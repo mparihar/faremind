@@ -1,0 +1,71 @@
+{% extends "base.html" %}
+{% block title %}Booking Confirmed – {{ booking_reference }}{% endblock %}
+{% block header_tag %}Booking Confirmation{% endblock %}
+{% block body %}
+<p style="margin:0 0 6px;color:#94a3b8;font-size:13px;">Dear {{ customer_name }},</p>
+<h2 style="margin:0 0 20px;color:#1abc9c;font-size:22px;font-weight:800;">✈ Your flight is confirmed!</h2>
+
+<!-- Booking reference badge -->
+<div style="background:#0f172a;border:1px solid #1abc9c;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px;">
+  <p style="margin:0 0 4px;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.1em;">Booking Reference</p>
+  <p style="margin:0;color:#1abc9c;font-size:28px;font-weight:900;letter-spacing:.15em;">{{ booking_reference }}</p>
+</div>
+
+<!-- Flight summary -->
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;">
+  <tr>
+    <td style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:16px 20px;">
+      <table width="100%" cellpadding="0" cellspacing="0">
+        <tr>
+          <td style="color:#e2e8f0;font-size:20px;font-weight:800;text-align:center;">{{ origin }}</td>
+          <td style="color:#1abc9c;font-size:18px;text-align:center;">⇄</td>
+          <td style="color:#e2e8f0;font-size:20px;font-weight:800;text-align:center;">{{ destination }}</td>
+        </tr>
+      </table>
+      <hr style="border:none;border-top:1px solid #334155;margin:12px 0;">
+      <table width="100%" cellpadding="4" cellspacing="0" style="font-size:13px;">
+        <tr><td style="color:#64748b;">Airline</td><td style="color:#e2e8f0;text-align:right;">{{ airline }}</td></tr>
+        <tr><td style="color:#64748b;">Fare Class</td><td style="color:#e2e8f0;text-align:right;">{{ fare_class }}</td></tr>
+        <tr><td style="color:#64748b;">Status</td><td style="text-align:right;"><span style="color:#1abc9c;font-weight:700;">Confirmed</span></td></tr>
+      </table>
+    </td>
+  </tr>
+</table>
+
+<!-- Passengers -->
+{% if passengers %}
+<h3 style="color:#e2e8f0;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px;">Passengers</h3>
+<table width="100%" cellpadding="0" cellspacing="0" style="margin-bottom:24px;background:#0f172a;border:1px solid #334155;border-radius:10px;">
+  {% for p in passengers %}
+  <tr style="border-bottom:1px solid #1e293b;">
+    <td style="padding:10px 16px;color:#e2e8f0;font-size:13px;">{{ p.name }}</td>
+    <td style="padding:10px 16px;color:#64748b;font-size:12px;text-align:right;">{{ p.type|default('Adult') }}</td>
+  </tr>
+  {% endfor %}
+</table>
+{% endif %}
+
+<!-- Payment -->
+<h3 style="color:#e2e8f0;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px;">Payment Summary</h3>
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:24px;font-size:13px;">
+  <tr><td style="padding:6px 16px;color:#64748b;">Total Charged</td><td style="padding:6px 16px;color:#1abc9c;font-weight:700;text-align:right;">{{ total_amount }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Payment Method</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">Card ending {{ card_last4 }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Confirmed At</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ confirmed_at }}</td></tr>
+</table>
+
+<!-- Next steps -->
+<h3 style="color:#e2e8f0;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px;">Next Steps</h3>
+<ul style="margin:0 0 24px;padding-left:20px;color:#94a3b8;font-size:13px;line-height:1.8;">
+  <li>Check your passport and travel documents.</li>
+  <li>Check in with the airline when check-in opens.</li>
+  <li>Boarding passes are available after airline check-in.</li>
+  <li>Use your booking reference <strong style="color:#e2e8f0;">{{ booking_reference }}</strong> to manage your booking.</li>
+</ul>
+
+<!-- CTA -->
+{% if itinerary_url is defined %}
+<div style="text-align:center;margin-bottom:8px;">
+  <a href="{{ itinerary_url }}" style="display:inline-block;background:#1abc9c;color:#fff;font-weight:700;font-size:14px;padding:14px 32px;border-radius:12px;text-decoration:none;">View / Download Itinerary</a>
+</div>
+{% endif %}
+{% endblock %}

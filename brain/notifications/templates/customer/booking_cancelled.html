@@ -1,0 +1,29 @@
+{% extends "base.html" %}
+{% block title %}Booking Cancelled – {{ booking_reference }}{% endblock %}
+{% block header_tag %}Booking Cancelled{% endblock %}
+{% block body %}
+<p style="margin:0 0 6px;color:#94a3b8;font-size:13px;">Dear {{ customer_name }},</p>
+<h2 style="margin:0 0 20px;color:#ef4444;font-size:22px;font-weight:800;">Your booking has been cancelled</h2>
+
+<div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px;">
+  <p style="margin:0 0 4px;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.1em;">Cancelled Booking</p>
+  <p style="margin:0;color:#ef4444;font-size:28px;font-weight:900;letter-spacing:.15em;">{{ booking_reference }}</p>
+</div>
+
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:16px;font-size:13px;margin-bottom:24px;">
+  <tr><td style="padding:6px 16px;color:#64748b;">Route</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ origin }} → {{ destination }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Airline</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ airline }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Cancelled At</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ cancelled_at|default('N/A') }}</td></tr>
+  {% if refund_amount is defined %}<tr><td style="padding:6px 16px;color:#64748b;">Refund Amount</td><td style="padding:6px 16px;color:#1abc9c;font-weight:700;text-align:right;">{{ refund_amount }}</td></tr>{% endif %}
+</table>
+
+{% if refund_amount is defined %}
+<p style="color:#94a3b8;font-size:13px;line-height:1.7;margin:0 0 16px;">
+  Your refund of <strong style="color:#1abc9c;">{{ refund_amount }}</strong> will be returned to your original payment method within 5–10 business days.
+</p>
+{% endif %}
+
+<p style="color:#64748b;font-size:13px;text-align:center;margin:0;">
+  Questions? Contact <a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a>
+</p>
+{% endblock %}

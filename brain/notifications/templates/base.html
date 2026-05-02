@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>{% block title %}FareMind{% endblock %}</title>
+</head>
+<body style="margin:0;padding:0;background:#0f172a;font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Roboto,sans-serif;">
+  <table width="100%" cellpadding="0" cellspacing="0" style="padding:40px 20px;">
+    <tr><td align="center">
+      <table width="100%" style="max-width:600px;">
+
+        <!-- Header -->
+        <tr><td style="background:#1e293b;border-radius:16px 16px 0 0;border:1px solid #334155;border-bottom:none;padding:24px 32px;">
+          <table cellpadding="0" cellspacing="0"><tr>
+            <td style="width:38px;height:38px;background:rgba(26,188,156,0.15);border-radius:10px;border:1px solid rgba(26,188,156,0.3);text-align:center;line-height:38px;">
+              <span style="color:#1abc9c;font-size:20px;font-weight:900;">F</span>
+            </td>
+            <td style="padding-left:12px;">
+              <span style="color:#fff;font-size:16px;font-weight:800;">FareMind</span>
+              <span style="display:block;color:#64748b;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;">{% block header_tag %}Travel Intelligence{% endblock %}</span>
+            </td>
+          </tr></table>
+        </td></tr>
+
+        <!-- Body -->
+        <tr><td style="background:#1e293b;border:1px solid #334155;border-top:none;border-bottom:none;padding:32px;">
+          {% block body %}{% endblock %}
+        </td></tr>
+
+        <!-- Footer -->
+        <tr><td style="background:#0f172a;border:1px solid #334155;border-top:1px solid #334155;border-radius:0 0 16px 16px;padding:20px 32px;">
+          <p style="margin:0 0 6px;color:#475569;font-size:11px;text-align:center;">
+            FareMind &middot; <a href="{{ app_url|default('https://faremind.ai') }}" style="color:#1abc9c;text-decoration:none;">faremind.ai</a>
+          </p>
+          <p style="margin:0;color:#334155;font-size:11px;text-align:center;">
+            &copy; {{ year|default('2026') }} FareMind. All rights reserved.
+          </p>
+        </td></tr>
+
+      </table>
+    </td></tr>
+  </table>
+</body>
+</html>

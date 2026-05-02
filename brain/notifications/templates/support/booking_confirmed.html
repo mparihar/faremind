@@ -1,0 +1,58 @@
+{% extends "base.html" %}
+{% block title %}New Booking Confirmed – {{ booking_reference }}{% endblock %}
+{% block header_tag %}Support — Booking Alert{% endblock %}
+{% block body %}
+<h2 style="margin:0 0 6px;color:#1abc9c;font-size:20px;font-weight:800;">New Flight Booking Confirmed</h2>
+<p style="margin:0 0 24px;color:#64748b;font-size:13px;">Hello Team — a new booking has been completed on FareMind.</p>
+
+<h3 style="color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 8px;">Booking Summary</h3>
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:0;font-size:13px;margin-bottom:20px;">
+  <tr><td style="padding:8px 16px;color:#64748b;">Booking Reference</td><td style="padding:8px 16px;color:#1abc9c;font-weight:800;text-align:right;">{{ booking_reference }}</td></tr>
+  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Route</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ origin }} ⇄ {{ destination }}</td></tr>
+  <tr><td style="padding:8px 16px;color:#64748b;">Airline</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ airline }}</td></tr>
+  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Fare Class</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ fare_class }}</td></tr>
+  <tr><td style="padding:8px 16px;color:#64748b;">Status</td><td style="padding:8px 16px;color:#1abc9c;font-weight:700;text-align:right;">Confirmed</td></tr>
+  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Provider Booking ID</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ provider_booking_id|default('N/A') }}</td></tr>
+  <tr><td style="padding:8px 16px;color:#64748b;">PNR</td><td style="padding:8px 16px;color:#e2e8f0;font-weight:700;text-align:right;">{{ pnr|default('N/A') }}</td></tr>
+</table>
+
+<h3 style="color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 8px;">Passenger Details</h3>
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px;margin-bottom:20px;">
+  {% if passengers %}
+    {% for p in passengers %}
+    <tr style="{{ 'background:#111827;' if loop.index is even }}">
+      <td style="padding:8px 16px;color:#e2e8f0;">{{ p.name }}</td>
+      <td style="padding:8px 16px;color:#64748b;text-align:right;">{{ p.type|default('Adult') }}</td>
+    </tr>
+    {% endfor %}
+  {% else %}
+    <tr><td style="padding:8px 16px;color:#64748b;">{{ passenger_details|default('N/A') }}</td></tr>
+  {% endif %}
+</table>
+
+<h3 style="color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 8px;">Payment Details</h3>
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px;margin-bottom:20px;">
+  <tr><td style="padding:8px 16px;color:#64748b;">Total Charged</td><td style="padding:8px 16px;color:#1abc9c;font-weight:700;text-align:right;">{{ total_amount }}</td></tr>
+  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Payment Method</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">Card ending {{ card_last4 }}</td></tr>
+  <tr><td style="padding:8px 16px;color:#64748b;">Stripe PaymentIntent</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ payment_intent_id|default('N/A') }}</td></tr>
+  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Transaction Time</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ confirmed_at }}</td></tr>
+</table>
+
+<h3 style="color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 8px;">Add-ons</h3>
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px;margin-bottom:20px;">
+  <tr><td style="padding:8px 16px;color:#64748b;">Seats</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ seat_summary|default('None') }}</td></tr>
+  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Meals</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ meal_summary|default('None') }}</td></tr>
+  <tr><td style="padding:8px 16px;color:#64748b;">Bags</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ baggage_summary|default('None') }}</td></tr>
+  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Price Drop Protection</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ price_drop_protection_status|default('Not purchased') }}</td></tr>
+  <tr><td style="padding:8px 16px;color:#64748b;">Travel Protection</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ travel_protection_status|default('Not purchased') }}</td></tr>
+</table>
+
+<div style="background:#1e3a2f;border:1px solid #1abc9c;border-radius:10px;padding:16px;margin-bottom:8px;">
+  <p style="margin:0 0 6px;color:#1abc9c;font-size:12px;font-weight:700;text-transform:uppercase;">Action Required</p>
+  <ul style="margin:0;padding-left:18px;color:#94a3b8;font-size:13px;line-height:1.8;">
+    <li>Verify provider booking synchronization.</li>
+    <li>Ensure ticket issuance is completed.</li>
+    <li>Monitor for provider updates or failures.</li>
+  </ul>
+</div>
+{% endblock %}

@@ -31,7 +31,7 @@ async function main() {
       data: {
         email,
         passwordHash,
-        fullName: 'Maulik Parihar',
+        fullName: 'Munish Parihar',
         role: 'SUPER_ADMIN',
         isActive: true,
       },

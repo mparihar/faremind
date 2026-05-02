@@ -1,0 +1,21 @@
+{% extends "base.html" %}
+{% block title %}[URGENT] Pending Confirmation – {{ booking_reference }}{% endblock %}
+{% block header_tag %}Support — Urgent Alert{% endblock %}
+{% block body %}
+<div style="background:#7c2d12;border:1px solid #ef4444;border-radius:10px;padding:14px 20px;margin-bottom:20px;">
+  <p style="margin:0;color:#fca5a5;font-size:14px;font-weight:700;">⚠ URGENT — Provider confirmation is pending</p>
+</div>
+
+<p style="margin:0 0 24px;color:#94a3b8;font-size:13px;line-height:1.7;">
+  Payment was successful but the airline/provider has not yet confirmed booking <strong style="color:#e2e8f0;">{{ booking_reference }}</strong>. Manual review may be required.
+</p>
+
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px;margin-bottom:20px;">
+  <tr><td style="padding:8px 16px;color:#64748b;">Booking Reference</td><td style="padding:8px 16px;color:#f59e0b;font-weight:800;text-align:right;">{{ booking_reference }}</td></tr>
+  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Customer Email</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ customer_email }}</td></tr>
+  <tr><td style="padding:8px 16px;color:#64748b;">Route</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ origin }} → {{ destination }}</td></tr>
+  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Airline</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ airline }}</td></tr>
+  <tr><td style="padding:8px 16px;color:#64748b;">Amount Charged</td><td style="padding:8px 16px;color:#1abc9c;font-weight:700;text-align:right;">{{ total_amount }}</td></tr>
+  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Payment Intent</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ payment_intent_id|default('N/A') }}</td></tr>
+</table>
+{% endblock %}

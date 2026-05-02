@@ -1,0 +1,30 @@
+{% extends "base.html" %}
+{% block title %}Check-in Opening – {{ destination }}{% endblock %}
+{% block header_tag %}Check-in Reminder{% endblock %}
+{% block body %}
+<p style="margin:0 0 6px;color:#94a3b8;font-size:13px;">Dear {{ customer_name }},</p>
+<h2 style="margin:0 0 20px;color:#3b82f6;font-size:22px;font-weight:800;">🛂 Check-in is opening soon</h2>
+
+<p style="color:#94a3b8;font-size:14px;line-height:1.7;margin:0 0 24px;">
+  Online check-in for your flight to <strong style="color:#e2e8f0;">{{ destination }}</strong> is now open or opening shortly.
+</p>
+
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:16px;font-size:13px;margin-bottom:24px;">
+  <tr><td style="padding:6px 16px;color:#64748b;">Booking Reference</td><td style="padding:6px 16px;color:#e2e8f0;font-weight:700;text-align:right;">{{ booking_reference }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Route</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ origin }} → {{ destination }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Airline</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ airline }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Departure</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ departure_time }}</td></tr>
+</table>
+
+<ul style="margin:0 0 24px;padding-left:20px;color:#94a3b8;font-size:13px;line-height:1.8;">
+  <li>Check in online to save time at the airport.</li>
+  <li>Your boarding pass will be available after check-in.</li>
+  <li>Arrive at the airport at least 2–3 hours before departure.</li>
+</ul>
+
+{% if checkin_url is defined %}
+<div style="text-align:center;">
+  <a href="{{ checkin_url }}" style="display:inline-block;background:#3b82f6;color:#fff;font-weight:700;font-size:14px;padding:14px 32px;border-radius:12px;text-decoration:none;">Check In with {{ airline }}</a>
+</div>
+{% endif %}
+{% endblock %}

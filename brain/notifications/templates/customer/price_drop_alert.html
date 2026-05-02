@@ -1,0 +1,37 @@
+{% extends "base.html" %}
+{% block title %}Price Drop – {{ route }}{% endblock %}
+{% block header_tag %}Price Alert{% endblock %}
+{% block body %}
+<h2 style="margin:0 0 8px;color:#1abc9c;font-size:22px;font-weight:800;">📉 Price drop on your tracked flight!</h2>
+<p style="color:#94a3b8;font-size:14px;margin:0 0 24px;">Good news — fares have dropped for <strong style="color:#e2e8f0;">{{ route }}</strong>.</p>
+
+<div style="background:#0f172a;border:1px solid #1abc9c;border-radius:12px;padding:24px;margin-bottom:24px;">
+  <table width="100%" cellpadding="0" cellspacing="0">
+    <tr>
+      <td style="text-align:center;padding:0 12px;">
+        <p style="margin:0 0 4px;color:#64748b;font-size:11px;text-transform:uppercase;">Was</p>
+        <p style="margin:0;color:#ef4444;font-size:22px;font-weight:800;text-decoration:line-through;">{{ original_price }}</p>
+      </td>
+      <td style="color:#1abc9c;font-size:22px;text-align:center;">→</td>
+      <td style="text-align:center;padding:0 12px;">
+        <p style="margin:0 0 4px;color:#64748b;font-size:11px;text-transform:uppercase;">Now</p>
+        <p style="margin:0;color:#1abc9c;font-size:28px;font-weight:900;">{{ new_price }}</p>
+      </td>
+      <td style="text-align:center;padding:0 12px;">
+        <p style="margin:0 0 4px;color:#64748b;font-size:11px;text-transform:uppercase;">Savings</p>
+        <p style="margin:0;color:#f59e0b;font-size:22px;font-weight:800;">{{ savings }}</p>
+      </td>
+    </tr>
+  </table>
+</div>
+
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:16px;font-size:13px;margin-bottom:24px;">
+  <tr><td style="padding:6px 16px;color:#64748b;">Route</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ route }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Departure</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ departure_date }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Airline</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ airline|default('Multiple airlines') }}</td></tr>
+</table>
+
+<div style="text-align:center;">
+  <a href="{{ fare_url|default(app_url|default('https://faremind.ai')) }}" style="display:inline-block;background:#1abc9c;color:#fff;font-weight:700;font-size:14px;padding:14px 32px;border-radius:12px;text-decoration:none;">View Updated Fare</a>
+</div>
+{% endblock %}

@@ -1,0 +1,28 @@
+{% extends "base.html" %}
+{% block title %}Booking Being Processed – {{ booking_reference }}{% endblock %}
+{% block header_tag %}Booking Update{% endblock %}
+{% block body %}
+<p style="margin:0 0 6px;color:#94a3b8;font-size:13px;">Dear {{ customer_name }},</p>
+<h2 style="margin:0 0 20px;color:#f59e0b;font-size:22px;font-weight:800;">⏳ Your booking is being processed</h2>
+
+<p style="color:#94a3b8;font-size:14px;line-height:1.7;margin:0 0 24px;">
+  Your payment was successful and we're waiting for the airline to confirm your booking.
+  This usually takes a few minutes. We'll email you again once confirmed.
+</p>
+
+<div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:20px;text-align:center;margin-bottom:24px;">
+  <p style="margin:0 0 4px;color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.1em;">Booking Reference</p>
+  <p style="margin:0;color:#f59e0b;font-size:28px;font-weight:900;letter-spacing:.15em;">{{ booking_reference }}</p>
+</div>
+
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:16px;font-size:13px;margin-bottom:24px;">
+  <tr><td style="padding:6px 16px;color:#64748b;">Route</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ origin }} → {{ destination }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Airline</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ airline }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Status</td><td style="padding:6px 16px;text-align:right;"><span style="color:#f59e0b;font-weight:700;">Pending Confirmation</span></td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Total Charged</td><td style="padding:6px 16px;color:#1abc9c;font-weight:700;text-align:right;">{{ total_amount }}</td></tr>
+</table>
+
+<p style="color:#64748b;font-size:13px;text-align:center;margin:0;">
+  If you don't hear from us within 30 minutes, please contact <a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a>
+</p>
+{% endblock %}

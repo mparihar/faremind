@@ -1,0 +1,23 @@
+{% extends "base.html" %}
+{% block title %}Payment Issue – FareMind{% endblock %}
+{% block header_tag %}Payment Update{% endblock %}
+{% block body %}
+<p style="margin:0 0 6px;color:#94a3b8;font-size:13px;">Dear {{ customer_name }},</p>
+<h2 style="margin:0 0 20px;color:#ef4444;font-size:22px;font-weight:800;">Payment could not be processed</h2>
+
+<p style="color:#94a3b8;font-size:14px;line-height:1.7;margin:0 0 24px;">
+  We were unable to process your payment for the booking below.
+  Please try again or use a different payment method.
+</p>
+
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:16px;font-size:13px;margin-bottom:24px;">
+  <tr><td style="padding:6px 16px;color:#64748b;">Route</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ origin }} → {{ destination }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Amount</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ total_amount }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Card</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">Ending {{ card_last4 }}</td></tr>
+  <tr><td style="padding:6px 16px;color:#64748b;">Reason</td><td style="padding:6px 16px;color:#ef4444;text-align:right;">{{ failure_reason|default('Payment declined') }}</td></tr>
+</table>
+
+<div style="text-align:center;">
+  <a href="{{ app_url|default('https://faremind.ai') }}/checkout/payment" style="display:inline-block;background:#ef4444;color:#fff;font-weight:700;font-size:14px;padding:14px 32px;border-radius:12px;text-decoration:none;">Retry Payment</a>
+</div>
+{% endblock %}

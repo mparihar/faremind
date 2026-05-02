@@ -15,6 +15,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useAdminStore } from '@/store/useAdminStore';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Search', icon: Plane },
@@ -25,6 +26,12 @@ export default function Navbar() {
   const pathname = usePathname();
   const [mobileOpen, setMobileOpen] = useState(false);
   const { user, loadSession, logout } = useAuthStore();
+  const { user: adminUser, clearAuth: clearAdminAuth } = useAdminStore();
+
+  async function adminLogout() {
+    await fetch('/api/admin/auth/logout', { method: 'POST', credentials: 'include' });
+    clearAdminAuth();
+  }
 
   // Load session on mount
   useEffect(() => {
@@ -95,6 +102,14 @@ export default function Navbar() {
                   Log Out
                 </button>
               </>
+            ) : adminUser ? (
+              <button
+                onClick={adminLogout}
+                className="flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-semibold text-white/70 hover:text-white transition-all"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </button>
             ) : (
               <>
                 <Link
@@ -155,21 +170,33 @@ export default function Navbar() {
                 );
               })}
               <div className="pt-2 border-t border-white/[0.06] space-y-2">
-                <Link
-                  href="/auth/login"
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:text-white"
-                >
-                  <LogIn className="w-5 h-5" />
-                  Sign In
-                </Link>
-                <Link
-                  href="/auth/signup"
-                  onClick={() => setMobileOpen(false)}
-                  className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white bg-[#1ABC9C]"
-                >
-                  Get Started
-                </Link>
+                {adminUser ? (
+                  <button
+                    onClick={() => { setMobileOpen(false); adminLogout(); }}
+                    className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:text-white w-full"
+                  >
+                    <LogOut className="w-5 h-5" />
+                    Sign Out
+                  </button>
+                ) : (
+                  <>
+                    <Link
+                      href="/auth/login"
+                      onClick={() => setMobileOpen(false)}
+                      className="flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium text-slate-400 hover:text-white"
+                    >
+                      <LogIn className="w-5 h-5" />
+                      Sign In
+                    </Link>
+                    <Link
+                      href="/auth/signup"
+                      onClick={() => setMobileOpen(false)}
+                      className="flex items-center justify-center gap-2 px-4 py-3 rounded-xl text-sm font-semibold text-white bg-[#1ABC9C]"
+                    >
+                      Get Started
+                    </Link>
+                  </>
+                )}
               </div>
             </div>
           </motion.div>
