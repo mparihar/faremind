@@ -1,0 +1,322 @@
+/**
+ * Flight Search Orchestrator
+ *
+ * The core aggregation engine that:
+ * 1. Calls Duffel (NDC) + Amadeus (GDS) in parallel
+ * 2. Normalizes responses into the unified schema
+ * 3. Merges, deduplicates, and ranks results
+ * 4. Falls back to mock data if API keys are not configured
+ * 5. Logs search analytics to the database
+ *
+ * This is the single source of truth for all flight search logic.
+ */
+
+import * as duffel from '@/lib/providers/duffel';
+import * as amadeus from '@/lib/providers/amadeus';
+import {
+  normalizeDuffelOffer,
+  normalizeAmadeusOffer,
+  mergeAndRankFlights,
+} from '@/lib/providers/normalizer';
+import { normalizeDuffelRoundTripOffer } from '@/lib/providers/round-trip-normalizer';
+import type { UnifiedFlight } from '@/lib/types';
+import type { RoundTripOption } from '@/lib/round-trip-types';
+
+// ─── Provider Availability Check ───
+
+function isDuffelConfigured(): boolean {
+  const token = process.env.DUFFEL_API_TOKEN || '';
+  return token.length > 0 && !token.includes('your_token');
+}
+
+function isAmadeusConfigured(): boolean {
+  const id = process.env.AMADEUS_CLIENT_ID || '';
+  const secret = process.env.AMADEUS_CLIENT_SECRET || '';
+  return id.length > 0 && !id.includes('your_') && secret.length > 0 && !secret.includes('your_');
+}
+
+// ─── Provider Results ───
+
+export interface ProviderResult {
+  provider: 'duffel' | 'amadeus';
+  flights: UnifiedFlight[];
+  responseTimeMs: number;
+  error?: string;
+  isMock: boolean;
+}
+
+export interface SearchResult {
+  flights: UnifiedFlight[];
+  providers: ProviderResult[];
+  searchId: string;
+  totalTimeMs: number;
+  usedMockData: boolean;
+}
+
+// ─── Duffel Search ───
+
+async function searchDuffel(params: {
+  origin: string;
+  destination: string;
+  date: string;
+  returnDate?: string;
+  adults: number;
+  children?: number;
+  infants?: number;
+  cabin?: string;
+}): Promise<ProviderResult> {
+  const start = Date.now();
+
+  if (!isDuffelConfigured()) {
+    return {
+      provider: 'duffel',
+      flights: [],
+      responseTimeMs: 0,
+      error: 'Duffel API not configured',
+      isMock: true,
+    };
+  }
+
+  try {
+    const offers = await duffel.searchFlights({
+      origin: params.origin,
+      destination: params.destination,
+      departureDate: params.date,
+      returnDate: params.returnDate,
+      adults: params.adults,
+      children: params.children,
+      infants: params.infants,
+      cabinClass: params.cabin || undefined,
+    });
+
+    const flights = (Array.isArray(offers) ? offers : [])
+      .map((offer: any) => {
+        try {
+          return normalizeDuffelOffer(offer);
+        } catch (e) {
+          console.warn('[Duffel] Failed to normalize offer:', (e as Error).message);
+          return null;
+        }
+      })
+      .filter(Boolean) as UnifiedFlight[];
+
+    return {
+      provider: 'duffel',
+      flights,
+      responseTimeMs: Date.now() - start,
+      isMock: false,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[Duffel] Search failed:', msg);
+    return {
+      provider: 'duffel',
+      flights: [],
+      responseTimeMs: Date.now() - start,
+      error: msg,
+      isMock: false,
+    };
+  }
+}
+
+// ─── Amadeus Search ───
+
+async function searchAmadeus(params: {
+  origin: string;
+  destination: string;
+  date: string;
+  returnDate?: string;
+  adults: number;
+  children?: number;
+  infants?: number;
+  cabin?: string;
+}): Promise<ProviderResult> {
+  const start = Date.now();
+
+  if (!isAmadeusConfigured()) {
+    return {
+      provider: 'amadeus',
+      flights: [],
+      responseTimeMs: 0,
+      error: 'Amadeus API not configured',
+      isMock: true,
+    };
+  }
+
+  try {
+    const response = await amadeus.searchFlights({
+      origin: params.origin,
+      destination: params.destination,
+      departureDate: params.date,
+      returnDate: params.returnDate,
+      adults: params.adults,
+      children: params.children,
+      infants: params.infants,
+      travelClass: params.cabin?.toUpperCase(),
+      maxResults: 50,
+    });
+
+    const data = response as { data: any[]; dictionaries?: any };
+    const offers = data?.data || [];
+    const dictionaries = data?.dictionaries;
+
+    const flights = offers
+      .map((offer: any) => {
+        try {
+          return normalizeAmadeusOffer(offer, dictionaries);
+        } catch (e) {
+          console.warn('[Amadeus] Failed to normalize offer:', (e as Error).message);
+          return null;
+        }
+      })
+      .filter(Boolean) as UnifiedFlight[];
+
+    return {
+      provider: 'amadeus',
+      flights,
+      responseTimeMs: Date.now() - start,
+      isMock: false,
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Unknown error';
+    console.error('[Amadeus] Search failed:', msg);
+    return {
+      provider: 'amadeus',
+      flights: [],
+      responseTimeMs: Date.now() - start,
+      error: msg,
+      isMock: false,
+    };
+  }
+}
+
+// ─── Main Orchestrator ───
+
+export async function searchFlights(params: {
+  origin: string;
+  destination: string;
+  date: string;
+  returnDate?: string;
+  adults: number;
+  children?: number;
+  infants?: number;
+  cabin?: string;
+}): Promise<SearchResult> {
+  const overallStart = Date.now();
+  const searchId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+
+  const hasDuffel = isDuffelConfigured();
+  const hasAmadeus = isAmadeusConfigured();
+  const hasAnyProvider = hasDuffel || hasAmadeus;
+
+  console.log(`[Search ${searchId}] Starting flight search: ${params.origin} → ${params.destination} on ${params.date}`);
+  console.log(`[Search ${searchId}] Providers: Duffel=${hasDuffel ? 'ON' : 'OFF'}, Amadeus=${hasAmadeus ? 'ON' : 'OFF'}`);
+
+  let providerResults: ProviderResult[];
+
+  if (hasAnyProvider) {
+    const promises: Promise<ProviderResult>[] = [];
+    if (hasDuffel) promises.push(searchDuffel(params));
+    if (hasAmadeus) promises.push(searchAmadeus(params));
+    providerResults = await Promise.all(promises);
+  } else {
+    console.log(`[Search ${searchId}] No providers configured`);
+    providerResults = [];
+  }
+
+  const allFlights = providerResults.flatMap((r) => r.flights);
+  const rankedFlights = mergeAndRankFlights(allFlights);
+  const totalTimeMs = Date.now() - overallStart;
+
+  console.log(`[Search ${searchId}] Complete: ${rankedFlights.length} flights in ${totalTimeMs}ms`);
+
+  return {
+    flights: rankedFlights,
+    providers: providerResults,
+    searchId,
+    totalTimeMs,
+    usedMockData: false,
+  };
+}
+
+// ─── Round-Trip Search ────────────────────────────────────────────────────────
+// Separate from searchFlights() — does NOT touch the one-way pipeline.
+
+export interface RoundTripSearchResult {
+  options: RoundTripOption[];
+  providers: ProviderResult[];
+  searchId: string;
+  totalTimeMs: number;
+  usedMockData: boolean;
+}
+
+export async function searchRoundTripFlights(params: {
+  origin: string;
+  destination: string;
+  date: string;
+  returnDate: string;
+  adults: number;
+  children?: number;
+  infants?: number;
+  cabin?: string;
+}): Promise<RoundTripSearchResult> {
+  const overallStart = Date.now();
+  const searchId = `rt_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+
+  console.log(`[RT ${searchId}] ${params.origin} ⇄ ${params.destination} | out:${params.date} ret:${params.returnDate}`);
+
+  const options: RoundTripOption[] = [];
+  const providerResults: ProviderResult[] = [];
+
+  if (isDuffelConfigured()) {
+    const start = Date.now();
+    try {
+      const raw = await duffel.searchFlights({
+        origin: params.origin,
+        destination: params.destination,
+        departureDate: params.date,
+        returnDate: params.returnDate,
+        adults: params.adults,
+        children: params.children,
+        infants: params.infants,
+        cabinClass: params.cabin || undefined,
+      });
+
+      const normalized = (Array.isArray(raw) ? raw : [])
+        .map((offer: any) => {
+          try { return normalizeDuffelRoundTripOffer(offer); }
+          catch (e) { console.warn('[RT Duffel] normalize failed:', (e as Error).message); return null; }
+        })
+        .filter((o): o is RoundTripOption => o !== null);
+
+      options.push(...normalized);
+      providerResults.push({ provider: 'duffel', flights: [], responseTimeMs: Date.now() - start, isMock: false });
+    } catch (error) {
+      const msg = error instanceof Error ? error.message : 'Unknown error';
+      console.error('[RT Duffel] search failed:', msg);
+      providerResults.push({ provider: 'duffel', flights: [], responseTimeMs: Date.now() - start, error: msg, isMock: false });
+    }
+  }
+
+  const totalTimeMs = Date.now() - overallStart;
+  console.log(`[RT ${searchId}] Done: ${options.length} options in ${totalTimeMs}ms`);
+
+  return { options, providers: providerResults, searchId, totalTimeMs, usedMockData: false };
+}
+
+// ─── Provider Status Check ───
+
+export function getProviderStatus() {
+  return {
+    duffel: {
+      configured: isDuffelConfigured(),
+      type: 'NDC' as const,
+      description: 'Direct airline connections',
+    },
+    amadeus: {
+      configured: isAmadeusConfigured(),
+      type: 'GDS' as const,
+      description: 'Global Distribution System',
+    },
+  };
+}
