@@ -14,15 +14,18 @@ RUN npm ci --omit=dev
 # Copy backend
 COPY backend/ ./backend/
 
-# Install backend deps
+# Install ALL backend deps (including devDependencies for tsc)
 WORKDIR /app/backend
-RUN npm ci --omit=dev
+RUN npm ci
 
 # Generate Prisma client (schema is at ../prisma/schema.prisma)
 RUN npx prisma generate --schema ../prisma/schema.prisma
 
-# Build backend TypeScript
+# Build backend TypeScript (needs tsc from devDependencies)
 RUN npm run build
+
+# Remove devDependencies after build
+RUN npm prune --omit=dev
 
 # Expose port
 EXPOSE ${PORT:-3001}
