@@ -465,7 +465,7 @@ function SearchContent() {
     if (prefs.budgetActive) {
       filtered = filtered.filter(rt => rt.totalPrice >= prefs.budgetMin && rt.totalPrice <= prefs.budgetMax);
     }
-    if (prefs.maxDuration !== null) {
+    if (prefs.maxDuration != null) {
       filtered = filtered.filter(rt => rt.totalDurationMinutes <= prefs.maxDuration!);
     }
     if (prefs.stops === 'nonstop') {
@@ -475,7 +475,7 @@ function SearchContent() {
     } else if (prefs.stops === '2stop') {
       filtered = filtered.filter(rt => rt.maxStopsOneWay <= 2);
     }
-    if (prefs.departureWindow) {
+    if (prefs.departureWindow != null) {
       filtered = filtered.filter(rt => {
         const h = new Date(rt.outboundJourney.departureTime).getHours();
         if (prefs.departureWindow === 'morning')   return h >= 5 && h < 12;
@@ -1230,3 +1230,4 @@ export default function SearchPage() {
     </Suspense>
   );
 }
+
