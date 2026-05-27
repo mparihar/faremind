@@ -196,6 +196,7 @@ function SearchContent() {
       ...(returnDateParam ? { returnDate: returnDateParam } : {}),
     });
     fetch(`/api/search?${params}`)
+      .then((res) => res.json())
       .then((data) => {
         if (data.error) {
           alert(`Search Error: ${data.error}\nDetails: ${data.details || 'Check logs'}`);
@@ -488,7 +489,7 @@ function SearchContent() {
     return filtered;
   }, [effectiveRT, prefs.budgetActive, prefs.budgetMin, prefs.budgetMax, prefs.maxDuration, prefs.stops, prefs.departureWindow]);
 
-  const panelFilteredRT = useMemo(() => {
+  const panelFilteredRT = useMemo(() => { console.log('[DEBUG] effectiveRT.length:', effectiveRT.length, 'prefsFilteredRT.length:', prefsFilteredRT.length, 'selectedAirlines:', selectedAirlines.size, 'selectedClasses:', selectedClasses.size, 'selectedFeatures:', selectedFeatures.size);
     let f = prefsFilteredRT;
     if (selectedAirlines.size > 0) f = f.filter(rt => rt.airlines.some(a => selectedAirlines.has(a)));
     if (selectedClasses.size  > 0) f = f.filter(rt => selectedClasses.has(rt.cabinClass));
@@ -1230,4 +1231,5 @@ export default function SearchPage() {
     </Suspense>
   );
 }
+
 
