@@ -1,0 +1,17 @@
+[phases.setup]
+nixPkgs = ["nodejs_22"]
+
+[phases.install]
+cmds = [
+  "npm ci --prefix backend",
+  "npm ci"
+]
+
+[phases.build]
+cmds = [
+  "npx prisma generate",
+  "cd backend && npx prisma generate --schema ../prisma/schema.prisma && npm run build"
+]
+
+[start]
+cmd = "cd backend && node dist/index.js"
