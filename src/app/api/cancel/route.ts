@@ -87,14 +87,16 @@ export async function POST(request: NextRequest) {
     }
 
     // In-app notification
-    await createNotification({
-      userId: booking.userId,
-      bookingId,
-      type: 'BOOKING_CANCELLATION',
-      channel: 'IN_APP',
-      title: 'Booking Cancelled',
-      body: `Your ${booking.airlineName} flight ${booking.originAirport} → ${booking.destinationAirport} (PNR: ${booking.pnr}) has been cancelled.${refundAmount > 0 ? ` Refund: $${refundAmount.toFixed(2)}` : ''}`,
-    }).catch(() => {});
+    if (booking.userId) {
+      await createNotification({
+        userId: booking.userId,
+        bookingId,
+        type: 'BOOKING_CANCELLATION',
+        channel: 'IN_APP',
+        title: 'Booking Cancelled',
+        body: `Your ${booking.airlineName} flight ${booking.originAirport} → ${booking.destinationAirport} (PNR: ${booking.pnr}) has been cancelled.${refundAmount > 0 ? ` Refund: $${refundAmount.toFixed(2)}` : ''}`,
+      }).catch(() => {});
+    }
 
     // Email notification
     const primaryPax = booking.passengers?.[0];
