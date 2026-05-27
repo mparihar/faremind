@@ -196,9 +196,10 @@ function SearchContent() {
       ...(returnDateParam ? { returnDate: returnDateParam } : {}),
     });
     fetch(`/api/search?${params}`)
-      .then((r) => r.json())
       .then((data) => {
-        if (data.roundTripOptions) {
+        if (data.error) {
+          alert(`Search Error: ${data.error}\nDetails: ${data.details || 'Check logs'}`);
+        } else if (data.roundTripOptions) {
           setRoundTripOptions(data.roundTripOptions);
         } else if (data.flights) {
           setResults(data.flights);
@@ -207,7 +208,11 @@ function SearchContent() {
         if (cabin) setSelectedClasses(new Set([cabin]));
         setLoading(false);
       })
-      .catch((err) => { console.error('Search failed:', err); setLoading(false); });
+      .catch((err) => { 
+        console.error('Search failed:', err); 
+        alert(`Search failed: ${err.message}`);
+        setLoading(false); 
+      });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [origin, destination, date, adults, cabin, tripParam, returnDateParam]);
 

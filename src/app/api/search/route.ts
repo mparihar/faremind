@@ -238,8 +238,11 @@ export async function GET(request: NextRequest) {
         rankingMetadata: rankResult.metadata,
       },
     });
-  } catch (error) {
+  } catch (error: any) {
     console.error('[Search] Critical error:', error);
-    return NextResponse.json({ error: 'Search failed. Please try again.' }, { status: 500 });
+    return NextResponse.json({ 
+      error: 'Search failed. Please try again.',
+      details: error.message || String(error)
+    }, { status: 500 });
   }
 }
