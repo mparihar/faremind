@@ -136,8 +136,8 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
     const connDirMap: Record<string, 'outbound' | 'return'> = {};
 
     // Flight info to embed into origin/destination pins (from first item)
-    let outFlightInfo: { duration: string; price: number; flightCode: string; stops: number } | null = null;
-    let retFlightInfo: { duration: string; flightCode: string; stops: number } | null = null;
+    let outFlightInfo: { duration: string; price: number; flightCode: string; stops: number } | null = null as { duration: string; price: number; flightCode: string; stops: number } | null;
+    let retFlightInfo: { duration: string; flightCode: string; stops: number } | null = null as { duration: string; flightCode: string; stops: number } | null;
 
     const items = tripType === 'round_trip' ? roundTrips : flights;
 
