@@ -11,26 +11,18 @@ COPY package-lock.json ./package-lock.json
 # Install root deps (for prisma generate)
 RUN npm ci --omit=dev
 
-# Copy backend
+# Copy backend source
 COPY backend/ ./backend/
 
-# Install ALL backend deps (including devDependencies for tsc)
+# Install backend deps (tsx is now a production dependency)
 WORKDIR /app/backend
-RUN npm ci
+RUN npm ci --omit=dev
 
 # Generate Prisma client (schema is at ../prisma/schema.prisma)
 RUN npx prisma generate --schema ../prisma/schema.prisma
 
-# Build backend TypeScript
-RUN npm run build
-
-# Remove devDependencies after build
-RUN npm prune --omit=dev
-
 # Expose port
 EXPOSE ${PORT:-3001}
 
-# tsc outputs to dist/ with paths mirroring the rootDir.
-# Since backend imports ../src/generated/, rootDir becomes /app/,
-# so compiled entry is at dist/backend/src/index.js
-CMD ["node", "dist/backend/src/index.js"]
+# Run directly from TypeScript source using tsx
+CMD ["node", "--import", "tsx", "src/index.ts"]
