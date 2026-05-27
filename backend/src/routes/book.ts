@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import * as duffelClient from '../services/duffel';
 import { createBooking as dbCreateBooking, createPayment, addLedgerEntry, createNotification } from '../lib/db-queries';
 import { prisma } from '../lib/db';
+import { fireNotification } from '../lib/notify';
 
 function generateMockPNR(): string {
   return Array.from({ length: 6 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[Math.floor(Math.random() * 36)]).join('');
@@ -106,6 +107,51 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
         await addLedgerEntry({ type: 'BOOKING_PAYMENT', bookingId: booking.id, amount: flight.totalPrice, currency: flight.currency || 'USD', description: `Booking ${pnr}` }).catch(() => {});
         await createNotification({ userId: resolvedUserId, bookingId: booking.id, type: 'BOOKING_CONFIRMATION', channel: 'IN_APP', title: `Booking Confirmed`, body: `PNR: ${pnr}. Price tracking ${enablePriceTracking ? 'enabled' : 'disabled'}.` }).catch(() => {});
+
+        // Email notifications
+        const customerEmail = firstPassenger.email;
+        const customerName = `${firstPassenger.firstName} ${firstPassenger.lastName}`.trim();
+        const emailEventType = bookingStatus === 'CONFIRMED' ? 'BOOKING_CONFIRMED' as const : 'BOOKING_PENDING' as const;
+        fireNotification({
+          event_type: emailEventType,
+          booking_id: booking.id,
+          customer_email: customerEmail || undefined,
+          data: {
+            booking_reference: pnr,
+            pnr,
+            customer_name: customerName,
+            customer_email: customerEmail,
+            origin: firstSeg?.departure?.airport || '',
+            destination: lastSeg?.arrival?.airport || '',
+            route: `${firstSeg?.departure?.airport || ''} - ${lastSeg?.arrival?.airport || ''}`,
+            airline: flight.airline?.name || '',
+            fare_class: flight.cabinClass || 'Economy',
+            passengers: passengers.map((p: any) => ({ name: `${p.firstName} ${p.lastName}`.trim(), type: p.type ?? 'adult' })),
+            total_amount: `$${flight.totalPrice}`,
+            total_charged: flight.totalPrice,
+            currency: flight.currency || 'USD',
+          },
+        });
+        if (bookingStatus === 'CONFIRMED') {
+          fireNotification({
+            event_type: 'PAYMENT_SUCCESS',
+            booking_id: booking.id,
+            customer_email: customerEmail || undefined,
+            data: {
+              booking_reference: pnr,
+              pnr,
+              customer_name: customerName,
+              customer_email: customerEmail,
+              origin: firstSeg?.departure?.airport || '',
+              destination: lastSeg?.arrival?.airport || '',
+              route: `${firstSeg?.departure?.airport || ''} - ${lastSeg?.arrival?.airport || ''}`,
+              airline: flight.airline?.name || '',
+              total_amount: `$${flight.totalPrice}`,
+              total_charged: flight.totalPrice,
+              currency: flight.currency || 'USD',
+            },
+          });
+        }
       } catch (dbError) {
         console.error('[Booking] DB error:', dbError);
         booking = { id: `temp-${Date.now()}`, pnr, status: bookingStatus };

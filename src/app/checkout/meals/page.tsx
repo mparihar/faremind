@@ -61,7 +61,7 @@ function buildSegments(
   if (sourceRoundTrip) {
     return [
       {
-        key: 'outbound', label: 'Outbound',
+        key: 'out', label: 'Outbound',
         from: sourceRoundTrip.outboundJourney.departureAirport,
         to:   sourceRoundTrip.outboundJourney.arrivalAirport,
         depTime:     sourceRoundTrip.outboundJourney.departureTime,
@@ -71,7 +71,7 @@ function buildSegments(
         airlineCode: sourceRoundTrip.outboundJourney.flightNumbers[0]?.slice(0, 2) ?? '',
       },
       {
-        key: 'return', label: 'Return',
+        key: 'ret', label: 'Return',
         from: sourceRoundTrip.returnJourney.departureAirport,
         to:   sourceRoundTrip.returnJourney.arrivalAirport,
         depTime:     sourceRoundTrip.returnJourney.departureTime,

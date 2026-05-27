@@ -8,6 +8,7 @@ import {
   createNotification,
 } from '@/lib/db-queries';
 import prisma from '@/lib/db';
+import { fireNotification } from '@/lib/notify';
 
 /**
  * POST /api/book
@@ -254,6 +255,52 @@ export async function POST(request: NextRequest) {
         title: `Booking Confirmed - ${firstSeg?.departure?.airport || ''} → ${lastSeg?.arrival?.airport || ''}`,
         body: `Your ${flight.airline?.name || ''} flight has been confirmed. PNR: ${pnr}${enablePriceTracking ? '. Price tracking is enabled.' : ''}`,
       }).catch((err) => console.warn('[Booking] Notification failed:', err.message));
+
+      // ─── Step 7: Email notifications ───
+      const customerEmail = firstPassenger.email;
+      const customerName = `${firstPassenger.firstName} ${firstPassenger.lastName}`.trim();
+      const emailEventType = bookingStatus === 'CONFIRMED' ? 'BOOKING_CONFIRMED' as const : 'BOOKING_PENDING' as const;
+      fireNotification({
+        event_type: emailEventType,
+        booking_id: booking.id,
+        customer_email: customerEmail || undefined,
+        data: {
+          booking_reference: pnr,
+          pnr,
+          customer_name: customerName,
+          customer_email: customerEmail,
+          origin: firstSeg?.departure?.airport || '',
+          destination: lastSeg?.arrival?.airport || '',
+          route: `${firstSeg?.departure?.airport || ''} - ${lastSeg?.arrival?.airport || ''}`,
+          airline: flight.airline?.name || '',
+          fare_class: flight.cabinClass || 'Economy',
+          passengers: passengers.map((p: any) => ({ name: `${p.firstName} ${p.lastName}`.trim(), type: p.type ?? 'adult' })),
+          total_amount: `$${flight.totalPrice}`,
+          total_charged: flight.totalPrice,
+          currency: flight.currency || 'USD',
+        },
+      });
+
+      if (bookingStatus === 'CONFIRMED') {
+        fireNotification({
+          event_type: 'PAYMENT_SUCCESS',
+          booking_id: booking.id,
+          customer_email: customerEmail || undefined,
+          data: {
+            booking_reference: pnr,
+            pnr,
+            customer_name: customerName,
+            customer_email: customerEmail,
+            origin: firstSeg?.departure?.airport || '',
+            destination: lastSeg?.arrival?.airport || '',
+            route: `${firstSeg?.departure?.airport || ''} - ${lastSeg?.arrival?.airport || ''}`,
+            airline: flight.airline?.name || '',
+            total_amount: `$${flight.totalPrice}`,
+            total_charged: flight.totalPrice,
+            currency: flight.currency || 'USD',
+          },
+        });
+      }
 
     } catch (dbError) {
       console.error('[Booking] Database error:', dbError);

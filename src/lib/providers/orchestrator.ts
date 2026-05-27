@@ -263,7 +263,7 @@ export async function searchRoundTripFlights(params: {
   const overallStart = Date.now();
   const searchId = `rt_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
 
-  console.log(`[RT ${searchId}] ${params.origin} ⇄ ${params.destination} | out:${params.date} ret:${params.returnDate}`);
+  console.log(`[RT ${searchId}] ${params.origin} ⇄ ${params.destination} | out:${params.date} ret:${params.returnDate} | all-cabin search`);
 
   const options: RoundTripOption[] = [];
   const providerResults: ProviderResult[] = [];
@@ -271,6 +271,9 @@ export async function searchRoundTripFlights(params: {
   if (isDuffelConfigured()) {
     const start = Date.now();
     try {
+      // Omit cabin_class so Duffel returns offers for ALL available cabin
+      // classes in a single API call — avoids rate-limiting (429) that occurs
+      // when firing 4 parallel per-cabin requests.
       const raw = await duffel.searchFlights({
         origin: params.origin,
         destination: params.destination,
@@ -279,7 +282,7 @@ export async function searchRoundTripFlights(params: {
         adults: params.adults,
         children: params.children,
         infants: params.infants,
-        cabinClass: params.cabin || undefined,
+        // cabinClass intentionally omitted → Duffel returns all classes
       });
 
       const normalized = (Array.isArray(raw) ? raw : [])
@@ -299,7 +302,10 @@ export async function searchRoundTripFlights(params: {
   }
 
   const totalTimeMs = Date.now() - overallStart;
-  console.log(`[RT ${searchId}] Done: ${options.length} options in ${totalTimeMs}ms`);
+  // Log cabin breakdown for debugging
+  const cabinBreakdown: Record<string, number> = {};
+  options.forEach(o => { cabinBreakdown[o.cabinClass] = (cabinBreakdown[o.cabinClass] || 0) + 1; });
+  console.log(`[RT ${searchId}] Done: ${options.length} options in ${totalTimeMs}ms | cabins:`, cabinBreakdown);
 
   return { options, providers: providerResults, searchId, totalTimeMs, usedMockData: false };
 }

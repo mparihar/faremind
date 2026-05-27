@@ -42,6 +42,8 @@ interface PassengerErrors {
   firstName?: string;
   lastName?: string;
   dateOfBirth?: string;
+  nationality?: string;
+  passportCountry?: string;
   passportNumber?: string;
   passportExpiry?: string;
   email?: string;
@@ -53,8 +55,31 @@ function validatePassenger(pax: PassengerInfo): PassengerErrors {
   if (!pax.firstName.trim()) errors.firstName = 'First name is required';
   if (!pax.lastName.trim()) errors.lastName = 'Last name is required';
   if (!pax.dateOfBirth) errors.dateOfBirth = 'Date of birth is required';
+  if (!pax.nationality) errors.nationality = 'Nationality is required';
+  if (!pax.passportCountry) errors.passportCountry = 'Passport country is required';
+  if (pax.nationality && pax.passportCountry && pax.nationality !== pax.passportCountry)
+    errors.passportCountry = 'Passport country must match nationality';
   if (!pax.passportNumber.trim()) errors.passportNumber = 'Passport number is required';
-  if (!pax.passportExpiry) errors.passportExpiry = 'Passport expiry is required';
+  if (!pax.passportExpiry) {
+    errors.passportExpiry = 'Passport expiry is required';
+  } else {
+    const expiry = new Date(pax.passportExpiry);
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    const year = expiry.getFullYear();
+    const maxYear = today.getFullYear() + 20;
+    if (isNaN(expiry.getTime()) || year < 2000 || year > maxYear) {
+      errors.passportExpiry = `Enter a valid expiry date (year between 2000 and ${maxYear})`;
+    } else if (expiry < today) {
+      errors.passportExpiry = 'Passport is expired — please use a valid passport';
+    } else {
+      const sixMonthsOut = new Date(today);
+      sixMonthsOut.setMonth(sixMonthsOut.getMonth() + 6);
+      if (expiry < sixMonthsOut) {
+        errors.passportExpiry = 'Passport must be valid for at least 6 months from today';
+      }
+    }
+  }
   if (pax.isContact) {
     if (!pax.email.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(pax.email))
       errors.email = 'Valid email is required';
@@ -284,32 +309,36 @@ function PassengerCard({ pax, index, errors, touched, onChange }: PassengerCardP
           {touched && <FieldError message={errors.dateOfBirth} />}
         </div>
         <div>
-          <FieldLabel>Nationality</FieldLabel>
+          <FieldLabel required>Nationality</FieldLabel>
           <SelectField
             value={pax.nationality}
             onChange={e => onChange('nationality', e.target.value)}
+            hasError={touched && !!errors.nationality}
           >
             <option value="">Select country</option>
             {COUNTRIES.map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
           </SelectField>
+          {touched && <FieldError message={errors.nationality} />}
         </div>
       </div>
 
       {/* Passport row */}
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
         <div>
-          <FieldLabel>Passport Country</FieldLabel>
+          <FieldLabel required>Passport Country</FieldLabel>
           <SelectField
             value={pax.passportCountry}
             onChange={e => onChange('passportCountry', e.target.value)}
+            hasError={touched && !!errors.passportCountry}
           >
             <option value="">Select country</option>
             {COUNTRIES.map(c => (
               <option key={c} value={c}>{c}</option>
             ))}
           </SelectField>
+          {touched && <FieldError message={errors.passportCountry} />}
         </div>
         <div>
           <FieldLabel required>Passport Number</FieldLabel>
@@ -330,6 +359,7 @@ function PassengerCard({ pax, index, errors, touched, onChange }: PassengerCardP
             onChange={e => onChange('passportExpiry', e.target.value)}
             hasError={touched && !!errors.passportExpiry}
             min={new Date().toISOString().split('T')[0]}
+            max={`${new Date().getFullYear() + 20}-12-31`}
           />
           {touched && <FieldError message={errors.passportExpiry} />}
         </div>

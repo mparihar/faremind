@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { getUserNotifications, markNotificationRead, getUnreadCount } from '../lib/db-queries';
+import { fireNotification } from '../lib/notify';
 
 const NOTIFICATION_SERVICE = process.env.NOTIFICATION_SERVICE_URL ?? 'http://localhost:8001';
 
@@ -49,16 +50,21 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
   // ── Notification service gateway endpoints ────────────────────────────────
 
-  // POST /api/notifications/event — trigger a booking lifecycle event
+  // POST /api/notifications/event — trigger a booking lifecycle event (direct Brevo)
   fastify.post('/event', async (request, reply) => {
     const body = request.body as Record<string, unknown>;
     if (!body?.event_type) return reply.code(400).send({ error: 'event_type is required' });
     try {
-      const { status, data } = await proxyToService('/notifications/event', 'POST', body);
-      return reply.code(status).send(data);
+      await fireNotification({
+        event_type: body.event_type as any,
+        booking_id: body.booking_id as string | undefined,
+        customer_email: body.customer_email as string | undefined,
+        data: (body.data as Record<string, unknown>) ?? {},
+      });
+      return reply.code(200).send({ status: 'processing', notifications_queued: 1 });
     } catch (err) {
-      fastify.log.error({ err }, '[notifications/event] proxy failed');
-      return reply.code(202).send({ queued: false, error: 'Notification service unavailable — booking not affected' });
+      fastify.log.error({ err }, '[notifications/event] send failed');
+      return reply.code(202).send({ queued: false, error: 'Notification send failed — booking not affected' });
     }
   });
 

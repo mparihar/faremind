@@ -3,7 +3,7 @@
  * Mirrors the frontend types for the unified flight schema.
  */
 
-export type Provider = 'duffel' | 'amadeus';
+export type Provider = 'duffel' | 'amadeus' | 'mystifly';
 export type CabinClass = 'economy' | 'premium_economy' | 'business' | 'first';
 
 export interface AirlineInfo {

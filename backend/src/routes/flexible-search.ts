@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { searchFlights } from '../services/orchestrator';
 import type { UnifiedFlight } from '../lib/types';
-
+import { rankMonthlyFareTiles } from '../lib/monthly-ranking';
 function getMonthDates(startDateStr: string): Array<{ year: number; month: number; label: string; date: string }> {
   const parts = startDateStr.split('-');
   const startYear = parseInt(parts[0]);
@@ -57,14 +57,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
     const settled = await Promise.allSettled(
       months.map((m) =>
-        searchFlights({ origin, destination, date: m.date, returnDate: returnDateFor(m.date), adults, cabin })
+        searchFlights({ origin, destination, date: m.date, returnDate: returnDateFor(m.date), adults, cabin, providers: ['duffel'] })
       )
     );
 
-    const results = months.map((m, i) => {
+    const rawResults = months.map((m, i) => {
       const result = settled[i];
       if (result.status === 'rejected' || !result.value.flights.length) {
-        return { ...m, price: null, stops: null, duration: null, layover: null, currency: 'USD', isMock: false };
+        return { ...m, price: null, stops: null, duration: null, layover: null, currency: 'USD', providerCode: null, isMock: false };
       }
       const cheapest = result.value.flights.reduce<UnifiedFlight>(
         (best, f) => (f.totalPrice < best.totalPrice ? f : best),
@@ -77,17 +77,27 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         stops: cheapest.stops,
         duration: cheapest.totalDuration,
         layover: calcLayoverMinutes(cheapest),
+        providerCode: cheapest.provider,
+        providerOfferId: cheapest.id,
         isMock: false,
       };
     });
 
-    const sorted = [...results].sort((a, b) => {
+    const rankedData = rankMonthlyFareTiles(rawResults);
+
+    const sorted = [...rankedData.rankedTiles].sort((a, b) => {
       if (a.price === null) return 1;
       if (b.price === null) return -1;
       return a.price - b.price;
     });
 
-    return { months: results, sorted, cheapestMonth: sorted.find((m) => m.price !== null) ?? null };
+    return {
+      months: rankedData.rankedTiles,
+      sorted,
+      cheapestMonth: sorted.find((m) => m.price !== null) ?? null,
+      metadata: rankedData.metadata,
+      badgeWinners: rankedData.badgeWinners
+    };
   });
 };
 

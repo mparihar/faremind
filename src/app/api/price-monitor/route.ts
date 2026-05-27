@@ -8,6 +8,7 @@ import {
   createNotification,
 } from '@/lib/db-queries';
 import prisma from '@/lib/db';
+import { fireNotification } from '@/lib/notify';
 
 /**
  * POST /api/price-monitor
@@ -105,7 +106,7 @@ export async function POST(request: NextRequest) {
               currency: job.currency,
             });
 
-            // Create notification
+            // Create in-app notification
             await createNotification({
               userId: booking.userId,
               bookingId: job.bookingId,
@@ -113,6 +114,22 @@ export async function POST(request: NextRequest) {
               channel: 'IN_APP',
               title: 'Price Drop Detected!',
               body: `Your ${booking.originAirport} → ${booking.destinationAirport} flight dropped by $${priceDiff.toFixed(0)} (${percentDrop.toFixed(0)}%). Save now with smart rebooking.`,
+            });
+
+            // Fire email notification for price drop
+            fireNotification({
+              event_type: 'PRICE_DROP_ALERT',
+              booking_id: job.bookingId,
+              data: {
+                route: `${booking.originAirport} - ${booking.destinationAirport}`,
+                origin: booking.originAirport,
+                destination: booking.destinationAirport,
+                booked_price: `$${bookedPrice.toFixed(2)}`,
+                current_price: `$${currentPrice.toFixed(2)}`,
+                savings: `$${priceDiff.toFixed(2)}`,
+                percent_drop: `${percentDrop.toFixed(1)}%`,
+                currency: job.currency,
+              },
             });
           }
 

@@ -189,16 +189,16 @@ export default function AdminDashboardPage() {
                   className="hover:bg-white/2 cursor-pointer transition-colors"
                   onClick={() => router.push(`/admin/bookings/${b.id}`)}
                 >
-                  <td className="px-6 py-3.5 font-mono text-[#1ABC9C] font-bold text-xs">{b.pnr ?? b.id.slice(0, 8)}</td>
+                  <td className="px-6 py-3.5 font-mono text-[#1ABC9C] font-bold text-sm">{b.pnr ?? b.id.slice(0, 8)}</td>
                   <td className="px-6 py-3.5">
-                    <p className="text-white font-semibold text-xs">{b.user.firstName} {b.user.lastName}</p>
-                    <p className="text-slate-500 text-[11px]">{b.user.email}</p>
+                    <p className="text-white font-semibold text-sm">{b.user.firstName} {b.user.lastName}</p>
+                    <p className="text-slate-500 text-xs">{b.user.email}</p>
                   </td>
-                  <td className="px-6 py-3.5 font-bold text-white text-xs">{b.originAirport} → {b.destinationAirport}</td>
-                  <td className="px-6 py-3.5 text-slate-300 text-xs">
+                  <td className="px-6 py-3.5 font-bold text-white text-sm">{b.originAirport} → {b.destinationAirport}</td>
+                  <td className="px-6 py-3.5 text-slate-300 text-sm">
                     {format(new Date(b.departureTime), 'dd MMM yyyy')}
                   </td>
-                  <td className="px-6 py-3.5 font-bold text-white text-xs">
+                  <td className="px-6 py-3.5 font-bold text-white text-sm">
                     {new Intl.NumberFormat('en-US', { style: 'currency', currency: b.currency }).format(Number(b.totalPrice))}
                   </td>
                   <td className="px-6 py-3.5">

@@ -32,12 +32,13 @@ model User {
   lastLoginAt   DateTime? @map("last_login_at")
 
   // Relations
-  bookings       Booking[]
-  priceAlerts    PriceAlert[]
-  searchHistory  SearchHistory[]
-  sessions       Session[]
-  notifications  Notification[]
-  savedRoutes    SavedRoute[]
+  bookings        Booking[]
+  masterBookings  MasterBooking[]
+  priceAlerts     PriceAlert[]
+  searchHistory   SearchHistory[]
+  sessions        Session[]
+  notifications   Notification[]
+  savedRoutes     SavedRoute[]
 
   @@map("users")
 }
@@ -64,27 +65,41 @@ model Session {
   @@map("sessions")
 }
 
+model OtpCode {
+  id        String   @id @default(cuid())
+  email     String
+  otpHash   String   @map("otp_hash")
+  expiresAt DateTime @map("expires_at")
+  isUsed    Boolean  @default(false) @map("is_used")
+  attempts  Int      @default(0)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([email])
+  @@index([expiresAt])
+  @@map("otp_codes")
+}
+
 // ═══════════════════════════════════════════════
 // FLIGHT SEARCH & CACHING
 // ═══════════════════════════════════════════════
 
 model SearchHistory {
-  id              String   @id @default(cuid())
-  userId          String?  @map("user_id")
+  id              String     @id @default(cuid())
+  userId          String?    @map("user_id")
   origin          String
   destination     String
-  departureDate   DateTime @map("departure_date")
-  returnDate      DateTime? @map("return_date")
-  adults          Int      @default(1)
-  children        Int      @default(0)
-  infants         Int      @default(0)
+  departureDate   DateTime   @map("departure_date")
+  returnDate      DateTime?  @map("return_date")
+  adults          Int        @default(1)
+  children        Int        @default(0)
+  infants         Int        @default(0)
   cabinClass      CabinClass @default(ECONOMY) @map("cabin_class")
   tripType        TripType   @default(ROUND_TRIP) @map("trip_type")
-  resultsCount    Int?     @map("results_count")
-  lowestPrice     Decimal? @map("lowest_price") @db.Decimal(10, 2)
-  currency        String   @default("USD")
-  searchDurationMs Int?    @map("search_duration_ms")
-  createdAt       DateTime @default(now()) @map("created_at")
+  resultsCount    Int?       @map("results_count")
+  lowestPrice     Decimal?   @map("lowest_price") @db.Decimal(10, 2)
+  currency        String     @default("USD")
+  searchDurationMs Int?      @map("search_duration_ms")
+  createdAt       DateTime   @default(now()) @map("created_at")
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
@@ -96,17 +111,17 @@ model SearchHistory {
 }
 
 model CachedSearch {
-  id            String   @id @default(cuid())
-  cacheKey      String   @unique @map("cache_key")
+  id            String     @id @default(cuid())
+  cacheKey      String     @unique @map("cache_key")
   origin        String
   destination   String
-  departureDate DateTime @map("departure_date")
-  returnDate    DateTime? @map("return_date")
+  departureDate DateTime   @map("departure_date")
+  returnDate    DateTime?  @map("return_date")
   cabinClass    CabinClass @default(ECONOMY) @map("cabin_class")
-  resultsJson   Json     @map("results_json")
-  providersMeta Json?    @map("providers_meta")
-  expiresAt     DateTime @map("expires_at")
-  createdAt     DateTime @default(now()) @map("created_at")
+  resultsJson   Json       @map("results_json")
+  providersMeta Json?      @map("providers_meta")
+  expiresAt     DateTime   @map("expires_at")
+  createdAt     DateTime   @default(now()) @map("created_at")
 
   @@index([cacheKey])
   @@index([expiresAt])
@@ -115,19 +130,18 @@ model CachedSearch {
 }
 
 // ═══════════════════════════════════════════════
-// BOOKINGS
+// LEGACY BOOKINGS (kept for price-tracking engine)
 // ═══════════════════════════════════════════════
 
 model Booking {
   id                  String        @id @default(cuid())
-  userId              String        @map("user_id")
+  userId              String?       @map("user_id")
   provider            Provider
   providerBookingId   String?       @map("provider_booking_id")
   providerOfferId     String?       @map("provider_offer_id")
   pnr                 String?
   status              BookingStatus @default(PENDING)
 
-  // Flight details (denormalized for fast display)
   airlineCode         String        @map("airline_code")
   airlineName         String        @map("airline_name")
   originAirport       String        @map("origin_airport")
@@ -136,46 +150,39 @@ model Booking {
   destinationCity     String        @map("destination_city")
   departureTime       DateTime      @map("departure_time")
   arrivalTime         DateTime      @map("arrival_time")
-  totalDuration       Int           @map("total_duration") // minutes
+  totalDuration       Int           @map("total_duration")
   stops               Int           @default(0)
   cabinClass          CabinClass    @default(ECONOMY) @map("cabin_class")
   fareClass           String?       @map("fare_class")
 
-  // Financial
   totalPrice          Decimal       @map("total_price") @db.Decimal(10, 2)
   baseFare            Decimal?      @map("base_fare") @db.Decimal(10, 2)
   taxes               Decimal?      @db.Decimal(10, 2)
   currency            String        @default("USD")
   platformFee         Decimal?      @map("platform_fee") @db.Decimal(10, 2)
-  platformMargin      Decimal?      @map("platform_margin") @db.Decimal(5, 4) // e.g. 0.0350 = 3.5%
+  platformMargin      Decimal?      @map("platform_margin") @db.Decimal(5, 4)
 
-  // Fare rules
   refundable          Boolean       @default(false)
   changeable          Boolean       @default(false)
   cancellationFee     Decimal?      @map("cancellation_fee") @db.Decimal(10, 2)
   changeFee           Decimal?      @map("change_fee") @db.Decimal(10, 2)
 
-  // Baggage
   carryOnBags         Int           @default(1) @map("carry_on_bags")
   checkedBags         Int           @default(0) @map("checked_bags")
 
-  // Price tracking
   priceTracking       Boolean       @default(true) @map("price_tracking")
   currentTrackedPrice Decimal?      @map("current_tracked_price") @db.Decimal(10, 2)
   lastPriceCheckAt    DateTime?     @map("last_price_check_at")
 
-  // Flight data snapshot (full provider response)
   flightDataSnapshot  Json?         @map("flight_data_snapshot")
 
-  // Timestamps
   bookedAt            DateTime      @default(now()) @map("booked_at")
   cancelledAt         DateTime?     @map("cancelled_at")
   completedAt         DateTime?     @map("completed_at")
   createdAt           DateTime      @default(now()) @map("created_at")
   updatedAt           DateTime      @updatedAt @map("updated_at")
 
-  // Relations
-  user                User          @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user                User?         @relation(fields: [userId], references: [id], onDelete: Cascade)
   passengers          Passenger[]
   segments            FlightSegment[]
   priceHistory        PriceHistory[]
@@ -195,27 +202,22 @@ model Booking {
 }
 
 model Passenger {
-  id            String        @id @default(cuid())
-  bookingId     String        @map("booking_id")
-  firstName     String        @map("first_name")
-  lastName      String        @map("last_name")
-  dateOfBirth   DateTime      @map("date_of_birth")
-  gender        Gender
-  email         String
-  phone         String?
-  type          PassengerType @default(ADULT)
-
-  // Travel documents
-  passportNumber    String?   @map("passport_number")
-  passportExpiry    DateTime? @map("passport_expiry")
-  nationality       String?
-  issuingCountry    String?   @map("issuing_country")
-
-  // Provider-specific passenger ID
-  providerPassengerId String? @map("provider_passenger_id")
-
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
+  id                  String        @id @default(cuid())
+  bookingId           String        @map("booking_id")
+  firstName           String        @map("first_name")
+  lastName            String        @map("last_name")
+  dateOfBirth         DateTime      @map("date_of_birth")
+  gender              Gender
+  email               String
+  phone               String?
+  type                PassengerType @default(ADULT)
+  passportNumber      String?       @map("passport_number")
+  passportExpiry      DateTime?     @map("passport_expiry")
+  nationality         String?
+  issuingCountry      String?       @map("issuing_country")
+  providerPassengerId String?       @map("provider_passenger_id")
+  createdAt           DateTime      @default(now()) @map("created_at")
+  updatedAt           DateTime      @updatedAt @map("updated_at")
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
@@ -227,29 +229,22 @@ model FlightSegment {
   id              String   @id @default(cuid())
   bookingId       String   @map("booking_id")
   segmentOrder    Int      @map("segment_order")
-
-  // Departure
   depAirport      String   @map("dep_airport")
   depAirportName  String?  @map("dep_airport_name")
   depCity         String?  @map("dep_city")
   depTime         DateTime @map("dep_time")
   depTerminal     String?  @map("dep_terminal")
-
-  // Arrival
   arrAirport      String   @map("arr_airport")
   arrAirportName  String?  @map("arr_airport_name")
   arrCity         String?  @map("arr_city")
   arrTime         DateTime @map("arr_time")
   arrTerminal     String?  @map("arr_terminal")
-
-  // Flight info
   airlineCode     String   @map("airline_code")
   airlineName     String?  @map("airline_name")
   flightNumber    String   @map("flight_number")
-  duration        Int      // minutes
+  duration        Int
   aircraft        String?
   operatingCarrier String? @map("operating_carrier")
-
   createdAt       DateTime @default(now()) @map("created_at")
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
@@ -280,20 +275,20 @@ model PriceHistory {
 }
 
 model PriceAlert {
-  id            String          @id @default(cuid())
-  bookingId     String          @map("booking_id")
-  userId        String          @map("user_id")
-  bookedPrice   Decimal         @map("booked_price") @db.Decimal(10, 2)
-  currentPrice  Decimal         @map("current_price") @db.Decimal(10, 2)
-  savings       Decimal         @db.Decimal(10, 2)
-  percentDrop   Decimal         @map("percent_drop") @db.Decimal(5, 2)
-  currency      String          @default("USD")
+  id            String           @id @default(cuid())
+  bookingId     String           @map("booking_id")
+  userId        String           @map("user_id")
+  bookedPrice   Decimal          @map("booked_price") @db.Decimal(10, 2)
+  currentPrice  Decimal          @map("current_price") @db.Decimal(10, 2)
+  savings       Decimal          @db.Decimal(10, 2)
+  percentDrop   Decimal          @map("percent_drop") @db.Decimal(5, 2)
+  currency      String           @default("USD")
   status        PriceAlertStatus @default(NEW)
-  detectedAt    DateTime        @default(now()) @map("detected_at")
-  notifiedAt    DateTime?       @map("notified_at")
-  actionedAt    DateTime?       @map("actioned_at")
-  expiresAt     DateTime?       @map("expires_at")
-  createdAt     DateTime        @default(now()) @map("created_at")
+  detectedAt    DateTime         @default(now()) @map("detected_at")
+  notifiedAt    DateTime?        @map("notified_at")
+  actionedAt    DateTime?        @map("actioned_at")
+  expiresAt     DateTime?        @map("expires_at")
+  createdAt     DateTime         @default(now()) @map("created_at")
 
   booking Booking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   user    User    @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -306,23 +301,23 @@ model PriceAlert {
 }
 
 model PriceTrackingJob {
-  id            String              @id @default(cuid())
-  bookingId     String              @unique @map("booking_id")
+  id            String            @id @default(cuid())
+  bookingId     String            @unique @map("booking_id")
   origin        String
   destination   String
-  departureDate DateTime            @map("departure_date")
-  cabinClass    CabinClass          @default(ECONOMY) @map("cabin_class")
-  bookedPrice   Decimal             @map("booked_price") @db.Decimal(10, 2)
-  currency      String              @default("USD")
-  threshold     Decimal             @default(0.05) @db.Decimal(5, 4) // 5% default threshold
-  status        TrackingJobStatus   @default(ACTIVE)
-  lastRunAt     DateTime?           @map("last_run_at")
-  nextRunAt     DateTime?           @map("next_run_at")
-  runCount      Int                 @default(0) @map("run_count")
-  errorCount    Int                 @default(0) @map("error_count")
-  lastError     String?             @map("last_error")
-  createdAt     DateTime            @default(now()) @map("created_at")
-  updatedAt     DateTime            @updatedAt @map("updated_at")
+  departureDate DateTime          @map("departure_date")
+  cabinClass    CabinClass        @default(ECONOMY) @map("cabin_class")
+  bookedPrice   Decimal           @map("booked_price") @db.Decimal(10, 2)
+  currency      String            @default("USD")
+  threshold     Decimal           @default(0.05) @db.Decimal(5, 4)
+  status        TrackingJobStatus @default(ACTIVE)
+  lastRunAt     DateTime?         @map("last_run_at")
+  nextRunAt     DateTime?         @map("next_run_at")
+  runCount      Int               @default(0) @map("run_count")
+  errorCount    Int               @default(0) @map("error_count")
+  lastError     String?           @map("last_error")
+  createdAt     DateTime          @default(now()) @map("created_at")
+  updatedAt     DateTime          @updatedAt @map("updated_at")
 
   @@index([status])
   @@index([nextRunAt, status])
@@ -338,26 +333,18 @@ model Rebooking {
   originalBookingId   String          @map("original_booking_id")
   newBookingId        String?         @map("new_booking_id")
   status              RebookingStatus @default(PENDING)
-
-  // Pricing
   originalPrice       Decimal         @map("original_price") @db.Decimal(10, 2)
   newPrice            Decimal         @map("new_price") @db.Decimal(10, 2)
   cancellationCost    Decimal?        @map("cancellation_cost") @db.Decimal(10, 2)
   netSavings          Decimal         @map("net_savings") @db.Decimal(10, 2)
   currency            String          @default("USD")
-
-  // Decision
   autoApproved        Boolean         @default(false) @map("auto_approved")
   userApprovedAt      DateTime?       @map("user_approved_at")
   reason              String?
-
-  // Execution
   cancelledOriginalAt DateTime?       @map("cancelled_original_at")
   newBookingCreatedAt DateTime?       @map("new_booking_created_at")
   refundAmount        Decimal?        @map("refund_amount") @db.Decimal(10, 2)
   refundStatus        String?         @map("refund_status")
-
-  // Timestamps
   initiatedAt         DateTime        @default(now()) @map("initiated_at")
   completedAt         DateTime?       @map("completed_at")
   failedAt            DateTime?       @map("failed_at")
@@ -373,7 +360,7 @@ model Rebooking {
 }
 
 // ═══════════════════════════════════════════════
-// PAYMENTS & LEDGER
+// LEGACY PAYMENTS & LEDGER
 // ═══════════════════════════════════════════════
 
 model Payment {
@@ -383,18 +370,12 @@ model Payment {
   stripeCustomerId    String?       @map("stripe_customer_id")
   type                PaymentType   @default(BOOKING)
   status              PaymentStatus @default(PENDING)
-
   amount              Decimal       @db.Decimal(10, 2)
   currency            String        @default("USD")
   description         String?
-
-  // Refund info
   refundedAmount      Decimal?      @map("refunded_amount") @db.Decimal(10, 2)
   refundedAt          DateTime?     @map("refunded_at")
-
-  // Metadata
   metadata            Json?
-
   processedAt         DateTime?     @map("processed_at")
   failedAt            DateTime?     @map("failed_at")
   failureReason       String?       @map("failure_reason")
@@ -432,20 +413,20 @@ model LedgerEntry {
 // ═══════════════════════════════════════════════
 
 model Notification {
-  id          String             @id @default(cuid())
-  userId      String             @map("user_id")
-  bookingId   String?            @map("booking_id")
+  id          String              @id @default(cuid())
+  userId      String              @map("user_id")
+  bookingId   String?             @map("booking_id")
   type        NotificationType
   channel     NotificationChannel @default(EMAIL)
   title       String
   body        String
   metadata    Json?
-  status      NotificationStatus @default(PENDING)
-  sentAt      DateTime?          @map("sent_at")
-  readAt      DateTime?          @map("read_at")
-  failedAt    DateTime?          @map("failed_at")
-  failReason  String?            @map("fail_reason")
-  createdAt   DateTime           @default(now()) @map("created_at")
+  status      NotificationStatus  @default(PENDING)
+  sentAt      DateTime?           @map("sent_at")
+  readAt      DateTime?           @map("read_at")
+  failedAt    DateTime?           @map("failed_at")
+  failReason  String?             @map("fail_reason")
+  createdAt   DateTime            @default(now()) @map("created_at")
 
   user    User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   booking Booking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
@@ -463,19 +444,19 @@ model Notification {
 // ═══════════════════════════════════════════════
 
 model SavedRoute {
-  id            String     @id @default(cuid())
-  userId        String     @map("user_id")
-  origin        String
-  destination   String
-  preferredDates String?   @map("preferred_dates") // JSON array of date ranges
-  cabinClass    CabinClass @default(ECONOMY) @map("cabin_class")
-  maxPrice      Decimal?   @map("max_price") @db.Decimal(10, 2)
-  currency      String     @default("USD")
-  alertEnabled  Boolean    @default(true) @map("alert_enabled")
-  lastCheckedAt DateTime?  @map("last_checked_at")
-  lowestSeen    Decimal?   @map("lowest_seen") @db.Decimal(10, 2)
-  createdAt     DateTime   @default(now()) @map("created_at")
-  updatedAt     DateTime   @updatedAt @map("updated_at")
+  id             String     @id @default(cuid())
+  userId         String     @map("user_id")
+  origin         String
+  destination    String
+  preferredDates String?    @map("preferred_dates")
+  cabinClass     CabinClass @default(ECONOMY) @map("cabin_class")
+  maxPrice       Decimal?   @map("max_price") @db.Decimal(10, 2)
+  currency       String     @default("USD")
+  alertEnabled   Boolean    @default(true) @map("alert_enabled")
+  lastCheckedAt  DateTime?  @map("last_checked_at")
+  lowestSeen     Decimal?   @map("lowest_seen") @db.Decimal(10, 2)
+  createdAt      DateTime   @default(now()) @map("created_at")
+  updatedAt      DateTime   @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -501,21 +482,901 @@ model Airline {
 }
 
 model Airport {
-  id          String  @id @default(cuid())
-  iataCode    String  @unique @map("iata_code")
+  id          String   @id @default(cuid())
+  iataCode    String   @unique @map("iata_code")
   name        String
   city        String
   country     String
-  countryCode String  @map("country_code")
+  countryCode String   @map("country_code")
   latitude    Decimal? @db.Decimal(10, 7)
   longitude   Decimal? @db.Decimal(10, 7)
   timezone    String?
-  isActive    Boolean @default(true) @map("is_active")
+  isActive    Boolean  @default(true) @map("is_active")
 
   @@index([iataCode])
   @@index([city])
   @@index([country])
   @@map("airports")
+}
+
+// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════
+// MASTER BOOKINGS — Professional OTA Data Model
+// ═══════════════════════════════════════════════
+// ═══════════════════════════════════════════════
+
+model MasterBooking {
+  id                     String             @id @default(cuid())
+  masterBookingReference String             @unique @map("master_booking_reference")
+  masterPnr              String?            @map("master_pnr")
+
+  // Customer
+  customerEmail          String             @map("customer_email")
+  customerName           String             @map("customer_name")
+  userId                 String?            @map("user_id")
+
+  // Trip
+  tripType               MbTripType         @default(ONE_WAY) @map("trip_type")
+  originAirport          String             @map("origin_airport")
+  originCity             String             @map("origin_city")
+  originCountry          String?            @map("origin_country")
+  destinationAirport     String             @map("destination_airport")
+  destinationCity        String             @map("destination_city")
+  destinationCountry     String?            @map("destination_country")
+  departureDate          DateTime           @map("departure_date")
+  returnDate             DateTime?          @map("return_date")
+
+  // Status
+  bookingStatus          MbBookingStatus    @default(CREATED) @map("booking_status")
+  paymentStatus          MbPaymentStatus    @default(PENDING) @map("payment_status")
+  ticketingStatus        MbTicketingStatus  @default(NOT_STARTED) @map("ticketing_status")
+
+  // Financial
+  totalAmount            Decimal            @map("total_amount") @db.Decimal(10, 2)
+  currency               String             @default("USD")
+
+  // Provider
+  primaryProvider        String             @default("duffel") @map("primary_provider")
+
+  rawProviderPayload     Json?              @map("raw_provider_payload")
+
+  createdAt              DateTime           @default(now()) @map("created_at")
+  updatedAt              DateTime           @updatedAt @map("updated_at")
+
+  // PNR strategy fields
+  pnrStrategy            PnrStrategy?       @map("pnr_strategy")
+  isSplitTicket          Boolean            @default(false) @map("is_split_ticket")
+  isSelfTransfer         Boolean            @default(false) @map("is_self_transfer")
+  connectionProtStatus   ConnProtStatus     @default(UNKNOWN) @map("connection_prot_status")
+  providerMix            String?            @map("provider_mix")
+  pnrCount               Int                @default(1) @map("pnr_count")
+  riskLabel              String?            @map("risk_label")
+  riskExplanation        String?            @map("risk_explanation")
+
+  // Relations
+  user                   User?              @relation(fields: [userId], references: [id])
+  pnrs                   BookingPnr[]
+  journeys               BookingJourney[]
+  segments               BookingSegment[]
+  passengers             BookingPassenger[]
+  tickets                BookingTicket[]
+  seats                  BookingSeat[]
+  meals                  BookingMeal[]
+  baggage                BookingBaggage[]
+  addons                 BookingAddon[]
+  payments               BookingPayment[]
+  events                 BookingEvent[]
+  notes                  BookingNote[]
+  providerPayloads       BookingProviderPayload[]
+
+  @@index([masterBookingReference])
+  @@index([masterPnr])
+  @@index([customerEmail])
+  @@index([userId])
+  @@index([departureDate])
+  @@index([bookingStatus])
+  @@map("master_bookings")
+}
+
+// ── PNR Records ───────────────────────────────
+
+model BookingPnr {
+  id               String    @id @default(cuid())
+  bookingId        String    @map("booking_id")
+  pnrCode          String    @map("pnr_code")
+  pnrType          PnrType   @default(AIRLINE_PNR) @map("pnr_type")
+  journeyDirection PnrDir    @default(ALL) @map("journey_direction")
+  isPrimary        Boolean   @default(false) @map("is_primary")
+  status           PnrStatus @default(ACTIVE) @map("status")
+  provider         String?
+  providerOrderId  String?   @map("provider_order_id")
+  airlineCode      String?   @map("airline_code")
+  airlineName      String?   @map("airline_name")
+  displayLabel     String?   @map("display_label")
+
+  // ── Fare Rules (stored at booking time) ──
+  refundable       Boolean   @default(false)
+  changeable       Boolean   @default(false)
+  cancellationFee  Decimal?  @map("cancellation_fee") @db.Decimal(10, 2)
+  changeFee        Decimal?  @map("change_fee") @db.Decimal(10, 2)
+  seatSelection    String?   @map("seat_selection")
+  seatSelectionFee Decimal?  @map("seat_selection_fee") @db.Decimal(10, 2)
+  milesEarning     String?   @map("miles_earning")
+  fareRulesJson    Json?     @map("fare_rules_json")
+
+  createdAt        DateTime  @default(now()) @map("created_at")
+  updatedAt        DateTime  @updatedAt @map("updated_at")
+
+  booking  MasterBooking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  segments BookingSegment[]
+  tickets  BookingTicket[]
+
+  @@index([bookingId])
+  @@index([pnrCode])
+  @@map("booking_pnrs")
+}
+
+// ── Journeys (Outbound / Return) ──────────────
+
+model BookingJourney {
+  id                  String         @id @default(cuid())
+  bookingId           String         @map("booking_id")
+  direction           JourneyDir     @map("direction")
+  journeyOrder        Int            @default(0) @map("journey_order")
+  originAirport       String         @map("origin_airport")
+  originCity          String         @map("origin_city")
+  originCountry       String?        @map("origin_country")
+  destinationAirport  String         @map("destination_airport")
+  destinationCity     String         @map("destination_city")
+  destinationCountry  String?        @map("destination_country")
+  departureDateTime   DateTime       @map("departure_datetime")
+  arrivalDateTime     DateTime       @map("arrival_datetime")
+  totalDurationMinutes Int           @map("total_duration_minutes")
+  totalStops          Int            @default(0) @map("total_stops")
+  primaryAirline      String?        @map("primary_airline")
+  cabinSummary        String?        @map("cabin_summary")
+  journeyStatus       String         @default("confirmed") @map("journey_status")
+  totalFare           Decimal?       @map("total_fare") @db.Decimal(10, 2)
+  fareCurrency        String?        @map("fare_currency")
+  pnrCount            Int            @default(1) @map("pnr_count")
+  isSplitJourney      Boolean        @default(false) @map("is_split_journey")
+  journeyProtStatus   ConnProtStatus @default(UNKNOWN) @map("journey_prot_status")
+  createdAt           DateTime       @default(now()) @map("created_at")
+  updatedAt           DateTime       @updatedAt @map("updated_at")
+
+  booking  MasterBooking   @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  segments BookingSegment[]
+  seats    BookingSeat[]
+  meals    BookingMeal[]
+  baggage  BookingBaggage[]
+  addons   BookingAddon[]
+  tickets  BookingTicket[]
+
+  @@index([bookingId])
+  @@map("booking_journeys")
+}
+
+// ── Segments (individual hops) ────────────────
+
+model BookingSegment {
+  id                    String   @id @default(cuid())
+  bookingId             String   @map("booking_id")
+  journeyId             String   @map("journey_id")
+  pnrId                 String?  @map("pnr_id")
+  direction             JourneyDir @map("direction")
+  segmentOrder          Int      @map("segment_order")
+  providerSegmentId     String?  @map("provider_segment_id")
+  providerOfferId       String?  @map("provider_offer_id")
+  providerOrderId       String?  @map("provider_order_id")
+
+  airlineCode           String   @map("airline_code")
+  airlineName           String   @map("airline_name")
+  marketingCarrierCode  String?  @map("marketing_carrier_code")
+  operatingAirlineCode  String?  @map("operating_airline_code")
+  operatingAirlineName  String?  @map("operating_airline_name")
+  flightNumber          String   @map("flight_number")
+  isCodeshare           Boolean  @default(false) @map("is_codeshare")
+  isSelfTransferSegment Boolean  @default(false) @map("is_self_transfer_segment")
+  aircraftType          String?  @map("aircraft_type")
+  cabin                 String   @default("ECONOMY")
+  fareClass             String?  @map("fare_class")
+
+  originAirport         String   @map("origin_airport")
+  originCity            String   @map("origin_city")
+  originCountry         String?  @map("origin_country")
+  originTerminal        String?  @map("origin_terminal")
+  originGate            String?  @map("origin_gate")
+  destinationAirport    String   @map("destination_airport")
+  destinationCity       String   @map("destination_city")
+  destinationCountry    String?  @map("destination_country")
+  destinationTerminal   String?  @map("destination_terminal")
+  destinationGate       String?  @map("destination_gate")
+
+  departureDateTime     DateTime @map("departure_datetime")
+  arrivalDateTime       DateTime @map("arrival_datetime")
+  durationMinutes       Int      @map("duration_minutes")
+
+  layoverAfterMinutes   Int?     @map("layover_after_minutes")
+  layoverAirport        String?  @map("layover_airport")
+  layoverCity           String?  @map("layover_city")
+  layoverCountry        String?  @map("layover_country")
+
+  segmentStatus         String   @default("confirmed") @map("segment_status")
+  rawSegmentPayload     Json?    @map("raw_segment_payload")
+
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  booking  MasterBooking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  journey  BookingJourney   @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  pnr      BookingPnr?      @relation(fields: [pnrId], references: [id])
+  tickets  BookingTicket[]
+  seats    BookingSeat[]
+  meals    BookingMeal[]
+  coupons  TicketCoupon[]
+
+  @@index([bookingId])
+  @@index([journeyId])
+  @@map("booking_segments")
+}
+
+// ── Passengers ────────────────────────────────
+
+model BookingPassenger {
+  id                  String   @id @default(cuid())
+  bookingId           String   @map("booking_id")
+  passengerOrder      Int      @default(0) @map("passenger_order")
+  passengerType       String   @default("adult") @map("passenger_type")
+  firstName           String   @map("first_name")
+  middleName          String?  @map("middle_name")
+  lastName            String   @map("last_name")
+  email               String?
+  phone               String?
+  gender              String?
+  dateOfBirth         DateTime? @map("date_of_birth")
+  nationality         String?
+  passportCountry     String?  @map("passport_country")
+  passportNumber      String?  @map("passport_number")
+  passportExpiry      DateTime? @map("passport_expiry")
+  providerPassengerId String?  @map("provider_passenger_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  booking  MasterBooking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  tickets  BookingTicket[]
+  seats    BookingSeat[]
+  meals    BookingMeal[]
+  baggage  BookingBaggage[]
+  addons   BookingAddon[]
+  coupons  TicketCoupon[]
+
+  @@index([bookingId])
+  @@index([bookingId, lastName])
+  @@map("booking_passengers")
+}
+
+// ── Tickets ───────────────────────────────────
+
+model BookingTicket {
+  id                   String       @id @default(cuid())
+  bookingId            String       @map("booking_id")
+  passengerId          String       @map("passenger_id")
+  journeyId            String?      @map("journey_id")
+  segmentId            String?      @map("segment_id")
+  pnrId                String?      @map("pnr_id")
+  ticketNumber         String?      @map("ticket_number")
+  eTicketNumber        String?      @map("e_ticket_number")
+  ticketDocumentNumber String?      @map("ticket_document_number")
+  couponNumber         String?      @map("coupon_number")
+  airlineCode          String?      @map("airline_code")
+  pnrReference         String?      @map("pnr_reference")
+  providerTicketId     String?      @map("provider_ticket_id")
+  ticketStatus         TicketStatus @default(PENDING) @map("ticket_status")
+  issuedAt             DateTime?    @map("issued_at")
+  rawTicketPayload     Json?        @map("raw_ticket_payload")
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+
+  booking   MasterBooking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  passenger BookingPassenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  journey   BookingJourney?  @relation(fields: [journeyId], references: [id])
+  segment   BookingSegment?  @relation(fields: [segmentId], references: [id])
+  pnr       BookingPnr?      @relation(fields: [pnrId], references: [id])
+  coupons   TicketCoupon[]
+
+  @@index([bookingId])
+  @@index([passengerId])
+  @@index([ticketNumber])
+  @@index([eTicketNumber])
+  @@map("booking_tickets")
+}
+
+// ── Ticket Coupons (one coupon per segment per ticket) ──
+
+model TicketCoupon {
+  id                 String       @id @default(cuid())
+  ticketId           String       @map("ticket_id")
+  passengerId        String       @map("passenger_id")
+  segmentId          String       @map("segment_id")
+  couponNumber       String?      @map("coupon_number")
+  couponStatus       CouponStatus @default(OPEN) @map("coupon_status")
+  flightNumber       String?      @map("flight_number")
+  airlineCode        String?      @map("airline_code")
+  originAirport      String?      @map("origin_airport")
+  destinationAirport String?      @map("destination_airport")
+  departureDateTime  DateTime?    @map("departure_datetime")
+  arrivalDateTime    DateTime?    @map("arrival_datetime")
+  fareClass          String?      @map("fare_class")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  ticket    BookingTicket    @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  passenger BookingPassenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  segment   BookingSegment   @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  @@index([ticketId])
+  @@index([passengerId])
+  @@index([segmentId])
+  @@map("ticket_coupons")
+}
+
+// ── Seats ─────────────────────────────────────
+
+model BookingSeat {
+  id              String     @id @default(cuid())
+  bookingId       String     @map("booking_id")
+  passengerId     String     @map("passenger_id")
+  journeyId       String     @map("journey_id")
+  segmentId       String     @map("segment_id")
+  seatNumber      String     @map("seat_number")
+  seatType        String     @default("unknown") @map("seat_type")
+  seatPrice       Decimal    @default(0) @map("seat_price") @db.Decimal(10, 2)
+  currency        String     @default("USD")
+  providerSeatId  String?    @map("provider_seat_id")
+  seatStatus      SeatStatus @default(SELECTED) @map("seat_status")
+  createdAt       DateTime   @default(now()) @map("created_at")
+  updatedAt       DateTime   @updatedAt @map("updated_at")
+
+  booking   MasterBooking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  passenger BookingPassenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  journey   BookingJourney   @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  segment   BookingSegment   @relation(fields: [segmentId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([passengerId])
+  @@map("booking_seats")
+}
+
+// ── Meals ─────────────────────────────────────
+
+model BookingMeal {
+  id          String     @id @default(cuid())
+  bookingId   String     @map("booking_id")
+  passengerId String     @map("passenger_id")
+  journeyId   String     @map("journey_id")
+  segmentId   String?    @map("segment_id")
+  direction   JourneyDir @map("direction")
+  mealCode    String     @map("meal_code")
+  mealLabel   String     @map("meal_label")
+  mealPrice   Decimal    @default(0) @map("meal_price") @db.Decimal(10, 2)
+  currency    String     @default("USD")
+  mealStatus  MealStatus @default(REQUESTED) @map("meal_status")
+  createdAt   DateTime   @default(now()) @map("created_at")
+  updatedAt   DateTime   @updatedAt @map("updated_at")
+
+  booking   MasterBooking    @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  passenger BookingPassenger @relation(fields: [passengerId], references: [id], onDelete: Cascade)
+  journey   BookingJourney   @relation(fields: [journeyId], references: [id], onDelete: Cascade)
+  segment   BookingSegment?  @relation(fields: [segmentId], references: [id])
+
+  @@index([bookingId])
+  @@index([passengerId])
+  @@map("booking_meals")
+}
+
+// ── Baggage ───────────────────────────────────
+
+model BookingBaggage {
+  id          String   @id @default(cuid())
+  bookingId   String   @map("booking_id")
+  passengerId String?  @map("passenger_id")
+  journeyId   String?  @map("journey_id")
+  segmentId   String?  @map("segment_id")
+  baggageType String   @default("checked") @map("baggage_type")
+  quantity    Int      @default(1)
+  weightValue Decimal? @map("weight_value") @db.Decimal(6, 2)
+  weightUnit  String?  @map("weight_unit")
+  baggagePrice Decimal @default(0) @map("baggage_price") @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  status      String   @default("confirmed")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  booking   MasterBooking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  passenger BookingPassenger? @relation(fields: [passengerId], references: [id])
+  journey   BookingJourney?   @relation(fields: [journeyId], references: [id])
+
+  @@index([bookingId])
+  @@map("booking_baggage")
+}
+
+// ── Add-ons (insurance, price protection, etc.) ──
+
+model BookingAddon {
+  id          String   @id @default(cuid())
+  bookingId   String   @map("booking_id")
+  passengerId String?  @map("passenger_id")
+  journeyId   String?  @map("journey_id")
+  segmentId   String?  @map("segment_id")
+  addonType   String   @map("addon_type")
+  addonName   String   @map("addon_name")
+  description String?
+  amount      Decimal  @default(0) @db.Decimal(10, 2)
+  currency    String   @default("USD")
+  status      String   @default("confirmed")
+  metadataJson Json?   @map("metadata_json")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  booking   MasterBooking     @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  passenger BookingPassenger? @relation(fields: [passengerId], references: [id])
+  journey   BookingJourney?   @relation(fields: [journeyId], references: [id])
+
+  @@index([bookingId])
+  @@map("booking_addons")
+}
+
+// ── Payments ──────────────────────────────────
+
+model BookingPayment {
+  id                   String        @id @default(cuid())
+  bookingId            String        @map("booking_id")
+  stripePaymentIntentId String?      @map("stripe_payment_intent_id")
+  amount               Decimal       @db.Decimal(10, 2)
+  currency             String        @default("USD")
+  paymentMethodType    String?       @map("payment_method_type")
+  cardLast4            String?       @map("card_last4")
+  status               MbPaymentTxStatus @default(PENDING) @map("status")
+  paidAt               DateTime?     @map("paid_at")
+  rawPaymentPayload    Json?         @map("raw_payment_payload")
+  createdAt            DateTime      @default(now()) @map("created_at")
+  updatedAt            DateTime      @updatedAt @map("updated_at")
+
+  booking MasterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([stripePaymentIntentId])
+  @@map("booking_payments")
+}
+
+// ── Timeline Events ───────────────────────────
+
+model BookingEvent {
+  id               String   @id @default(cuid())
+  bookingId        String   @map("booking_id")
+  eventType        String   @map("event_type")
+  eventTitle       String   @map("event_title")
+  eventDescription String?  @map("event_description") @db.Text
+  actorType        String   @default("system") @map("actor_type")
+  actorId          String?  @map("actor_id")
+  actorName        String?  @map("actor_name")
+  payloadJson      Json?    @map("payload_json")
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  booking MasterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([bookingId, createdAt])
+  @@map("booking_events")
+}
+
+// ── Admin Notes ───────────────────────────────
+
+model BookingNote {
+  id          String    @id @default(cuid())
+  bookingId   String    @map("booking_id")
+  noteText    String    @map("note_text") @db.Text
+  isInternal  Boolean   @default(true) @map("is_internal")
+  createdById String?   @map("created_by_id")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  booking   MasterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+  createdBy AdminUser?    @relation(fields: [createdById], references: [id])
+
+  @@index([bookingId])
+  @@map("booking_notes")
+}
+
+// ── Raw Provider Payloads ─────────────────────
+
+model BookingProviderPayload {
+  id                String   @id @default(cuid())
+  bookingId         String   @map("booking_id")
+  provider          String
+  payloadType       String   @map("payload_type")
+  providerReference String?  @map("provider_reference")
+  payloadJson       Json     @map("payload_json")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  booking MasterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@map("booking_provider_payloads")
+}
+
+// ═══════════════════════════════════════════════
+// ADMIN AUTH
+// ═══════════════════════════════════════════════
+
+model AdminUser {
+  id                 String    @id @default(cuid())
+  email              String    @unique
+  passwordHash       String?   @map("password_hash")
+  fullName           String    @map("full_name")
+  role               AdminRole @default(SUPPORT)
+  isActive           Boolean   @default(true) @map("is_active")
+  mustChangePassword Boolean   @default(false) @map("must_change_password")
+  lastLoginAt        DateTime? @map("last_login_at")
+  lastLoginIp        String?   @map("last_login_ip")
+  createdById        String?   @map("created_by_id")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  otps         AdminOtp[]
+  sessions     AdminSession[]
+  auditLogs    AuditLog[]
+  bookingNotes BookingNote[]
+
+  @@index([email])
+  @@map("admin_users")
+}
+
+model AdminOtp {
+  id          String    @id @default(cuid())
+  adminUserId String    @map("admin_user_id")
+  otpHash     String    @map("otp_hash")
+  expiresAt   DateTime  @map("expires_at")
+  attempts    Int       @default(0)
+  used        Boolean   @default(false)
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId])
+  @@index([expiresAt])
+  @@map("admin_otps")
+}
+
+model AdminSession {
+  id           String   @id @default(cuid())
+  adminUserId  String   @map("admin_user_id")
+  token        String   @unique
+  refreshToken String?  @unique @map("refresh_token")
+  expiresAt    DateTime @map("expires_at")
+  ipAddress    String?  @map("ip_address")
+  userAgent    String?  @map("user_agent")
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
+
+  @@index([adminUserId])
+  @@index([token])
+  @@map("admin_sessions")
+}
+
+// ═══════════════════════════════════════════════
+// PARTNERS (B2B / AGENCIES)
+// ═══════════════════════════════════════════════
+
+model Partner {
+  id            String        @id @default(cuid())
+  name          String
+  slug          String        @unique
+  email         String        @unique
+  phone         String?
+  country       String?
+  status        PartnerStatus @default(ACTIVE)
+  apiKey        String?       @unique @map("api_key")
+  creditLimit   Decimal?      @map("credit_limit") @db.Decimal(12, 2)
+  creditBalance Decimal       @default(0) @map("credit_balance") @db.Decimal(12, 2)
+  metadata      Json?
+  createdAt     DateTime      @default(now()) @map("created_at")
+  updatedAt     DateTime      @updatedAt @map("updated_at")
+
+  users           PartnerUser[]
+  commissionRules CommissionRule[]
+  settlements     PartnerSettlement[]
+
+  @@index([slug])
+  @@index([status])
+  @@map("partners")
+}
+
+model PartnerUser {
+  id          String    @id @default(cuid())
+  partnerId   String    @map("partner_id")
+  email       String    @unique
+  fullName    String    @map("full_name")
+  role        String    @default("AGENT")
+  isActive    Boolean   @default(true) @map("is_active")
+  lastLoginAt DateTime? @map("last_login_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  updatedAt   DateTime  @updatedAt @map("updated_at")
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId])
+  @@map("partner_users")
+}
+
+// ═══════════════════════════════════════════════
+// CHANGE REQUESTS & CANCELLATIONS
+// ═══════════════════════════════════════════════
+
+model ChangeRequest {
+  id               String              @id @default(cuid())
+  bookingId        String              @map("booking_id")
+  type             ChangeRequestType
+  status           ChangeRequestStatus @default(NEW)
+  requestedBy      String              @map("requested_by")
+  assignedTo       String?             @map("assigned_to")
+  originalData     Json?               @map("original_data")
+  requestedData    Json?               @map("requested_data")
+  newItineraryJson Json?               @map("new_itinerary_json")
+  oldItineraryJson Json?               @map("old_itinerary_json")
+  fareDifference   Decimal?            @map("fare_difference") @db.Decimal(10, 2)
+  penalties        Decimal?            @db.Decimal(10, 2)
+  totalCost        Decimal?            @map("total_cost") @db.Decimal(10, 2)
+  currency         String              @default("USD")
+  providerQuoteId  String?             @map("provider_quote_id")
+  providerChangeId String?             @map("provider_change_id")
+  providerResponse Json?               @map("provider_response")
+  paymentIntentId  String?             @map("payment_intent_id")
+  paidAt           DateTime?           @map("paid_at")
+  notes            String?
+  rejectionReason  String?             @map("rejection_reason")
+  expiresAt        DateTime?           @map("expires_at")
+  confirmedAt      DateTime?           @map("confirmed_at")
+  rejectedAt       DateTime?           @map("rejected_at")
+  createdAt        DateTime            @default(now()) @map("created_at")
+  updatedAt        DateTime            @updatedAt @map("updated_at")
+
+  @@index([bookingId])
+  @@index([status])
+  @@index([assignedTo])
+  @@map("change_requests")
+}
+
+model CancellationRecord {
+  id               String             @id @default(cuid())
+  bookingId        String             @unique @map("booking_id")
+  status           CancellationStatus @default(CANCEL_REQUESTED)
+  requestedBy      String             @map("requested_by")
+  assignedTo       String?            @map("assigned_to")
+  originalAmount   Decimal            @map("original_amount") @db.Decimal(10, 2)
+  penaltyAmount    Decimal?           @map("penalty_amount") @db.Decimal(10, 2)
+  airlinePenalty   Decimal?           @map("airline_penalty") @db.Decimal(10, 2)
+  refundAmount     Decimal?           @map("refund_amount") @db.Decimal(10, 2)
+  currency         String             @default("USD")
+  refundMethod     RefundMethod?      @map("refund_method")
+  creditAmount     Decimal?           @map("credit_amount") @db.Decimal(10, 2)
+  creditExpiresAt  DateTime?          @map("credit_expires_at")
+  providerCancelId String?            @map("provider_cancel_id")
+  providerResponse Json?              @map("provider_response")
+  providerCancelPayload Json?         @map("provider_cancel_payload")
+  stripeRefundId   String?            @map("stripe_refund_id")
+  notes            String?
+  cancelledAt      DateTime?          @map("cancelled_at")
+  refundedAt       DateTime?          @map("refunded_at")
+  failedAt         DateTime?          @map("failed_at")
+  failureReason    String?            @map("failure_reason")
+  customerNotifiedAt DateTime?        @map("customer_notified_at")
+  adminNotifiedAt  DateTime?          @map("admin_notified_at")
+  createdAt        DateTime           @default(now()) @map("created_at")
+  updatedAt        DateTime           @updatedAt @map("updated_at")
+
+  refunds          BookingRefund[]
+
+  @@index([status])
+  @@index([assignedTo])
+  @@map("cancellations")
+}
+
+model BookingRefund {
+  id                 String       @id @default(cuid())
+  bookingId          String       @map("booking_id")
+  cancellationId     String?      @map("cancellation_id")
+  changeRequestId    String?      @map("change_request_id")
+  amount             Decimal      @db.Decimal(10, 2)
+  currency           String       @default("USD")
+  method             RefundMethod @default(ORIGINAL_PAYMENT)
+  status             RefundStatus @default(INITIATED)
+  providerRefundId   String?      @map("provider_refund_id")
+  providerResponse   Json?        @map("provider_response")
+  stripeRefundId     String?      @map("stripe_refund_id")
+  processingDays     Int?         @map("processing_days")
+  initiatedAt        DateTime     @default(now()) @map("initiated_at")
+  completedAt        DateTime?    @map("completed_at")
+  failedAt           DateTime?    @map("failed_at")
+  failureReason      String?      @map("failure_reason")
+  createdAt          DateTime     @default(now()) @map("created_at")
+  updatedAt          DateTime     @updatedAt @map("updated_at")
+
+  cancellation CancellationRecord? @relation(fields: [cancellationId], references: [id])
+
+  @@index([bookingId])
+  @@index([cancellationId])
+  @@index([status])
+  @@map("booking_refunds")
+}
+
+model BookingPassengerUpdate {
+  id               String   @id @default(cuid())
+  bookingId        String   @map("booking_id")
+  passengerId      String   @map("passenger_id")
+  fieldName        String   @map("field_name")
+  oldValue         String?  @map("old_value")
+  newValue         String?  @map("new_value")
+  status           String   @default("pending")
+  requestedBy      String   @map("requested_by")
+  providerResponse Json?    @map("provider_response")
+  confirmedAt      DateTime? @map("confirmed_at")
+  failedAt         DateTime? @map("failed_at")
+  failureReason    String?  @map("failure_reason")
+  createdAt        DateTime @default(now()) @map("created_at")
+  updatedAt        DateTime @updatedAt @map("updated_at")
+
+  @@index([bookingId])
+  @@index([passengerId])
+  @@map("booking_passenger_updates")
+}
+
+// ═══════════════════════════════════════════════
+// SUPPORT & AUDIT
+// ═══════════════════════════════════════════════
+
+model AuditLog {
+  id          String    @id @default(cuid())
+  adminUserId String?   @map("admin_user_id")
+  action      String
+  entityType  String    @map("entity_type")
+  entityId    String?   @map("entity_id")
+  before      Json?
+  after       Json?
+  metadata    Json?
+  ipAddress   String?   @map("ip_address")
+  userAgent   String?   @map("user_agent")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  adminUser AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
+
+  @@index([adminUserId])
+  @@index([entityType, entityId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}
+
+// ═══════════════════════════════════════════════
+// PROVIDER SYNC
+// ═══════════════════════════════════════════════
+
+model ProviderSync {
+  id              String    @id @default(cuid())
+  bookingId       String    @map("booking_id")
+  provider        Provider
+  providerOrderId String?   @map("provider_order_id")
+  status          String    @default("SYNCED")
+  lastSyncAt      DateTime? @map("last_sync_at")
+  lastError       String?   @map("last_error")
+  retryCount      Int       @default(0) @map("retry_count")
+  rawResponse     Json?     @map("raw_response")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  @@index([bookingId])
+  @@index([status])
+  @@index([provider, status])
+  @@map("provider_sync")
+}
+
+// ═══════════════════════════════════════════════
+// COMMISSIONS & SETTLEMENTS
+// ═══════════════════════════════════════════════
+
+model CommissionRule {
+  id        String   @id @default(cuid())
+  partnerId String   @map("partner_id")
+  airline   String?
+  route     String?
+  fareClass String?  @map("fare_class")
+  rateType  String   @default("PERCENT")
+  rate      Decimal  @db.Decimal(8, 4)
+  currency  String   @default("USD")
+  isActive  Boolean  @default(true) @map("is_active")
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId])
+  @@map("commission_rules")
+}
+
+model PartnerSettlement {
+  id            String   @id @default(cuid())
+  partnerId     String   @map("partner_id")
+  periodStart   DateTime @map("period_start")
+  periodEnd     DateTime @map("period_end")
+  bookingsCount Int      @default(0) @map("bookings_count")
+  grossRevenue  Decimal  @map("gross_revenue") @db.Decimal(12, 2)
+  commission    Decimal  @db.Decimal(12, 2)
+  netPayable    Decimal  @map("net_payable") @db.Decimal(12, 2)
+  currency      String   @default("USD")
+  status        String   @default("PENDING")
+  paidAt        DateTime? @map("paid_at")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+
+  @@index([partnerId])
+  @@index([status])
+  @@map("partner_settlements")
+}
+
+// ═══════════════════════════════════════════════
+// AI DYNAMIC PROFILE LOG
+// ═══════════════════════════════════════════════
+
+model AiDynamicProfile {
+  id               String   @id @default(cuid())
+  userPrompt       String   @map("user_prompt") @db.Text
+  profileId        String?  @map("profile_id")
+  intentSummary    String   @map("intent_summary")
+  intentCategories String[] @map("intent_categories")
+  weightsJson      Json     @map("weights_json")
+  reasoningFocus   String[] @map("reasoning_focus")
+  rankedIdsJson    Json     @map("ranked_ids_json")
+  source           String
+  createdAt        DateTime @default(now()) @map("created_at")
+
+  @@index([profileId])
+  @@index([source])
+  @@index([createdAt])
+  @@map("ai_dynamic_profiles")
+}
+
+// ═══════════════════════════════════════════════
+// FARE AI SCORES
+// ═══════════════════════════════════════════════
+
+model FareAiScore {
+  id              String   @id @default(cuid())
+  fareOptionId    String   @map("fare_option_id")
+  offerId         String   @map("offer_id")
+  fareName        String   @map("fare_name")
+  cabin           String
+  totalPrice      Decimal  @map("total_price") @db.Decimal(10, 2)
+  currency        String   @default("USD")
+  priceScore      Decimal  @map("price_score")      @db.Decimal(5, 4)
+  durationScore   Decimal  @map("duration_score")   @db.Decimal(5, 4)
+  stopsScore      Decimal  @map("stops_score")      @db.Decimal(5, 4)
+  baggageScore    Decimal  @map("baggage_score")    @db.Decimal(5, 4)
+  refundScore     Decimal  @map("refund_score")     @db.Decimal(5, 4)
+  changeScore     Decimal  @map("change_score")     @db.Decimal(5, 4)
+  seatScore       Decimal  @map("seat_score")       @db.Decimal(5, 4)
+  layoverScore    Decimal  @map("layover_score")    @db.Decimal(5, 4)
+  predictionScore Decimal  @map("prediction_score") @db.Decimal(5, 4)
+  finalScore      Decimal  @map("final_score") @db.Decimal(6, 2)
+  explanation     String
+  badgesJson      Json     @map("badges_json")
+  computedAt      DateTime @default(now()) @map("computed_at")
+
+  @@index([offerId])
+  @@index([fareOptionId])
+  @@index([finalScore])
+  @@map("fare_ai_scores")
 }
 
 // ═══════════════════════════════════════════════
@@ -525,6 +1386,7 @@ model Airport {
 enum Provider {
   DUFFEL
   AMADEUS
+  MYSTIFLY
 }
 
 enum CabinClass {
@@ -618,6 +1480,12 @@ enum NotificationType {
   REBOOKING_OFFER
   REBOOKING_SUCCESS
   PRICE_ALERT
+  REFUND_INITIATED
+  REFUND_COMPLETED
+  FLIGHT_CHANGED
+  ITINERARY_REISSUED
+  SEAT_CHANGED
+  PASSENGER_UPDATED
   SYSTEM
 }
 
@@ -685,393 +1553,129 @@ enum CancellationStatus {
   FAILED
 }
 
-// ═══════════════════════════════════════════════
-// ADMIN AUTH
-// ═══════════════════════════════════════════════
-
-model AdminUser {
-  id                 String    @id @default(cuid())
-  email              String    @unique
-  passwordHash       String?   @map("password_hash")
-  fullName           String    @map("full_name")
-  role               AdminRole @default(SUPPORT)
-  isActive           Boolean   @default(true) @map("is_active")
-  mustChangePassword Boolean   @default(false) @map("must_change_password")
-  lastLoginAt        DateTime? @map("last_login_at")
-  lastLoginIp        String?   @map("last_login_ip")
-  createdById        String?   @map("created_by_id")
-  createdAt          DateTime  @default(now()) @map("created_at")
-  updatedAt          DateTime  @updatedAt @map("updated_at")
-
-  otps         AdminOtp[]
-  sessions     AdminSession[]
-  auditLogs    AuditLog[]
-  supportNotes SupportNote[]
-
-  @@index([email])
-  @@map("admin_users")
+enum RefundMethod {
+  ORIGINAL_PAYMENT
+  AIRLINE_CREDIT
 }
 
-model AdminOtp {
-  id          String    @id @default(cuid())
-  adminUserId String    @map("admin_user_id")
-  otpHash     String    @map("otp_hash")
-  expiresAt   DateTime  @map("expires_at")
-  attempts    Int       @default(0)
-  used        Boolean   @default(false)
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
-
-  @@index([adminUserId])
-  @@index([expiresAt])
-  @@map("admin_otps")
+enum RefundStatus {
+  INITIATED
+  PROCESSING
+  COMPLETED
+  FAILED
+  PARTIAL
 }
 
-model AdminSession {
-  id           String   @id @default(cuid())
-  adminUserId  String   @map("admin_user_id")
-  token        String   @unique
-  refreshToken String?  @unique @map("refresh_token")
-  expiresAt    DateTime @map("expires_at")
-  ipAddress    String?  @map("ip_address")
-  userAgent    String?  @map("user_agent")
-  createdAt    DateTime @default(now()) @map("created_at")
-
-  adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
-
-  @@index([adminUserId])
-  @@index([token])
-  @@map("admin_sessions")
+// Master Booking enums
+enum MbTripType {
+  ONE_WAY
+  ROUND_TRIP
+  MULTI_CITY
 }
 
-// ═══════════════════════════════════════════════
-// PARTNERS (B2B / AGENCIES)
-// ═══════════════════════════════════════════════
-
-model Partner {
-  id            String        @id @default(cuid())
-  name          String
-  slug          String        @unique
-  email         String        @unique
-  phone         String?
-  country       String?
-  status        PartnerStatus @default(ACTIVE)
-  apiKey        String?       @unique @map("api_key")
-  creditLimit   Decimal?      @map("credit_limit") @db.Decimal(12, 2)
-  creditBalance Decimal       @default(0) @map("credit_balance") @db.Decimal(12, 2)
-  metadata      Json?
-  createdAt     DateTime      @default(now()) @map("created_at")
-  updatedAt     DateTime      @updatedAt @map("updated_at")
-
-  users           PartnerUser[]
-  commissionRules CommissionRule[]
-  settlements     PartnerSettlement[]
-
-  @@index([slug])
-  @@index([status])
-  @@map("partners")
+enum MbBookingStatus {
+  CREATED
+  CONFIRMED
+  TICKETED
+  CANCELLED
+  COMPLETED
+  FAILED
 }
 
-model PartnerUser {
-  id          String    @id @default(cuid())
-  partnerId   String    @map("partner_id")
-  email       String    @unique
-  fullName    String    @map("full_name")
-  role        String    @default("AGENT")
-  isActive    Boolean   @default(true) @map("is_active")
-  lastLoginAt DateTime? @map("last_login_at")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-
-  @@index([partnerId])
-  @@map("partner_users")
+enum MbPaymentStatus {
+  PENDING
+  PARTIAL
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
 }
 
-// ═══════════════════════════════════════════════
-// BOOKING EXTENSIONS
-// ═══════════════════════════════════════════════
-
-model BookingContact {
-  id        String   @id @default(cuid())
-  bookingId String   @unique @map("booking_id")
-  firstName String   @map("first_name")
-  lastName  String   @map("last_name")
-  email     String
-  phone     String?
-  address   String?
-  city      String?
-  country   String?
-  createdAt DateTime @default(now()) @map("created_at")
-
-  @@index([bookingId])
-  @@map("booking_contacts")
+enum MbTicketingStatus {
+  NOT_STARTED
+  IN_PROGRESS
+  ISSUED
+  PARTIALLY_ISSUED
+  FAILED
+  VOIDED
 }
 
-model BookingAddon {
-  id          String    @id @default(cuid())
-  bookingId   String    @map("booking_id")
-  type        AddonType
-  description String?
-  quantity    Int       @default(1)
-  unitPrice   Decimal   @map("unit_price") @db.Decimal(10, 2)
-  totalPrice  Decimal   @map("total_price") @db.Decimal(10, 2)
-  currency    String    @default("USD")
-  serviceId   String?   @map("service_id")
-  seatNumber  String?   @map("seat_number")
-  segmentRef  String?   @map("segment_ref")
-  metadata    Json?
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  @@index([bookingId])
-  @@map("booking_addons")
+enum MbPaymentTxStatus {
+  PENDING
+  SUCCEEDED
+  FAILED
+  REFUNDED
+  PARTIALLY_REFUNDED
 }
 
-model BookingTicket {
-  id           String    @id @default(cuid())
-  bookingId    String    @map("booking_id")
-  passengerId  String?   @map("passenger_id")
-  ticketNumber String    @map("ticket_number")
-  issuedAt     DateTime? @map("issued_at")
-  eticketUrl   String?   @map("eticket_url")
-  status       String    @default("ISSUED")
-  createdAt    DateTime  @default(now()) @map("created_at")
-
-  @@index([bookingId])
-  @@index([ticketNumber])
-  @@map("booking_tickets")
+enum JourneyDir {
+  OUTBOUND
+  RETURN
 }
 
-model BookingEvent {
-  id          String   @id @default(cuid())
-  bookingId   String   @map("booking_id")
-  eventType   String   @map("event_type")
-  title       String
-  description String?
-  metadata    Json?
-  actorType   String?  @map("actor_type")
-  actorId     String?  @map("actor_id")
-  actorName   String?  @map("actor_name")
-  createdAt   DateTime @default(now()) @map("created_at")
-
-  @@index([bookingId])
-  @@index([bookingId, createdAt])
-  @@map("booking_events")
+enum TicketStatus {
+  PENDING
+  ISSUED
+  VOIDED
+  REFUNDED
+  EXCHANGED
 }
 
-// ═══════════════════════════════════════════════
-// CHANGE REQUESTS
-// ═══════════════════════════════════════════════
-
-model ChangeRequest {
-  id               String              @id @default(cuid())
-  bookingId        String              @map("booking_id")
-  type             ChangeRequestType
-  status           ChangeRequestStatus @default(NEW)
-  requestedBy      String              @map("requested_by")
-  assignedTo       String?             @map("assigned_to")
-  originalData     Json?               @map("original_data")
-  requestedData    Json?               @map("requested_data")
-  fareDifference   Decimal?            @map("fare_difference") @db.Decimal(10, 2)
-  penalties        Decimal?            @db.Decimal(10, 2)
-  totalCost        Decimal?            @map("total_cost") @db.Decimal(10, 2)
-  currency         String              @default("USD")
-  providerQuoteId  String?             @map("provider_quote_id")
-  providerResponse Json?               @map("provider_response")
-  paymentIntentId  String?             @map("payment_intent_id")
-  paidAt           DateTime?           @map("paid_at")
-  notes            String?
-  rejectionReason  String?             @map("rejection_reason")
-  expiresAt        DateTime?           @map("expires_at")
-  confirmedAt      DateTime?           @map("confirmed_at")
-  rejectedAt       DateTime?           @map("rejected_at")
-  createdAt        DateTime            @default(now()) @map("created_at")
-  updatedAt        DateTime            @updatedAt @map("updated_at")
-
-  @@index([bookingId])
-  @@index([status])
-  @@index([assignedTo])
-  @@map("change_requests")
+enum SeatStatus {
+  SELECTED
+  CONFIRMED
+  UNAVAILABLE
+  CHANGED
 }
 
-// ═══════════════════════════════════════════════
-// CANCELLATIONS
-// ═══════════════════════════════════════════════
-
-model CancellationRecord {
-  id               String             @id @default(cuid())
-  bookingId        String             @unique @map("booking_id")
-  status           CancellationStatus @default(CANCEL_REQUESTED)
-  requestedBy      String             @map("requested_by")
-  assignedTo       String?            @map("assigned_to")
-  originalAmount   Decimal            @map("original_amount") @db.Decimal(10, 2)
-  penaltyAmount    Decimal?           @map("penalty_amount") @db.Decimal(10, 2)
-  refundAmount     Decimal?           @map("refund_amount") @db.Decimal(10, 2)
-  currency         String             @default("USD")
-  providerCancelId String?            @map("provider_cancel_id")
-  providerResponse Json?              @map("provider_response")
-  stripeRefundId   String?            @map("stripe_refund_id")
-  notes            String?
-  cancelledAt      DateTime?          @map("cancelled_at")
-  refundedAt       DateTime?          @map("refunded_at")
-  failedAt         DateTime?          @map("failed_at")
-  failureReason    String?            @map("failure_reason")
-  createdAt        DateTime           @default(now()) @map("created_at")
-  updatedAt        DateTime           @updatedAt @map("updated_at")
-
-  @@index([status])
-  @@index([assignedTo])
-  @@map("cancellations")
+enum MealStatus {
+  REQUESTED
+  CONFIRMED
+  UNAVAILABLE
 }
 
-// ═══════════════════════════════════════════════
-// SUPPORT & AUDIT
-// ═══════════════════════════════════════════════
-
-model SupportNote {
-  id          String    @id @default(cuid())
-  bookingId   String    @map("booking_id")
-  adminUserId String    @map("admin_user_id")
-  note        String
-  isInternal  Boolean   @default(true) @map("is_internal")
-  createdAt   DateTime  @default(now()) @map("created_at")
-  updatedAt   DateTime  @updatedAt @map("updated_at")
-
-  adminUser AdminUser @relation(fields: [adminUserId], references: [id])
-
-  @@index([bookingId])
-  @@index([adminUserId])
-  @@map("support_notes")
+enum PnrStrategy {
+  SINGLE_PNR
+  DIRECTION_PNR
+  SEGMENT_PNR
+  PROVIDER_SPLIT
+  UNKNOWN
 }
 
-model AuditLog {
-  id          String    @id @default(cuid())
-  adminUserId String?   @map("admin_user_id")
-  action      String
-  entityType  String    @map("entity_type")
-  entityId    String?   @map("entity_id")
-  before      Json?
-  after       Json?
-  metadata    Json?
-  ipAddress   String?   @map("ip_address")
-  userAgent   String?   @map("user_agent")
-  createdAt   DateTime  @default(now()) @map("created_at")
-
-  adminUser AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
-
-  @@index([adminUserId])
-  @@index([entityType, entityId])
-  @@index([createdAt])
-  @@map("audit_logs")
+enum PnrType {
+  MASTER_AIRLINE_PNR
+  AIRLINE_PNR
+  PROVIDER_PNR
+  SPLIT_TICKET_PNR
+  SUB_PNR
 }
 
-// ═══════════════════════════════════════════════
-// PROVIDER SYNC
-// ═══════════════════════════════════════════════
-
-model ProviderSync {
-  id              String   @id @default(cuid())
-  bookingId       String   @map("booking_id")
-  provider        Provider
-  providerOrderId String?  @map("provider_order_id")
-  status          String   @default("SYNCED")
-  lastSyncAt      DateTime? @map("last_sync_at")
-  lastError       String?  @map("last_error")
-  retryCount      Int      @default(0) @map("retry_count")
-  rawResponse     Json?    @map("raw_response")
-  createdAt       DateTime @default(now()) @map("created_at")
-  updatedAt       DateTime @updatedAt @map("updated_at")
-
-  @@index([bookingId])
-  @@index([status])
-  @@index([provider, status])
-  @@map("provider_sync")
+enum PnrStatus {
+  ACTIVE
+  PENDING
+  CANCELLED
+  EXCHANGED
+  UNKNOWN
 }
 
-// ═══════════════════════════════════════════════
-// COMMISSIONS & SETTLEMENTS
-// ═══════════════════════════════════════════════
-
-model CommissionRule {
-  id        String   @id @default(cuid())
-  partnerId String   @map("partner_id")
-  airline   String?
-  route     String?
-  fareClass String?  @map("fare_class")
-  rateType  String   @default("PERCENT")
-  rate      Decimal  @db.Decimal(8, 4)
-  currency  String   @default("USD")
-  isActive  Boolean  @default(true) @map("is_active")
-  createdAt DateTime @default(now()) @map("created_at")
-  updatedAt DateTime @updatedAt @map("updated_at")
-
-  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-
-  @@index([partnerId])
-  @@map("commission_rules")
+enum PnrDir {
+  ALL
+  OUTBOUND
+  RETURN
 }
 
-model PartnerSettlement {
-  id            String   @id @default(cuid())
-  partnerId     String   @map("partner_id")
-  periodStart   DateTime @map("period_start")
-  periodEnd     DateTime @map("period_end")
-  bookingsCount Int      @default(0) @map("bookings_count")
-  grossRevenue  Decimal  @map("gross_revenue") @db.Decimal(12, 2)
-  commission    Decimal  @db.Decimal(12, 2)
-  netPayable    Decimal  @map("net_payable") @db.Decimal(12, 2)
-  currency      String   @default("USD")
-  status        String   @default("PENDING")
-  paidAt        DateTime? @map("paid_at")
-  createdAt     DateTime @default(now()) @map("created_at")
-  updatedAt     DateTime @updatedAt @map("updated_at")
-
-  partner Partner @relation(fields: [partnerId], references: [id], onDelete: Cascade)
-
-  @@index([partnerId])
-  @@index([status])
-  @@map("partner_settlements")
+enum ConnProtStatus {
+  PROTECTED
+  PARTIALLY_PROTECTED
+  NOT_PROTECTED
+  UNKNOWN
 }
 
-// ═══════════════════════════════════════════════
-// FARE AI SCORES
-// ═══════════════════════════════════════════════
-
-model FareAiScore {
-  id              String   @id @default(cuid())
-
-  // Fare identification
-  fareOptionId    String   @map("fare_option_id")
-  offerId         String   @map("offer_id")
-  fareName        String   @map("fare_name")
-  cabin           String
-  totalPrice      Decimal  @map("total_price") @db.Decimal(10, 2)
-  currency        String   @default("USD")
-
-  // Sub-scores (0.0 – 1.0)
-  priceScore      Decimal  @map("price_score")      @db.Decimal(5, 4)
-  durationScore   Decimal  @map("duration_score")   @db.Decimal(5, 4)
-  stopsScore      Decimal  @map("stops_score")      @db.Decimal(5, 4)
-  baggageScore    Decimal  @map("baggage_score")    @db.Decimal(5, 4)
-  refundScore     Decimal  @map("refund_score")     @db.Decimal(5, 4)
-  changeScore     Decimal  @map("change_score")     @db.Decimal(5, 4)
-  seatScore       Decimal  @map("seat_score")       @db.Decimal(5, 4)
-  layoverScore    Decimal  @map("layover_score")    @db.Decimal(5, 4)
-  predictionScore Decimal  @map("prediction_score") @db.Decimal(5, 4)
-
-  // Final score (0.00 – 100.00)
-  finalScore      Decimal  @map("final_score") @db.Decimal(6, 2)
-
-  // Classification
-  explanation     String
-  badgesJson      Json     @map("badges_json")
-
-  computedAt      DateTime @default(now()) @map("computed_at")
-
-  @@index([offerId])
-  @@index([fareOptionId])
-  @@index([finalScore])
-  @@map("fare_ai_scores")
+enum CouponStatus {
+  OPEN
+  FLOWN
+  EXCHANGED
+  REFUNDED
+  VOIDED
+  UNAVAILABLE
 }

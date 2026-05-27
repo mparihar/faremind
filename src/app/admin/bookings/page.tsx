@@ -7,12 +7,28 @@ import {
   useReactTable, getCoreRowModel, getSortedRowModel,
   flexRender, createColumnHelper, type SortingState,
 } from '@tanstack/react-table';
-import { Search, ChevronUp, ChevronDown, ChevronsUpDown, ChevronLeft, ChevronRight, Filter, RefreshCw } from 'lucide-react';
+import {
+  Search, ChevronUp, ChevronDown, ChevronsUpDown,
+  ChevronLeft, ChevronRight, Filter, RefreshCw, Eye, Trash2,
+} from 'lucide-react';
 import { format } from 'date-fns';
+
+interface BookingPnrRow {
+  id: string;
+  pnrCode: string;
+  journeyDirection: string;
+  isPrimary: boolean;
+  pnrType: string;
+}
 
 interface BookingRow {
   id: string;
   pnr: string | null;
+  masterBookingReference: string;
+  pnrStrategy: string | null;
+  isSplitTicket: boolean;
+  pnrCount: number;
+  pnrs: BookingPnrRow[];
   status: string;
   originAirport: string;
   destinationAirport: string;
@@ -40,43 +56,82 @@ const STATUSES = ['', 'PENDING', 'CONFIRMED', 'TICKETED', 'CANCELLED', 'COMPLETE
 
 const col = createColumnHelper<BookingRow>();
 
-const columns = [
-  col.accessor('pnr', {
-    header: 'PNR',
-    cell: i => <span className="font-mono text-[#1ABC9C] font-bold text-xs">{i.getValue() ?? i.row.original.id.slice(0, 8)}</span>,
+const DIR_LABEL: Record<string, string> = { OUTBOUND: '↗', RETURN: '↙', ALL: '⇄' };
+
+const DATA_COLUMNS = [
+  col.accessor('masterBookingReference', {
+    header: 'Booking',
+    cell: i => {
+      const row = i.row.original;
+      const pnrs = row.pnrs ?? [];
+      const multi = pnrs.length > 1;
+      return (
+        <div className="space-y-1 min-w-[110px]">
+          {/* Master reference */}
+          <span className="font-mono text-[#1ABC9C] font-black text-xs block">
+            {row.masterBookingReference ?? row.pnr ?? row.id.slice(0, 8)}
+          </span>
+          {/* PNR chips — only when multiple */}
+          {multi && (
+            <div className="flex flex-wrap gap-1">
+              {pnrs.slice(0, 3).map((p: BookingPnrRow) => (
+                <span
+                  key={p.id}
+                  className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded bg-slate-700/60 border border-slate-600/50 font-mono text-[10px] text-slate-300 font-semibold"
+                >
+                  <span className="text-slate-500">{DIR_LABEL[p.journeyDirection] ?? ''}</span>
+                  {p.pnrCode}
+                </span>
+              ))}
+              {pnrs.length > 3 && (
+                <span className="px-1.5 py-0.5 rounded bg-slate-700/40 text-slate-500 text-[10px]">
+                  +{pnrs.length - 3}
+                </span>
+              )}
+            </div>
+          )}
+          {/* Split-ticket warning */}
+          {row.isSplitTicket && (
+            <span className="inline-block px-1.5 py-0.5 rounded bg-amber-400/10 border border-amber-400/20 text-amber-400 text-[9px] font-bold uppercase tracking-wide">
+              Split Ticket
+            </span>
+          )}
+        </div>
+      );
+    },
   }),
   col.accessor(r => `${r.user.firstName} ${r.user.lastName}`, {
     id: 'passenger',
     header: 'Passenger',
     cell: i => (
       <div>
-        <p className="text-white font-semibold text-xs">{i.getValue()}</p>
-        <p className="text-slate-500 text-[11px]">{i.row.original.user.email}</p>
+        <p className="text-white font-semibold text-sm">{i.getValue()}</p>
+        <p className="text-slate-500 text-xs">{i.row.original.user.email}</p>
       </div>
     ),
   }),
   col.accessor(r => `${r.originAirport} → ${r.destinationAirport}`, {
     id: 'route',
     header: 'Route',
-    cell: i => <span className="text-white font-bold text-xs">{i.getValue()}</span>,
+    cell: i => <span className="text-white font-bold text-sm">{i.getValue()}</span>,
   }),
   col.accessor('departureTime', {
     header: 'Departure',
-    cell: i => <span className="text-slate-300 text-xs">{format(new Date(i.getValue()), 'dd MMM yyyy HH:mm')}</span>,
+    cell: i => <span className="text-slate-300 text-sm">{format(new Date(i.getValue()), 'dd MMM yyyy HH:mm')}</span>,
   }),
   col.accessor('cabinClass', {
     header: 'Cabin',
-    cell: i => <span className="text-slate-400 text-xs capitalize">{i.getValue().toLowerCase().replace('_', ' ')}</span>,
+    cell: i => <span className="text-slate-400 text-sm capitalize">{i.getValue().toLowerCase().replace('_', ' ')}</span>,
   }),
   col.accessor(r => r.passengers.length, {
     id: 'paxCount',
     header: 'Pax',
-    cell: i => <span className="text-slate-300 text-xs text-center block">{i.getValue()}</span>,
+    cell: i => <span className="text-slate-300 text-sm text-center block">{i.getValue()}</span>,
   }),
   col.accessor('totalPrice', {
     header: 'Amount',
     cell: i => (
-      <span className="text-white font-bold text-xs">
+      <span className="text-white font-bold text-sm">
         {new Intl.NumberFormat('en-US', { style: 'currency', currency: i.row.original.currency }).format(Number(i.getValue()))}
       </span>
     ),
@@ -91,7 +146,7 @@ const columns = [
   }),
   col.accessor('createdAt', {
     header: 'Created',
-    cell: i => <span className="text-slate-500 text-[11px]">{format(new Date(i.getValue()), 'dd MMM yyyy')}</span>,
+    cell: i => <span className="text-slate-500 text-xs">{format(new Date(i.getValue()), 'dd MMM yyyy')}</span>,
   }),
 ];
 
@@ -105,6 +160,7 @@ export default function AdminBookingsPage() {
   const [search, setSearch]   = useState('');
   const [status, setStatus]   = useState('');
   const [sorting, setSorting] = useState<SortingState>([]);
+  const [deleting, setDeleting] = useState<string | null>(null);
   const limit = 20;
 
   const load = useCallback(async () => {
@@ -122,6 +178,41 @@ export default function AdminBookingsPage() {
   }, [page, search, status, router]);
 
   useEffect(() => { load(); }, [load]);
+
+  async function handleDelete(id: string, pnr: string | null) {
+    if (!window.confirm(`Delete booking ${pnr ?? id}?\n\nThis will permanently remove the booking and all associated data. This cannot be undone.`)) return;
+    setDeleting(id);
+    const res = await adminFetch(`/api/admin/bookings/${id}`, { method: 'DELETE' });
+    setDeleting(null);
+    if (res.ok) await load();
+  }
+
+  const columns = [
+    ...DATA_COLUMNS,
+    col.display({
+      id: 'actions',
+      header: 'Actions',
+      cell: ({ row }) => (
+        <div className="flex items-center gap-1.5" onClick={e => e.stopPropagation()}>
+          <button
+            onClick={() => router.push(`/admin/bookings/${row.original.id}`)}
+            title="Open"
+            className="p-1.5 rounded-lg bg-slate-700/40 text-slate-400 hover:text-white transition-all"
+          >
+            <Eye size={12} />
+          </button>
+          <button
+            onClick={() => handleDelete(row.original.id, row.original.pnr)}
+            disabled={deleting === row.original.id}
+            title="Delete booking"
+            className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 disabled:opacity-40 transition-all"
+          >
+            <Trash2 size={12} />
+          </button>
+        </div>
+      ),
+    }),
+  ];
 
   const table = useReactTable({
     data,

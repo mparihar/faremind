@@ -138,8 +138,8 @@ export default function SettingsPage() {
             <tbody className="divide-y divide-slate-700/30">
               {users.map((u: any) => (
                 <tr key={u.id} className="hover:bg-white/2 transition-colors">
-                  <td className="px-5 py-3.5 text-white font-semibold text-xs">{u.fullName}</td>
-                  <td className="px-5 py-3.5 text-slate-400 text-xs">{u.email}</td>
+                  <td className="px-5 py-3.5 text-white font-semibold text-sm">{u.fullName}</td>
+                  <td className="px-5 py-3.5 text-slate-400 text-sm">{u.email}</td>
                   <td className="px-5 py-3.5">
                     <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${ROLE_COLORS[u.role] ?? 'bg-slate-400/15 text-slate-400'}`}>
                       {u.role.replace('_', ' ')}
@@ -150,7 +150,7 @@ export default function SettingsPage() {
                       {u.isActive ? 'Active' : 'Inactive'}
                     </span>
                   </td>
-                  <td className="px-5 py-3.5 text-slate-500 text-xs">
+                  <td className="px-5 py-3.5 text-slate-500 text-sm">
                     {u.lastLoginAt ? new Date(u.lastLoginAt).toLocaleDateString() : 'Never'}
                   </td>
                 </tr>

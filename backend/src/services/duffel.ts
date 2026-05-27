@@ -344,7 +344,8 @@ export async function searchFlights(params: DuffelSearchParams): Promise<DuffelO
     body: {
       slices,
       passengers,
-      cabin_class: params.cabinClass || 'economy',
+      // Omit cabin_class entirely when not specified → Duffel returns ALL classes
+      ...(params.cabinClass ? { cabin_class: params.cabinClass } : {}),
       max_connections: params.maxConnections ?? 2,
     } as Record<string, unknown>,
     retries: 1, // Offer requests can be slow, don't over-retry
@@ -561,6 +562,216 @@ export async function checkPrice(params: DuffelSearchParams): Promise<{
 }
 
 // ═══════════════════════════════════════════════
+// Post-Booking Management (NEW — does NOT modify existing functions)
+// ═══════════════════════════════════════════════
+
+/**
+ * Create a cancellation quote WITHOUT confirming.
+ * Returns the refund amount and cancellation ID.
+ * Use confirmCancellation() separately to execute.
+ *
+ * NOTE: The existing cancelBooking() above combines both steps.
+ * This function is used by the manage-booking module where
+ * we need to show the quote to the user first.
+ */
+export async function createCancellationQuote(orderId: string): Promise<DuffelCancellation> {
+  const cancellation = await duffelRequest<DuffelCancellation>({
+    method: 'POST',
+    path: '/air/order_cancellations',
+    body: { order_id: orderId } as Record<string, unknown>,
+  });
+
+  console.log(`[Duffel] Cancellation quote created: ${cancellation.id} — refund ${cancellation.refund_amount} ${cancellation.refund_currency}`);
+  return cancellation;
+}
+
+/**
+ * Confirm an existing cancellation quote.
+ */
+export async function confirmCancellation(cancellationId: string): Promise<DuffelCancellation> {
+  const confirmed = await duffelRequest<DuffelCancellation>({
+    method: 'POST',
+    path: `/air/order_cancellations/${cancellationId}/actions/confirm`,
+    retries: 0,
+  });
+
+  console.log(`[Duffel] ✅ Cancellation confirmed: ${confirmed.id}`);
+  return confirmed;
+}
+
+/**
+ * Get seat maps for an offer.
+ * Duffel returns seat maps per slice/segment.
+ */
+export async function getSeatMaps(offerId: string): Promise<any[]> {
+  try {
+    const result = await duffelRequest<any[]>({
+      method: 'GET',
+      path: '/air/seat_maps',
+      queryParams: { offer_id: offerId },
+    });
+    return Array.isArray(result) ? result : [];
+  } catch (error) {
+    console.warn('[Duffel] Seat map fetch failed (may not be supported for this offer):', (error as Error).message);
+    return [];
+  }
+}
+
+/**
+ * Update passenger details on an existing order.
+ * Only certain fields can be updated after booking.
+ */
+export async function updateOrderPassenger(
+  orderId: string,
+  passengerId: string,
+  updates: Record<string, string>
+): Promise<DuffelOrder> {
+  // Duffel expects passenger updates via the order update endpoint
+  const passengerPayload: Record<string, unknown> = { id: passengerId, ...updates };
+
+  return duffelRequest<DuffelOrder>({
+    method: 'PATCH',
+    path: `/air/orders/${orderId}`,
+    body: { passengers: [passengerPayload] } as Record<string, unknown>,
+  });
+}
+
+// ═══════════════════════════════════════════════
+// Order Changes (Flight/Date Modifications)
+// ═══════════════════════════════════════════════
+
+export interface OrderChangeSlices {
+  remove: { slice_id: string }[];
+  add: {
+    origin: string;
+    destination: string;
+    departure_date: string;
+    cabin_class?: string;
+  }[];
+}
+
+export interface OrderChangeOffer {
+  id: string;
+  order_change_id: string;
+  change_total_amount: string;
+  change_total_currency: string;
+  penalty_total_amount: string;
+  penalty_total_currency: string;
+  new_total_amount: string;
+  new_total_currency: string;
+  expires_at: string;
+  created_at: string;
+  slices: {
+    add: any[];
+    remove: any[];
+  };
+  conditions: DuffelConditions;
+}
+
+export interface OrderChangeRequest {
+  id: string;
+  order_id: string;
+  order_change_offers: OrderChangeOffer[];
+  slices: OrderChangeSlices;
+  created_at: string;
+  live_mode: boolean;
+}
+
+export interface OrderChange {
+  id: string;
+  order_id: string;
+  change_total_amount: string;
+  change_total_currency: string;
+  penalty_total_amount: string;
+  penalty_total_currency: string;
+  new_total_amount: string;
+  new_total_currency: string;
+  confirmed_at?: string;
+  created_at: string;
+  live_mode: boolean;
+}
+
+/**
+ * Create an order change request — searches for alternative flights.
+ * Returns change offers with fare differences and penalties.
+ */
+export async function createOrderChangeRequest(
+  orderId: string,
+  slices: OrderChangeSlices
+): Promise<OrderChangeRequest> {
+  const result = await duffelRequest<OrderChangeRequest>({
+    method: 'POST',
+    path: '/air/order_change_requests',
+    body: {
+      order_id: orderId,
+      slices,
+    } as Record<string, unknown>,
+    retries: 1,
+  });
+
+  const offerCount = result.order_change_offers?.length ?? 0;
+  console.log(`[Duffel] Order change request created: ${result.id} — ${offerCount} offers available`);
+  return result;
+}
+
+/**
+ * Get a single order change request (to refresh offers).
+ */
+export async function getOrderChangeRequest(requestId: string): Promise<OrderChangeRequest> {
+  return duffelRequest<OrderChangeRequest>({
+    method: 'GET',
+    path: `/air/order_change_requests/${requestId}`,
+  });
+}
+
+/**
+ * Create an order change — select a specific change offer.
+ * This locks in the change but does NOT confirm it yet.
+ */
+export async function createOrderChange(
+  selectedChangeOfferId: string,
+  paymentAmount?: number,
+  paymentCurrency?: string
+): Promise<OrderChange> {
+  const body: Record<string, unknown> = {
+    selected_order_change_offer: selectedChangeOfferId,
+  };
+
+  // If there's an additional cost, include payment
+  if (paymentAmount && paymentAmount > 0 && paymentCurrency) {
+    body.payments = [{
+      type: 'balance',
+      amount: paymentAmount.toFixed(2),
+      currency: paymentCurrency,
+    }];
+  }
+
+  const result = await duffelRequest<OrderChange>({
+    method: 'POST',
+    path: '/air/order_changes',
+    body,
+    retries: 0, // Never retry payment operations
+  });
+
+  console.log(`[Duffel] Order change created: ${result.id}`);
+  return result;
+}
+
+/**
+ * Confirm an order change — executes the modification.
+ */
+export async function confirmOrderChange(changeId: string): Promise<OrderChange> {
+  const result = await duffelRequest<OrderChange>({
+    method: 'POST',
+    path: `/air/order_changes/${changeId}/actions/confirm`,
+    retries: 0,
+  });
+
+  console.log(`[Duffel] ✅ Order change confirmed: ${result.id}`);
+  return result;
+}
+
+// ═══════════════════════════════════════════════
 // Exports
 // ═══════════════════════════════════════════════
 
@@ -573,4 +784,14 @@ export default {
   updateOrder,
   cancelBooking,
   checkPrice,
+  // Post-booking management
+  createCancellationQuote,
+  confirmCancellation,
+  getSeatMaps,
+  updateOrderPassenger,
+  // Order changes (flight modifications)
+  createOrderChangeRequest,
+  getOrderChangeRequest,
+  createOrderChange,
+  confirmOrderChange,
 };

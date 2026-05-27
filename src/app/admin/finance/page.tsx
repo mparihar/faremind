@@ -105,16 +105,16 @@ export default function FinancePage() {
               {data.pendingSettlements.map((s: any) => (
                 <tr key={s.id}>
                   <td className="px-5 py-3">
-                    <p className="text-white font-semibold text-xs">{s.partner?.name}</p>
-                    <p className="text-slate-500 text-[10px]">{s.partner?.email}</p>
+                    <p className="text-white font-semibold text-sm">{s.partner?.name}</p>
+                    <p className="text-slate-500 text-xs">{s.partner?.email}</p>
                   </td>
-                  <td className="px-5 py-3 text-slate-300 text-xs">
+                  <td className="px-5 py-3 text-slate-300 text-sm">
                     {format(new Date(s.periodStart), 'dd MMM')} – {format(new Date(s.periodEnd), 'dd MMM yyyy')}
                   </td>
-                  <td className="px-5 py-3 text-white text-xs">{s.bookingsCount}</td>
-                  <td className="px-5 py-3 text-white text-xs">{fmtMoney(Number(s.grossRevenue))}</td>
-                  <td className="px-5 py-3 text-[#1ABC9C] text-xs font-bold">{fmtMoney(Number(s.commission))}</td>
-                  <td className="px-5 py-3 text-amber-400 text-xs font-bold">{fmtMoney(Number(s.netPayable))}</td>
+                  <td className="px-5 py-3 text-white text-sm">{s.bookingsCount}</td>
+                  <td className="px-5 py-3 text-white text-sm">{fmtMoney(Number(s.grossRevenue))}</td>
+                  <td className="px-5 py-3 text-[#1ABC9C] text-sm font-bold">{fmtMoney(Number(s.commission))}</td>
+                  <td className="px-5 py-3 text-amber-400 text-sm font-bold">{fmtMoney(Number(s.netPayable))}</td>
                 </tr>
               ))}
             </tbody>
@@ -138,18 +138,18 @@ export default function FinancePage() {
           <tbody className="divide-y divide-slate-700/30">
             {(data?.recentPayments ?? []).map((p: any) => (
               <tr key={p.id}>
-                <td className="px-5 py-3 font-mono text-[#1ABC9C] text-xs font-bold">{p.booking?.pnr ?? p.bookingId?.slice(0, 8)}</td>
-                <td className="px-5 py-3 text-slate-300 text-xs">
+                <td className="px-5 py-3 font-mono text-[#1ABC9C] text-sm font-bold">{p.booking?.pnr ?? p.bookingId?.slice(0, 8)}</td>
+                <td className="px-5 py-3 text-slate-300 text-sm">
                   {p.booking?.user ? `${p.booking.user.firstName} ${p.booking.user.lastName}` : '—'}
                 </td>
-                <td className="px-5 py-3 text-slate-400 text-xs">{p.type}</td>
-                <td className="px-5 py-3 text-white font-bold text-xs">{fmtMoney(Number(p.amount))}</td>
+                <td className="px-5 py-3 text-slate-400 text-sm">{p.type}</td>
+                <td className="px-5 py-3 text-white font-bold text-sm">{fmtMoney(Number(p.amount))}</td>
                 <td className="px-5 py-3">
                   <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${PAY_STATUS_COLORS[p.status] ?? 'bg-slate-400/15 text-slate-400'}`}>
                     {p.status}
                   </span>
                 </td>
-                <td className="px-5 py-3 text-slate-500 text-xs">{format(new Date(p.createdAt), 'dd MMM yyyy')}</td>
+                <td className="px-5 py-3 text-slate-500 text-sm">{format(new Date(p.createdAt), 'dd MMM yyyy')}</td>
               </tr>
             ))}
             {(data?.recentPayments ?? []).length === 0 && (

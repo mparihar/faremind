@@ -29,8 +29,9 @@ import fareOptionsPlugin   from './routes/fare-options';
 import priceProtectionPlugin from './routes/price-protection';
 import bookingSessionPlugin from './routes/booking-session';
 import checkoutPlugin      from './routes/checkout';
+import manageBookingPlugin from './routes/manage-booking';
 
-const PORT = parseInt(process.env.BACKEND_PORT || '3001');
+const PORT = parseInt(process.env.PORT || process.env.BACKEND_PORT || '3001');
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
 
 async function main() {
@@ -45,14 +46,27 @@ async function main() {
       },
     },
     keepAliveTimeout: 65_000,
-    connectionTimeout: 10_000,
+    connectionTimeout: 120_000,
     bodyLimit: 10 * 1024 * 1024,
   });
 
   // ─── Plugins ────────────────────────────────────────────────────────────────
 
+  // CORS: support multiple origins via CORS_ORIGINS (comma-separated) or FRONTEND_URL
+  const allowedOrigins = (process.env.CORS_ORIGINS || FRONTEND_URL)
+    .split(',')
+    .map((s: string) => s.trim())
+    .filter(Boolean);
+
   await fastify.register(cors, {
-    origin: FRONTEND_URL,
+    origin: (origin, callback) => {
+      if (!origin || allowedOrigins.includes('*') || allowedOrigins.includes(origin)) {
+        callback(null, true);
+      } else {
+        fastify.log.warn({ origin, allowedOrigins }, 'CORS rejected');
+        callback(null, false);
+      }
+    },
     credentials: true,
     methods: ['GET', 'POST', 'PATCH', 'DELETE', 'OPTIONS'],
   });
@@ -94,6 +108,7 @@ async function main() {
   fastify.register(priceProtectionPlugin, { prefix: '/api/price-protection' });
   fastify.register(bookingSessionPlugin,  { prefix: '/api/booking-session' });
   fastify.register(checkoutPlugin,        { prefix: '/api/checkout' });
+  fastify.register(manageBookingPlugin,   { prefix: '/api/manage-booking' });
 
   // ─── 404 / error handlers ────────────────────────────────────────────────
 

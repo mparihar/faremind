@@ -140,10 +140,10 @@ export default function HomePage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.3 }}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 shadow-sm mb-4"
+              className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-[#1ABC9C] text-white shadow-sm mb-4"
             >
-              <Sparkles className="w-4 h-4 text-[#1ABC9C]" />
-              <span className="text-[12px] font-bold tracking-wide text-[#1ABC9C] uppercase">AI Powered Intelligence</span>
+              <Sparkles className="w-4 h-4 text-white" />
+              <span className="text-[12px] font-bold tracking-wide text-white uppercase">AI Powered Intelligence</span>
             </motion.div>
 
             <motion.h1
@@ -387,7 +387,7 @@ export default function HomePage() {
                     </span>
                   </div>
                   <h3 className="text-lg font-bold text-gray-900 mb-2">{item.title}</h3>
-                  <p className="text-sm text-gray-500 leading-relaxed max-w-xs mx-auto">{item.description}</p>
+                  <p className="text-sm text-black leading-relaxed max-w-xs mx-auto">{item.description}</p>
                 </motion.div>
               );
             })}

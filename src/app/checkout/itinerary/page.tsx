@@ -550,16 +550,12 @@ export default function CheckoutItineraryPage() {
                           {pax.type === 'adult' ? 'Adult' : 'Child'}
                         </span>
                       </p>
+                      {/* Show the all-in fare as a single line — taxes are already included in the
+                          Duffel total_amount and we do not have a real per-component split. */}
                       <div className="flex justify-between items-center">
-                        <span className="text-sm text-slate-600">Flight</span>
+                        <span className="text-sm text-slate-600">Fare (incl. taxes &amp; carrier fees)</span>
                         <span className="text-sm font-semibold text-slate-800">
-                          {formatPrice(pax.baseFare, currency)}
-                        </span>
-                      </div>
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-slate-500">Taxes &amp; fees</span>
-                        <span className="text-sm text-slate-500">
-                          {formatPrice(pax.taxes, currency)}
+                          {formatPrice(pax.subtotal, currency)}
                         </span>
                       </div>
                     </div>
@@ -571,6 +567,29 @@ export default function CheckoutItineraryPage() {
                       <span className="text-sm text-slate-500">Service fee</span>
                       <span className="text-sm text-slate-500">
                         {formatPrice(pricing.serviceFee, currency)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Price Drop Protection line */}
+                  {pricing && pricing.protectionFee > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-slate-500 flex items-center gap-1.5">
+                        <Shield size={11} className="text-[#1ABC9C]" strokeWidth={2} />
+                        Price Drop Protection
+                      </span>
+                      <span className="text-sm text-slate-500">
+                        {formatPrice(pricing.protectionFee, currency)}
+                      </span>
+                    </div>
+                  )}
+
+                  {/* Travel insurance line */}
+                  {pricing && pricing.insuranceFee > 0 && (
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm text-slate-500">Travel insurance</span>
+                      <span className="text-sm text-slate-500">
+                        {formatPrice(pricing.insuranceFee, currency)}
                       </span>
                     </div>
                   )}
@@ -610,14 +629,14 @@ export default function CheckoutItineraryPage() {
                 </div>
               </div>
 
-              {/* Price protection notice */}
+              {/* Price Drop Protection confirmation notice */}
               {selectedFare.priceProtection && selectedFare.protectionFee > 0 && (
                 <div className="bg-[#1ABC9C]/8 border border-[#1ABC9C]/20 rounded-2xl px-4 py-3 flex items-start gap-2.5">
                   <Shield size={15} className="text-[#1ABC9C] flex-none mt-0.5" strokeWidth={2} />
                   <div>
-                    <p className="text-xs font-bold text-[#1ABC9C]">Price Drop Protection</p>
+                    <p className="text-xs font-bold text-[#1ABC9C]">Price Drop Protection active</p>
                     <p className="text-xs text-slate-600 mt-0.5">
-                      Included · {formatPrice(selectedFare.protectionFee, currency)}
+                      80% refund if the price drops after booking
                     </p>
                   </div>
                 </div>

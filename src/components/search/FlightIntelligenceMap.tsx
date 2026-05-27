@@ -29,15 +29,33 @@ function validCoord(c: [number, number]): boolean {
   return Number.isFinite(c[0]) && Number.isFinite(c[1]);
 }
 
+// Normalize longitude sequence so no consecutive jump exceeds 180° — prevents
+// antimeridian artifacts in flat-2D rendering (bezierSpline, offsetArc, MapLibre layers).
+// MapLibre GL supports coordinates outside [-180, 180] and renders them correctly.
+function unwrapLngs(pts: [number, number][]): [number, number][] {
+  if (pts.length === 0) return pts;
+  const out: [number, number][] = [pts[0]];
+  for (let i = 1; i < pts.length; i++) {
+    let lng = pts[i][0];
+    const prev = out[i - 1][0];
+    while (lng - prev > 180) lng -= 360;
+    while (lng - prev < -180) lng += 360;
+    out.push([lng, pts[i][1]]);
+  }
+  return out;
+}
+
 function safeGreatCircle(
   start: [number, number],
   end: [number, number]
 ): GeoJSON.LineString | null {
   try {
     const arc = turf.greatCircle(turf.point(start), turf.point(end), { npoints: 100 });
-    const coords = arc.geometry.coordinates as [number, number][];
-    if (!coords.length || !validCoord(coords[0]) || !validCoord(coords[coords.length - 1])) return null;
-    return arc.geometry as GeoJSON.LineString;
+    const raw = arc.geometry.coordinates as [number, number][];
+    if (!raw.length || !validCoord(raw[0]) || !validCoord(raw[raw.length - 1])) return null;
+    // Unwrap so longitude values are continuous — fixes routes crossing the antimeridian
+    const coords = unwrapLngs(raw);
+    return { type: 'LineString', coordinates: coords };
   } catch {
     return null;
   }
@@ -75,7 +93,8 @@ function offsetArc(arc: GeoJSON.LineString, offsetKm: number): GeoJSON.LineStrin
       return pt;
     }
   });
-  return { type: 'LineString', coordinates: shifted };
+  // turf.destination normalises output to [-180,180] — re-unwrap to keep the arc continuous
+  return { type: 'LineString', coordinates: unwrapLngs(shifted) };
 }
 
 const AIRPORT_COUNTRY: Record<string, string> = {
@@ -135,23 +154,28 @@ function LocationPin({
     >
       {/* Bubble body */}
       <div
-        className="relative text-white text-center px-3.5 pt-3.5 pb-2.5"
-        style={{ background: color, borderRadius: '16px', minWidth: '96px' }}
+        className="relative text-white text-center px-4 pt-4 pb-3"
+        style={{ background: color, borderRadius: '16px', minWidth: '110px' }}
       >
         {/* White inner ring — classic Google Maps pin detail */}
         <div
           className="absolute top-[-8px] left-1/2 -translate-x-1/2 w-[16px] h-[16px] rounded-full border-[3px] border-white/90"
           style={{ background: color }}
         />
-        <div className="text-[12px] font-black leading-snug whitespace-nowrap mt-0.5">
-          {city} ({code})
+        {/* IATA code — prominent */}
+        <div className="text-[16px] font-black leading-snug whitespace-nowrap mt-0.5 tracking-[0.06em]">
+          {code}
+        </div>
+        {/* City name — clearly readable */}
+        <div className="text-[12px] font-semibold opacity-90 leading-tight mt-0.5">
+          {city}
         </div>
         {fare && (
-          <div className="mt-1.5 bg-black/25 rounded-lg px-2 py-0.5 inline-flex items-center gap-1">
+          <div className="mt-2 bg-black/25 rounded-lg px-2.5 py-1 inline-flex items-center gap-1.5">
             {fareLabel && (
-              <span className="text-[9px] font-semibold opacity-80 uppercase tracking-wider">{fareLabel}</span>
+              <span className="text-[9px] font-bold opacity-80 uppercase tracking-wider">{fareLabel}</span>
             )}
-            <span className="text-[11px] font-black">{fare}</span>
+            <span className="text-[12px] font-black">{fare}</span>
           </div>
         )}
       </div>
@@ -167,7 +191,7 @@ function LocationPin({
       />
       {/* Ground dot */}
       <div
-        className="w-3 h-3 rounded-full border-[2.5px] border-white shadow-sm"
+        className="w-3.5 h-3.5 rounded-full border-[2.5px] border-white shadow-sm"
         style={{ background: color, marginTop: '-2px' }}
       />
     </div>
@@ -193,7 +217,7 @@ export default function FlightIntelligenceMap(props: FlightIntelligenceMapProps)
   const originCoords = getAirportCoords(origin);
   const destCoords = getAirportCoords(destination);
 
-  // ── Map centering — fitBounds on the actual offset arc geometries ──────────
+  // ── Map centering — fitBounds on the actual offset arc geometries, tightly framed ──
   useEffect(() => {
     if (originCoords[0] === 0 || destCoords[0] === 0) return;
 
@@ -218,15 +242,15 @@ export default function FlightIntelligenceMap(props: FlightIntelligenceMapProps)
     // Clamp south so empty ocean below the airports isn't included in the frame
     const rawSouth = Math.min(...lats);
     const minAirportLat = Math.min(originCoords[1], destCoords[1]);
-    const south = Math.max(rawSouth, minAirportLat - 18);
+    const south = Math.max(rawSouth, minAirportLat - 12);
 
     const fit = () => {
       const map = mapRef.current?.getMap?.();
       if (!map) return;
       map.fitBounds([[west, south], [east, north]], {
-        padding: { top: 60, bottom: 40, left: 60, right: 60 },
+        padding: { top: 80, bottom: 50, left: 80, right: 80 },
         duration: 0,
-        maxZoom: 6,
+        maxZoom: 8,
       });
     };
 

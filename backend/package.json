@@ -5,8 +5,9 @@
   "description": "FareMind Backend API Gateway — Fastify microservice architecture",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "npx prisma generate --schema ../prisma/schema.prisma && tsc",
     "start": "node dist/index.js",
+    "postinstall": "npx prisma generate --schema ../prisma/schema.prisma || true",
     "db:push": "prisma db push --schema ../prisma/schema.prisma",
     "db:studio": "prisma studio --schema ../prisma/schema.prisma",
     "db:generate": "prisma generate --schema ../prisma/schema.prisma"

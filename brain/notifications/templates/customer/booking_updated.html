@@ -18,6 +18,19 @@
   <tr><td style="padding:6px 16px;color:#64748b;">Updated At</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ updated_at|default('N/A') }}</td></tr>
 </table>
 
+{% if has_price_breakdown %}
+<h3 style="color:#e2e8f0;font-size:14px;font-weight:700;text-transform:uppercase;letter-spacing:.08em;margin:0 0 10px;">Price Breakdown</h3>
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:16px;margin-bottom:24px;font-size:13px;">
+  {% for pax in price_per_passenger %}
+  <tr><td style="padding:6px 16px;color:#64748b;">{{ pax.name }} ({{ pax.type }})</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ pax.fare }}</td></tr>
+  {% endfor %}
+  {% for addon in price_add_ons %}
+  <tr><td style="padding:6px 16px;color:{% if addon.highlight %}#1abc9c{% else %}#64748b{% endif %};">{{ addon.label }}</td><td style="padding:6px 16px;color:{% if addon.highlight %}#1abc9c{% else %}#e2e8f0{% endif %};text-align:right;">+{{ addon.amount }}</td></tr>
+  {% endfor %}
+  <tr style="border-top:1px solid #334155;"><td style="padding:8px 16px;color:#94a3b8;font-weight:700;">Total</td><td style="padding:8px 16px;color:#1abc9c;font-weight:900;font-size:15px;text-align:right;">{{ total_amount }}</td></tr>
+</table>
+{% endif %}
+
 <p style="color:#64748b;font-size:13px;text-align:center;margin:0;">
   Need help? Contact <a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a>
 </p>

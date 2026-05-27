@@ -1,34 +1,8 @@
-import { UnifiedFlight, Booking, PricePoint, Airport } from './types';
+import { UnifiedFlight, Booking, PricePoint } from './types';
+import { AIRPORTS } from '@/data/airports';
 
-// ─── Popular Airports ───
-
-export const AIRPORTS: Airport[] = [
-  { code: 'JFK', name: 'John F. Kennedy International', city: 'New York', country: 'US' },
-  { code: 'LAX', name: 'Los Angeles International', city: 'Los Angeles', country: 'US' },
-  { code: 'ORD', name: "O'Hare International", city: 'Chicago', country: 'US' },
-  { code: 'SFO', name: 'San Francisco International', city: 'San Francisco', country: 'US' },
-  { code: 'MIA', name: 'Miami International', city: 'Miami', country: 'US' },
-  { code: 'DFW', name: 'Dallas/Fort Worth International', city: 'Dallas', country: 'US' },
-  { code: 'ATL', name: 'Hartsfield-Jackson Atlanta', city: 'Atlanta', country: 'US' },
-  { code: 'SEA', name: 'Seattle-Tacoma International', city: 'Seattle', country: 'US' },
-  { code: 'DEN', name: 'Denver International', city: 'Denver', country: 'US' },
-  { code: 'BOS', name: 'Boston Logan International', city: 'Boston', country: 'US' },
-  { code: 'LHR', name: 'Heathrow Airport', city: 'London', country: 'GB' },
-  { code: 'CDG', name: 'Charles de Gaulle Airport', city: 'Paris', country: 'FR' },
-  { code: 'NRT', name: 'Narita International', city: 'Tokyo', country: 'JP' },
-  { code: 'DXB', name: 'Dubai International', city: 'Dubai', country: 'AE' },
-  { code: 'SIN', name: 'Changi Airport', city: 'Singapore', country: 'SG' },
-  { code: 'HND', name: 'Haneda Airport', city: 'Tokyo', country: 'JP' },
-  { code: 'FRA', name: 'Frankfurt Airport', city: 'Frankfurt', country: 'DE' },
-  { code: 'AMS', name: 'Amsterdam Schiphol', city: 'Amsterdam', country: 'NL' },
-  { code: 'ICN', name: 'Incheon International', city: 'Seoul', country: 'KR' },
-  { code: 'YYZ', name: 'Toronto Pearson International', city: 'Toronto', country: 'CA' },
-  { code: 'SYD', name: 'Sydney Kingsford Smith', city: 'Sydney', country: 'AU' },
-  { code: 'DEL', name: 'Indira Gandhi International', city: 'Delhi', country: 'IN' },
-  { code: 'BOM', name: 'Chhatrapati Shivaji Maharaj', city: 'Mumbai', country: 'IN' },
-  { code: 'CAN', name: 'Guangzhou Baiyun', city: 'Guangzhou', country: 'CN' },
-  { code: 'MEX', name: 'Mexico City International', city: 'Mexico City', country: 'MX' },
-];
+// ─── Airport data — re-exported from canonical source ───
+export { AIRPORTS } from '@/data/airports';
 
 // ─── Mock Flight Data ───
 

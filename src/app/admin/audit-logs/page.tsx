@@ -72,25 +72,25 @@ export default function AuditLogsPage() {
                 <tr><td colSpan={6} className="px-5 py-12 text-center text-slate-500">No logs found</td></tr>
               ) : logs.map((log: any) => (
                 <tr key={log.id} className="hover:bg-white/2 transition-colors">
-                  <td className="px-5 py-3 text-slate-500 text-[11px] whitespace-nowrap">
+                  <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">
                     {format(new Date(log.createdAt), 'dd MMM yyyy HH:mm:ss')}
                   </td>
                   <td className="px-5 py-3">
                     {log.adminUser ? (
                       <div>
-                        <p className="text-white text-xs font-semibold">{log.adminUser.fullName}</p>
-                        <p className="text-slate-500 text-[10px]">{log.adminUser.role}</p>
+                        <p className="text-white text-sm font-semibold">{log.adminUser.fullName}</p>
+                        <p className="text-slate-500 text-xs">{log.adminUser.role}</p>
                       </div>
-                    ) : <span className="text-slate-500 text-xs">System</span>}
+                    ) : <span className="text-slate-500 text-sm">System</span>}
                   </td>
                   <td className="px-5 py-3">
                     <span className="px-2 py-0.5 rounded-full bg-[#1ABC9C]/10 text-[#1ABC9C] text-[10px] font-bold font-mono">
                       {log.action}
                     </span>
                   </td>
-                  <td className="px-5 py-3 text-slate-300 text-xs">{log.entityType}</td>
-                  <td className="px-5 py-3 text-slate-500 text-[10px] font-mono">{log.entityId?.slice(0, 12) ?? '—'}</td>
-                  <td className="px-5 py-3 text-slate-500 text-[10px]">{log.ipAddress ?? '—'}</td>
+                  <td className="px-5 py-3 text-slate-300 text-sm">{log.entityType}</td>
+                  <td className="px-5 py-3 text-slate-500 text-xs font-mono">{log.entityId?.slice(0, 12) ?? '—'}</td>
+                  <td className="px-5 py-3 text-slate-500 text-xs">{log.ipAddress ?? '—'}</td>
                 </tr>
               ))}
             </tbody>

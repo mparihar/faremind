@@ -363,6 +363,26 @@ export default function ReviewPage() {
 
   const hasAssignedSeats = seatSelections.some(s => s.seatNumber);
 
+  // Meal selections are stored at journey level ('out'/'ret'), not per-segment
+  const mealSegs = (() => {
+    if (sourceRoundTrip) {
+      return [
+        {
+          key: 'out',
+          flightNum: `${sourceRoundTrip.outboundJourney.departureAirport}→${sourceRoundTrip.outboundJourney.arrivalAirport}`,
+        },
+        {
+          key: 'ret',
+          flightNum: `${sourceRoundTrip.returnJourney.departureAirport}→${sourceRoundTrip.returnJourney.arrivalAirport}`,
+        },
+      ];
+    }
+    return (sourceFlight?.segments ?? []).map((seg, i) => ({
+      key: `seg_${i}`,
+      flightNum: seg.flightNumber ?? `Segment ${i + 1}`,
+    }));
+  })();
+
   // ── Fare feature checklist ─────────────────────────────────────────────────
   const fareFeatures = fareOption
     ? [
@@ -550,12 +570,12 @@ export default function ReviewPage() {
                 <h2 className="text-base font-bold text-slate-900 mb-4">Meal Preferences</h2>
                 <div className="space-y-2">
                   {passengers.map((pax, pi) =>
-                    seatMealSegs.map((seg) => {
+                    mealSegs.map((seg) => {
                       const sel = mealSelections.find(m => m.passengerId === pax.id && m.segmentKey === seg.key);
                       return (
                         <ReviewRow
                           key={`${pax.id}_${seg.key}`}
-                          label={`${pax.firstName || `Traveler ${pi + 1}`} · ${seg.flightNum || seg.label}`}
+                          label={`${pax.firstName || `Traveler ${pi + 1}`} · ${seg.flightNum}`}
                           value={sel ? (sel.mealLabel || MEAL_LABEL[sel.mealType] || sel.mealType) : 'Standard'}
                         />
                       );

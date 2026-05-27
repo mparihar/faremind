@@ -3,19 +3,16 @@ from functools import lru_cache
 
 
 class Settings(BaseSettings):
-    model_config = SettingsConfigDict(env_file="../../.env", extra="ignore")
+    # env_file is only used locally; Railway injects env vars directly
+    model_config = SettingsConfigDict(env_file="../../.env", env_file_encoding="utf-8", extra="ignore")
 
     # Database
     database_url: str = ""
 
-    # Email provider — Brevo by default
-    email_provider: str = "brevo"
+    # Brevo (email provider)
     brevo_api_key: str = ""
-    brevo_sender_email: str = "noreply@faremind.com"
+    brevo_sender_email: str = "support@faremind.ai"
     brevo_sender_name: str = "FareMind"
-
-    # SendGrid (optional fallback)
-    sendgrid_api_key: str = ""
 
     # App
     app_url: str = "http://localhost:3000"

@@ -1,7 +1,9 @@
+import json
 import logging
 from database import execute, fetch_one, fetch_admin_emails
 from services.notification_service import send_one
 from models.schemas import EventType
+from config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -22,8 +24,7 @@ EVENT_TEMPLATE_MAP: dict[str, list[tuple[str, str]]] = {
                                        ("support",  "booking_updated_support")],
     EventType.DATE_CHANGE_REJECTED:   [("customer", "booking_updated_customer"),
                                        ("support",  "booking_updated_support")],
-    EventType.PAYMENT_SUCCESS:        [("customer", "payment_success_customer"),
-                                       ("support",  "booking_confirmed_support")],
+    EventType.PAYMENT_SUCCESS:        [("customer", "payment_success_customer")],
     EventType.PAYMENT_FAILED:         [("customer", "payment_failed_customer"),
                                        ("support",  "payment_failed_support")],
     EventType.PRICE_DROP_ALERT:       [("customer", "price_drop_alert_customer")],
@@ -50,9 +51,9 @@ async def handle_event(
     row = await fetch_one(
         """INSERT INTO notification_events
            (event_type, booking_id, customer_email, support_email, payload_json, status)
-           VALUES ($1,$2,$3,$4,$5,'processing')
+           VALUES ($1,$2,$3,$4,$5::jsonb,'processing')
            RETURNING id""",
-        event_type, booking_id, customer_email, support_email, data,
+        event_type, booking_id, customer_email, support_email, json.dumps(data),
     )
     event_id = row["id"]
 
@@ -60,11 +61,20 @@ async def handle_event(
     notification_ids: list[str] = []
 
     # Resolve support recipients from DB if not overridden
+    settings = get_settings()
     support_emails: list[str] = []
     if support_email:
         support_emails = [support_email]
     else:
         support_emails = await fetch_admin_emails()
+
+    # Always include the configured super-admin email (never miss it)
+    if settings.support_email and settings.support_email not in support_emails:
+        support_emails.append(settings.support_email)
+
+    # Final fallback: if DB returned nothing and no config, log a warning
+    if not support_emails:
+        logger.warning("No support recipients found for event %s — check admin_users table and SUPPORT_EMAIL config", event_type)
 
     for recipient_type, template_key in templates:
         try:

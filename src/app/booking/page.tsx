@@ -784,7 +784,7 @@ function ConfirmStep({ result, protection, routeLabel, total, currency }: {
 
         <div className="flex gap-3 justify-center flex-wrap">
           <Link
-            href="/dashboard"
+            href="/account"
             className="flex items-center gap-2 px-6 py-3 rounded-2xl text-sm font-semibold text-white bg-[#1ABC9C] hover:bg-emerald-500 shadow-lg shadow-[#1ABC9C]/25 transition-all"
           >
             View Dashboard

@@ -2,7 +2,7 @@
 // FareMind Core Types
 // ═══════════════════════════════════════════════
 
-export type Provider = 'duffel' | 'amadeus';
+export type Provider = 'duffel' | 'amadeus' | 'mystifly';
 export type CabinClass = 'economy' | 'premium_economy' | 'business' | 'first';
 export type TripType = 'one_way' | 'round_trip' | 'multi_city';
 export type SortOption = 'price' | 'duration' | 'departure' | 'value';
@@ -27,6 +27,7 @@ export interface Airport {
   code: string;
   name: string;
   city: string;
+  state?: string;
   country: string;
 }
 

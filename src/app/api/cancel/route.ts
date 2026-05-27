@@ -3,6 +3,7 @@ import * as duffelClient from '@/lib/providers/duffel';
 import * as amadeusClient from '@/lib/providers/amadeus';
 import { getBookingById, updateBookingStatus, createNotification, addLedgerEntry } from '@/lib/db-queries';
 import prisma from '@/lib/db';
+import { fireNotification } from '@/lib/notify';
 
 /**
  * POST /api/cancel
@@ -85,7 +86,7 @@ export async function POST(request: NextRequest) {
       }).catch(() => {});
     }
 
-    // Send notification
+    // In-app notification
     await createNotification({
       userId: booking.userId,
       bookingId,
@@ -94,6 +95,29 @@ export async function POST(request: NextRequest) {
       title: 'Booking Cancelled',
       body: `Your ${booking.airlineName} flight ${booking.originAirport} → ${booking.destinationAirport} (PNR: ${booking.pnr}) has been cancelled.${refundAmount > 0 ? ` Refund: $${refundAmount.toFixed(2)}` : ''}`,
     }).catch(() => {});
+
+    // Email notification
+    const primaryPax = booking.passengers?.[0];
+    const customerEmail = primaryPax?.email ?? '';
+    const customerName = primaryPax ? `${primaryPax.firstName} ${primaryPax.lastName}`.trim() : '';
+    fireNotification({
+      event_type: 'BOOKING_CANCELLED',
+      booking_id: bookingId,
+      customer_email: customerEmail || undefined,
+      data: {
+        booking_reference: booking.pnr,
+        pnr: booking.pnr,
+        customer_name: customerName,
+        customer_email: customerEmail,
+        origin: booking.originAirport,
+        destination: booking.destinationAirport,
+        route: `${booking.originAirport} - ${booking.destinationAirport}`,
+        airline: booking.airlineName ?? '',
+        cancellation_reason: 'Passenger request',
+        refund_amount: refundAmount > 0 ? `$${refundAmount.toFixed(2)}` : 'Non-refundable',
+        refund_policy: refundAmount > 0 ? 'Refund will be processed within 5–10 business days' : 'Non-refundable fare',
+      },
+    });
 
     return NextResponse.json({
       success: true,

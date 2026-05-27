@@ -1,9 +1,12 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { searchFlights, searchRoundTripFlights, getProviderStatus } from '@/lib/providers/orchestrator';
+import { searchRoundTripFlights, getProviderStatus } from '@/lib/providers/orchestrator';
 import { logSearch } from '@/lib/db-queries';
-import { rankFlights } from '@/lib/flight/score';
-import { rankRoundTripOptions } from '@/lib/flight/round-trip-score';
+import { rankFlightOffers } from '@/lib/ai-scoring';
+import type { AiUserPreferences, WeightPresetName, AiSortMode } from '@/lib/ai-scoring/types';
 import type { RoundTripUserPrefs } from '@/lib/round-trip-types';
+import { flexCacheKey, flexCacheGet } from '@/lib/flex-search-cache';
+
+export const maxDuration = 120; // Allow up to 2 minutes for search
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
@@ -31,28 +34,67 @@ export async function GET(request: NextRequest) {
   try {
     // ── Round-trip path ──────────────────────────────────────────────────────
     if (trip === 'round_trip' && returnDate) {
-      const rtResult = await searchRoundTripFlights({
-        origin: origin!, destination: destination!,
-        date: date!, returnDate, adults, children, infants, cabin,
-      });
-      const prefs: RoundTripUserPrefs = {
-        stops:           (searchParams.get('stops') as RoundTripUserPrefs['stops']) || undefined,
-        departureWindow: (searchParams.get('departure_window') as RoundTripUserPrefs['departureWindow']) || undefined,
+      // Check if flex-price strip already fetched results for this exact tile.
+      // If so, reuse that dataset so the cheapest card matches the tile price.
+      const cachedOptions = flexCacheGet(flexCacheKey(origin!, destination!, date!, returnDate, adults, cabin));
+      const rtResult = cachedOptions
+        ? { options: cachedOptions, totalTimeMs: 0, searchId: 'cached', usedMockData: false, providers: [] }
+        : await searchRoundTripFlights({
+            origin: origin!, destination: destination!,
+            date: date!, returnDate, adults, children, infants, cabin,
+          });
+
+      // ── Unified AI Ranking (ROUND_TRIP) ───────────────────────────────────
+      const rtAiPrefs: AiUserPreferences = {
+        sortMode: (searchParams.get('sort') as AiSortMode) || 'best_value',
+        weightPreset: ((searchParams.get('sort') || 'best_ai_pick') as WeightPresetName),
+        stops: (searchParams.get('stops') as AiUserPreferences['stops']) || undefined,
+        departureWindow: (searchParams.get('departure_window') as AiUserPreferences['departureWindow']) || undefined,
       };
-      const ranked = rankRoundTripOptions(rtResult.options, prefs);
+
+      const rtRankResult = rankFlightOffers(rtResult.options, 'ROUND_TRIP', rtAiPrefs, true);
+
+      // Map ranked results to the format the frontend expects
+      const ranked = rtRankResult.ranked.map((r) => ({
+        ...r.option,
+        score: r.aiScore,
+        aiScoreRaw: r.aiScoreRaw,
+        aiScoreDisplay: r.aiScore,
+        aiReasons: r.aiReasons,
+        rankingTags: r.rankingTags,
+        scoreBreakdown: r.scoreBreakdown,
+        badges: r.rankingTags
+          .filter((t: string) => ['Cheapest', 'Fastest', 'Fewest Stops', 'Best Value', 'Recommended', 'AI Pick'].includes(t))
+          .map((t: string) => t.toLowerCase().replace(/\s+/g, '_')),
+      }));
+
+      // Append filtered-out options
+      const unscoredRT = rtRankResult.filteredOut.map((r) => ({
+        ...r.option,
+        score: 0,
+        aiScoreRaw: 0,
+        aiScoreDisplay: 0,
+        aiReasons: [],
+        rankingTags: [],
+        scoreBreakdown: undefined,
+        badges: [],
+      }));
+
+      const allRankedRT = [...ranked, ...unscoredRT];
+
       logSearch({
         origin: origin!, destination: destination!,
         departureDate: new Date(date!), returnDate: new Date(returnDate),
         adults, children, infants, cabinClass: cabin.toUpperCase() as any,
-        tripType: 'ROUND_TRIP', resultsCount: ranked.length,
-        lowestPrice: ranked[0]?.totalPrice, currency: ranked[0]?.currency ?? 'USD',
+        tripType: 'ROUND_TRIP', resultsCount: allRankedRT.length,
+        lowestPrice: allRankedRT[0]?.totalPrice, currency: allRankedRT[0]?.currency ?? 'USD',
         searchDurationMs: rtResult.totalTimeMs,
       }).catch((e) => console.warn('[RT Search] log failed:', e.message));
       const providerStatus = getProviderStatus();
       return NextResponse.json({
-        roundTripOptions: ranked,
+        roundTripOptions: allRankedRT,
         meta: {
-          totalResults: ranked.length, searchId: rtResult.searchId,
+          totalResults: allRankedRT.length, searchId: rtResult.searchId,
           totalTimeMs: rtResult.totalTimeMs, usedMockData: rtResult.usedMockData,
           providers: rtResult.providers.map((p) => ({
             provider: p.provider, count: rtResult.options.length,
@@ -62,28 +104,100 @@ export async function GET(request: NextRequest) {
             duffel: providerStatus.duffel.configured ? 'connected' : 'not_configured',
             amadeus: providerStatus.amadeus.configured ? 'connected' : 'not_configured',
           },
+          rankingMetadata: rtRankResult.metadata,
         },
       });
     }
 
-    // ── One-way: single search with NO cabin_class filter ─────────────────────
-    // Duffel returns all available cabin classes when cabin_class is omitted.
-    // We pass cabin=undefined so the orchestrator omits it from the Duffel body.
-    const result = await searchFlights({
-      origin: origin!, destination: destination!,
-      date: date!, returnDate, adults, children, infants,
-      cabin: undefined,
+    // ── One-way: proxy to backend for aggregated Duffel + Mystifly data ──────
+    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    const backendParams = new URLSearchParams({
+      origin: origin!,
+      destination: destination!,
+      date: date!,
+      adults: String(adults),
+      cabin: cabin || 'economy',
     });
+    if (returnDate) backendParams.set('returnDate', returnDate);
+    if (children) backendParams.set('children', String(children));
+    if (infants) backendParams.set('infants', String(infants));
+
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 90_000); // 90s timeout
+
+    let backendFlights: any[] = [];
+    let backendMeta: any = {};
+    try {
+      const res = await fetch(`${backendUrl}/api/search?${backendParams}`, {
+        signal: controller.signal,
+      });
+      clearTimeout(timeout);
+      if (res.ok) {
+        const data = await res.json();
+        backendFlights = data.flights || [];
+        backendMeta = {
+          searchId: data.searchId,
+          totalTimeMs: data.totalTimeMs,
+          providers: data.providers,
+        };
+      } else {
+        console.warn(`[Search] Backend returned ${res.status}`);
+      }
+    } catch (err) {
+      clearTimeout(timeout);
+      console.warn('[Search] Backend call failed, falling back to empty:', (err as Error).message);
+    }
 
     // Log what cabin classes actually came back
     const cabinBreakdown: Record<string, number> = {};
-    result.flights.forEach(f => {
+    backendFlights.forEach((f: any) => {
       cabinBreakdown[f.cabinClass] = (cabinBreakdown[f.cabinClass] || 0) + 1;
     });
-    console.log(`[Search] ${origin}→${destination} | ${result.flights.length} flights | cabins:`, cabinBreakdown);
+    console.log(`[Search] ${origin}→${destination} | ${backendFlights.length} flights | cabins:`, cabinBreakdown);
 
-    const lowestPrice = result.flights.length > 0
-      ? Math.min(...result.flights.map(f => f.totalPrice))
+    // ── Unified AI Ranking (ONE_WAY) ───────────────────────────────────────
+    const sortMode = searchParams.get('sort') as AiSortMode | null;
+    const aiPrefs: AiUserPreferences = {
+      sortMode: sortMode || 'best_value',
+      weightPreset: (sortMode || 'best_ai_pick') as WeightPresetName,
+      stops:           (searchParams.get('stops') as AiUserPreferences['stops']) || undefined,
+      departureWindow: (searchParams.get('departure_window') as AiUserPreferences['departureWindow']) || undefined,
+    };
+
+    const rankResult = rankFlightOffers(backendFlights, 'ONE_WAY', aiPrefs, true);
+
+    // Map ranked results to the format the frontend expects (AI-scored)
+    const scoredFlights = rankResult.ranked.map((r) => ({
+      ...r.option,
+      valueScore:      r.aiScore,          // backward-compatible score field
+      aiScoreRaw:      r.aiScoreRaw,
+      aiScoreDisplay:  r.aiScore,
+      aiReasons:       r.aiReasons,
+      rankingTags:     r.rankingTags,
+      scoreBreakdown:  r.scoreBreakdown,
+      tags:            r.labels.map((l: string) =>
+        l === '✨ AI Pick' ? 'best_value' : l === 'Best Price' ? 'cheapest' : l === 'Fastest' ? 'fastest' : l
+      ),
+    }));
+
+    // Append quality-filtered flights at the end WITHOUT AI scores
+    // These are flights that didn't pass the quality filter (e.g. duration > 2× fastest,
+    // short layovers) but the user should still see them as scroll-able options.
+    const unscoredFlights = rankResult.filteredOut.map((r) => ({
+      ...r.option,
+      valueScore:      0,
+      aiScoreRaw:      0,
+      aiScoreDisplay:  0,
+      aiReasons:       [],
+      rankingTags:     [],
+      scoreBreakdown:  undefined,
+      tags:            [],
+    }));
+
+    const rankedFlights = [...scoredFlights, ...unscoredFlights];
+
+    const lowestPrice = rankedFlights.length > 0
+      ? Math.min(...rankedFlights.map((f: any) => f.totalPrice))
       : undefined;
 
     logSearch({
@@ -91,36 +205,37 @@ export async function GET(request: NextRequest) {
       departureDate: new Date(date!),
       returnDate: returnDate ? new Date(returnDate) : undefined,
       adults, children, infants, cabinClass: cabin.toUpperCase() as any,
-      tripType: 'ONE_WAY', resultsCount: result.flights.length,
-      lowestPrice, currency: 'USD', searchDurationMs: result.totalTimeMs,
+      tripType: 'ONE_WAY', resultsCount: rankedFlights.length,
+      lowestPrice, currency: 'USD', searchDurationMs: backendMeta.totalTimeMs || 0,
     }).catch((err) => console.warn('[Search] Failed to log search:', err.message));
-
-    const rankedFlights = rankFlights(result.flights);
 
     // Build class counts for the filter panel
     const classCounts: Record<string, { count: number; minPrice: number }> = {};
     for (const f of rankedFlights) {
-      const c = f.cabinClass;
+      const c = (f as any).cabinClass;
       if (!classCounts[c]) classCounts[c] = { count: 0, minPrice: Infinity };
       classCounts[c].count++;
-      if (f.totalPrice < classCounts[c].minPrice) classCounts[c].minPrice = f.totalPrice;
+      if ((f as any).totalPrice < classCounts[c].minPrice) classCounts[c].minPrice = (f as any).totalPrice;
     }
 
     const providerStatus = getProviderStatus();
     return NextResponse.json({
       flights: rankedFlights,
       meta: {
-        totalResults: rankedFlights.length, searchId: result.searchId,
-        totalTimeMs: result.totalTimeMs, usedMockData: result.usedMockData,
-        providers: result.providers.map((p) => ({
-          provider: p.provider, count: p.flights.length,
-          responseTimeMs: p.responseTimeMs, error: p.error || null, isMock: p.isMock,
-        })),
+        totalResults: rankedFlights.length,
+        searchId: backendMeta.searchId || 'unknown',
+        totalTimeMs: backendMeta.totalTimeMs || 0,
+        usedMockData: false,
+        providers: backendMeta.providers?.map((p: any) => ({
+          provider: p.provider, count: p.flights?.length ?? 0,
+          responseTimeMs: p.responseTimeMs, error: p.error || null, isMock: p.isMock ?? false,
+        })) || [],
         providerStatus: {
           duffel: providerStatus.duffel.configured ? 'connected' : 'not_configured',
           amadeus: providerStatus.amadeus.configured ? 'connected' : 'not_configured',
         },
         filters: { classes: classCounts },
+        rankingMetadata: rankResult.metadata,
       },
     });
   } catch (error) {

@@ -36,32 +36,17 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     if (cached) return cached;
 
     try {
-      // Run all 4 cabin classes in parallel
-      const cabinSearches = await Promise.allSettled(
-        CABIN_CLASSES.map(c => searchFlights({ origin, destination, date, returnDate, adults, children, infants, cabin: c }))
-      );
+      // Single cabin-agnostic search — Duffel returns offers for ALL available
+      // cabin classes when cabin_class is omitted.  This avoids rate-limiting
+      // (429) that occurs when firing 4 parallel per-cabin requests.
+      const result = await searchFlights({ origin, destination, date, returnDate, adults, children, infants });
 
-      // Merge, deduplicating by providerOfferId
-      const seenOfferIds = new Set<string>();
-      const mergedFlights: UnifiedFlight[] = [];
-      let totalTimeMs = 0;
-      let usedMockData = false;
-      const allProviders: { provider: string; count: number; responseTimeMs: number; error: string | null; isMock: boolean }[] = [];
-
-      for (const res of cabinSearches) {
-        if (res.status !== 'fulfilled') continue;
-        totalTimeMs = Math.max(totalTimeMs, res.value.totalTimeMs);
-        if (res.value.usedMockData) usedMockData = true;
-        for (const p of res.value.providers) {
-          allProviders.push({ provider: p.provider, count: p.flights.length, responseTimeMs: p.responseTimeMs, error: p.error || null, isMock: p.isMock });
-        }
-        for (const f of res.value.flights) {
-          if (!seenOfferIds.has(f.providerOfferId)) {
-            seenOfferIds.add(f.providerOfferId);
-            mergedFlights.push(f);
-          }
-        }
-      }
+      const mergedFlights = result.flights;
+      const totalTimeMs = result.totalTimeMs;
+      const usedMockData = result.usedMockData;
+      const allProviders = result.providers.map(p => ({
+        provider: p.provider, count: p.flights.length, responseTimeMs: p.responseTimeMs, error: p.error || null, isMock: p.isMock,
+      }));
 
       const lowestPrice = mergedFlights.length > 0 ? Math.min(...mergedFlights.map((f) => f.totalPrice)) : undefined;
       logSearch({
@@ -98,7 +83,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           return { ...f, valueScore: Math.round(scored.score * 100), breakdown: scored.breakdown, tags };
         });
 
-        rankedFlights = enriched.sort((a, b) => b.valueScore - a.valueScore).slice(0, 50);
+        rankedFlights = enriched.sort((a, b) => b.valueScore - a.valueScore).map((f, i) => {
+          if (i >= 50) {
+            return { ...f, valueScore: 0, breakdown: undefined };
+          }
+          return f;
+        });
       }
 
       // Aggregate class counts for the filter panel
@@ -121,6 +111,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           providerStatus: {
             duffel: providerStatus.duffel.configured ? 'connected' : 'not_configured',
             amadeus: providerStatus.amadeus.configured ? 'connected' : 'not_configured',
+            mystifly: providerStatus.mystifly.configured ? 'connected' : 'not_configured',
           },
           filters: {
             classes: classCounts,

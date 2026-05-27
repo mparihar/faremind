@@ -14,6 +14,11 @@ export function qualityFilter(
   norm:               NormalizedOption,
   minDurationMinutes: number,
 ): QualityResult {
+  // Hard rule 0 — invalid offers (no price or no duration)
+  if (norm.price <= 0 || norm.durationMinutes <= 0) {
+    return { pass: false, reason: 'Invalid offer (missing price or duration)', layoverPenalty: 0 };
+  }
+
   // Hard rule 1 — short layovers
   for (const lv of norm.layoverMinutes) {
     if (lv < MIN_LAYOVER_MINUTES) {

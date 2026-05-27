@@ -17,6 +17,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
+import { useAuthStore } from '@/store/useAuthStore';
 import { apiFetch } from '@/lib/api-client';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
@@ -215,6 +216,7 @@ interface CardFields {
 export default function PaymentPage() {
   const router = useRouter();
   const store = useCheckoutStore();
+  const { user } = useAuthStore();
   const [processing, setProcessing] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
 
@@ -236,6 +238,8 @@ export default function PaymentPage() {
     sourceRoundTrip,
     passengers,
     currency,
+    seatSelections,
+    mealSelections,
   } = store;
 
   const pricing = buildLocalPricing(store);
@@ -257,6 +261,11 @@ export default function PaymentPage() {
       return `${first.departure.airport} → ${last.arrival.airport}`;
     }
     return selectedFare ? `${selectedFare.cabin.replace(/_/g, ' ')} flight` : 'Your Flight';
+  })();
+
+  const airlineName = (() => {
+    if (sourceRoundTrip) return sourceRoundTrip.airlines[0] ?? '';
+    return sourceFlight?.airline.name ?? '';
   })();
 
   // ── Validation ─────────────────────────────────────────────────────────────
@@ -301,23 +310,26 @@ export default function PaymentPage() {
         }),
       }).catch(() => ({ success: true }));
 
-      // 3. Confirm booking
-      const bookingRes = await apiFetch<{
-        success: boolean;
-        pnr?: string;
-        bookingId?: string;
-        error?: string;
-      }>('/api/checkout/bookings/confirm', {
+      // 3. Confirm booking — calls Next.js route directly (writes to DB)
+      const bookingRes = await fetch('/api/checkout/bookings/confirm', {
         method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           paymentIntentId,
           sessionId,
           passengers: passengers.map((p) => ({
+            id: p.id,
             firstName: p.firstName,
+            middleName: p.middleName,
             lastName: p.lastName,
+            gender: p.gender,
             dateOfBirth: p.dateOfBirth,
-            passportNumber: p.passportNumber,
+            email: p.email,
+            phone: p.phone,
             nationality: p.nationality,
+            passportNumber: p.passportNumber,
+            passportExpiry: p.passportExpiry,
+            passportCountry: p.passportCountry,
             type: p.type,
           })),
           selectedFare,
@@ -326,13 +338,28 @@ export default function PaymentPage() {
           extraBags: store.extraBags,
           priceProtection: store.priceProtection,
           travelInsurance: store.travelInsurance,
+          seatSelections,
+          mealSelections,
+          sourceFlight,
+          sourceRoundTrip,
+          currency: currency ?? 'USD',
+          userId: user?.id ?? null,
         }),
-      }).catch(() => ({
-        success: true,
-        pnr: `FM${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-        bookingId: `bk_${Date.now()}`,
-        error: undefined as string | undefined,
-      }));
+      })
+        .then((r) => r.json())
+        .catch(() => ({
+          success: true,
+          pnr: `FM${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
+          bookingId: `bk_${Date.now()}`,
+        })) as {
+          success: boolean; pnr?: string; bookingId?: string; error?: string;
+          masterBookingReference?: string;
+          pnrStrategy?: string | null;
+          isSplitTicket?: boolean;
+          riskLabel?: string | null;
+          riskExplanation?: string | null;
+          pnrs?: Array<{ pnrCode: string; pnrType: string; journeyDirection: 'ALL'|'OUTBOUND'|'RETURN'; isPrimary: boolean; airlineCode?: string|null; airlineName?: string|null; displayLabel: string }>;
+        };
 
       if (!bookingRes.success && 'error' in bookingRes && bookingRes.error) {
         throw new Error(bookingRes.error);
@@ -340,28 +367,73 @@ export default function PaymentPage() {
 
       // 4. Store confirmation
       const last4 = card.number.replace(/\s/g, '').slice(-4);
+      const pnr = bookingRes.pnr ?? `FM${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
+      const bookingId = bookingRes.bookingId ?? `bk_${Date.now()}`;
+      const passengerNames = passengers.map(
+        (p) => `${p.firstName} ${p.lastName}`.trim() || 'Traveler'
+      );
+      store.setPricing(pricing);
       store.setConfirmation({
-        pnr: bookingRes.pnr ?? `FM${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-        bookingId: bookingRes.bookingId ?? `bk_${Date.now()}`,
+        pnr,
+        masterBookingReference: bookingRes.masterBookingReference ?? pnr,
+        bookingId,
         status: 'confirmed',
         confirmedAt: new Date().toISOString(),
-        passengerNames: passengers.map(
-          (p) => `${p.firstName} ${p.lastName}`.trim() || 'Traveler'
-        ),
+        passengerNames,
         totalCharged: pricing.total,
         currency: currency ?? 'USD',
+        pnrStrategy:    bookingRes.pnrStrategy ?? null,
+        isSplitTicket:  bookingRes.isSplitTicket ?? false,
+        riskLabel:      bookingRes.riskLabel ?? null,
+        riskExplanation: bookingRes.riskExplanation ?? null,
+        pnrs:           bookingRes.pnrs ?? [],
       });
 
       // 5. Send notification (non-blocking)
       apiFetch('/api/checkout/notifications/booking-confirm', {
         method: 'POST',
         body: JSON.stringify({
+          pnr,
+          bookingId,
           paymentIntentId,
-          pnr: bookingRes.pnr,
           email: passengers[0]?.email,
+          customerName: `${passengers[0]?.firstName ?? ''} ${passengers[0]?.lastName ?? ''}`.trim() || 'Traveler',
+          passengerNames,
+          passengers: passengers.map((p) => ({
+            name: [p.firstName, p.middleName, p.lastName].filter(Boolean).join(' '),
+            type: p.type === 'child' ? 'Child' : 'Adult',
+            gender: p.gender ?? '',
+            date_of_birth: p.dateOfBirth ?? '',
+            email: p.email ?? '',
+            phone: p.phone ?? '',
+            nationality: p.nationality ?? '',
+            passport_number: p.passportNumber ?? '',
+            passport_expiry: p.passportExpiry ?? '',
+            issuing_country: p.passportCountry ?? '',
+          })),
           total: pricing.total,
+          currency: currency ?? 'USD',
           routeLabel,
+          airline: airlineName,
+          fareClass: selectedFare.cabin.replace(/_/g, ' '),
           last4,
+          // Full pricing breakdown for email templates
+          pricing: {
+            perPassenger: pricing.perPassenger.map((p, i) => ({
+              name: passengers[i]
+                ? `${passengers[i].firstName} ${passengers[i].lastName}`.trim()
+                : `Passenger ${i + 1}`,
+              type: p.type,
+              fare: p.subtotal,
+            })),
+            seatFees:      pricing.seatFees,
+            mealFees:      pricing.mealFees,
+            baggageFees:   pricing.baggageFees,
+            protectionFee: pricing.protectionFee,
+            insuranceFee:  pricing.insuranceFee,
+            serviceFee:    pricing.serviceFee,
+            total:         pricing.total,
+          },
         }),
       }).catch(() => {});
 

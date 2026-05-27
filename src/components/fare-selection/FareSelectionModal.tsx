@@ -7,6 +7,7 @@ import { X, Plane, Zap, ChevronRight } from 'lucide-react';
 import FareCard from '@/components/fare-selection/FareCard';
 import { useFareStore, getSelectedFareOption } from '@/store/useFareStore';
 import { useBookingStore } from '@/store/useBookingStore';
+import { useCheckoutStore } from '@/store/useCheckoutStore';
 import type { FareSelectionPayload, PriceProtectionQuote } from '@/lib/fare-types';
 import { apiFetch } from '@/lib/api-client';
 
@@ -99,7 +100,9 @@ export default function FareSelectionModal({ onClose }: Props) {
 
   const selectedFare = getSelectedFareOption(store);
   const protectionFee = store.protectionQuote?.protectionFeeUsd ?? 0;
-  const grandTotal = selectedFare ? selectedFare.totalPrice + (store.priceProtection ? protectionFee : 0) : 0;
+  const grandTotal = selectedFare
+    ? selectedFare.totalPrice + (store.priceProtection ? protectionFee : 0)
+    : 0;
 
   const activeFares = useMemo(
     () => store.payload?.fareGroups.find(g => g.cabin === activeCabin)?.fares ?? [],
@@ -172,8 +175,10 @@ export default function FareSelectionModal({ onClose }: Props) {
       }
     }).catch(() => { /* non-critical */ });
 
-    // Navigate first — router.push unmounts the whole page (including this modal),
-    // so calling onClose() before it would briefly expose the search page underneath.
+    // Reset checkout store so the itinerary page always re-initialises from the
+    // freshly selected fare above — prevents stale data from a previous session.
+    useCheckoutStore.getState().reset();
+
     router.push('/checkout/itinerary');
     setConfirming(false);
   }, [selectedFare, store, protectionFee, bookingStore, router, onClose]);
@@ -342,9 +347,9 @@ export default function FareSelectionModal({ onClose }: Props) {
                   <span className="text-3xl font-bold text-[#F97316] leading-none">{fmtPrice(grandTotal, payload.currency)}</span>
                   <span className="text-[10px] text-slate-400 font-medium">per traveler</span>
                 </div>
-                {store.priceProtection && (
-                  <p className="text-[9px] text-[#1ABC9C] font-semibold mt-0.5">+ Price Drop Protection included</p>
-                )}
+                <p className="text-[9px] text-slate-400 mt-0.5">
+                  {store.priceProtection ? 'incl. protection · ' : ''}+ small service fee at checkout
+                </p>
               </div>
               <button
                 onClick={handleContinue}

@@ -92,10 +92,15 @@ export default function Footer() {
         </div>
 
         {/* Bottom bar */}
-        <div className="mt-12 pt-8 border-t border-white/[0.06] flex flex-col sm:flex-row items-center justify-between gap-4">
-          <p className="text-xs text-slate-500">
-            © {new Date().getFullYear()} FareMind. All rights reserved.
-          </p>
+        <div className="mt-12 pt-8 border-t border-white/[0.06] flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
+          <div className="space-y-2 max-w-xl">
+            <p className="text-xs text-slate-500">
+              © {new Date().getFullYear()} FareMind. All rights reserved.
+            </p>
+            <p className="text-xs text-slate-500/80 leading-relaxed">
+              FareMind is a travel technology brand operated by Chatore LLC, a Texas limited liability company.
+            </p>
+          </div>
           <div className="flex items-center gap-6">
             {['Privacy Policy', 'Terms of Service', 'Cookie Policy'].map((item) => (
               <a key={item} href="#" className="text-xs text-slate-500 hover:text-slate-300 transition-colors">

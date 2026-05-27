@@ -60,6 +60,7 @@ export async function POST(request: NextRequest) {
         id: user.id,
         email: user.email,
         name: `${user.firstName} ${user.lastName}`,
+        avatar: user.avatar || null,
       },
       sessionToken: token,
     });

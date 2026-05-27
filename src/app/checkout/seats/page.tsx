@@ -202,7 +202,7 @@ function SegmentTabs({
   segments.forEach(s => { if (!journeys.includes(s.journeyLabel)) journeys.push(s.journeyLabel); });
 
   return (
-    <div className="space-y-3 mb-5">
+    <div className="flex flex-wrap gap-6 mb-5">
       {journeys.map(journey => (
         <div key={journey}>
           <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2">
@@ -319,7 +319,7 @@ function ItineraryPanel({
   const grandTotal = pricing.total;
 
   return (
-    <div className="sticky top-[calc(4rem+5.75rem+2px)] space-y-4">
+    <div className="sticky top-[calc(4rem+5.75rem+12rem)] space-y-4">
       <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
         <h3 className="text-sm font-bold text-slate-900 mb-4 flex items-center gap-2">
           <Shield className="w-4 h-4 text-[#1ABC9C]" strokeWidth={2} />

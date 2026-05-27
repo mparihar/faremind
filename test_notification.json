@@ -1,0 +1,24 @@
+{
+  "event_type": "BOOKING_CONFIRMED",
+  "booking_id": "bk_TEST001",
+  "customer_email": "mparihar@gmail.com",
+  "data": {
+    "booking_reference": "FMTEST1",
+    "pnr": "FMTEST1",
+    "provider_booking_id": "bk_TEST001",
+    "customer_name": "Munish Parihar",
+    "customer_email": "mparihar@gmail.com",
+    "origin": "DFW",
+    "destination": "DEL",
+    "route": "DFW - DEL",
+    "airline": "Lufthansa",
+    "fare_class": "Economy",
+    "passengers": [{"name": "Munish Parihar", "type": "Adult"}],
+    "total_amount": "$2,195",
+    "total_charged": 2195,
+    "currency": "USD",
+    "card_last4": "4242",
+    "confirmed_at": "May 3, 2026, 10:30 PM",
+    "payment_intent_id": "pi_test_mock"
+  }
+}

@@ -32,14 +32,16 @@ export interface RoundTripScoreBreakdown {
   durationScore: number;
   stopsScore: number;
   layoverScore: number;
-  departureWindowScore: number;
-  airlineConsistencyScore: number;
+  scheduleScore: number;
+  baggageScore: number;
+  fareFlexibilityScore: number;
+  providerReliabilityScore: number;
   finalScore: number;
 }
 
 // ─── Badges ─────────────────────────────────────────────────────────────────
 
-export type RoundTripBadge = 'cheapest' | 'fastest' | 'fewest_stops';
+export type RoundTripBadge = 'cheapest' | 'fastest' | 'fewest_stops' | 'best_value' | 'recommended' | 'better_schedule';
 
 // ─── Complete round-trip option (one card on the UI) ────────────────────────
 

@@ -132,16 +132,16 @@ export default function PartnersPage() {
               <div className="flex items-start justify-between mb-3">
                 <div>
                   <h3 className="text-white font-bold text-sm">{p.name}</h3>
-                  <p className="text-slate-400 text-xs">{p.email}</p>
+                  <p className="text-slate-400 text-sm">{p.email}</p>
                 </div>
                 <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_COLORS[p.status] ?? 'bg-slate-400/15 text-slate-400'}`}>
                   {p.status}
                 </span>
               </div>
-              <div className="grid grid-cols-2 gap-2 text-xs">
+              <div className="grid grid-cols-2 gap-2 text-sm">
                 <div className="bg-slate-700/30 rounded-xl p-3">
                   <p className="text-slate-500 mb-0.5">API Key</p>
-                  <p className="text-slate-300 font-mono text-[10px] truncate">{p.apiKey?.slice(0, 20)}…</p>
+                  <p className="text-slate-300 font-mono text-xs truncate">{p.apiKey?.slice(0, 20)}…</p>
                 </div>
                 <div className="bg-slate-700/30 rounded-xl p-3">
                   <p className="text-slate-500 mb-0.5">Credit Balance</p>
@@ -152,11 +152,11 @@ export default function PartnersPage() {
                 </div>
               </div>
               <div className="flex items-center justify-between mt-3 pt-3 border-t border-slate-700/30">
-                <div className="flex items-center gap-3 text-xs text-slate-500">
+                <div className="flex items-center gap-3 text-sm text-slate-500">
                   <span>{p.users?.length ?? 0} users</span>
                   <span>{p._count?.commissionRules ?? 0} rules</span>
                 </div>
-                <span className="text-slate-600 text-[10px]">Since {format(new Date(p.createdAt), 'MMM yyyy')}</span>
+                <span className="text-slate-500 text-xs">Since {format(new Date(p.createdAt), 'MMM yyyy')}</span>
               </div>
             </div>
           ))}

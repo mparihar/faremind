@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Clock, Armchair, ChevronRight, Sparkles, Tag, Zap } from 'lucide-react';
+import { Clock, Armchair, ChevronRight, Sparkles, Tag, Zap, Check, X } from 'lucide-react';
 import { cn, formatDuration, formatTime, formatPrice, getStopsLabel, getAirlineLogo } from '@/lib/utils';
 import type { UnifiedFlight } from '@/lib/types';
 
@@ -10,9 +10,13 @@ interface FlightCardProps {
   index: number;
   isCompact?: boolean;
   onSelect: (flight: UnifiedFlight) => void;
+  scoreOverride?: number;
+  aiReasons?: string[];
+  isAiHighlighted?: boolean;
+  aiBadge?: string;
 }
 
-export default function FlightCard({ flight, index, isCompact, onSelect }: FlightCardProps) {
+export default function FlightCard({ flight, index, isCompact, onSelect, scoreOverride, aiReasons, isAiHighlighted, aiBadge }: FlightCardProps) {
   const firstSeg = flight.segments[0];
   const lastSeg  = flight.segments[flight.segments.length - 1];
 
@@ -25,27 +29,43 @@ export default function FlightCard({ flight, index, isCompact, onSelect }: Fligh
         return (arr > dep) ? Math.round((arr - dep) / 60000) : 0;
       })();
 
-  // Use scoring engine tags when available; fall back to position for mock data
-  const isBestValue = flight.tags ? flight.tags.includes('best_value') : index === 0;
+  // Use scoring engine tags when available
+  const isBestValue = flight.tags?.includes('best_value') ?? false;
   const isCheapest  = flight.tags?.includes('cheapest') ?? false;
   const isFastest   = flight.tags?.includes('fastest')  ?? false;
   const isNDC       = flight.provider === 'duffel';
+  const isMystifly  = flight.provider === 'mystifly';
 
   const hasTag = isBestValue || isCheapest || isFastest;
 
-  const ringClass = isBestValue
-    ? 'ring-2 ring-[#1ABC9C]/40 shadow-lg shadow-[#1ABC9C]/10'
-    : isCheapest
-      ? 'ring-2 ring-[#F97316]/40 shadow-lg shadow-[#F97316]/10'
-      : isFastest
-        ? 'ring-2 ring-[#0F172A]/40 shadow-lg shadow-[#0F172A]/10'
-        : 'shadow-sm';
+  const ringClass = isAiHighlighted
+    ? 'ring-2 ring-[#1ABC9C]/60 shadow-lg shadow-[#1ABC9C]/15'
+    : isBestValue
+      ? 'ring-2 ring-[#1ABC9C]/40 shadow-lg shadow-[#1ABC9C]/10'
+      : isCheapest
+        ? 'ring-2 ring-[#F97316]/40 shadow-lg shadow-[#F97316]/10'
+        : isFastest
+          ? 'ring-2 ring-[#0F172A]/40 shadow-lg shadow-[#0F172A]/10'
+          : 'shadow-sm';
 
   return (
     <motion.div
       initial={{ opacity: 0, y: 20 }}
-      animate={{ opacity: 1, y: 0 }}
-      transition={{ delay: index * 0.05, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
+      whileInView={{ opacity: 1, y: 0 }}
+      viewport={{ once: true, margin: "-50px" }}
+      animate={isAiHighlighted
+        ? {
+            boxShadow: [
+              '0 0 0 0px rgba(26,188,156,0)',
+              '0 0 0 6px rgba(26,188,156,0.35)',
+              '0 0 0 0px rgba(26,188,156,0)',
+            ],
+          }
+        : undefined}
+      transition={isAiHighlighted
+        ? { delay: index * 0.05, duration: 0.4, ease: [0.16, 1, 0.3, 1],
+            boxShadow: { duration: 1.6, repeat: 2, ease: 'easeInOut', delay: 0.4 } }
+        : { delay: index * 0.05, duration: 0.4, ease: [0.16, 1, 0.3, 1] }}
       className={cn(
         'glass-card-scenic p-0 overflow-hidden cursor-pointer group',
         ringClass,
@@ -53,8 +73,27 @@ export default function FlightCard({ flight, index, isCompact, onSelect }: Fligh
       )}
       onClick={() => onSelect(flight)}
     >
+      {/* AI Top Pick banner — prominent strip when AI highlights this card */}
+      {isAiHighlighted && !isCompact && (
+        <motion.div
+          initial={{ opacity: 0, y: -4 }}
+          animate={{ opacity: 1, y: 0 }}
+          className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-[#0a5252] via-[#0d9488] to-[#14b8a6]"
+        >
+          <Sparkles className="w-3.5 h-3.5 text-white shrink-0" />
+          <span className="text-white text-[11px] font-black uppercase tracking-wider">
+            FareMind AI Top Recommendation
+          </span>
+          {aiBadge && (
+            <span className="ml-auto px-2 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-bold">
+              {aiBadge}
+            </span>
+          )}
+        </motion.div>
+      )}
+
       {/* Top badges */}
-      {(hasTag || isNDC) && !isCompact && (
+      {(hasTag || isNDC || (aiBadge && !isAiHighlighted)) && !isCompact && (
         <div className="flex items-center gap-2 px-5 pt-4 flex-wrap">
           {isBestValue && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-[#1ABC9C] to-[#26d0ce] text-white shadow-sm">
@@ -78,6 +117,16 @@ export default function FlightCard({ flight, index, isCompact, onSelect }: Fligh
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-tighter bg-slate-900 text-white shadow-sm border border-white/20">
               Direct NDC
             </span>
+          )}
+          {aiBadge && !isAiHighlighted && (
+            <motion.span
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-[#1ABC9C]/15 to-[#1ABC9C]/5 border border-[#1ABC9C]/40 text-[#1ABC9C] shadow-sm shadow-[#1ABC9C]/10"
+            >
+              <Sparkles className="w-3 h-3" />
+              {aiBadge}
+            </motion.span>
           )}
         </div>
       )}
@@ -156,20 +205,50 @@ export default function FlightCard({ flight, index, isCompact, onSelect }: Fligh
               <Armchair className="w-3.5 h-3.5 text-slate-400" />
               {flight.cabinClass.replace('_', ' ')}
             </span>
-            {flight.breakdown && (
+            {index < 51 && (scoreOverride !== undefined || flight.valueScore > 0) && (
               <span
                 className="text-xs text-slate-400"
-                title={`Price ${(flight.breakdown.priceScore * 100).toFixed(0)}  Duration ${(flight.breakdown.durationScore * 100).toFixed(0)}  Stops ${(flight.breakdown.stopsScore * 100).toFixed(0)}`}
+                title={flight.breakdown ? `Price ${(flight.breakdown.priceScore * 100).toFixed(0)}  Duration ${(flight.breakdown.durationScore * 100).toFixed(0)}  Stops ${(flight.breakdown.stopsScore * 100).toFixed(0)}` : undefined}
               >
-                Score {flight.valueScore}
+                Score {scoreOverride ?? flight.valueScore}
               </span>
             )}
             <span className={cn(
               'ml-auto text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg border',
-              isNDC ? 'text-[#1ABC9C] bg-[#1ABC9C]/10 border-[#1ABC9C]/20' : 'text-slate-500 bg-slate-50 border-slate-200'
+              isNDC ? 'text-[#1ABC9C] bg-[#1ABC9C]/10 border-[#1ABC9C]/20'
+                : isMystifly ? 'text-indigo-600 bg-indigo-50 border-indigo-200'
+                : 'text-slate-500 bg-slate-50 border-slate-200'
             )}>
-              {isNDC ? 'NDC Connection' : 'GDS Economy'}
+              {isNDC ? 'NDC Connection' : isMystifly ? 'GDS Aggregator' : 'GDS'}
             </span>
+          </div>
+        )}
+
+        {/* AI reasoning bullets */}
+        {aiReasons && aiReasons.length > 0 && !isCompact && index < 25 && (
+          <div className="mt-2.5 px-3 py-2.5 rounded-xl bg-[#1ABC9C]/6 border border-[#1ABC9C]/20 space-y-1">
+            <p className="flex items-center gap-1.5 text-[10px] font-bold text-[#1ABC9C] uppercase tracking-wider mb-1.5">
+              <Sparkles className="w-3 h-3" /> Why FareMind AI recommends this
+            </p>
+            {aiReasons.slice(0, 4).map((reason, i) => {
+              const isAlert = [
+                'longer journey', 'significantly longer', 'layover — may be less convenient',
+                'risk of missed transfer', 'Inconvenient flight times', 'No checked baggage',
+                'additional fee may apply', 'Non-refundable and non-changeable', 'Consider trade-offs'
+              ].some(a => reason.includes(a));
+              return (
+                <div key={i} className="flex items-start gap-1.5">
+                  {isAlert ? (
+                    <X className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />
+                  ) : (
+                    <Check className="w-3 h-3 text-[#1ABC9C] shrink-0 mt-0.5" />
+                  )}
+                  <span className={cn("text-[11px] leading-relaxed", isAlert ? "text-amber-700/80" : "text-slate-600")}>
+                    {reason}
+                  </span>
+                </div>
+              );
+            })}
           </div>
         )}
       </div>

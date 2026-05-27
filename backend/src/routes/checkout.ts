@@ -1,4 +1,5 @@
 import { FastifyPluginAsync } from 'fastify';
+import { fireNotification } from '../lib/notify';
 
 interface PassengerInfo {
   id?: string; firstName: string; lastName: string; email?: string;
@@ -133,7 +134,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/payment/create-intent', async (request, reply) => {
     try {
-      const { amount, currency, description } = request.body as any;
+      const { amount, currency } = request.body as any;
       if (typeof amount !== 'number' || amount <= 0) return reply.code(400).send({ error: 'amount must be a positive number' });
       if (!currency) return reply.code(400).send({ error: 'currency is required' });
       const now = Date.now();
@@ -183,12 +184,88 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/notifications/booking-confirm', async (request, reply) => {
     try {
-      const { email, pnr, passengerNames, flight, total, currency } = request.body as any;
-      if (!email || !pnr) return reply.code(400).send({ error: 'email and pnr are required' });
-      console.log(`[checkout] Booking confirmation notification queued — PNR: ${pnr}, email: ${email}, passengers: ${Array.isArray(passengerNames) ? passengerNames.join(', ') : passengerNames}, total: ${currency ?? ''} ${total}`);
+      const {
+        email, pnr, bookingId, paymentIntentId,
+        customerName, passengerNames, passengers: passengersDetail,
+        total, currency, routeLabel,
+        airline, fareClass, last4,
+        pricing: pricingInput,
+      } = request.body as any;
+      // Only pnr is required — customer email can be absent and admin still gets notified
+      if (!pnr) return reply.code(400).send({ error: 'pnr is required' });
+
+      // Parse origin / destination from routeLabel (e.g. "DFW ⇄ DEL" or "JFK → LHR")
+      const routeParts = (routeLabel ?? '').split(/\s*[⇄→]\s*/);
+      const origin      = routeParts[0]?.trim() ?? '';
+      const destination = routeParts[1]?.trim() ?? '';
+
+      const cur = currency ?? 'USD';
+      const fmt = (n: number) => new Intl.NumberFormat('en-US', {
+        style: 'currency', currency: cur, maximumFractionDigits: 0,
+      }).format(n || 0);
+
+      const totalAmount = fmt(Number(total) || 0);
+
+      const confirmedAt = new Date().toLocaleString('en-US', {
+        dateStyle: 'medium', timeStyle: 'short',
+      });
+
+      // Build passengers array expected by templates — use full detail if provided
+      const passengersArr = Array.isArray(passengersDetail) && passengersDetail.length > 0
+        ? passengersDetail
+        : (Array.isArray(passengerNames) ? passengerNames : [passengerNames])
+            .filter(Boolean)
+            .map((name: string) => ({ name, type: 'Adult' }));
+
+      // ── Build structured price breakdown for email templates ──────────────
+      const pricePerPassenger = (pricingInput?.perPassenger ?? []).map((p: any, i: number) => ({
+        name:  p.name ?? passengersArr[i]?.name ?? `Passenger ${i + 1}`,
+        type:  p.type === 'child' ? 'Child' : 'Adult',
+        fare:  fmt(Number(p.fare) || 0),
+      }));
+
+      const addOns: { label: string; amount: string; highlight?: boolean }[] = [];
+      if ((pricingInput?.seatFees      ?? 0) > 0) addOns.push({ label: 'Seat fees',             amount: fmt(pricingInput.seatFees) });
+      if ((pricingInput?.mealFees      ?? 0) > 0) addOns.push({ label: 'Meal fees',              amount: fmt(pricingInput.mealFees) });
+      if ((pricingInput?.baggageFees   ?? 0) > 0) addOns.push({ label: 'Extra bags',             amount: fmt(pricingInput.baggageFees) });
+      if ((pricingInput?.protectionFee ?? 0) > 0) addOns.push({ label: 'Price Drop Protection',  amount: fmt(pricingInput.protectionFee), highlight: true });
+      if ((pricingInput?.insuranceFee  ?? 0) > 0) addOns.push({ label: 'Travel insurance',       amount: fmt(pricingInput.insuranceFee) });
+      if ((pricingInput?.serviceFee    ?? 0) > 0) addOns.push({ label: 'Service fee',            amount: fmt(pricingInput.serviceFee) });
+
+      const hasPriceBreakdown = pricePerPassenger.length > 0;
+
+      // Fire via direct Brevo — no Python micro-service dependency
+      fireNotification({
+        event_type: 'BOOKING_CONFIRMED',
+        booking_id: bookingId ?? pnr,
+        customer_email: email,
+        data: {
+          booking_reference: pnr,
+          pnr,
+          provider_booking_id: bookingId ?? pnr,
+          customer_name:  customerName ?? passengersArr[0]?.name ?? 'Traveler',
+          customer_email: email,
+          origin,
+          destination,
+          route:          routeLabel ?? `${origin} → ${destination}`,
+          airline:        airline ?? '',
+          fare_class:     fareClass ?? '',
+          passengers:     passengersArr,
+          total_amount:   totalAmount,
+          total_charged:  total,
+          currency:       cur,
+          card_last4:     `•••• ${last4 ?? '****'}`,
+          confirmed_at:   confirmedAt,
+          payment_intent_id: paymentIntentId ?? '',
+          has_price_breakdown:   hasPriceBreakdown,
+          price_per_passenger:   pricePerPassenger,
+          price_add_ons:         addOns,
+        },
+      });
+
       return { success: true, message: 'Notification queued' };
     } catch (err) {
-      console.error('[checkout] POST /notifications/booking-confirm error:', err);
+      fastify.log.error({ err }, '[checkout] POST /notifications/booking-confirm error');
       reply.code(500).send({ error: 'Internal server error' });
     }
   });

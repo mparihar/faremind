@@ -7,6 +7,7 @@ interface AuthUser {
   id: string;
   email: string;
   name: string;
+  avatar?: string | null;
 }
 
 interface AuthStore {
@@ -15,11 +16,12 @@ interface AuthStore {
   loading: boolean;
   error: string | null;
 
-  login: (email: string, password: string) => Promise<boolean>;
-  signup: (firstName: string, lastName: string, email: string, password: string) => Promise<boolean>;
+  verifyOtp: (email: string, otp: string) => Promise<boolean>;
   logout: () => void;
   loadSession: () => void;
   setError: (error: string | null) => void;
+  updateAvatar: (avatar: string | null) => void;
+  updateUser: (updates: Partial<AuthUser>) => void;
 }
 
 export const useAuthStore = create<AuthStore>((set, get) => ({
@@ -28,52 +30,42 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   loading: false,
   error: null,
 
-  login: async (email, password) => {
+  verifyOtp: async (email, otp) => {
     set({ loading: true, error: null });
     try {
-      const res = await fetch(apiUrl('/api/auth/login'), {
+      const res = await fetch(apiUrl('/api/auth/verify-otp'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, password }),
+        body: JSON.stringify({ email, otp }),
       });
       const data = await res.json();
 
-      if (data.success) {
+      if (res.ok && data.success) {
         localStorage.setItem('faremind_session', JSON.stringify({
           user: data.user,
           token: data.sessionToken,
         }));
         set({ user: data.user, sessionToken: data.sessionToken, loading: false });
+
+        // Fetch avatar in background after login
+        try {
+          const profileRes = await fetch(`/api/auth/profile?userId=${data.user.id}`);
+          const profileData = await profileRes.json();
+          if (profileRes.ok && profileData.user?.avatar) {
+            const userWithAvatar = { ...data.user, avatar: profileData.user.avatar };
+            localStorage.setItem('faremind_session', JSON.stringify({
+              user: userWithAvatar,
+              token: data.sessionToken,
+            }));
+            set({ user: userWithAvatar });
+          }
+        } catch {
+          // Avatar fetch is non-critical
+        }
+
         return true;
       } else {
-        set({ error: data.error || 'Login failed', loading: false });
-        return false;
-      }
-    } catch {
-      set({ error: 'Network error', loading: false });
-      return false;
-    }
-  },
-
-  signup: async (firstName, lastName, email, password) => {
-    set({ loading: true, error: null });
-    try {
-      const res = await fetch(apiUrl('/api/auth/signup'), {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ firstName, lastName, email, password }),
-      });
-      const data = await res.json();
-
-      if (data.success) {
-        localStorage.setItem('faremind_session', JSON.stringify({
-          user: data.user,
-          token: data.sessionToken,
-        }));
-        set({ user: data.user, sessionToken: data.sessionToken, loading: false });
-        return true;
-      } else {
-        set({ error: data.error || 'Signup failed', loading: false });
+        set({ error: data.detail || data.error || 'Verification failed', loading: false });
         return false;
       }
     } catch {
@@ -85,6 +77,11 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   logout: () => {
     localStorage.removeItem('faremind_session');
     set({ user: null, sessionToken: null });
+    // Clear all booking data to prevent stale session leaks
+    try { 
+      const { useManageBookingStore } = require('@/store/useManageBookingStore');
+      useManageBookingStore.getState().reset();
+    } catch {}
   },
 
   loadSession: () => {
@@ -100,4 +97,27 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
   },
 
   setError: (error) => set({ error }),
+
+  updateAvatar: (avatar) => {
+    const { user, sessionToken } = get();
+    if (!user) return;
+    const updatedUser = { ...user, avatar };
+    set({ user: updatedUser });
+    // Persist to localStorage
+    localStorage.setItem('faremind_session', JSON.stringify({
+      user: updatedUser,
+      token: sessionToken,
+    }));
+  },
+
+  updateUser: (updates) => {
+    const { user, sessionToken } = get();
+    if (!user) return;
+    const updatedUser = { ...user, ...updates };
+    set({ user: updatedUser });
+    localStorage.setItem('faremind_session', JSON.stringify({
+      user: updatedUser,
+      token: sessionToken,
+    }));
+  },
 }));

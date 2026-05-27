@@ -6,29 +6,45 @@
 <p style="margin:0 0 24px;color:#64748b;font-size:13px;">Hello Team — a new booking has been completed on FareMind.</p>
 
 <h3 style="color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 8px;">Booking Summary</h3>
-<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:0;font-size:13px;margin-bottom:20px;">
-  <tr><td style="padding:8px 16px;color:#64748b;">Booking Reference</td><td style="padding:8px 16px;color:#1abc9c;font-weight:800;text-align:right;">{{ booking_reference }}</td></tr>
+<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;padding:0;font-size:13px;margin-bottom:{% if pnr_strategy and pnr_strategy not in ['SINGLE_PNR','UNKNOWN'] %}12px{% else %}20px{% endif %};">
+  <tr><td style="padding:8px 16px;color:#64748b;">FareMind Reference</td><td style="padding:8px 16px;color:#1abc9c;font-weight:800;text-align:right;">{{ booking_reference }}</td></tr>
+  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">PNR Strategy</td><td style="padding:8px 16px;color:#e2e8f0;font-weight:700;text-align:right;">{{ pnr_strategy|default('SINGLE_PNR')|replace('_',' ') }}</td></tr>
+  <tr><td style="padding:8px 16px;color:#64748b;">Primary PNR</td><td style="padding:8px 16px;color:#e2e8f0;font-weight:700;font-family:monospace;text-align:right;">{{ pnr|default('N/A') }}</td></tr>
   <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Route</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ origin }} ⇄ {{ destination }}</td></tr>
   <tr><td style="padding:8px 16px;color:#64748b;">Airline</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ airline }}</td></tr>
   <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Fare Class</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ fare_class }}</td></tr>
   <tr><td style="padding:8px 16px;color:#64748b;">Status</td><td style="padding:8px 16px;color:#1abc9c;font-weight:700;text-align:right;">Confirmed</td></tr>
   <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Provider Booking ID</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ provider_booking_id|default('N/A') }}</td></tr>
-  <tr><td style="padding:8px 16px;color:#64748b;">PNR</td><td style="padding:8px 16px;color:#e2e8f0;font-weight:700;text-align:right;">{{ pnr|default('N/A') }}</td></tr>
 </table>
 
+{% if pnr_strategy and pnr_strategy not in ['SINGLE_PNR','UNKNOWN'] %}
+<!-- Split-ticket / multi-PNR alert -->
+<div style="background:#7c3aed1a;border:1px solid #7c3aed66;border-radius:10px;padding:14px 18px;margin-bottom:20px;">
+  <p style="margin:0 0 4px;color:#a78bfa;font-size:12px;font-weight:700;">⚠ {{ risk_label|default('Split Ticket') }} — {{ pnr_strategy|replace('_',' ') }}</p>
+  <p style="margin:0;color:#c4b5fd;font-size:12px;">{{ risk_explanation|default('Multiple airline confirmation codes apply to this booking.') }}</p>
+</div>
+{% endif %}
+
 <h3 style="color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 8px;">Passenger Details</h3>
-<table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px;margin-bottom:20px;">
-  {% if passengers %}
-    {% for p in passengers %}
-    <tr style="{{ 'background:#111827;' if loop.index is even }}">
-      <td style="padding:8px 16px;color:#e2e8f0;">{{ p.name }}</td>
-      <td style="padding:8px 16px;color:#64748b;text-align:right;">{{ p.type|default('Adult') }}</td>
-    </tr>
-    {% endfor %}
-  {% else %}
+{% if passengers %}
+  {% for p in passengers %}
+  <table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px;margin-bottom:12px;">
+    <tr><td colspan="2" style="padding:8px 16px;color:#e2e8f0;font-weight:700;border-bottom:1px solid #1e293b;">{{ p.name }} <span style="color:#64748b;font-weight:400;font-size:12px;">· {{ p.type|default('Adult') }}</span></td></tr>
+    {% if p.gender %}<tr style="background:#111827;"><td style="padding:6px 16px;color:#64748b;">Gender</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ p.gender }}</td></tr>{% endif %}
+    {% if p.date_of_birth %}<tr><td style="padding:6px 16px;color:#64748b;">Date of Birth</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ p.date_of_birth }}</td></tr>{% endif %}
+    {% if p.email %}<tr style="background:#111827;"><td style="padding:6px 16px;color:#64748b;">Email</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ p.email }}</td></tr>{% endif %}
+    {% if p.phone %}<tr><td style="padding:6px 16px;color:#64748b;">Phone</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ p.phone }}</td></tr>{% endif %}
+    {% if p.nationality %}<tr style="background:#111827;"><td style="padding:6px 16px;color:#64748b;">Nationality</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ p.nationality }}</td></tr>{% endif %}
+    {% if p.passport_number %}<tr><td style="padding:6px 16px;color:#64748b;">Passport No.</td><td style="padding:6px 16px;color:#e2e8f0;font-family:monospace;text-align:right;">{{ p.passport_number }}</td></tr>{% endif %}
+    {% if p.passport_expiry %}<tr style="background:#111827;"><td style="padding:6px 16px;color:#64748b;">Passport Expiry</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ p.passport_expiry }}</td></tr>{% endif %}
+    {% if p.issuing_country %}<tr><td style="padding:6px 16px;color:#64748b;">Issuing Country</td><td style="padding:6px 16px;color:#e2e8f0;text-align:right;">{{ p.issuing_country }}</td></tr>{% endif %}
+  </table>
+  {% endfor %}
+{% else %}
+  <table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px;margin-bottom:20px;">
     <tr><td style="padding:8px 16px;color:#64748b;">{{ passenger_details|default('N/A') }}</td></tr>
-  {% endif %}
-</table>
+  </table>
+{% endif %}
 
 <h3 style="color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 8px;">Payment Details</h3>
 <table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px;margin-bottom:20px;">
@@ -38,13 +54,28 @@
   <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Transaction Time</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ confirmed_at }}</td></tr>
 </table>
 
-<h3 style="color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 8px;">Add-ons</h3>
+<h3 style="color:#94a3b8;font-size:12px;font-weight:700;text-transform:uppercase;letter-spacing:.1em;margin:0 0 8px;">Price Breakdown</h3>
 <table width="100%" cellpadding="4" cellspacing="0" style="background:#0f172a;border:1px solid #334155;border-radius:10px;font-size:13px;margin-bottom:20px;">
-  <tr><td style="padding:8px 16px;color:#64748b;">Seats</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ seat_summary|default('None') }}</td></tr>
-  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Meals</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ meal_summary|default('None') }}</td></tr>
-  <tr><td style="padding:8px 16px;color:#64748b;">Bags</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ baggage_summary|default('None') }}</td></tr>
-  <tr style="background:#111827;"><td style="padding:8px 16px;color:#64748b;">Price Drop Protection</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ price_drop_protection_status|default('Not purchased') }}</td></tr>
-  <tr><td style="padding:8px 16px;color:#64748b;">Travel Protection</td><td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ travel_protection_status|default('Not purchased') }}</td></tr>
+  {% if has_price_breakdown %}
+  {% for pax in price_per_passenger %}
+  <tr style="{{ 'background:#111827;' if loop.index is even }}">
+    <td style="padding:8px 16px;color:#64748b;">{{ pax.name }} ({{ pax.type }})</td>
+    <td style="padding:8px 16px;color:#e2e8f0;text-align:right;">{{ pax.fare }}</td>
+  </tr>
+  {% endfor %}
+  {% for addon in price_add_ons %}
+  <tr style="{{ 'background:#111827;' if loop.index is even }}">
+    <td style="padding:8px 16px;color:{% if addon.highlight %}#1abc9c{% else %}#64748b{% endif %};">{{ addon.label }}</td>
+    <td style="padding:8px 16px;color:{% if addon.highlight %}#1abc9c{% else %}#e2e8f0{% endif %};text-align:right;">+{{ addon.amount }}</td>
+  </tr>
+  {% endfor %}
+  <tr style="border-top:1px solid #334155;">
+    <td style="padding:10px 16px;color:#94a3b8;font-weight:700;">Total Charged</td>
+    <td style="padding:10px 16px;color:#1abc9c;font-weight:900;font-size:15px;text-align:right;">{{ total_amount }}</td>
+  </tr>
+  {% else %}
+  <tr><td style="padding:8px 16px;color:#64748b;">Total Charged</td><td style="padding:8px 16px;color:#1abc9c;font-weight:700;text-align:right;">{{ total_amount }}</td></tr>
+  {% endif %}
 </table>
 
 <div style="background:#1e3a2f;border:1px solid #1abc9c;border-radius:10px;padding:16px;margin-bottom:8px;">

@@ -1,7 +1,9 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import { useRouter } from 'next/navigation';
 import { apiUrl } from '@/lib/api-client';
+import { useAuthStore } from '@/store/useAuthStore';
 import { motion } from 'framer-motion';
 import {
   LayoutDashboard,
@@ -62,19 +64,82 @@ interface DashboardStats {
 }
 
 export default function DashboardPage() {
+  const router = useRouter();
+  const { user, loadSession } = useAuthStore();
+  const [authChecked, setAuthChecked] = useState(false);
   const [activeTab, setActiveTab] = useState<'active' | 'completed'>('active');
   const [bookings, setBookings] = useState<DashboardBooking[]>([]);
   const [stats, setStats] = useState<DashboardStats | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Fetch bookings from API
+  // Auth guard — redirect to login if not signed in
   useEffect(() => {
+    loadSession();
+    const stored = localStorage.getItem('faremind_session');
+    if (!stored) {
+      router.replace('/auth/login?redirect=/dashboard');
+    } else {
+      setAuthChecked(true);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
+  // Fetch bookings from MasterBooking via manage-booking API
+  useEffect(() => {
+    if (!authChecked || !user?.id) return;
     const fetchDashboard = async () => {
       try {
-        const res = await fetch(apiUrl('/api/bookings?userId=demo-user'));
+        const res = await fetch(apiUrl(`/api/manage-booking/user/${user.id}/bookings?filter=all`));
         const data = await res.json();
-        if (data.bookings) setBookings(data.bookings);
-        if (data.stats) setStats(data.stats);
+        if (data.bookings) {
+          // Map MasterBooking shape to DashboardBooking
+          const mapped = data.bookings.map((b: any) => {
+            const firstSeg = b.journeys?.[0]?.segments?.[0];
+            const lastJourney = b.journeys?.[b.journeys.length - 1];
+            const lastSeg = lastJourney?.segments?.[lastJourney.segments.length - 1];
+            return {
+              id: b.id,
+              pnr: b.masterPnr ?? b.masterBookingReference,
+              status: b.bookingStatus,
+              provider: b.primaryProvider ?? 'duffel',
+              airlineCode: firstSeg?.airlineCode ?? '',
+              airlineName: firstSeg?.airlineName ?? '',
+              originAirport: b.originAirport,
+              originCity: b.originCity,
+              destinationAirport: b.destinationAirport,
+              destinationCity: b.destinationCity,
+              departureTime: b.departureDate,
+              arrivalTime: lastSeg?.arrivalDateTime ?? b.departureDate,
+              totalDuration: 0,
+              stops: Math.max(0, (b.journeys?.[0]?.segments?.length ?? 1) - 1),
+              cabinClass: firstSeg?.cabin ?? 'ECONOMY',
+              fareClass: firstSeg?.fareClass ?? null,
+              totalPrice: Number(b.totalAmount),
+              currency: b.currency ?? 'USD',
+              refundable: false,
+              changeable: true,
+              carryOnBags: 1,
+              checkedBags: 0,
+              priceTracking: false,
+              currentTrackedPrice: null,
+              createdAt: b.createdAt,
+              passengers: (b.passengers ?? []).map((p: any) => ({ firstName: p.firstName, lastName: p.lastName, email: p.email ?? '' })),
+              segments: (b.journeys?.[0]?.segments ?? []).map((s: any) => ({
+                depAirport: s.originAirport, arrAirport: s.destinationAirport,
+                flightNumber: `${s.airlineCode}${s.flightNumber}`,
+                depTime: s.departureDateTime, arrTime: s.arrivalDateTime, duration: 0,
+              })),
+              priceAlerts: [],
+            };
+          });
+          setBookings(mapped);
+          setStats({
+            activeBookings: data.counts?.upcoming ?? 0,
+            trackedFlights: 0,
+            newAlerts: 0,
+            totalSavings: 0,
+          });
+        }
       } catch (err) {
         console.error('Failed to load dashboard:', err);
       } finally {
@@ -82,10 +147,10 @@ export default function DashboardPage() {
       }
     };
     fetchDashboard();
-  }, []);
+  }, [authChecked, user?.id]);
 
-  const activeBookings = bookings.filter((b) => ['CONFIRMED', 'TICKETED', 'PENDING'].includes(b.status));
-  const completedBookings = bookings.filter((b) => ['COMPLETED', 'CANCELLED'].includes(b.status));
+  const activeBookings = bookings.filter((b) => ['CONFIRMED', 'TICKETED', 'CREATED', 'PENDING'].includes(b.status));
+  const completedBookings = bookings.filter((b) => ['COMPLETED', 'CANCELLED', 'FAILED'].includes(b.status));
   const displayedBookings = activeTab === 'active' ? activeBookings : completedBookings;
 
   const totalSaved = stats?.totalSavings || 0;
@@ -271,7 +336,7 @@ export default function DashboardPage() {
                   )}
                   <span className={cn(
                     'px-2.5 py-1 rounded-full text-[10px] font-semibold border',
-                    booking.status === 'CONFIRMED' ? 'bg-success-500/10 text-success-400 border-success-500/20' :
+                    booking.status === 'CONFIRMED' ? 'bg-[#1ABC9C] text-white border-[#1ABC9C]' :
                     booking.status === 'PENDING' ? 'bg-warning-400/10 text-warning-400 border-warning-400/20' :
                     booking.status === 'CANCELLED' ? 'bg-error-500/10 text-error-400 border-error-500/20' :
                     'bg-slate-500/10 text-slate-400 border-slate-500/20'
@@ -315,7 +380,7 @@ export default function DashboardPage() {
                   </span>
                 </div>
                 <div className="text-right">
-                  <p className="text-base font-bold gradient-text">{formatPrice(booking.totalPrice, booking.currency)}</p>
+                  <p className="text-base font-bold text-orange-500">{formatPrice(booking.totalPrice, booking.currency)}</p>
                   {booking.currentTrackedPrice && booking.currentTrackedPrice < booking.totalPrice && (
                     <p className="text-[10px] text-success-400">
                       Now {formatPrice(booking.currentTrackedPrice, booking.currency)} ↓
@@ -335,7 +400,7 @@ export default function DashboardPage() {
             <p className="text-lg font-semibold text-white">
               No {activeTab === 'active' ? 'active' : 'past'} bookings
             </p>
-            <p className="text-sm text-slate-500">
+            <p className="text-sm text-black font-bold">
               {activeTab === 'active'
                 ? 'Search for flights and make your first booking!'
                 : 'Your completed trips will appear here'}

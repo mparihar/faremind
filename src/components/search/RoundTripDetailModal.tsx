@@ -213,14 +213,20 @@ interface Props {
   onBook: () => void;
   isBestAiPick?: boolean;
   isTopAiPick?: boolean;
+  aiScoreOverride?: number;
+  aiReasonsOverride?: string[];
 }
 
-export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBook, isBestAiPick, isTopAiPick }: Props) {
+export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBook, isBestAiPick, isTopAiPick, aiScoreOverride, aiReasonsOverride }: Props) {
   const [activeDetailJourney, setActiveDetailJourney] = useState<JourneySegment | null>(null);
   const [tab, setTab] = useState<'glance' | 'ai'>('glance');
 
+  // Use AI-overridden score when available (cabin-aware), fall back to legacy score
+  const displayScore = aiScoreOverride ?? option.score;
   const cScore = comfortScore(option.totalDurationMinutes, option.totalStops);
-  const insights = generateInsights(option);
+  const insights = aiReasonsOverride && aiReasonsOverride.length > 0
+    ? aiReasonsOverride
+    : generateInsights(option);
   const scoreBreakdown = option.scoreBreakdown;
 
   return (
@@ -384,10 +390,10 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                         <div className="space-y-3">
                           <InfoStat label="Total Duration" value={fmtDur(option.totalDurationMinutes)} />
                           <InfoStat label="Connections" value={String(option.totalStops)} />
-                          {option.score != null && (
+                          {displayScore != null && (
                             <InfoStat
                               label="Airfare Score"
-                              value={`${option.score}/100`}
+                              value={`${displayScore}/100`}
                               sub={option.badges?.includes('cheapest') ? 'Cheapest' : option.badges?.includes('fastest') ? 'Fastest' : undefined}
                             />
                           )}
@@ -423,10 +429,10 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                               </div>
                             </div>
                             <p className="text-[8px] text-slate-400 uppercase tracking-tight">Seat pitch: 31 in · 3-3-3</p>
-                            {option.score != null && (
+                            {displayScore != null && (
                               <div className="mt-2.5">
                                 <span className="px-2.5 py-0.5 rounded-full bg-[#1ABC9C]/10 text-[#1ABC9C] text-[8px] font-bold uppercase tracking-widest border border-[#1ABC9C]/20">
-                                  AI Score {option.score}/100
+                                  AI Score {displayScore}/100
                                 </span>
                               </div>
                             )}
@@ -477,13 +483,13 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                             <p className="text-[10px] font-bold text-slate-900 uppercase tracking-widest">AI Recommendation</p>
                           </div>
                           <div className="flex items-end gap-2 mb-2">
-                            <p className="text-3xl font-bold text-[#1ABC9C] leading-none">{option.score}</p>
+                            <p className="text-3xl font-bold text-[#1ABC9C] leading-none">{displayScore ?? option.score}</p>
                             <p className="text-[10px] text-slate-400 mb-1">/100</p>
                           </div>
                           <p className="text-[10px] text-slate-500 leading-relaxed">
-                            {option.score >= 85
+                            {(displayScore ?? 0) >= 85
                               ? 'Excellent choice — scores in the top tier for this route.'
-                              : option.score >= 70
+                              : (displayScore ?? 0) >= 70
                                 ? 'Strong value — well-balanced across price, comfort, and flexibility.'
                                 : 'Decent option — consider trade-offs before booking.'
                             }
@@ -499,8 +505,10 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                               { label: 'Duration',      val: scoreBreakdown.durationScore      },
                               { label: 'Stops',         val: scoreBreakdown.stopsScore         },
                               { label: 'Layover',       val: scoreBreakdown.layoverScore       },
-                              { label: 'Dep. Window',   val: scoreBreakdown.departureWindowScore },
-                              { label: 'Consistency',   val: scoreBreakdown.airlineConsistencyScore },
+                              { label: 'Schedule',      val: scoreBreakdown.scheduleScore      },
+                              { label: 'Baggage',       val: scoreBreakdown.baggageScore       },
+                              { label: 'Flexibility',   val: scoreBreakdown.fareFlexibilityScore },
+                              { label: 'Provider',      val: scoreBreakdown.providerReliabilityScore },
                             ] as const).map(({ label, val }) => (
                               <div key={label} className="flex items-center gap-3">
                                 <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider w-20 shrink-0">{label}</p>

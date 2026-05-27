@@ -30,8 +30,13 @@ yarn-debug.log*
 yarn-error.log*
 .pnpm-debug.log*
 
-# env files (can opt-in for committing if needed)
-.env*
+# env files — keep .env.example tracked
+.env
+.env.local
+.env.production
+.env.development
+.env*.local
+backend/.env
 
 # vercel
 .vercel
@@ -48,3 +53,22 @@ next-env.d.ts
 # Nested node_modules (backend, brain, etc.)
 backend/node_modules/
 brain/node_modules/
+
+# Build output
+dist/
+backend/dist/
+
+# Logs
+*.log
+
+# Python
+__pycache__/
+venv/
+*.pyc
+
+# IDE
+.vscode/
+.idea/
+
+# OS
+Thumbs.db

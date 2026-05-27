@@ -18,10 +18,11 @@ import RoundTripCard from '@/components/search/RoundTripCard';
 import RoundTripDetailModal from '@/components/search/RoundTripDetailModal';
 import FlexibleDateStrip from '@/components/search/FlexibleDateStrip';
 import FilterPanel, { type FilterOption } from '@/components/search/FilterPanel';
+import FloatingAIAssistant, { type AIAssistResult } from '@/components/search/FloatingAIAssistant';
 import type { UnifiedFlight } from '@/lib/types';
 
 import type { RoundTripOption, RoundTripSortMode } from '@/lib/round-trip-types';
-import { aiRankOneWay, aiRankRoundTrip } from '@/lib/ai-scoring';
+import { rankFlightOffers } from '@/lib/ai-scoring';
 import type { AiScoredOption } from '@/lib/ai-scoring';
 import { LayoutGrid, Map as MapIcon } from 'lucide-react';
 import { format } from 'date-fns';
@@ -125,6 +126,9 @@ function SearchContent() {
   const toggleFeature  = useCallback((id: string) => setSelectedFeatures(p => { const s = new Set(p); s.has(id) ? s.delete(id) : s.add(id); return s; }), []);
   const clearAllFilters = useCallback(() => { setSelectedAirlines(new Set()); setSelectedClasses(new Set()); setSelectedFeatures(new Set()); }, []);
 
+  // ── AI Assistant bar result ───────────────────────────────────────────────
+  const [aiAssistResult, setAiAssistResult] = useState<AIAssistResult | null>(null);
+
   // ── Filter transition spinner ─────────────────────────────────────────────
   const [isFiltering, setIsFiltering] = useState(false);
   const filterTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -179,10 +183,12 @@ function SearchContent() {
     if (!origin || !destination || !date) return;
     setLoading(true);
     setSearchMeta(null);
-    setRoundTripOptions([]);
+    setResults([]);           // Clear one-way results
+    setRoundTripOptions([]);  // Clear round-trip results
     setSelectedAirlines(new Set());
     setSelectedClasses(new Set());
     setSelectedFeatures(new Set());
+    setAiAssistResult(null);
 
     const params = new URLSearchParams({
       origin, destination, date, adults, cabin,
@@ -198,7 +204,6 @@ function SearchContent() {
           setResults(data.flights);
         }
         if (data.meta) setSearchMeta(data.meta);
-        // Pre-select the user's searched cabin so initial view shows only matching flights
         if (cabin) setSelectedClasses(new Set([cabin]));
         setLoading(false);
       })
@@ -242,33 +247,59 @@ function SearchContent() {
   }, [results, prefs.budgetActive, prefs.budgetMin, prefs.budgetMax, prefs.maxDuration, prefs.stops, prefs.departureWindow, prefs.sort, prefs.personalized, prefs.aiIntelligence]);
 
   // ── AI Intelligence ranking ────────────────────────────────────────────────
-  const aiPrefs = useMemo(() => ({
-    budget:          prefs.budgetActive ? prefs.budgetMax : undefined,
-    maxDuration:     prefs.maxDuration ?? undefined,
-    stops:           prefs.stops,
-    departureWindow: prefs.departureWindow ?? undefined,
-  }), [prefs.budgetActive, prefs.budgetMax, prefs.maxDuration, prefs.stops, prefs.departureWindow]);
+  const aiPrefs = useMemo(() => {
+    // Map UI sort mode to weight preset for the 8-component scorer
+    const sortToPreset: Record<string, 'best_ai_pick' | 'cheapest' | 'fastest' | 'fewest_stops'> = {
+      best_value: 'best_ai_pick',
+      cheapest:   'cheapest',
+      fastest:    'fastest',
+      fewest_stops: 'fewest_stops',
+    };
+    return {
+      budget:          prefs.budgetActive ? prefs.budgetMax : undefined,
+      maxDuration:     prefs.maxDuration ?? undefined,
+      stops:           prefs.stops,
+      departureWindow: prefs.departureWindow ?? undefined,
+      weightPreset:    sortToPreset[prefs.sort ?? 'best_value'] ?? 'best_ai_pick',
+    };
+  }, [prefs.budgetActive, prefs.budgetMax, prefs.maxDuration, prefs.stops, prefs.departureWindow, prefs.sort]);
 
   const aiOneWayResult = useMemo(() => {
     if (!prefs.aiIntelligence || tripParam === 'round_trip' || !scoredResults.length) return null;
-    return aiRankOneWay(scoredResults, aiPrefs);
-  }, [prefs.aiIntelligence, scoredResults, aiPrefs, tripParam]);
+    return rankFlightOffers(scoredResults, 'ONE_WAY', aiPrefs, false, selectedClasses.size > 0 ? selectedClasses : undefined);
+  }, [prefs.aiIntelligence, scoredResults, aiPrefs, tripParam, selectedClasses]);
 
   const aiRTResult = useMemo(() => {
     if (!prefs.aiIntelligence || tripParam !== 'round_trip' || !roundTripOptions.length) return null;
-    return aiRankRoundTrip(roundTripOptions, aiPrefs);
-  }, [prefs.aiIntelligence, roundTripOptions, aiPrefs, tripParam]);
+    return rankFlightOffers(roundTripOptions, 'ROUND_TRIP', aiPrefs, false, selectedClasses.size > 0 ? selectedClasses : undefined);
+  }, [prefs.aiIntelligence, roundTripOptions, aiPrefs, tripParam, selectedClasses]);
 
-  const effectiveOneWay = useMemo<UnifiedFlight[]>(() =>
-    aiOneWayResult ? aiOneWayResult.ranked.map(r => r.option) : scoredResults,
-  [aiOneWayResult, scoredResults]);
+  const effectiveOneWay = useMemo<UnifiedFlight[]>(() => {
+    if (!aiOneWayResult) return scoredResults;
+    const ranked = aiOneWayResult.ranked.map(r => r.option);
+    const unranked = aiOneWayResult.filteredOut.map(r => ({
+      ...r.option,
+      valueScore: 0,
+      breakdown: undefined,
+      tags: [],
+    }));
+    return [...ranked, ...unranked];
+  }, [aiOneWayResult, scoredResults]);
 
   // When AI is ON and no explicit user sort, use AI ranking; otherwise use manual sort
-  const effectiveRT = useMemo<RoundTripOption[]>(() =>
-    aiRTResult && rtSortMode === null
-      ? aiRTResult.ranked.map(r => r.option)
-      : sortedRoundTrip,
-  [aiRTResult, rtSortMode, sortedRoundTrip]);
+  const effectiveRT = useMemo<RoundTripOption[]>(() => {
+    if (aiRTResult && rtSortMode === null) {
+      const ranked = aiRTResult.ranked.map(r => r.option);
+      const unranked = aiRTResult.filteredOut.map(r => ({
+        ...r.option,
+        score: 0,
+        scoreBreakdown: undefined,
+        badges: [],
+      }));
+      return [...ranked, ...unranked];
+    }
+    return sortedRoundTrip;
+  }, [aiRTResult, rtSortMode, sortedRoundTrip]);
 
   // Reset manual sort when AI is toggled back ON so AI takes over
   useEffect(() => {
@@ -298,7 +329,8 @@ function SearchContent() {
   }, []);
 
   const panelFilteredOneWay = useMemo(() => {
-    let f = scoredResults;
+    // Use effectiveOneWay (AI-ranked when AI is on) — not the pre-AI scoredResults
+    let f = effectiveOneWay;
     if (selectedAirlines.size > 0) f = f.filter(fl => selectedAirlines.has(fl.airline.name));
     if (selectedClasses.size  > 0) f = f.filter(fl => selectedClasses.has(fl.cabinClass));
     if (selectedFeatures.size > 0) f = f.filter(fl =>
@@ -308,14 +340,26 @@ function SearchContent() {
       )
     );
     return f;
-  }, [scoredResults, selectedAirlines, selectedClasses, selectedFeatures]);
+  }, [effectiveOneWay, selectedAirlines, selectedClasses, selectedFeatures]);
 
   const topResults = useMemo(() => {
     const copy = [...panelFilteredOneWay];
-    if (sortMode === 'fastest') copy.sort((a, b) => a.totalDuration - b.totalDuration);
-    else copy.sort((a, b) => a.totalPrice - b.totalPrice);
-    return copy.slice(0, 10);
-  }, [panelFilteredOneWay, sortMode]);
+    if (!prefs.aiIntelligence) {
+      if (sortMode === 'fastest') copy.sort((a, b) => a.totalDuration - b.totalDuration);
+      else copy.sort((a, b) => a.totalPrice - b.totalPrice);
+    }
+    return copy;
+  }, [panelFilteredOneWay, sortMode, prefs.aiIntelligence]);
+
+  // When chatbot result is active: filter list view to ONLY the ranked cards, in ranked order.
+  // When cleared (or 0 matches — stale IDs): fall back to topResults.
+  const displayResults = useMemo(() => {
+    if (!aiAssistResult?.rankedIds?.length) return topResults;
+    const filtered = aiAssistResult.rankedIds
+      .map(id => panelFilteredOneWay.find(f => f.id === id))
+      .filter((f): f is UnifiedFlight => f !== undefined);
+    return filtered.length > 0 ? filtered : topResults;
+  }, [topResults, panelFilteredOneWay, aiAssistResult]);
 
   const airlines = useMemo(() => {
     const seen = new Map<string, string>();
@@ -452,6 +496,71 @@ function SearchContent() {
     );
     return f;
   }, [prefsFilteredRT, selectedAirlines, selectedClasses, selectedFeatures]);
+
+  // Derive active cabin(s) from the class filter — when the user toggles one
+  // or more classes in the filter panel, the flex-date strip should show the
+  // lowest fare among the selected classes.  Comma-separated for multi-select.
+  const activeCabin = useMemo(() => {
+    if (selectedClasses.size > 0) return [...selectedClasses].join(',');
+    return cabin; // fallback to URL param when no filter is active
+  }, [selectedClasses, cabin]);
+
+  // Return-leg metadata for round trips — passed to chatbot for dual-leg display
+  const rtMetaMap = useMemo(() => {
+    if (tripParam !== 'round_trip' || panelFilteredRT.length === 0) return undefined;
+    const map = new Map<string, { outboundDurationMinutes: number; returnDeparture: string; returnArrival: string; returnDurationMinutes: number; returnStops: number }>();
+    panelFilteredRT.forEach(rt => {
+      map.set(rt.id, {
+        outboundDurationMinutes: rt.outboundJourney.durationMinutes,
+        returnDeparture:       rt.returnJourney.departureAirport,
+        returnArrival:         rt.returnJourney.arrivalAirport,
+        returnDurationMinutes: rt.returnJourney.durationMinutes,
+        returnStops:           rt.returnJourney.stops,
+      });
+    });
+    return map;
+  }, [panelFilteredRT, tripParam]);
+
+  const AI_POOL_SIZE = parseInt(process.env.NEXT_PUBLIC_AI_CHATBOT_POOL_SIZE ?? '30', 10);
+
+  // Full AI Pick pool sent to the chatbot — the chatbot re-ranks/filters within this set.
+  // Pool size is controlled by NEXT_PUBLIC_AI_CHATBOT_POOL_SIZE (default: 30).
+  const aiFlights = useMemo<UnifiedFlight[]>(() => {
+    if (panelFilteredOneWay.length > 0) return panelFilteredOneWay.slice(0, AI_POOL_SIZE);
+    return panelFilteredRT.slice(0, AI_POOL_SIZE).map(rt => ({
+      id: rt.id,
+      provider: rt.provider,
+      providerOfferId: rt.providerOfferId,
+      airline: { code: rt.airlineCodes[0] ?? 'XX', name: rt.airlines[0] ?? 'Unknown' },
+      segments: rt.outboundJourney.segments,
+      totalPrice: rt.totalPrice,
+      currency: rt.currency,
+      cabinClass: rt.cabinClass,
+      fareRules: rt.fareRules,
+      baggage: rt.baggage,
+      totalDuration: rt.totalDurationMinutes,
+      stops: rt.maxStopsOneWay,
+      valueScore: rt.score ?? 50,
+    }));
+  }, [panelFilteredOneWay, panelFilteredRT]);
+
+  // When chatbot result is active: show ONLY the chatbot-ranked cards in chatbot order.
+  // If IDs don't match (stale result / trip-type switch), fall back to full panel.
+  const displayPanelOneWay = useMemo(() => {
+    if (!aiAssistResult?.rankedIds?.length) return panelFilteredOneWay;
+    const filtered = aiAssistResult.rankedIds
+      .map(id => panelFilteredOneWay.find(f => f.id === id))
+      .filter((f): f is UnifiedFlight => f !== undefined);
+    return filtered.length > 0 ? filtered : panelFilteredOneWay;
+  }, [panelFilteredOneWay, aiAssistResult]);
+
+  const displayPanelRT = useMemo(() => {
+    if (!aiAssistResult?.rankedIds?.length) return panelFilteredRT;
+    const filtered = aiAssistResult.rankedIds
+      .map(id => panelFilteredRT.find(rt => rt.id === id))
+      .filter((rt): rt is RoundTripOption => rt !== undefined);
+    return filtered.length > 0 ? filtered : panelFilteredRT;
+  }, [panelFilteredRT, aiAssistResult]);
 
   // ── Active map flight: show hovered card's polylines, or first card by default ──
   const activeMapRoundTrips = useMemo(() => {
@@ -618,7 +727,10 @@ function SearchContent() {
               tripType={tripParam as 'one_way' | 'round_trip'}
               rtSortMode={rtSortMode}
               onRtSortChange={setRtSortMode}
-
+              departureDate={date}
+              returnDate={returnDateParam}
+              origin={origin}
+              destination={destination}
             />
           </div>
         </div>
@@ -628,10 +740,10 @@ function SearchContent() {
       {loading ? (
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
           <div className="flex flex-col items-center justify-center py-24 gap-6">
-            <div className="w-12 h-12 border-[3px] border-black/10 border-t-black rounded-full animate-spin" />
+            <div className="w-20 h-20 border-[4px] border-black/10 border-t-black rounded-full animate-spin" />
             <div className="text-center">
-              <p className="text-lg font-semibold text-white mb-1">Searching Duffel NDC...</p>
-              <p className="text-sm text-slate-500">Fetching live fares from airline direct connections</p>
+              <p className="text-xl font-semibold text-black mb-1">Searching flights...</p>
+              <p className="text-sm text-black/60">Fetching live fares from multiple providers</p>
             </div>
           </div>
         </div>
@@ -709,7 +821,10 @@ function SearchContent() {
                 tripType={tripParam as 'one_way' | 'round_trip'}
                 rtSortMode={rtSortMode}
                 onRtSortChange={setRtSortMode}
-  
+                departureDate={date}
+                returnDate={returnDateParam}
+                origin={origin}
+                destination={destination}
               />
             </div>
 
@@ -739,9 +854,9 @@ function SearchContent() {
                     departureDate={date}
                     returnDate={returnDateParam}
                     adults={adults}
-                    cabin={cabin}
+                    cabin={activeCabin}
                     tripParam={tripParam}
-                    currentMinPrice={roundTripOptions.length > 0 ? Math.min(...roundTripOptions.map(o => o.totalPrice)) : null}
+                    currentMinPrice={panelFilteredRT[0]?.totalPrice ?? null}
                   />
                 )}
 
@@ -751,10 +866,12 @@ function SearchContent() {
                     <div className="flex items-center gap-3 mb-5 pt-2">
                       <Sparkles className="w-5 h-5 text-amber-500" />
                       <h2 className="text-base font-black text-slate-800 uppercase tracking-wide">Round-trip options</h2>
-                      <span className="text-xs text-slate-400 font-medium ml-auto">AI-ranked · {panelFilteredRT.length} results</span>
+                      <span className="text-xs text-slate-400 font-medium ml-auto">
+                        {aiAssistResult ? `AI filtered · ${displayPanelRT.length} matches` : `AI-scored · ${Math.min(panelFilteredRT.length, 51)} of ${panelFilteredRT.length} results`}
+                      </span>
                     </div>
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      {panelFilteredRT.map((option, i) => (
+                      {displayPanelRT.map((option, i) => (
                         <RoundTripCard
                           key={option.id}
                           option={option}
@@ -764,7 +881,10 @@ function SearchContent() {
                           isHovered={hoveredFlightId === option.id}
                           aiEnabled={prefs.aiIntelligence}
                           isBestAiPick={prefs.aiIntelligence && i === 0}
-                          isTopAiPick={prefs.aiIntelligence && i > 0 && i < 15}
+                          isTopAiPick={prefs.aiIntelligence && i > 0 && i < 30}
+                          scoreOverride={prefs.aiIntelligence ? aiRTMap?.get(option.id)?.aiScore : undefined}
+                          isAiHighlighted={!!aiAssistResult && aiAssistResult.rankedIds[0] === option.id}
+                          aiReasons={prefs.aiIntelligence ? aiRTMap?.get(option.id)?.aiReasons : undefined}
                         />
                       ))}
                     </div>
@@ -784,15 +904,18 @@ function SearchContent() {
                     <div className="flex items-center gap-3 mb-5 pt-4">
                       <Sparkles className="w-5 h-5 text-amber-500" />
                       <h2 className="text-base font-black text-slate-800 uppercase tracking-wide">Top flights for you</h2>
-                      <span className="text-xs text-slate-400 font-medium ml-auto">AI-ranked · {panelFilteredOneWay.length} results</span>
+                      <span className="text-xs text-slate-400 font-medium ml-auto">
+                        {aiAssistResult ? `AI filtered · ${displayPanelOneWay.length} matches` : `AI-scored · ${Math.min(panelFilteredOneWay.length, 51)} of ${panelFilteredOneWay.length} results`}
+                      </span>
                     </div>
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      {panelFilteredOneWay.map((flight, i) => (
+                      {displayPanelOneWay.map((flight, i) => (
                         <motion.div
                           key={flight.id}
                           initial={{ opacity: 0, y: 12 }}
-                          animate={{ opacity: 1, y: 0 }}
-                          transition={{ delay: Math.min(i * 0.04, 0.4) }}
+                          whileInView={{ opacity: 1, y: 0 }}
+                          viewport={{ once: true, margin: "-40px" }}
+                          transition={{ duration: 0.35, ease: [0.16, 1, 0.3, 1] }}
                           className={`cursor-pointer rounded-2xl transition-all duration-150 h-full ${
                             hoveredFlightId === flight.id
                               ? 'ring-2 ring-[#1ABC9C]/60 shadow-xl shadow-[#1ABC9C]/10 -translate-y-0.5'
@@ -802,7 +925,15 @@ function SearchContent() {
                           onMouseLeave={() => setHoveredFlightId(null)}
                           onClick={() => setSelectedFlight(flight)}
                         >
-                          <FlightCard flight={flight} index={i} onSelect={(f) => setSelectedFlight(f)} />
+                          <FlightCard
+                            flight={flight}
+                            index={i}
+                            onSelect={(f) => setSelectedFlight(f)}
+                            scoreOverride={prefs.aiIntelligence ? aiOneWayMap?.get(flight.id)?.aiScore : (flight as any).aiScoreDisplay ?? undefined}
+                            aiReasons={aiAssistResult?.reasoning?.[flight.id] ?? (flight as any).aiReasons}
+                            isAiHighlighted={!!aiAssistResult && aiAssistResult.rankedIds[0] === flight.id}
+                            aiBadge={aiAssistResult?.badges?.[flight.id]}
+                          />
                         </motion.div>
                       ))}
                     </div>
@@ -852,7 +983,7 @@ function SearchContent() {
 
             {/* Results column */}
             <div className="flex-1 min-w-0">
-              {/* ── Round-trip list ── */}
+
               {tripParam === 'round_trip' ? (
                 panelFilteredRT.length > 0 ? (
                   <div>
@@ -863,9 +994,9 @@ function SearchContent() {
                         departureDate={date}
                         returnDate={returnDateParam}
                         adults={adults}
-                        cabin={cabin}
+                        cabin={activeCabin}
                         tripParam={tripParam}
-                        currentMinPrice={roundTripOptions.length > 0 ? Math.min(...roundTripOptions.map(o => o.totalPrice)) : null}
+                        currentMinPrice={panelFilteredRT[0]?.totalPrice ?? null}
                       />
                     )}
                     <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">
@@ -885,7 +1016,10 @@ function SearchContent() {
                           isHovered={hoveredFlightId === option.id}
                           aiEnabled={prefs.aiIntelligence}
                           isBestAiPick={prefs.aiIntelligence && i === 0}
-                          isTopAiPick={prefs.aiIntelligence && i > 0 && i < 15}
+                          isTopAiPick={prefs.aiIntelligence && i > 0 && i < 30}
+                          scoreOverride={prefs.aiIntelligence ? aiRTMap?.get(option.id)?.aiScore : undefined}
+                          isAiHighlighted={!!aiAssistResult && aiAssistResult.rankedIds[0] === option.id}
+                          aiReasons={prefs.aiIntelligence ? aiRTMap?.get(option.id)?.aiReasons : undefined}
                         />
                       ))}
                     </div>
@@ -951,8 +1085,17 @@ function SearchContent() {
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {topResults.map((flight, i) => (
-                      <FlightCard key={flight.id} flight={flight} index={i} onSelect={handleSelectFlight} />
+                    {displayResults.map((flight, i) => (
+                      <FlightCard
+                        key={flight.id}
+                        flight={flight}
+                        index={i}
+                        onSelect={handleSelectFlight}
+                        scoreOverride={prefs.aiIntelligence ? aiOneWayMap?.get(flight.id)?.aiScore : (flight as any).aiScoreDisplay ?? undefined}
+                        aiReasons={aiAssistResult?.reasoning?.[flight.id] ?? (flight as any).aiReasons}
+                        isAiHighlighted={!!aiAssistResult && aiAssistResult.rankedIds[0] === flight.id}
+                        aiBadge={aiAssistResult?.badges?.[flight.id]}
+                      />
                     ))}
                   </div>
                 </div>
@@ -1016,6 +1159,8 @@ function SearchContent() {
           aiEnabled={prefs.aiIntelligence}
           isBestAiPick={prefs.aiIntelligence && panelFilteredRT[0]?.id === selectedRoundTrip.id}
           isTopAiPick={prefs.aiIntelligence && (() => { const idx = panelFilteredRT.findIndex(r => r.id === selectedRoundTrip.id); return idx > 0 && idx < 15; })()}
+          aiScoreOverride={prefs.aiIntelligence ? aiRTMap?.get(selectedRoundTrip.id)?.aiScore : undefined}
+          aiReasonsOverride={prefs.aiIntelligence ? aiRTMap?.get(selectedRoundTrip.id)?.aiReasons : undefined}
           onClose={() => setSelectedRoundTrip(null)}
           onBook={() => {
             fareStore.reset();
@@ -1046,6 +1191,24 @@ function SearchContent() {
             setShowFareModal(false);
             fareStore.reset();
           }}
+        />
+      )}
+
+      {/* Floating AI Assistant */}
+      {!loading && aiFlights.length > 0 && (
+        <FloatingAIAssistant
+          flights={aiFlights}
+          context={{
+            origin,
+            destination,
+            tripType: tripParam,
+            passengers: parseInt(adults, 10),
+            departureDate: date,
+          }}
+          onResult={setAiAssistResult}
+          result={aiAssistResult}
+          focusedFlightId={hoveredFlightId}
+          rtMetaMap={rtMetaMap}
         />
       )}
     </div>

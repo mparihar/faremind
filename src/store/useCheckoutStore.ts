@@ -62,14 +62,30 @@ export interface PricingBreakdown {
   currency: string;
 }
 
+export interface ConfirmedPnr {
+  pnrCode: string;
+  pnrType: string;
+  journeyDirection: 'ALL' | 'OUTBOUND' | 'RETURN';
+  isPrimary: boolean;
+  airlineCode?: string | null;
+  airlineName?: string | null;
+  displayLabel: string;
+}
+
 export interface BookingConfirmation {
   pnr: string;
+  masterBookingReference: string;
   bookingId: string;
   status: 'confirmed' | 'pending' | 'failed';
   confirmedAt: string;
   passengerNames: string[];
   totalCharged: number;
   currency: string;
+  pnrStrategy?: string | null;
+  isSplitTicket?: boolean;
+  riskLabel?: string | null;
+  riskExplanation?: string | null;
+  pnrs?: ConfirmedPnr[];
 }
 
 // ─── Store interface ──────────────────────────────────────────────────────────
@@ -279,7 +295,10 @@ export function buildLocalPricing(store: CheckoutStore): PricingBreakdown {
   const seatFees = seatSelections.reduce((s, x) => s + (x.priceUsd ?? 0), 0);
   const mealFees = mealSelections.reduce((s, x) => s + (x.priceUsd ?? 0), 0);
   const baggageFees = extraBags * 35;
-  const protectionFee  = priceProtection  ? (selectedFare?.protectionFee ?? 0) : 0;
+  const rawProtectionFee = selectedFare?.protectionFee && selectedFare.protectionFee > 0
+    ? selectedFare.protectionFee
+    : Math.min(Math.max(Math.round((selectedFare?.basePrice ?? 0) * 0.06), 49), 399);
+  const protectionFee  = priceProtection  ? rawProtectionFee : 0;
   const insuranceFee   = travelInsurance  ? Math.round(perPersonBase * passengers.length * 0.04) : 0;
   const serviceFee     = Math.round(perPersonBase * passengers.length * 0.015);
 
