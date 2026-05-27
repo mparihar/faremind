@@ -11,9 +11,8 @@ COPY package-lock.json ./package-lock.json
 # Install root deps (for prisma generate)
 RUN npm ci --omit=dev
 
-# Copy backend and generated prisma client path
+# Copy backend
 COPY backend/ ./backend/
-COPY src/generated/ ./src/generated/ 2>/dev/null || true
 
 # Install ALL backend deps (including devDependencies for tsc)
 WORKDIR /app/backend
@@ -34,5 +33,4 @@ EXPOSE ${PORT:-3001}
 # tsc outputs to dist/ with paths mirroring the rootDir.
 # Since backend imports ../src/generated/, rootDir becomes /app/,
 # so compiled entry is at dist/backend/src/index.js
-# Use find to locate it reliably
 CMD ["node", "dist/backend/src/index.js"]
