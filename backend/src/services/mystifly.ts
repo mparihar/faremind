@@ -341,7 +341,7 @@ const authService = new MystiflyAuthService();
 // HTTP Client with Retry & Auto-Auth
 // ═══════════════════════════════════════════════
 
-interface MystiflyRequestOptions {
+interface MystiflyHttpRequestOptions {
   method: 'GET' | 'POST';
   path: string;
   body?: Record<string, unknown>;
@@ -355,7 +355,7 @@ async function mystiflyRequest<T>({
   body,
   retries = 2,
   skipAuth = false,
-}: MystiflyRequestOptions): Promise<T> {
+}: MystiflyHttpRequestOptions): Promise<T> {
   const url = `${MYSTIFLY_API_URL}${path}`;
   let lastError: Error | null = null;
 

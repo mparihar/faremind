@@ -599,7 +599,7 @@ export class MystiflyAdapter implements IBookingProvider {
     _orderId: string,
     _slicesToRemove: { slice_id: string }[],
     _slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[]
-  ) {
+  ): Promise<{ requestId: string; offers: any[]; raw: unknown }> {
     throw new Error('Mystifly order changes are not yet supported. Use PostTicketingRequest flow.');
   }
 
@@ -607,7 +607,7 @@ export class MystiflyAdapter implements IBookingProvider {
     _changeOfferId: string,
     _paymentAmount?: number,
     _paymentCurrency?: string
-  ) {
+  ): Promise<{ changeId: string; orderId: string; newTotalAmount: number; newTotalCurrency: string; confirmedAt: string; raw: unknown }> {
     throw new Error('Mystifly order changes are not yet supported. Use PostTicketingRequest flow.');
   }
 }
