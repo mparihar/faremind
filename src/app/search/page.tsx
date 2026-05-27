@@ -396,9 +396,8 @@ function SearchContent() {
   }, [results, roundTripOptions, tripParam]);
 
   const classFilterOptions = useMemo<FilterOption[]>(() => {
-    // Always show all 5 standard classes; count=0 ones are shown disabled
+    // Always show all standard classes; count=0 ones are shown disabled
     const ALL_CLASSES: { key: string; label: string; note?: string }[] = [
-      { key: 'economy_basic',    label: 'Basic Economy',    note: 'Fares may not include seats or bags' },
       { key: 'economy',          label: 'Economy' },
       { key: 'premium_economy',  label: 'Premium Economy' },
       { key: 'business',         label: 'Business Class' },
