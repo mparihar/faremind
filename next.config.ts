@@ -8,6 +8,10 @@ const nextConfig: NextConfig = {
   eslint: {
     ignoreDuringBuilds: true,
   },
+  experimental: {
+    // Suppress useSearchParams Suspense boundary check during prerendering
+    missingSuspenseWithCSRBailout: false,
+  },
 };
 
 export default nextConfig;
