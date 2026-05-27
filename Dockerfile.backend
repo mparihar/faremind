@@ -22,7 +22,7 @@ RUN npm ci
 RUN npx prisma generate --schema ../prisma/schema.prisma
 
 # Build backend TypeScript (needs tsc from devDependencies)
-RUN npm run build
+RUN npm run build && echo "=== BUILD OUTPUT ===" && ls -la dist/ && echo "=== dist/index.js exists ===" && test -f dist/index.js && echo "YES" || echo "NO - BUILD FAILED"
 
 # Remove devDependencies after build
 RUN npm prune --omit=dev
@@ -30,5 +30,5 @@ RUN npm prune --omit=dev
 # Expose port
 EXPOSE ${PORT:-3001}
 
-# Start
+# Start from /app/backend where dist/ lives
 CMD ["node", "dist/index.js"]
