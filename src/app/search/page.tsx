@@ -154,7 +154,7 @@ function SearchContent() {
 
   function fmtMonth(dateStr: string): string {
     if (!dateStr) return '';
-    try { return format(new Date(dateStr + 'T12:00:00'), 'dd, MMM yyyy'); } catch { return dateStr; }
+    try { return format(new Date(dateStr + 'T12:00:00'), 'EEE, MMM dd yyyy'); } catch { return dateStr; }
   }
 
   const originAirport = AIRPORTS.find((a) => a.code === origin);
