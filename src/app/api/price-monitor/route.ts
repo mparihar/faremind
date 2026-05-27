@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
             select: { userId: true, originAirport: true, destinationAirport: true },
           });
 
-          if (booking) {
+          if (booking && booking.userId) {
             // Create price alert
             await createPriceAlert({
               bookingId: job.bookingId,
