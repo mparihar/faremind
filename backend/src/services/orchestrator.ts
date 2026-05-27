@@ -11,6 +11,22 @@ import * as mystifly from './mystifly';
 import { normalizeDuffelOffer, normalizeAmadeusOffer, normalizeMystiflyOffer, mergeAndRankFlights } from './normalizer';
 import type { UnifiedFlight } from '../lib/types';
 
+// ─── Startup diagnostics (visible in Railway deploy logs) ──────────────────
+const _duffelToken = process.env.DUFFEL_API_TOKEN || '';
+const _mystiflyUser = process.env.MYSTIFLY_USERNAME || '';
+const _mystiflyPass = process.env.MYSTIFLY_PASSWORD || '';
+const _mystiflyAcct = process.env.MYSTIFLY_ACCOUNT_NUMBER || '';
+const _mystiflySession = process.env.MYSTIFLY_SESSION_ID || '';
+
+console.log('[Orchestrator] ── Provider env-var diagnostics ──');
+console.log(`[Orchestrator]   DUFFEL_API_TOKEN:         ${_duffelToken ? `set (${_duffelToken.substring(0, 12)}…)` : '❌ MISSING'}`);
+console.log(`[Orchestrator]   MYSTIFLY_USERNAME:        ${_mystiflyUser || '❌ MISSING'}`);
+console.log(`[Orchestrator]   MYSTIFLY_PASSWORD:        ${_mystiflyPass ? 'set (****)' : '❌ MISSING'}`);
+console.log(`[Orchestrator]   MYSTIFLY_ACCOUNT_NUMBER:  ${_mystiflyAcct || '❌ MISSING'}`);
+console.log(`[Orchestrator]   MYSTIFLY_SESSION_ID:      ${_mystiflySession ? `set (${_mystiflySession.substring(0, 8)}…)` : '❌ MISSING'}`);
+console.log(`[Orchestrator]   MYSTIFLY_API_URL:         ${process.env.MYSTIFLY_API_URL || '(default)'}`);
+console.log('[Orchestrator] ─────────────────────────────────');
+
 function isDuffelConfigured(): boolean {
   const token = process.env.DUFFEL_API_TOKEN || '';
   return token.length > 0 && !token.includes('your_token');

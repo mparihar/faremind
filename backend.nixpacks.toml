@@ -10,8 +10,8 @@ cmds = [
 [phases.build]
 cmds = [
   "npx prisma generate",
-  "cd backend && npx prisma generate --schema ../prisma/schema.prisma && npm run build"
+  "cd backend && npx prisma generate --schema ../prisma/schema.prisma"
 ]
 
 [start]
-cmd = "cd backend && node dist/index.js"
+cmd = "cd backend && node --import tsx src/index.ts"

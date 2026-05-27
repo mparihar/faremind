@@ -8,21 +8,26 @@ COPY prisma.config.ts ./prisma.config.ts
 COPY package.json ./package.json
 COPY package-lock.json ./package-lock.json
 
-# Install root deps (for prisma generate)
-RUN npm ci --omit=dev
+# Install root deps (includes prisma for generate, @prisma/client for runtime)
+RUN npm ci
+
+# Generate Prisma client at root level (outputs to /app/src/generated/prisma/)
+RUN npx prisma generate
 
 # Copy backend source
 COPY backend/ ./backend/
 
-# Install backend deps (tsx is now a production dependency)
+# Install backend deps
 WORKDIR /app/backend
-RUN npm ci --omit=dev
+RUN npm ci
 
-# Generate Prisma client (schema is at ../prisma/schema.prisma)
+# Generate Prisma client for backend (same output, ensures it's fresh)
 RUN npx prisma generate --schema ../prisma/schema.prisma
 
 # Expose port
 EXPOSE ${PORT:-3001}
 
 # Run directly from TypeScript source using tsx
+# CWD is /app/backend — tsx resolves ../../../src/generated/prisma from src/lib/
 CMD ["node", "--import", "tsx", "src/index.ts"]
+
