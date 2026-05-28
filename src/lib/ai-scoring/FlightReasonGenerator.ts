@@ -71,7 +71,24 @@ export function generateReasons(
           positiveReasons.push('Changeable fare — the premium includes reschedule flexibility');
         }
       }
-      negativeWarnings.push('Higher than the cheapest comparable options');
+    }
+  }
+
+  // ── Fare flexibility reasons (high priority — show early) ──
+  // Flexibility is a key differentiator; surface it before stops/duration.
+  // Skip if the price-justification section above already added one.
+  const hasFlex = features.fareFlexibility.refundable || features.fareFlexibility.changeable;
+  const alreadyHasFlexReason = positiveReasons.some(r =>
+    r.includes('refundable') || r.includes('Refundable') ||
+    r.includes('changeable') || r.includes('Changeable')
+  );
+  if (hasFlex && !alreadyHasFlexReason) {
+    if (features.fareFlexibility.refundable && features.fareFlexibility.changeable) {
+      positiveReasons.push('Fully refundable & changeable — maximum booking flexibility');
+    } else if (features.fareFlexibility.refundable) {
+      positiveReasons.push('Refundable fare — cancel for a full refund if plans change');
+    } else if (features.fareFlexibility.changeable) {
+      positiveReasons.push('Changeable fare — schedule flexibility if plans shift');
     }
   }
 
@@ -148,24 +165,8 @@ export function generateReasons(
     negativeWarnings.push('No checked baggage included — additional fee may apply');
   }
 
-  // ── Fare flexibility reasons ──
-  // Only add here if not already added in the price justification section above.
-  // Check by looking for the presence of flexibility-related text in positiveReasons.
-  const alreadyHasFlexReason = positiveReasons.some(r =>
-    r.includes('refundable') || r.includes('Refundable') ||
-    r.includes('changeable') || r.includes('Changeable')
-  );
-  if (!alreadyHasFlexReason) {
-    if (features.fareFlexibility.refundable && features.fareFlexibility.changeable) {
-      positiveReasons.push('Fully refundable & changeable — maximum booking flexibility');
-    } else if (features.fareFlexibility.refundable) {
-      positiveReasons.push('Refundable fare — cancel for a full refund if plans change');
-    } else if (features.fareFlexibility.changeable) {
-      positiveReasons.push('Changeable fare — schedule flexibility if plans shift');
-    } else {
-      negativeWarnings.push('Non-refundable and non-changeable — book only if dates are firm');
-    }
-  } else if (!features.fareFlexibility.refundable && !features.fareFlexibility.changeable) {
+  // ── Non-flexible warning (only if fare has zero flexibility) ──
+  if (!hasFlex) {
     negativeWarnings.push('Non-refundable and non-changeable — book only if dates are firm');
   }
 

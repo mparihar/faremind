@@ -38,8 +38,6 @@ export function generateReasons(
       } else {
         reasons.push(`Only ${pctAbove.toFixed(0)}% more than the cheapest option`);
       }
-    } else if (pctAbove > 20) {
-      reasons.push('Higher fare — consider if the features justify the premium');
     }
   }
 

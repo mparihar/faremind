@@ -93,7 +93,7 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
       )}
 
       {/* Top badges */}
-      {(hasTag || isNDC || (aiBadge && !isAiHighlighted)) && !isCompact && (
+      {(hasTag || isNDC || (aiBadge && !isAiHighlighted) || flight.fareRules.refundable || flight.fareRules.changeable) && !isCompact && (
         <div className="flex items-center gap-2 px-5 pt-4 flex-wrap">
           {isBestValue && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-[#1ABC9C] to-[#26d0ce] text-white shadow-sm">
@@ -111,6 +111,11 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-[#0F172A] text-white shadow-sm">
               <Zap className="w-3.5 h-3.5" />
               Fastest
+            </span>
+          )}
+          {(flight.fareRules.refundable || flight.fareRules.changeable) && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-purple-600 text-white shadow-sm">
+              🔄 Flexible
             </span>
           )}
           {isNDC && (
@@ -230,11 +235,12 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
             <p className="flex items-center gap-1.5 text-[10px] font-bold text-[#1ABC9C] uppercase tracking-wider mb-1.5">
               <Sparkles className="w-3 h-3" /> Why FareMind AI recommends this
             </p>
-            {aiReasons.slice(0, 4).map((reason, i) => {
+            {aiReasons.slice(0, 5).map((reason, i) => {
               const isAlert = [
                 'longer journey', 'significantly longer', 'layover — may be less convenient',
                 'risk of missed transfer', 'Inconvenient flight times', 'No checked baggage',
-                'additional fee may apply', 'Non-refundable and non-changeable', 'Consider trade-offs'
+                'additional fee may apply', 'Non-refundable and non-changeable', 'Consider trade-offs',
+                'Higher than', 'Higher fare'
               ].some(a => reason.includes(a));
               return (
                 <div key={i} className="flex items-start gap-1.5">

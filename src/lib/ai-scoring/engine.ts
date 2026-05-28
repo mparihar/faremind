@@ -512,11 +512,15 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     c.score.rankingTags = badgeResult?.rankingTags ?? [];
 
     // Build combined aiReasons for backward compatibility
-    // Positive reasons first, then negative warnings
+    // Ensure negative warnings (esp. non-refundable) are ALWAYS visible.
+    // Strategy: take up to 3 positives, then append all negatives, cap at 5.
+    const positives = reasonResult.positiveReasons;
+    const negatives = reasonResult.negativeWarnings;
+    const maxPositives = negatives.length > 0 ? 3 : 4;
     const aiReasons = [
-      ...reasonResult.positiveReasons,
-      ...reasonResult.negativeWarnings,
-    ].slice(0, 4);
+      ...positives.slice(0, maxPositives),
+      ...negatives,
+    ].slice(0, 5);
 
     // Build legacy labels
     const labels: AiLabel[] = [];

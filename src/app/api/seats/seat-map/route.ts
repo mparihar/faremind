@@ -150,10 +150,11 @@ export async function GET(request: NextRequest) {
     setCached(cacheKey, seatMaps);
     return NextResponse.json({ seatMaps, cached: false });
   } catch (error) {
-    console.error('[Seat Map] API error:', (error as Error).message);
+    const errMsg = (error as Error).message;
+    console.error(`[Seat Map] API error for ${type} ${id}: ${errMsg}`);
     // Return empty array — seats page shows preference-selector fallback
     return NextResponse.json(
-      { seatMaps: [], error: 'Seat map unavailable for this flight.' },
+      { seatMaps: [], error: `Seat map unavailable: ${errMsg}` },
       { status: 200 }, // 200 so the frontend can handle gracefully
     );
   }

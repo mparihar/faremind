@@ -5,6 +5,8 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Sparkles, Send, X, Minus, ChevronRight, Check, Bot, Plane, ArrowRight, ArrowLeft } from 'lucide-react';
 import { cn, formatDuration, formatPrice, getStopsLabel } from '@/lib/utils';
 import type { UnifiedFlight } from '@/lib/types';
+import type { RoundTripOption } from '@/lib/round-trip-types';
+import AiBookFlightFlow from './ai-booking/AiBookFlightFlow';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
@@ -67,6 +69,7 @@ interface FloatingAIAssistantProps {
   result: AIAssistResult | null;
   focusedFlightId?: string | null;
   rtMetaMap?: Map<string, RtLegMeta>;
+  roundTripOptions?: RoundTripOption[];
 }
 
 // ── Suggestion chips ────────────────────────────────────────────────────────
@@ -92,13 +95,14 @@ function uid() {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function FloatingAIAssistant({
-  flights, context, onResult, result, focusedFlightId, rtMetaMap,
+  flights, context, onResult, result, focusedFlightId, rtMetaMap, roundTripOptions,
 }: FloatingAIAssistantProps) {
   const [isOpen,    setIsOpen]    = useState(false);
   const [messages,  setMessages]  = useState<ChatMessage[]>([]);
   const [input,     setInput]     = useState('');
   const [loading,   setLoading]   = useState(false);
   const [activeChip, setActiveChip] = useState<string | null>(null);
+  const [bookingMode, setBookingMode] = useState(false);
   const scrollRef   = useRef<HTMLDivElement>(null);
   const inputRef    = useRef<HTMLInputElement>(null);
 
@@ -221,13 +225,14 @@ export default function FloatingAIAssistant({
             exit={{   opacity: 0, scale: 0.94,  y: 12 }}
             transition={{ type: 'spring', stiffness: 400, damping: 32 }}
             className="w-[380px] max-sm:w-[calc(100vw-24px)] flex flex-col rounded-2xl overflow-hidden shadow-[0_12px_48px_rgba(13,148,136,0.18),0_2px_12px_rgba(0,0,0,0.10)] border border-teal-200/60"
-            style={{ maxHeight: 540, background: '#ffffff' }}
+            style={{ maxHeight: 580, background: '#ffffff' }}
           >
 
             {/* Co-Pilot accent bar */}
             <div className="h-1 w-full shrink-0" style={{ background: 'linear-gradient(90deg, #007a7c 0%, #009A9C 50%, #00b5b7 100%)' }} />
 
-            {/* Header */}
+            {/* Header — hidden in booking mode (AiBookFlightFlow has its own) */}
+            {!bookingMode && (
             <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 shrink-0 bg-white">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm shrink-0 relative overflow-hidden"
                 style={{ background: 'linear-gradient(135deg, #007a7c 0%, #009A9C 55%, #00b5b7 100%)' }}>
@@ -265,6 +270,20 @@ export default function FloatingAIAssistant({
                 </button>
               </div>
             </div>
+            )}
+
+            {/* ── Booking Mode ── */}
+            {bookingMode ? (
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden" style={{ background: 'linear-gradient(180deg, #f0fdfb 0%, #f8fffe 100%)' }}>
+                <AiBookFlightFlow
+                  flights={flights}
+                  roundTripOptions={roundTripOptions}
+                  searchPassengers={context.passengers}
+                  onExit={() => setBookingMode(false)}
+                />
+              </div>
+            ) : (
+              <>
 
             {/* Scrollable body */}
             <div
@@ -329,6 +348,16 @@ export default function FloatingAIAssistant({
                   transition={{ delay: 0.15 }}
                   className="flex flex-wrap gap-1.5 justify-center pb-1"
                 >
+                  {/* ✈ Book a Flight — special action chip */}
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setBookingMode(true)}
+                    className="px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all bg-gradient-to-r from-[#1ABC9C] to-emerald-500 border-[#1ABC9C]/40 text-white shadow-md shadow-[#1ABC9C]/20 hover:shadow-lg hover:shadow-[#1ABC9C]/30"
+                  >
+                    ✈ Book a Flight
+                  </motion.button>
+
                   {CHIPS.map(chip => (
                     <motion.button
                       key={chip.label}
@@ -508,6 +537,9 @@ export default function FloatingAIAssistant({
                 </motion.button>
               </div>
             </div>
+
+              </>
+          )}
 
           </motion.div>
         )}

@@ -114,6 +114,18 @@ export async function POST(req: NextRequest) {
         // We MUST use these exact IDs when creating the order.
         const offerPassengers: Array<{ id: string; type: string }> = offer.passengers ?? [];
 
+        // Verify passenger count matches what Duffel expects
+        if (offerPassengers.length !== passengers.length) {
+          console.warn(
+            `[Duffel] Passenger count mismatch: offer has ${offerPassengers.length} passenger(s) but checkout has ${passengers.length}. ` +
+            `The offer was likely searched for a different number of travelers.`
+          );
+          return NextResponse.json(
+            { error: `This offer was booked for ${offerPassengers.length} traveler(s) but you have ${passengers.length}. Please search again with the correct number of passengers.` },
+            { status: 400 }
+          );
+        }
+
         // Match offer passengers to our checkout passengers by type
         const offerPaxByType: Record<string, string[]> = {};
         for (const op of offerPassengers) {
@@ -125,19 +137,29 @@ export async function POST(req: NextRequest) {
         const usedIdx: Record<string, number> = {};
 
         // Build Duffel passenger payload using the offer's passenger IDs
+        const usedPaxIds = new Set<string>();
         const duffelPassengers = passengers.map((p: any) => {
           const paxType = p.type === 'child' ? 'child' : p.type === 'infant' ? 'infant' : 'adult';
           const duffelType = p.type === 'infant' ? 'infant_without_seat' : paxType;
           const idx = usedIdx[paxType] ?? 0;
           usedIdx[paxType] = idx + 1;
-          const paxId = offerPaxByType[paxType]?.[idx];
+          let paxId = offerPaxByType[paxType]?.[idx];
 
+          // Fallback: try to find any unused passenger ID
           if (!paxId) {
-            console.warn(`[Duffel] No offer passenger ID for ${paxType} #${idx}, offer had:`, offerPassengers.map(op => op.id));
+            const unused = offerPassengers.find(op => !usedPaxIds.has(op.id));
+            paxId = unused?.id;
+            console.warn(`[Duffel] No offer passenger ID for ${paxType} #${idx}, using fallback: ${paxId}`);
           }
 
+          if (!paxId) {
+            console.error(`[Duffel] Cannot assign passenger ID for ${paxType} #${idx}`);
+          }
+
+          usedPaxIds.add(paxId ?? '');
+
           return {
-            id: paxId ?? offerPassengers[0]?.id ?? '',
+            id: paxId ?? '',
             type: duffelType,
             given_name: p.firstName || 'Unknown',
             family_name: p.lastName || 'Traveler',

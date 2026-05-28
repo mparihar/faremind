@@ -1214,6 +1214,7 @@ function SearchContent() {
           result={aiAssistResult}
           focusedFlightId={hoveredFlightId}
           rtMetaMap={rtMetaMap}
+          roundTripOptions={roundTripOptions}
         />
       )}
     </div>

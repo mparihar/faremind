@@ -269,10 +269,23 @@ export default function PaymentPage() {
   })();
 
   // ── Validation ─────────────────────────────────────────────────────────────
+  const isExpiryValid = (() => {
+    if (card.expiry.length !== 5) return false;
+    const [mm, yy] = card.expiry.split('/');
+    const month = parseInt(mm, 10);
+    const year = parseInt(yy, 10);
+    if (isNaN(month) || isNaN(year) || month < 1 || month > 12) return false;
+    const now = new Date();
+    const currentMonth = now.getMonth() + 1;  // 1-indexed
+    const currentYear = now.getFullYear() % 100; // 2-digit
+    // Card must expire in a future month/year
+    return year > currentYear || (year === currentYear && month >= currentMonth);
+  })();
+
   const isCardValid =
     card.name.trim().length > 0 &&
     card.number.replace(/\s/g, '').length === 16 &&
-    card.expiry.length === 5 &&
+    isExpiryValid &&
     card.cvc.length >= 3;
 
   // ── Booking flow ───────────────────────────────────────────────────────────
@@ -536,8 +549,15 @@ export default function PaymentPage() {
                       maxLength={5}
                       inputMode="numeric"
                       autoComplete="cc-exp"
-                      className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:border-[#1ABC9C]/50 focus:bg-white transition-all"
+                      className={`w-full px-4 py-3 rounded-xl bg-slate-50 border text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:bg-white transition-all ${
+                        card.expiry.length === 5 && !isExpiryValid
+                          ? 'border-red-400 focus:border-red-400'
+                          : 'border-slate-200 focus:border-[#1ABC9C]/50'
+                      }`}
                     />
+                    {card.expiry.length === 5 && !isExpiryValid && (
+                      <p className="text-[11px] text-red-500 mt-1">Card is expired</p>
+                    )}
                   </div>
                   <div>
                     <label className="block text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">
