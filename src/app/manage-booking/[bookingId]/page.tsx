@@ -315,7 +315,9 @@ function EmailItineraryModal({ bookingId, booking, onClose }: { bookingId: strin
       // Convert HTML to base64 for the email attachment
       const pdfBase64 = btoa(unescape(encodeURIComponent(htmlContent)));
       
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL}/api/manage-booking/${bookingId}/email-itinerary`, {
+      let apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
+      apiUrl = apiUrl.replace(/\/$/, '');
+      const res = await fetch(`${apiUrl}/api/manage-booking/${bookingId}/email-itinerary`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ email, pdfBase64, isHtml: true })

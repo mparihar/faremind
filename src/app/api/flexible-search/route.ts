@@ -3,7 +3,8 @@ import { NextRequest, NextResponse } from 'next/server';
 export const maxDuration = 120; // Allow up to 2 minutes for 12-month parallel search
 
 export async function GET(req: NextRequest) {
-  const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  let backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+  backendUrl = backendUrl.replace(/\/$/, '');
   const { searchParams } = new URL(req.url);
   const url = `${backendUrl}/api/flexible-search?${searchParams.toString()}`;
 

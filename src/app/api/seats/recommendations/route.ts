@@ -44,7 +44,8 @@ async function fetchSeatMaps(offerId: string, provider: string): Promise<Segment
 
   if (provider === 'mystifly') {
     // Mystifly: call backend directly
-    const backendUrl = process.env.BACKEND_URL || 'http://localhost:4000';
+    let backendUrl = process.env.BACKEND_URL || 'http://localhost:4000';
+    backendUrl = backendUrl.replace(/\/$/, '');
     const res = await fetch(`${backendUrl}/api/seats/mystifly-seat-map`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },

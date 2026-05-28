@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { searchRoundTripFlights, getProviderStatus } from '@/lib/providers/orchestrator';
+import { searchRoundTripFlights, searchFlights, getProviderStatus } from '@/lib/providers/orchestrator';
 import { logSearch } from '@/lib/db-queries';
 import { rankFlightOffers } from '@/lib/ai-scoring';
 import type { AiUserPreferences, WeightPresetName, AiSortMode } from '@/lib/ai-scoring/types';
@@ -110,7 +110,8 @@ export async function GET(request: NextRequest) {
     }
 
     // ── One-way: proxy to backend for aggregated Duffel + Mystifly data ──────
-    const backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    let backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+    backendUrl = backendUrl.replace(/\/$/, '');
     const backendParams = new URLSearchParams({
       origin: origin!,
       destination: destination!,
@@ -145,7 +146,25 @@ export async function GET(request: NextRequest) {
       }
     } catch (err) {
       clearTimeout(timeout);
-      console.warn('[Search] Backend call failed, falling back to empty:', (err as Error).message);
+      console.warn('[Search] Backend call failed, falling back to local orchestrator:', (err as Error).message);
+    }
+
+    if (backendFlights.length === 0) {
+      console.log('[Search] Using local orchestrator fallback for one-way search');
+      try {
+        const localResult = await searchFlights({
+          origin: origin!, destination: destination!,
+          date: date!, returnDate: returnDate || undefined, adults, children, infants, cabin,
+        });
+        backendFlights = localResult.flights || [];
+        backendMeta = {
+          searchId: localResult.searchId,
+          totalTimeMs: localResult.totalTimeMs,
+          providers: localResult.providers,
+        };
+      } catch (localErr) {
+        console.warn('[Search] Local orchestrator fallback also failed:', (localErr as Error).message);
+      }
     }
 
     // Log what cabin classes actually came back

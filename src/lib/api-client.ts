@@ -8,7 +8,8 @@
  * which would hit Next.js API routes as a legacy fallback.
  */
 
-const API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+let API_BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+API_BASE_URL = API_BASE_URL.replace(/\/$/, '');
 
 /**
  * Get the full API URL for a given path.

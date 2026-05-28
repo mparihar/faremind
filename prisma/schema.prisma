@@ -568,6 +568,10 @@ model MasterBooking {
   events                 BookingEvent[]
   notes                  BookingNote[]
   providerPayloads       BookingProviderPayload[]
+  changeRequests         ChangeRequest[]
+  cancellations          CancellationRecord[]
+  passengerUpdates       BookingPassengerUpdate[]
+  providerSyncs          ProviderSync[]
 
   @@index([masterBookingReference])
   @@index([masterPnr])
@@ -1142,6 +1146,8 @@ model ChangeRequest {
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
 
+  booking          MasterBooking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
   @@index([bookingId])
   @@index([status])
   @@index([assignedTo])
@@ -1176,6 +1182,7 @@ model CancellationRecord {
   createdAt        DateTime           @default(now()) @map("created_at")
   updatedAt        DateTime           @updatedAt @map("updated_at")
 
+  booking          MasterBooking      @relation(fields: [bookingId], references: [id], onDelete: Cascade)
   refunds          BookingRefund[]
 
   @@index([status])
@@ -1203,7 +1210,7 @@ model BookingRefund {
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
 
-  cancellation CancellationRecord? @relation(fields: [cancellationId], references: [id])
+  cancellation CancellationRecord? @relation(fields: [cancellationId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
   @@index([cancellationId])
@@ -1226,6 +1233,8 @@ model BookingPassengerUpdate {
   failureReason    String?  @map("failure_reason")
   createdAt        DateTime @default(now()) @map("created_at")
   updatedAt        DateTime @updatedAt @map("updated_at")
+
+  booking          MasterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
   @@index([passengerId])
@@ -1273,6 +1282,8 @@ model ProviderSync {
   rawResponse     Json?     @map("raw_response")
   createdAt       DateTime  @default(now()) @map("created_at")
   updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  booking         MasterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
   @@index([status])
