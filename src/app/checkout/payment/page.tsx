@@ -229,7 +229,11 @@ export default function PaymentPage() {
     card.name.trim().length > 0 &&
     card.number.replace(/\s/g, '').length === 16 &&
     isExpiryValid &&
-    card.cvc.length >= 3;
+    card.cvc.length >= 3 &&
+    card.country.trim().length > 0 &&
+    card.address.trim().length > 0 &&
+    card.city.trim().length > 0 &&
+    card.zip.trim().length > 0;
 
   // ── Booking flow ───────────────────────────────────────────────────────────
   const handleCompleteBooking = async () => {
@@ -533,7 +537,7 @@ export default function PaymentPage() {
                     {/* Country */}
                     <div>
                       <label className="block text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">
-                        Country
+                        Country <span className="text-red-400">*</span>
                       </label>
                       <div className="relative">
                         <select
@@ -556,7 +560,7 @@ export default function PaymentPage() {
                     {/* Address */}
                     <div>
                       <label className="block text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">
-                        Address Line
+                        Address Line <span className="text-red-400">*</span>
                       </label>
                       <input
                         type="text"
@@ -574,7 +578,7 @@ export default function PaymentPage() {
                     <div className="grid grid-cols-2 gap-4">
                       <div>
                         <label className="block text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">
-                          City
+                          City <span className="text-red-400">*</span>
                         </label>
                         <input
                           type="text"
@@ -589,7 +593,7 @@ export default function PaymentPage() {
                       </div>
                       <div>
                         <label className="block text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">
-                          ZIP / Postal Code
+                          ZIP / Postal Code <span className="text-red-400">*</span>
                         </label>
                         <input
                           type="text"
