@@ -22,12 +22,16 @@ function SectionTitle({ children }: { children: React.ReactNode }) {
   return <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">{children}</p>;
 }
 
-// Seat Map Modal
-function SeatMapModal({ bookingId, onClose }: { bookingId: string; onClose: () => void }) {
+// Seat Map Modal (provider-aware)
+function SeatMapModal({ bookingId, onClose, provider }: { bookingId: string; onClose: () => void; provider?: string }) {
   const { seatMaps, seatMapLoading, loadSeatMap, selectSeat } = useManageBookingStore();
   const [selected, setSelected] = useState<string | null>(null);
   const [selecting, setSelecting] = useState(false);
-  useEffect(() => { loadSeatMap(bookingId, 'slice_0'); }, [bookingId, loadSeatMap]);
+
+  // Duffel does NOT support post-booking seat changes
+  const isDuffel = (provider || '').toLowerCase() === 'duffel';
+
+  useEffect(() => { if (!isDuffel) loadSeatMap(bookingId, 'slice_0'); }, [bookingId, loadSeatMap, isDuffel]);
   const seatMap = seatMaps[0];
   const colorMap: Record<string, string> = { window: 'bg-blue-500/20 border-blue-500/30 text-blue-400', aisle: 'bg-emerald-500/20 border-emerald-500/30 text-emerald-400', middle: 'bg-amber-500/20 border-amber-500/30 text-amber-400' };
   async function handleConfirm() {
@@ -40,30 +44,67 @@ function SeatMapModal({ bookingId, onClose }: { bookingId: string; onClose: () =
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-lg max-h-[80vh] bg-slate-900 border border-white/10 rounded-2xl flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 border-b border-white/[0.06]">
-          <h3 className="text-white font-bold text-lg">Select Seat</h3>
+          <div>
+            <h3 className="text-white font-bold text-lg">Change Seat</h3>
+            {!isDuffel && <span className="text-[10px] text-amber-400/80 font-medium">If airline permits</span>}
+          </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
-          {seatMapLoading ? <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-[#1ABC9C] animate-spin" /></div> : seatMap ? (
-            <div className="space-y-1">
-              {seatMap.rows.slice(0, 25).map(row => (
-                <div key={row.row} className="flex items-center gap-1 justify-center">
-                  <span className="w-6 text-right text-[10px] text-slate-600 mr-1">{row.row}</span>
-                  {row.seats.map((seat, si) => (
-                    <span key={seat.designator}>
-                      {si === 3 && <span className="w-4 inline-block" />}
-                      <button disabled={!seat.available} onClick={() => setSelected(seat.designator)}
-                        className={`w-7 h-7 rounded text-[9px] font-bold border transition-all ${!seat.available ? 'bg-slate-800 border-slate-700 text-slate-700 cursor-not-allowed' : selected === seat.designator ? 'bg-[#1ABC9C] border-[#1ABC9C] text-white scale-110' : colorMap[seat.type] || 'bg-slate-700/30 border-slate-600 text-slate-500 hover:border-[#1ABC9C]/50'}`}>
-                        {seat.designator.slice(-1)}
-                      </button>
-                    </span>
+          {isDuffel ? (
+            /* ── Duffel: Contact Airline Message ── */
+            <div className="text-center py-8">
+              <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle size={28} className="text-amber-400" />
+              </div>
+              <p className="text-white font-bold text-lg mb-2">Post-Booking Seat Changes Unavailable</p>
+              <p className="text-slate-400 text-sm mb-4 max-w-sm mx-auto">
+                Your booking was made through Duffel (NDC), which does not support online seat changes after booking.
+              </p>
+              <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 mb-4 text-left">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-2">How to change your seat</p>
+                <ul className="space-y-2 text-sm text-slate-300">
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#1ABC9C] font-bold mt-0.5">1.</span>
+                    <span>Contact the airline directly via their website or customer service</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#1ABC9C] font-bold mt-0.5">2.</span>
+                    <span>Use the airline&apos;s online check-in (usually available 24-48hrs before departure)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#1ABC9C] font-bold mt-0.5">3.</span>
+                    <span>Request a seat change at the airport check-in counter</span>
+                  </li>
+                </ul>
+              </div>
+              <p className="text-slate-600 text-xs mb-5">Your original seat selection (if any) was confirmed at the time of booking.</p>
+              <button onClick={onClose} className="px-6 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-semibold text-sm">Got it</button>
+            </div>
+          ) : (
+            <>
+              {seatMapLoading ? <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-[#1ABC9C] animate-spin" /></div> : seatMap ? (
+                <div className="space-y-1">
+                  {seatMap.rows.slice(0, 25).map(row => (
+                    <div key={row.row} className="flex items-center gap-1 justify-center">
+                      <span className="w-6 text-right text-[10px] text-slate-600 mr-1">{row.row}</span>
+                      {row.seats.map((seat, si) => (
+                        <span key={seat.designator}>
+                          {si === 3 && <span className="w-4 inline-block" />}
+                          <button disabled={!seat.available} onClick={() => setSelected(seat.designator)}
+                            className={`w-7 h-7 rounded text-[9px] font-bold border transition-all ${!seat.available ? 'bg-slate-800 border-slate-700 text-slate-700 cursor-not-allowed' : selected === seat.designator ? 'bg-[#1ABC9C] border-[#1ABC9C] text-white scale-110' : colorMap[seat.type] || 'bg-slate-700/30 border-slate-600 text-slate-500 hover:border-[#1ABC9C]/50'}`}>
+                            {seat.designator.slice(-1)}
+                          </button>
+                        </span>
+                      ))}
+                    </div>
                   ))}
                 </div>
-              ))}
-            </div>
-          ) : <p className="text-slate-500 text-center py-8">Seat map not available</p>}
+              ) : <p className="text-slate-500 text-center py-8">Seat map not available</p>}
+            </>
+          )}
         </div>
-        {selected && (
+        {selected && !isDuffel && (
           <div className="p-5 border-t border-white/[0.06] flex items-center justify-between">
             <p className="text-white text-sm">Seat <strong className="text-[#1ABC9C]">{selected}</strong></p>
             <button onClick={handleConfirm} disabled={selecting} className="px-5 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-bold text-sm disabled:opacity-50">{selecting ? 'Saving…' : 'Confirm Seat'}</button>
@@ -607,7 +648,7 @@ export default function BookingDetailPage() {
       {/* Modals */}
       <AnimatePresence>
         {activeModal === 'cancel' && <CancelBookingModal bookingId={bookingId} onClose={() => setActiveModal(null)} />}
-        {activeModal === 'seat_change' && <SeatMapModal bookingId={bookingId} onClose={() => setActiveModal(null)} />}
+        {activeModal === 'seat_change' && <SeatMapModal bookingId={bookingId} onClose={() => setActiveModal(null)} provider={b.primaryProvider} />}
         {activeModal === 'passenger_update' && <PassengerModal bookingId={bookingId} passengers={b.passengers || []} onClose={() => setActiveModal(null)} />}
         {activeModal === 'date_change' && <DateChangeModal bookingId={bookingId} booking={b} onClose={() => setActiveModal(null)} />}
         {activeModal === 'download_eticket' && <ETicketModal bookingId={bookingId} onClose={() => setActiveModal(null)} />}

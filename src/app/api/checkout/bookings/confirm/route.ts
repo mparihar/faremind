@@ -171,6 +171,20 @@ export async function POST(req: NextRequest) {
           };
         });
 
+        // Build seat services to send to Duffel at order creation.
+        // Each seatSelection with a serviceId maps to a Duffel service add-on.
+        const seatServices: { id: string; quantity: number }[] = [];
+        if (Array.isArray(seatSelections)) {
+          for (const seat of seatSelections) {
+            if (seat.serviceId && seat.seatNumber) {
+              seatServices.push({ id: seat.serviceId, quantity: 1 });
+            }
+          }
+        }
+        if (seatServices.length > 0) {
+          console.log(`[Duffel] Including ${seatServices.length} seat service(s) in order: ${seatServices.map(s => s.id).join(', ')}`);
+        }
+
         console.log(`[Duffel] Creating order with offer ${offerId}, ${duffelPassengers.length} passenger(s), IDs: ${duffelPassengers.map(p => p.id).join(', ')}`);
 
         // Create the order (booking) — payment via Duffel balance
@@ -183,6 +197,8 @@ export async function POST(req: NextRequest) {
             amount: totalAmount.toFixed(2),
             currency: totalCurrency,
           }],
+          // Include seat selections as services so the airline assigns the exact seats
+          ...(seatServices.length > 0 ? { services: seatServices } : {}),
           metadata: { booked_via: 'faremind', session_id: sessionId || '' },
         });
 
@@ -319,9 +335,11 @@ export async function POST(req: NextRequest) {
           });
           // Index by provider segment id (used by seat/meal selections)
           if (seg.id) keyToDbId[seg.id] = dbSeg.id;
-          // Index by position key
+          // Index by position key (round-trip uses out_N / ret_N)
           const prefix = dir === 'OUTBOUND' ? 'out' : 'ret';
           keyToDbId[`${prefix}_${i}`] = dbSeg.id;
+          // One-way flights use seg_N keys from the checkout UI
+          if (dir === 'OUTBOUND') keyToDbId[`seg_${i}`] = dbSeg.id;
           dbIdToJourneyId[dbSeg.id] = journeyId;
         }
         return { keyToDbId, dbIdToJourneyId };

@@ -57,7 +57,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
     const settled = await Promise.allSettled(
       months.map((m) =>
-        searchFlights({ origin, destination, date: m.date, returnDate: returnDateFor(m.date), adults, cabin, providers: ['duffel'] })
+        searchFlights({ origin, destination, date: m.date, returnDate: returnDateFor(m.date), adults, cabin })
       )
     );
 

@@ -303,7 +303,7 @@ export default function BookingDetailPage() {
       {/* ── Modals ── */}
       <AnimatePresence>
         {activeModal === 'cancel' && <CancelBookingModal bookingId={ref} onClose={() => setActiveModal(null)} successRedirect="/account/bookings" />}
-        {activeModal === 'seat_change' && <SeatMapModal bookingId={ref} onClose={() => setActiveModal(null)} />}
+        {activeModal === 'seat_change' && <SeatMapModal bookingId={ref} onClose={() => setActiveModal(null)} provider={b.primaryProvider} />}
         {activeModal === 'passenger_update' && <PassengerModal bookingId={ref} passengers={b.passengers || []} onClose={() => setActiveModal(null)} />}
         {activeModal === 'date_change' && <DateChangeModal bookingId={ref} booking={b} onClose={() => setActiveModal(null)} />}
         {activeModal === 'download_eticket' && <ETicketModal bookingId={ref} onClose={() => setActiveModal(null)} />}

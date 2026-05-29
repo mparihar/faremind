@@ -24,6 +24,7 @@ const NAV: NavItem[] = [
   { href: '/admin/partners',     label: 'Partners',      icon: Users2, minRole: 'OPS_ADMIN' },
   { href: '/admin/finance',      label: 'Finance',       icon: DollarSign, minRole: 'FINANCE' },
   { href: '/admin/audit-logs',   label: 'Audit Logs',    icon: ScrollText, minRole: 'OPS_ADMIN' },
+  { href: '/admin/admin-users',  label: 'Admin Users',   icon: Shield, minRole: 'SUPER_ADMIN' },
   { href: '/admin/settings',     label: 'Settings',      icon: Settings, minRole: 'SUPER_ADMIN' },
 ];
 

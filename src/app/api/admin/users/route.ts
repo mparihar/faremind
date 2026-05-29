@@ -15,10 +15,17 @@ export const GET = withAdmin(async () => {
 }, 'SUPER_ADMIN');
 
 export const POST = withAdmin(async (req: NextRequest, { admin }) => {
-  const { email, fullName, role, password } = await req.json();
+  const { email, fullName, phone, role, password } = await req.json();
 
   if (!email || !fullName || !role) {
     return NextResponse.json({ error: 'email, fullName, role required' }, { status: 400 });
+  }
+
+  // Phone and email are mandatory for SUPER_ADMIN
+  if (role === 'SUPER_ADMIN') {
+    if (!phone?.trim()) {
+      return NextResponse.json({ error: 'Phone number is mandatory for Super Admin' }, { status: 400 });
+    }
   }
 
   const passwordHash = password ? await hashPassword(password) : null;
@@ -27,6 +34,7 @@ export const POST = withAdmin(async (req: NextRequest, { admin }) => {
     data: {
       email: email.toLowerCase(),
       fullName,
+      phone: phone?.trim() || null,
       role,
       passwordHash,
       createdById: admin.sub,

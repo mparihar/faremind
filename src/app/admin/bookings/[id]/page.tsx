@@ -7,24 +7,28 @@ import { useAdminStore } from '@/store/useAdminStore';
 import {
   ArrowLeft, RefreshCw, Plane, User, Ticket, Package, CreditCard,
   Clock, FileJson, MessageSquare, Send, ChevronDown, ChevronRight,
-  Globe, Tag, Hash, Trash2, Pencil, Plus, X, Save,
+  Globe, Tag, Hash, Trash2, Pencil, Plus, X, Save, Eye, EyeOff,
+  Shield, Armchair, UtensilsCrossed, AlertTriangle,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
-type Tab = 'summary' | 'journey' | 'passengers' | 'tickets' | 'addons' | 'payments' | 'timeline' | 'payloads' | 'notes';
+type Tab = 'summary' | 'journey' | 'passengers' | 'tickets' | 'seats' | 'meals' | 'addons' | 'payments' | 'timeline' | 'payloads' | 'notes' | 'auditLog';
 
 const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
-  { id: 'summary',    label: 'Booking Summary',   icon: Hash },
+  { id: 'timeline',   label: 'Timeline',           icon: Clock },
+  { id: 'summary',    label: 'Booking Summary',    icon: Hash },
   { id: 'journey',    label: 'Journey Details',    icon: Plane },
   { id: 'passengers', label: 'Passengers',         icon: User },
   { id: 'tickets',    label: 'Tickets / PNRs',     icon: Ticket },
+  { id: 'seats',      label: 'Seats',              icon: Armchair },
+  { id: 'meals',      label: 'Meals',              icon: UtensilsCrossed },
   { id: 'addons',     label: 'Add-ons',            icon: Package },
   { id: 'payments',   label: 'Payments',           icon: CreditCard },
-  { id: 'timeline',   label: 'Timeline',           icon: Clock },
   { id: 'payloads',   label: 'Provider Payloads',  icon: FileJson },
   { id: 'notes',      label: 'Notes',              icon: MessageSquare },
+  { id: 'auditLog',   label: 'Audit Log',          icon: Shield },
 ];
 
 const STATUS_COLORS: Record<string, string> = {
@@ -237,7 +241,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
 
   const [data, setData]         = useState<any>(null);
   const [loading, setLoading]   = useState(true);
-  const [tab, setTab]           = useState<Tab>('summary');
+  const [tab, setTab]           = useState<Tab>('timeline');
   const [selectedPnrId, setSelectedPnrId] = useState<string | null>(null);
   const [note, setNote]         = useState('');
   const [submitting, setSubmitting] = useState(false);
@@ -254,6 +258,12 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const [addRefData, setAddRefData] = useState({ pnrType: 'AIRLINE_PNR', pnrCode: '', journeyDirection: 'ALL', provider: '', airlineCode: '', airlineName: '' });
   const [editNoteId, setEditNoteId] = useState<string | null>(null);
   const [editNoteText, setEditNoteText] = useState('');
+
+  // ── New feature state ──
+  const [revealedPassports, setRevealedPassports] = useState<Set<string>>(new Set());
+  const [auditLogs, setAuditLogs] = useState<any[]>([]);
+  const [auditLoading, setAuditLoading] = useState(false);
+  const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
   // ── Data loading ──
   async function load(keepPnrSelection = false) {
@@ -331,6 +341,30 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
     setSubmitting(false);
   }
 
+  async function loadAuditLogs() {
+    setAuditLoading(true);
+    const res = await adminFetch(`/api/admin/bookings/${id}/audit-logs`);
+    if (res.ok) {
+      const json = await res.json();
+      setAuditLogs(json.logs ?? []);
+    }
+    setAuditLoading(false);
+  }
+
+  function toggleRevealPassport(paxId: string) {
+    setRevealedPassports(prev => {
+      const next = new Set(prev);
+      next.has(paxId) ? next.delete(paxId) : next.add(paxId);
+      return next;
+    });
+  }
+
+  function maskPassport(value: string | null | undefined, paxId: string): string {
+    if (!value) return '—';
+    if (revealedPassports.has(paxId)) return value;
+    return value.slice(0, 2) + '●'.repeat(Math.max(0, value.length - 4)) + value.slice(-2);
+  }
+
   if (loading) return (
     <div className="flex items-center justify-center h-screen">
       <RefreshCw size={24} className="text-[#1ABC9C] animate-spin" />
@@ -343,38 +377,87 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const pnrs: any[] = booking.pnrs ?? [];
   const selectedPnr = selectedPnrId ? pnrs.find((p: any) => p.id === selectedPnrId) ?? null : null;
   const isOps = user && ['SUPER_ADMIN', 'OPS_ADMIN'].includes(user.role);
+  const isSuperAdmin = user?.role === 'SUPER_ADMIN';
   const isSupport = user && ['SUPER_ADMIN', 'OPS_ADMIN', 'SUPPORT'].includes(user.role);
+
+  // Derived: separate seats and meals from addons
+  const seats = addons.filter((a: any) => a.type === 'SEAT');
+  const meals = addons.filter((a: any) => a.type === 'MEAL');
+  const otherAddons = addons.filter((a: any) => a.type !== 'SEAT' && a.type !== 'MEAL');
 
   return (
     <div className="p-6 max-w-7xl">
 
       {/* ── Confirm delete dialog ── */}
-      {confirmDel && (
-        <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
-          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-sm w-full shadow-2xl">
-            <h3 className="text-white font-bold text-base mb-2">Confirm Delete</h3>
-            <p className="text-slate-400 text-sm mb-5">
-              Delete <span className="text-white font-semibold">{confirmDel.label}</span>?
-              {' '}This cannot be undone.
-            </p>
-            <div className="flex justify-end gap-3">
-              <button
-                onClick={() => setConfirmDel(null)}
-                className="px-4 py-2 rounded-xl border border-slate-600 text-slate-300 hover:text-white text-sm transition-all"
-              >
-                Cancel
-              </button>
-              <button
-                onClick={doConfirmDelete}
-                disabled={saving}
-                className="px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all disabled:opacity-50"
-              >
-                {saving ? 'Deleting…' : 'Delete'}
-              </button>
+      {confirmDel && (() => {
+        const isMasterDel = confirmDel.redirect === '/admin/bookings';
+        const fbr = booking.masterBookingReference ?? booking.pnr ?? '';
+        const needsTypeConfirm = isMasterDel;
+        const canConfirm = !needsTypeConfirm || deleteConfirmText === fbr;
+        return (
+          <div className="fixed inset-0 bg-black/70 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+            <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl">
+              <div className="flex items-center gap-2 mb-3">
+                <AlertTriangle size={16} className="text-red-400" />
+                <h3 className="text-white font-bold text-base">Confirm Delete</h3>
+              </div>
+              <p className="text-slate-400 text-sm mb-3">
+                Delete <span className="text-white font-semibold">{confirmDel.label}</span>?
+                {' '}This cannot be undone.
+              </p>
+              {isMasterDel && (
+                <div className="mb-4 p-3 bg-red-500/8 border border-red-500/20 rounded-xl">
+                  <p className="text-red-400 text-xs font-bold mb-2 flex items-center gap-1.5">
+                    <AlertTriangle size={12} />
+                    The following will be permanently deleted:
+                  </p>
+                  <ul className="text-slate-400 text-xs space-y-0.5 ml-4 list-disc">
+                    <li>{booking.passengers?.length ?? 0} passenger(s)</li>
+                    <li>{pnrs.length} PNR(s)</li>
+                    <li>{tickets.length} ticket(s)</li>
+                    <li>{seats.length} seat(s), {meals.length} meal(s), {otherAddons.length} add-on(s)</li>
+                    <li>{booking.payments?.length ?? 0} payment record(s)</li>
+                    <li>{events.length} timeline event(s)</li>
+                    <li>{notes.length} note(s)</li>
+                    <li>{providerPayloads.length} provider payload(s)</li>
+                  </ul>
+                  <p className="text-slate-500 text-[10px] mt-2 italic">
+                    This does not cancel the provider/airline booking unless cancellation flow is executed.
+                  </p>
+                </div>
+              )}
+              {needsTypeConfirm && (
+                <div className="mb-4">
+                  <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">
+                    Type <span className="text-red-400 font-mono">{fbr}</span> to confirm
+                  </label>
+                  <input
+                    value={deleteConfirmText}
+                    onChange={e => setDeleteConfirmText(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-xl text-white font-mono text-sm focus:outline-none focus:border-red-400 transition-all"
+                    placeholder={fbr}
+                  />
+                </div>
+              )}
+              <div className="flex justify-end gap-3">
+                <button
+                  onClick={() => { setConfirmDel(null); setDeleteConfirmText(''); }}
+                  className="px-4 py-2 rounded-xl border border-slate-600 text-slate-300 hover:text-white text-sm transition-all"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={() => { doConfirmDelete(); setDeleteConfirmText(''); }}
+                  disabled={saving || !canConfirm}
+                  className="px-4 py-2 rounded-xl bg-red-500 hover:bg-red-600 text-white text-sm font-bold transition-all disabled:opacity-50"
+                >
+                  {saving ? 'Deleting…' : 'Delete'}
+                </button>
+              </div>
             </div>
           </div>
-        </div>
-      )}
+        );
+      })()}
 
       {/* ── Header ── */}
       <div className="flex items-start gap-4 mb-6">
@@ -428,14 +511,20 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             t.id === 'notes'    ? notes.length :
             t.id === 'tickets'  ? tickets.length :
             t.id === 'payloads' ? providerPayloads.length :
-            t.id === 'addons'   ? addons.length :
+            t.id === 'addons'   ? otherAddons.length :
+            t.id === 'seats'    ? seats.length :
+            t.id === 'meals'    ? meals.length :
             t.id === 'payments' ? (booking.payments?.length ?? 0) :
             t.id === 'timeline' ? events.length :
+            t.id === 'auditLog' ? auditLogs.length :
             null;
           return (
             <button
               key={t.id}
-              onClick={() => setTab(t.id)}
+              onClick={() => {
+                setTab(t.id);
+                if (t.id === 'auditLog' && auditLogs.length === 0 && !auditLoading) loadAuditLogs();
+              }}
               className={`flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-bold border-b-2 -mb-px whitespace-nowrap transition-all ${
                 tab === t.id
                   ? 'border-[#1ABC9C] text-[#1ABC9C]'
@@ -842,7 +931,23 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <InfoRow label="Email" value={p.email} />
                   <InfoRow label="Phone" value={p.phone} />
                   <InfoRow label="Nationality" value={p.nationality} />
-                  <InfoRow label="Passport No." value={p.passportNumber} mono />
+                  {p.passportNumber ? (
+                    <div className="flex items-start gap-3 py-2.5 border-b border-slate-700/30 last:border-0">
+                      <span className="text-slate-500 text-xs w-44 shrink-0">Passport No.</span>
+                      <span className="text-white text-sm font-semibold font-mono">{maskPassport(p.passportNumber, p.id)}</span>
+                      {isSuperAdmin && (
+                        <button
+                          onClick={() => toggleRevealPassport(p.id)}
+                          className="ml-1 p-1 rounded-lg bg-slate-700/40 text-slate-400 hover:text-white transition-all"
+                          title={revealedPassports.has(p.id) ? 'Hide passport' : 'Reveal passport'}
+                        >
+                          {revealedPassports.has(p.id) ? <EyeOff size={12} /> : <Eye size={12} />}
+                        </button>
+                      )}
+                    </div>
+                  ) : (
+                    <InfoRow label="Passport No." value={undefined} />
+                  )}
                   <InfoRow label="Passport Expiry" value={p.passportExpiry ? fmtDate(p.passportExpiry, 'dd MMM yyyy') : undefined} />
                   <InfoRow label="Issuing Country" value={p.issuingCountry} />
                 </div>
@@ -1445,6 +1550,206 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               </div>
             ))
           )}
+        </div>
+      )}
+      {/* ══════════════════════════════════════════════════════════
+          TAB: SEATS
+          ══════════════════════════════════════════════════════════ */}
+      {tab === 'seats' && (
+        <div className="space-y-4">
+          <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-700/50 flex items-center justify-between">
+              <h3 className="text-white font-bold text-sm flex items-center gap-2">
+                <Armchair size={14} className="text-[#1ABC9C]" />
+                Seat Allocations ({seats.length})
+              </h3>
+            </div>
+            {seats.length === 0 ? (
+              <p className="px-5 py-10 text-slate-500 text-sm">No seat selections on this booking.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-700/50">
+                    {['Passenger', 'Segment', 'Seat', 'Type', 'Zone', 'Price', ...(isOps ? [''] : [])].map(h => (
+                      <th key={h} className="px-5 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/30">
+                  {seats.map((s: any) => (
+                    <tr key={s.id} className="hover:bg-slate-700/20">
+                      <td className="px-5 py-3 text-white font-semibold">{s.passengerName ?? '—'}</td>
+                      <td className="px-5 py-3 text-slate-400 font-mono text-xs">{s.segmentRef ?? '—'}</td>
+                      <td className="px-5 py-3">
+                        <span className="px-2.5 py-1 rounded-lg bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 text-[#1ABC9C] font-mono font-black text-sm">{s.seatNumber ?? '—'}</span>
+                      </td>
+                      <td className="px-5 py-3 text-slate-300">{s.seatType ?? '—'}</td>
+                      <td className="px-5 py-3 text-slate-400">{s.zone ?? '—'}</td>
+                      <td className="px-5 py-3 text-white font-bold">{fmtMoney(Number(s.totalPrice ?? s.unitPrice ?? 0), s.currency ?? booking.currency)}</td>
+                      {isOps && (
+                        <td className="px-5 py-3">
+                          <button
+                            onClick={() => setConfirmDel({ apiPath: `/api/admin/bookings/${id}/seats/${s.id}`, label: `Seat ${s.seatNumber}` })}
+                            className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
+                            title="Remove seat"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-slate-700/50 bg-slate-900/30">
+                    <td colSpan={isOps ? 6 : 5} className="px-5 py-3 text-slate-400 text-xs font-bold text-right">Total Seat Charges</td>
+                    <td className="px-5 py-3 text-[#1ABC9C] font-black text-sm">
+                      {fmtMoney(seats.reduce((s: number, a: any) => s + Number(a.totalPrice ?? a.unitPrice ?? 0), 0), booking.currency)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════
+          TAB: MEALS
+          ══════════════════════════════════════════════════════════ */}
+      {tab === 'meals' && (
+        <div className="space-y-4">
+          <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-700/50 flex items-center justify-between">
+              <h3 className="text-white font-bold text-sm flex items-center gap-2">
+                <UtensilsCrossed size={14} className="text-[#1ABC9C]" />
+                Meal Preferences ({meals.length})
+              </h3>
+            </div>
+            {meals.length === 0 ? (
+              <p className="px-5 py-10 text-slate-500 text-sm">No meal preferences on this booking.</p>
+            ) : (
+              <table className="w-full text-sm">
+                <thead>
+                  <tr className="border-b border-slate-700/50">
+                    {['Passenger', 'Journey', 'Meal', 'Description', 'Price', ...(isOps ? [''] : [])].map(h => (
+                      <th key={h} className="px-5 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-700/30">
+                  {meals.map((m: any) => (
+                    <tr key={m.id} className="hover:bg-slate-700/20">
+                      <td className="px-5 py-3 text-white font-semibold">{m.passengerName ?? '—'}</td>
+                      <td className="px-5 py-3 text-slate-400 font-mono text-xs">{m.segmentRef ?? '—'}</td>
+                      <td className="px-5 py-3">
+                        <span className="px-2 py-0.5 rounded-lg bg-amber-400/10 text-amber-400 text-xs font-bold">{m.mealCode ?? m.description?.slice(0, 20) ?? '—'}</span>
+                      </td>
+                      <td className="px-5 py-3 text-slate-300">{m.description ?? m.mealLabel ?? '—'}</td>
+                      <td className="px-5 py-3 text-white font-bold">{fmtMoney(Number(m.totalPrice ?? m.unitPrice ?? 0), m.currency ?? booking.currency)}</td>
+                      {isOps && (
+                        <td className="px-5 py-3">
+                          <button
+                            onClick={() => setConfirmDel({ apiPath: `/api/admin/bookings/${id}/meals/${m.id}`, label: m.description ?? m.mealCode ?? 'this meal' })}
+                            className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
+                            title="Remove meal"
+                          >
+                            <Trash2 size={12} />
+                          </button>
+                        </td>
+                      )}
+                    </tr>
+                  ))}
+                </tbody>
+                <tfoot>
+                  <tr className="border-t border-slate-700/50 bg-slate-900/30">
+                    <td colSpan={isOps ? 5 : 4} className="px-5 py-3 text-slate-400 text-xs font-bold text-right">Total Meal Charges</td>
+                    <td className="px-5 py-3 text-[#1ABC9C] font-black text-sm">
+                      {fmtMoney(meals.reduce((s: number, a: any) => s + Number(a.totalPrice ?? a.unitPrice ?? 0), 0), booking.currency)}
+                    </td>
+                  </tr>
+                </tfoot>
+              </table>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* ══════════════════════════════════════════════════════════
+          TAB: AUDIT LOG
+          ══════════════════════════════════════════════════════════ */}
+      {tab === 'auditLog' && (
+        <div className="space-y-4">
+          <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-slate-700/50 flex items-center justify-between">
+              <h3 className="text-white font-bold text-sm flex items-center gap-2">
+                <Shield size={14} className="text-[#1ABC9C]" />
+                Audit Log ({auditLogs.length})
+              </h3>
+              <button
+                onClick={loadAuditLogs}
+                className="flex items-center gap-2 px-3 py-1.5 rounded-xl bg-slate-700/50 text-slate-300 hover:text-white text-xs font-bold transition-all"
+              >
+                <RefreshCw size={11} className={auditLoading ? 'animate-spin' : ''} />
+                Refresh
+              </button>
+            </div>
+            {auditLoading ? (
+              <div className="px-5 py-10 text-center">
+                <RefreshCw size={20} className="text-[#1ABC9C] animate-spin mx-auto" />
+              </div>
+            ) : auditLogs.length === 0 ? (
+              <p className="px-5 py-10 text-slate-500 text-sm text-center">No audit log entries for this booking.</p>
+            ) : (
+              <div className="relative pl-8 p-5">
+                <div className="absolute left-7 top-5 bottom-5 w-px bg-slate-700" />
+                <div className="space-y-5">
+                  {auditLogs.map((log: any) => {
+                    const actionColor =
+                      log.action.includes('DELETE') ? 'text-red-400 border-red-400' :
+                      log.action.includes('UPDATE') ? 'text-amber-400 border-amber-400' :
+                      log.action.includes('CREATE') ? 'text-emerald-400 border-emerald-400' :
+                      'text-blue-400 border-blue-400';
+                    return (
+                      <div key={log.id} className="relative">
+                        <div className={`absolute -left-4 top-1 w-3 h-3 rounded-full border-2 bg-slate-900 ${actionColor}`} />
+                        <div className="flex items-baseline gap-2 mb-0.5 flex-wrap">
+                          <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                            log.action.includes('DELETE') ? 'bg-red-400/10 text-red-400' :
+                            log.action.includes('UPDATE') ? 'bg-amber-400/10 text-amber-400' :
+                            log.action.includes('CREATE') ? 'bg-emerald-400/10 text-emerald-400' :
+                            'bg-blue-400/10 text-blue-400'
+                          }`}>{log.action.replace(/_/g, ' ')}</span>
+                          <span className="text-white text-xs font-bold">{log.entityType}</span>
+                          {log.entityId && <span className="text-slate-500 text-xs font-mono">{log.entityId}</span>}
+                          <span className="ml-auto text-slate-500 text-[10px]">
+                            {log.adminUser?.fullName ?? 'System'}
+                            {log.adminUser?.role && ` (${log.adminUser.role.replace(/_/g, ' ')})`}
+                          </span>
+                        </div>
+                        {log.before && (
+                          <div className="mt-1 ml-1">
+                            <span className="text-[10px] text-red-400 font-bold uppercase tracking-wider">Before: </span>
+                            <span className="text-slate-400 text-xs font-mono">{JSON.stringify(log.before, null, 0).slice(0, 200)}</span>
+                          </div>
+                        )}
+                        {log.after && (
+                          <div className="mt-0.5 ml-1">
+                            <span className="text-[10px] text-emerald-400 font-bold uppercase tracking-wider">After: </span>
+                            <span className="text-slate-300 text-xs font-mono">{JSON.stringify(log.after, null, 0).slice(0, 200)}</span>
+                          </div>
+                        )}
+                        <p className="text-slate-600 text-[10px] mt-1">
+                          {fmtDate(log.createdAt, 'dd MMM yyyy HH:mm:ss')}
+                          {log.ipAddress && ` · ${log.ipAddress}`}
+                        </p>
+                      </div>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
+          </div>
         </div>
       )}
 

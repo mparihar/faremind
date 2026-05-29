@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAdmin } from '@/lib/admin-rbac';
 import prisma from '@/lib/db';
 import { fireNotification } from '@/lib/notify';
+import { auditLog } from '@/lib/admin-auth';
 
 const FULL_INCLUDE = {
   user: { select: { id: true, firstName: true, lastName: true, email: true, phone: true } },
@@ -24,7 +25,19 @@ const FULL_INCLUDE = {
     },
   },
   meals: {
-    include: { passenger: { select: { firstName: true, lastName: true } } },
+    include: {
+      passenger: { select: { firstName: true, lastName: true } },
+      segment:   { select: { originAirport: true, destinationAirport: true, flightNumber: true, airlineCode: true } },
+      journey:   {
+        select: {
+          direction: true,
+          segments: {
+            select: { originAirport: true, destinationAirport: true, flightNumber: true, airlineCode: true },
+            orderBy: { segmentOrder: 'asc' as const },
+          },
+        },
+      },
+    },
   },
   baggage: true,
   addons: { orderBy: { createdAt: 'asc' as const } },
@@ -198,27 +211,54 @@ export const GET = withAdmin(async (_req: NextRequest, { params }: any) => {
   // Addons: seats + meals + baggage + addons
   const addons = [
     ...mb.seats.map((s: any) => ({
-      id:          s.id,
-      type:        'SEAT',
-      description: `Seat ${s.seatNumber} — ${s.passenger.firstName} ${s.passenger.lastName}`,
-      segmentRef:  s.segment ? `${s.segment.originAirport}→${s.segment.destinationAirport} ${s.segment.flightNumber}` : null,
-      seatNumber:  s.seatNumber,
-      quantity:    1,
-      unitPrice:   Number(s.seatPrice),
-      totalPrice:  Number(s.seatPrice),
-      currency:    s.currency,
+      id:            s.id,
+      type:          'SEAT',
+      passengerName: `${s.passenger.firstName} ${s.passenger.lastName}`,
+      description:   `Seat ${s.seatNumber} — ${s.passenger.firstName} ${s.passenger.lastName}`,
+      segmentRef:    s.segment ? `${s.segment.originAirport}→${s.segment.destinationAirport} ${s.segment.flightNumber}` : null,
+      seatNumber:    s.seatNumber,
+      seatType:      s.seatType ?? null,
+      zone:          s.zone ?? null,
+      quantity:      1,
+      unitPrice:     Number(s.seatPrice),
+      totalPrice:    Number(s.seatPrice),
+      currency:      s.currency,
     })),
-    ...mb.meals.map((m: any) => ({
-      id:          m.id,
-      type:        'MEAL',
-      description: `${m.mealLabel} — ${m.passenger.firstName} ${m.passenger.lastName}`,
-      segmentRef:  null,
-      seatNumber:  null,
-      quantity:    1,
-      unitPrice:   Number(m.mealPrice),
-      totalPrice:  Number(m.mealPrice),
-      currency:    m.currency,
-    })),
+    ...(() => {
+      // Group meals by passengerId+journeyId to match each meal to its journey segment by index
+      const mealsByPaxJourney = new Map<string, number>();
+      return mb.meals.map((m: any) => {
+        const fmtSeg = (seg: any) =>
+          `${seg.originAirport}→${seg.destinationAirport} ${seg.airlineCode ?? ''}${seg.flightNumber ?? ''}`.trim();
+
+        let segmentRef: string | null = null;
+        if (m.segment) {
+          segmentRef = fmtSeg(m.segment);
+        } else if (m.journey?.segments?.length) {
+          // Match meal to a journey segment by index within same passenger+journey
+          const key = `${m.passengerId}:${m.journeyId}`;
+          const idx = mealsByPaxJourney.get(key) ?? 0;
+          mealsByPaxJourney.set(key, idx + 1);
+          const seg = m.journey.segments[idx] ?? m.journey.segments[0];
+          segmentRef = fmtSeg(seg);
+        }
+
+        return {
+          id:            m.id,
+          type:          'MEAL',
+          passengerName: `${m.passenger.firstName} ${m.passenger.lastName}`,
+          description:   `${m.mealLabel} — ${m.passenger.firstName} ${m.passenger.lastName}`,
+          mealCode:      m.mealCode ?? null,
+          mealLabel:     m.mealLabel ?? null,
+          segmentRef,
+          seatNumber:    null,
+          quantity:      1,
+          unitPrice:     Number(m.mealPrice),
+          totalPrice:    Number(m.mealPrice),
+          currency:      m.currency,
+        };
+      });
+    })(),
     ...mb.baggage.map((b: any) => ({
       id:          b.id,
       type:        'BAGGAGE',
@@ -359,19 +399,39 @@ export const PATCH = withAdmin(async (req: NextRequest, { admin, params }: any) 
 }, 'OPS_ADMIN');
 
 // ── DELETE — permanently remove booking ──────────────────────────────────────
-export const DELETE = withAdmin(async (_req: NextRequest, { admin, params }: any) => {
+export const DELETE = withAdmin(async (req: NextRequest, { admin, params }: any) => {
   try {
     const id = params?.id;
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
     const mb = await prisma.masterBooking.findFirst({
       where: { OR: [{ id }, { masterBookingReference: id }] },
-      select: { id: true, masterBookingReference: true, customerEmail: true },
+      select: { id: true, masterBookingReference: true, customerEmail: true, customerName: true,
+                originAirport: true, destinationAirport: true, bookingStatus: true,
+                totalAmount: true, currency: true },
     });
     if (!mb) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
     // Cascading deletes handle all child records (FK onDelete: Cascade)
     await prisma.masterBooking.delete({ where: { id: mb.id } });
+
+    await auditLog({
+      adminUserId: admin.sub,
+      bookingId: mb.id,
+      action: 'DELETE_BOOKING',
+      entityType: 'MasterBooking',
+      entityId: mb.masterBookingReference,
+      before: {
+        masterBookingReference: mb.masterBookingReference,
+        customerEmail: mb.customerEmail,
+        customerName: mb.customerName,
+        route: `${mb.originAirport} → ${mb.destinationAirport}`,
+        status: mb.bookingStatus,
+        totalAmount: Number(mb.totalAmount),
+        currency: mb.currency,
+      },
+      ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
+    });
 
     console.info(`[admin] Booking ${mb.masterBookingReference} deleted by admin ${admin.email}`);
     return NextResponse.json({ success: true, deleted: mb.masterBookingReference });

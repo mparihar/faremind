@@ -402,14 +402,34 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           if (seatMaps.length > 0) return { seatMaps };
         } catch { /* fall through to mock */ }
       }
-      // Mock seat map for demo/test
+      // ── Mock seat map fallback ──────────────────────────────────────────────
+      // Controlled by ENABLE_MOCK_SEATMAP env variable:
+      //   true  (default) = return demo seat map for development/testing
+      //   false           = return empty array, rely on real provider only
+      const enableMock = (process.env.ENABLE_MOCK_SEATMAP ?? 'true').toLowerCase() !== 'false';
+
+      if (!enableMock) {
+        fastify.log.info(`[manage-booking/seats] No provider seat map for booking ${bookingId} — mock disabled via ENABLE_MOCK_SEATMAP=false`);
+        return {
+          seatMaps: [],
+          isMock: false,
+          error: 'Seat map not available for this booking. Please manage seat selection at airline check-in or contact support.',
+        };
+      }
+
+      // Mock seat map for demo/test — clearly labelled so frontend can show appropriate messaging
+      fastify.log.warn(`[manage-booking/seats] No provider seat map available for booking ${bookingId} — returning demo-only mock`);
       const seatLetters = ['A','B','C','D','E','F'];
       const types: Record<string,string> = { A:'window', B:'middle', C:'aisle', D:'aisle', E:'middle', F:'window' };
       const rows = Array.from({ length: 30 }, (_, i) => ({
         row: i + 1,
         seats: seatLetters.map(l => ({ designator: `${i+1}${l}`, available: Math.random() > 0.3, type: types[l], price: i < 5 ? 45 : i < 12 ? 25 : i < 14 ? 15 : 0, currency: 'USD', cabinClass: i < 5 ? 'business' : 'economy', isExitRow: i === 13 || i === 14, hasExtraLegroom: i < 5 || i === 13 || i === 14, serviceId: null })),
       }));
-      return { seatMaps: [{ sliceId, segmentId: '', cabin: 'economy', rows }] };
+      return {
+        seatMaps: [{ sliceId, segmentId: '', cabin: 'economy', rows }],
+        isMock: true,
+        warning: 'This is a demo seat map. Actual seat availability may differ. Seat assignments are subject to airline confirmation.',
+      };
     } catch (e) { fastify.log.error(e, '[manage-booking/seats]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
@@ -422,23 +442,65 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const booking = await mbq.getMasterBookingFull(bookingId);
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
 
-      // Try to add seat via Duffel if we have a provider order
-      const providerPnr = booking.pnrs.find(p => p.providerOrderId);
+      // Check if the provider supports post-booking seat changes
+      const provider = getProvider(booking.primaryProvider);
+      const providerSupportsSeatChange = provider.supportsSeatSelection();
       let providerConfirmed = false;
-      if (providerPnr?.providerOrderId && serviceId) {
-        try {
-          const provider = getProvider(booking.primaryProvider);
-          // Duffel uses order changes to add services (seats)
-          // For now, record it as a change request that gets auto-approved
-          providerConfirmed = true;
-          fastify.log.info(`[manage-booking/seats] Seat ${seatDesignator} recorded for order ${providerPnr.providerOrderId}`);
-        } catch (providerErr) {
-          fastify.log.warn({ providerErr }, '[manage-booking/seats] Provider seat change failed — recording locally');
+
+      if (providerSupportsSeatChange) {
+        // Mystifly supports post-ticketing seat selection
+        const providerPnr = booking.pnrs.find(p => p.providerOrderId);
+        if (providerPnr?.providerOrderId && serviceId) {
+          try {
+            // TODO: Implement Mystifly SeatSelection API call here
+            fastify.log.info(`[manage-booking/seats] Seat ${seatDesignator} — provider seat change API not yet wired for ${booking.primaryProvider}`);
+          } catch (providerErr) {
+            fastify.log.warn({ providerErr }, '[manage-booking/seats] Provider seat change failed — recording locally');
+          }
         }
+      } else {
+        // Duffel does NOT support post-booking seat changes.
+        // Seats can only be added as services at order creation time.
+        fastify.log.info(`[manage-booking/seats] Provider ${booking.primaryProvider} does not support post-booking seat changes. Recording preference locally.`);
       }
 
       // Record seat change in DB
       const existingSeat = booking.seats.find(s => s.passengerId === passengerId && s.segmentId === segmentId);
+
+      // Update the bookingSeat table so admin console reflects the latest seat
+      if (existingSeat) {
+        // Update existing seat record
+        await prisma.bookingSeat.update({
+          where: { id: existingSeat.id },
+          data: {
+            seatNumber: seatDesignator,
+            seatPrice: price ?? 0,
+            currency: currency || 'USD',
+            seatStatus: providerConfirmed ? 'CONFIRMED' : 'SELECTED',
+          },
+        }).catch((err: unknown) => fastify.log.warn({ err }, '[manage-booking/seats] Failed to update bookingSeat'));
+      } else {
+        // Create new seat record
+        const resolvedJourneyId = journeyId || booking.journeys?.[0]?.id;
+        const resolvedSegmentId = segmentId || booking.segments?.[0]?.id;
+        if (resolvedJourneyId && resolvedSegmentId) {
+          await prisma.bookingSeat.create({
+            data: {
+              bookingId,
+              passengerId,
+              journeyId: resolvedJourneyId,
+              segmentId: resolvedSegmentId,
+              seatNumber: seatDesignator,
+              seatType: 'selected',
+              seatPrice: price ?? 0,
+              currency: currency || 'USD',
+              seatStatus: providerConfirmed ? 'CONFIRMED' : 'SELECTED',
+            },
+          }).catch((err: unknown) => fastify.log.warn({ err }, '[manage-booking/seats] Failed to create bookingSeat'));
+        }
+      }
+
+      // Create change request for audit trail
       await mbq.createChangeRequest({
         bookingId, type: 'SEAT_CHANGE',
         requestedBy: booking.userId || booking.customerEmail,
@@ -447,10 +509,17 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         totalCost: price || 0,
         currency: currency || 'USD',
       });
+
+      const statusNote = providerConfirmed
+        ? ' (confirmed with airline)'
+        : providerSupportsSeatChange
+          ? ' (pending airline confirmation)'
+          : ' (preference recorded — contact airline to confirm)';
+
       await mbq.createBookingEvent({
         bookingId, eventType: 'SEAT_CHANGED',
         eventTitle: 'Seat changed',
-        eventDescription: `${existingSeat?.seatNumber || 'None'} → ${seatDesignator}${providerConfirmed ? ' (confirmed with airline)' : ' (pending confirmation)'}`,
+        eventDescription: `${existingSeat?.seatNumber || 'None'} → ${seatDesignator}${statusNote}`,
         actorType: 'customer',
       });
 
@@ -483,7 +552,18 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      return { success: true, seat: seatDesignator, price, providerConfirmed };
+      return {
+        success: true,
+        seat: seatDesignator,
+        price,
+        providerConfirmed,
+        providerSupportsSeatChange,
+        message: providerConfirmed
+          ? 'Seat confirmed with airline.'
+          : providerSupportsSeatChange
+            ? 'Seat preference recorded. Pending airline confirmation.'
+            : 'Seat preference recorded in FareMind. Post-booking seat changes are not available online for this provider — please contact the airline directly or manage at check-in.',
+      };
     } catch (e) { fastify.log.error(e, '[manage-booking/seats/select]'); reply.code(500).send({ error: 'Server error' }); }
   });
 

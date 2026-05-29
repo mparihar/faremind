@@ -9,12 +9,21 @@ export const GET = withAdmin(async (req: NextRequest) => {
     const limit  = Math.min(100, parseInt(searchParams.get('limit') ?? '20'));
     const search = searchParams.get('q') ?? '';
     const status = searchParams.get('status') ?? '';
+    const paymentStatus   = searchParams.get('paymentStatus') ?? '';
+    const ticketingStatus = searchParams.get('ticketingStatus') ?? '';
+    const provider        = searchParams.get('provider') ?? '';
+    const cabin           = searchParams.get('cabin') ?? '';
+    const tripType        = searchParams.get('tripType') ?? '';
     const from   = searchParams.get('from');
     const to     = searchParams.get('to');
 
     const where: any = {};
 
-    if (status) where.bookingStatus = status;
+    if (status)          where.bookingStatus   = status;
+    if (paymentStatus)   where.paymentStatus   = paymentStatus;
+    if (ticketingStatus) where.ticketingStatus  = ticketingStatus;
+    if (provider)        where.primaryProvider  = { equals: provider, mode: 'insensitive' };
+    if (tripType)        where.tripType         = tripType;
     if (from || to) {
       where.departureDate = {
         ...(from ? { gte: new Date(from) } : {}),
@@ -30,6 +39,22 @@ export const GET = withAdmin(async (req: NextRequest) => {
       });
       const refBookingIds = [...new Set(matchingPnrs.map(r => r.bookingId))];
 
+      // Search by Stripe payment intent ID
+      const matchingPayments = await prisma.bookingPayment.findMany({
+        where: { stripePaymentIntentId: { contains: search, mode: 'insensitive' } },
+        select: { bookingId: true },
+      });
+      const paymentBookingIds = [...new Set(matchingPayments.map(p => p.bookingId))];
+
+      // Search by provider order ID
+      const matchingProviderOrders = await prisma.bookingPnr.findMany({
+        where: { providerOrderId: { contains: search, mode: 'insensitive' } },
+        select: { bookingId: true },
+      });
+      const providerOrderBookingIds = [...new Set(matchingProviderOrders.map(p => p.bookingId))];
+
+      const allMatchedIds = [...new Set([...refBookingIds, ...paymentBookingIds, ...providerOrderBookingIds])];
+
       where.OR = [
         { masterPnr: { contains: search, mode: 'insensitive' } },
         { masterBookingReference: { contains: search, mode: 'insensitive' } },
@@ -37,8 +62,23 @@ export const GET = withAdmin(async (req: NextRequest) => {
         { customerName: { contains: search, mode: 'insensitive' } },
         { originAirport: { contains: search.toUpperCase() } },
         { destinationAirport: { contains: search.toUpperCase() } },
-        ...(refBookingIds.length > 0 ? [{ id: { in: refBookingIds } }] : []),
+        ...(allMatchedIds.length > 0 ? [{ id: { in: allMatchedIds } }] : []),
       ];
+    }
+
+    // Cabin filter: search in journeys
+    if (cabin) {
+      const matchingJourneys = await prisma.bookingJourney.findMany({
+        where: { cabinSummary: { equals: cabin, mode: 'insensitive' } },
+        select: { bookingId: true },
+      });
+      const cabinBookingIds = [...new Set(matchingJourneys.map(j => j.bookingId))];
+      if (cabinBookingIds.length > 0) {
+        where.id = { ...(where.id ?? {}), in: cabinBookingIds };
+      } else {
+        // No matching bookings for this cabin — return empty
+        return NextResponse.json({ bookings: [], total: 0, page, limit, pages: 0 });
+      }
     }
 
     const [masterBookings, total] = await Promise.all([
@@ -52,7 +92,8 @@ export const GET = withAdmin(async (req: NextRequest) => {
           passengers: { select: { id: true, passengerType: true }, orderBy: { passengerOrder: 'asc' } },
           payments:   { take: 1, orderBy: { createdAt: 'desc' }, select: { status: true, amount: true, currency: true } },
           journeys:   { where: { direction: 'OUTBOUND' }, take: 1, select: { cabinSummary: true } },
-          pnrs:       { orderBy: { createdAt: 'asc' }, select: { id: true, pnrCode: true, journeyDirection: true, isPrimary: true, pnrType: true } },
+          pnrs:       { orderBy: { createdAt: 'asc' }, select: { id: true, pnrCode: true, journeyDirection: true, isPrimary: true, pnrType: true, airlineCode: true, airlineName: true, provider: true } },
+          segments:   { take: 1, orderBy: { segmentOrder: 'asc' }, select: { airlineCode: true, airlineName: true } },
         },
       }),
       prisma.masterBooking.count({ where }),
@@ -64,6 +105,9 @@ export const GET = withAdmin(async (req: NextRequest) => {
       const firstName = nameParts[0] ?? '';
       const lastName  = nameParts.slice(1).join(' ') || '';
       const cabin = (mb.journeys[0]?.cabinSummary ?? 'economy').toUpperCase();
+      const primaryPnr = mb.pnrs.find(p => p.isPrimary) ?? mb.pnrs[0];
+      const airlineCode = primaryPnr?.airlineCode ?? mb.segments[0]?.airlineCode ?? null;
+      const airlineName = primaryPnr?.airlineName ?? mb.segments[0]?.airlineName ?? null;
 
       return {
         id:                     mb.id,
@@ -72,14 +116,22 @@ export const GET = withAdmin(async (req: NextRequest) => {
         pnrStrategy:            mb.pnrStrategy ?? null,
         isSplitTicket:          mb.isSplitTicket,
         pnrCount:               mb.pnrCount,
-        pnrs:                   mb.pnrs.map(p => ({ id: p.id, pnrCode: p.pnrCode, journeyDirection: p.journeyDirection, isPrimary: p.isPrimary, pnrType: p.pnrType })),
+        pnrs:                   mb.pnrs.map(p => ({ id: p.id, pnrCode: p.pnrCode, journeyDirection: p.journeyDirection, isPrimary: p.isPrimary, pnrType: p.pnrType, airlineCode: p.airlineCode, airlineName: p.airlineName, provider: p.provider })),
         status:                 mb.bookingStatus,
+        paymentStatus:          mb.paymentStatus,
+        ticketingStatus:        mb.ticketingStatus,
+        provider:               mb.primaryProvider,
+        airlineCode,
+        airlineName,
+        tripType:               mb.tripType,
         originAirport:          mb.originAirport,
         destinationAirport:     mb.destinationAirport,
         departureTime:          mb.departureDate,
+        returnDate:             mb.returnDate,
         totalPrice:             Number(mb.totalAmount),
         currency:               mb.currency,
         cabinClass:             cabin,
+        customerEmail:          mb.customerEmail,
         createdAt:              mb.createdAt,
         user: mb.user
           ? { firstName: mb.user.firstName, lastName: mb.user.lastName, email: mb.user.email }

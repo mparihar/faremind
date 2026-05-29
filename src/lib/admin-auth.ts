@@ -152,6 +152,7 @@ export async function revokeAdminSession(sessionId: string): Promise<void> {
 
 export async function auditLog(params: {
   adminUserId?: string;
+  bookingId?: string;
   action: string;
   entityType: string;
   entityId?: string;
@@ -164,6 +165,7 @@ export async function auditLog(params: {
   await prisma.auditLog.create({
     data: {
       adminUserId: params.adminUserId ?? null,
+      bookingId: params.bookingId ?? null,
       action: params.action,
       entityType: params.entityType,
       entityId: params.entityId ?? null,

@@ -6,12 +6,16 @@ import { X, Loader2, AlertCircle, Check, Plane, Printer, User, Calendar } from '
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 
 // ── Seat Map Modal ──
-export function SeatMapModal({ bookingId, onClose }: { bookingId: string; onClose: () => void }) {
+export function SeatMapModal({ bookingId, onClose, provider }: { bookingId: string; onClose: () => void; provider?: string }) {
   const { seatMaps, seatMapLoading, loadSeatMap, selectSeat } = useManageBookingStore();
   const [selected, setSelected] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
-  useEffect(() => { loadSeatMap(bookingId, 'slice_0'); }, [bookingId]);
+
+  // Duffel does NOT support post-booking seat changes
+  const isDuffel = (provider || '').toLowerCase() === 'duffel';
+
+  useEffect(() => { if (!isDuffel) loadSeatMap(bookingId, 'slice_0'); }, [bookingId, isDuffel]);
   const seatMap = seatMaps[0];
   const colorMap: Record<string, string> = {
     window: 'bg-blue-500/20 border-blue-500/30 text-blue-400',
@@ -31,63 +35,97 @@ export function SeatMapModal({ bookingId, onClose }: { bookingId: string; onClos
         className="w-full max-w-lg max-h-[80vh] bg-[#0f1525] border border-white/10 rounded-2xl flex flex-col" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between p-5 border-b border-white/[0.06]">
           <div>
-            <h3 className="text-white font-bold text-lg">Select Seat</h3>
-            <span className="text-[10px] text-amber-400/80 font-medium">If airline permits</span>
+            <h3 className="text-white font-bold text-lg">Change Seat</h3>
+            {!isDuffel && <span className="text-[10px] text-amber-400/80 font-medium">If airline permits</span>}
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={18} /></button>
         </div>
         <div className="flex-1 overflow-y-auto p-5">
-          {/* Provider notice */}
-          <div className="mb-4 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10 text-xs text-amber-400/70">
-            <AlertCircle size={12} className="inline mr-1.5 -mt-0.5" />
-            Seat assignments are subject to airline availability and confirmation. Post-booking changes may require airline assistance.
-          </div>
-          {done ? (
+          {isDuffel ? (
+            /* ── Duffel: Contact Airline Message ── */
             <div className="text-center py-8">
-              <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-3"><Check size={28} className="text-emerald-400" /></div>
-              <p className="text-white font-bold mb-1">Seat Request Submitted</p>
-              <p className="text-slate-400 text-sm mb-1">Requested: <strong className="text-[#1ABC9C]">{selected}</strong></p>
-              <p className="text-slate-500 text-xs mb-4">Status: Pending Airline Confirmation</p>
-              <p className="text-slate-600 text-[11px] mb-4">You will receive an email once the airline confirms.</p>
-              <button onClick={onClose} className="px-6 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-semibold text-sm">Done</button>
+              <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/20 flex items-center justify-center mx-auto mb-4">
+                <AlertCircle size={28} className="text-amber-400" />
+              </div>
+              <p className="text-white font-bold text-lg mb-2">Post-Booking Seat Changes Unavailable</p>
+              <p className="text-slate-400 text-sm mb-4 max-w-sm mx-auto">
+                Your booking was made through Duffel (NDC), which does not support online seat changes after booking.
+              </p>
+              <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 mb-4 text-left">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-2">How to change your seat</p>
+                <ul className="space-y-2 text-sm text-slate-300">
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#1ABC9C] font-bold mt-0.5">1.</span>
+                    <span>Contact the airline directly via their website or customer service</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#1ABC9C] font-bold mt-0.5">2.</span>
+                    <span>Use the airline's online check-in (usually available 24-48hrs before departure)</span>
+                  </li>
+                  <li className="flex items-start gap-2">
+                    <span className="text-[#1ABC9C] font-bold mt-0.5">3.</span>
+                    <span>Request a seat change at the airport check-in counter</span>
+                  </li>
+                </ul>
+              </div>
+              <p className="text-slate-600 text-xs mb-5">Your original seat selection (if any) was confirmed at the time of booking.</p>
+              <button onClick={onClose} className="px-6 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-semibold text-sm">Got it</button>
             </div>
-          ) : seatMapLoading ? <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-[#1ABC9C] animate-spin" /></div>
-            : seatMap ? (
-              <div className="space-y-1">
-                <div className="flex justify-center gap-4 mb-4 text-[10px]">
-                  {Object.entries(colorMap).map(([type, cls]) => (
-                    <span key={type} className="flex items-center gap-1.5">
-                      <span className={`w-4 h-4 rounded border ${cls}`} />
-                      <span className="text-slate-400 capitalize">{type}</span>
-                    </span>
-                  ))}
-                  <span className="flex items-center gap-1.5">
-                    <span className="w-4 h-4 rounded bg-slate-800 border border-slate-700" />
-                    <span className="text-slate-400">Taken</span>
-                  </span>
+          ) : (
+            <>
+              {/* Provider notice */}
+              <div className="mb-4 p-3 rounded-xl bg-amber-500/5 border border-amber-500/10 text-xs text-amber-400/70">
+                <AlertCircle size={12} className="inline mr-1.5 -mt-0.5" />
+                Seat assignments are subject to airline availability and confirmation. Post-booking changes may require airline assistance.
+              </div>
+              {done ? (
+                <div className="text-center py-8">
+                  <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-3"><Check size={28} className="text-emerald-400" /></div>
+                  <p className="text-white font-bold mb-1">Seat Request Submitted</p>
+                  <p className="text-slate-400 text-sm mb-1">Requested: <strong className="text-[#1ABC9C]">{selected}</strong></p>
+                  <p className="text-slate-500 text-xs mb-4">Status: Pending Airline Confirmation</p>
+                  <p className="text-slate-600 text-[11px] mb-4">You will receive an email once the airline confirms.</p>
+                  <button onClick={onClose} className="px-6 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-semibold text-sm">Done</button>
                 </div>
-                {seatMap.rows.slice(0, 25).map(row => (
-                  <div key={row.row} className="flex items-center gap-1 justify-center">
-                    <span className="w-6 text-right text-[10px] text-slate-600 mr-1">{row.row}</span>
-                    {row.seats.map((seat, si) => (
-                      <span key={seat.designator}>
-                        {si === 3 && <span className="w-4 inline-block" />}
-                        <button disabled={!seat.available} onClick={() => setSelected(seat.designator)}
-                          className={`w-7 h-7 rounded text-[9px] font-bold border transition-all ${!seat.available
-                            ? 'bg-slate-800 border-slate-700 text-slate-700 cursor-not-allowed'
-                            : selected === seat.designator
-                              ? 'bg-[#1ABC9C] border-[#1ABC9C] text-white scale-110'
-                              : colorMap[seat.type] || 'bg-slate-700/30 border-slate-600 text-slate-500 hover:border-[#1ABC9C]/50'}`}>
-                          {seat.designator.slice(-1)}
-                        </button>
+              ) : seatMapLoading ? <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-[#1ABC9C] animate-spin" /></div>
+                : seatMap ? (
+                  <div className="space-y-1">
+                    <div className="flex justify-center gap-4 mb-4 text-[10px]">
+                      {Object.entries(colorMap).map(([type, cls]) => (
+                        <span key={type} className="flex items-center gap-1.5">
+                          <span className={`w-4 h-4 rounded border ${cls}`} />
+                          <span className="text-slate-400 capitalize">{type}</span>
+                        </span>
+                      ))}
+                      <span className="flex items-center gap-1.5">
+                        <span className="w-4 h-4 rounded bg-slate-800 border border-slate-700" />
+                        <span className="text-slate-400">Taken</span>
                       </span>
+                    </div>
+                    {seatMap.rows.slice(0, 25).map(row => (
+                      <div key={row.row} className="flex items-center gap-1 justify-center">
+                        <span className="w-6 text-right text-[10px] text-slate-600 mr-1">{row.row}</span>
+                        {row.seats.map((seat, si) => (
+                          <span key={seat.designator}>
+                            {si === 3 && <span className="w-4 inline-block" />}
+                            <button disabled={!seat.available} onClick={() => setSelected(seat.designator)}
+                              className={`w-7 h-7 rounded text-[9px] font-bold border transition-all ${!seat.available
+                                ? 'bg-slate-800 border-slate-700 text-slate-700 cursor-not-allowed'
+                                : selected === seat.designator
+                                  ? 'bg-[#1ABC9C] border-[#1ABC9C] text-white scale-110'
+                                  : colorMap[seat.type] || 'bg-slate-700/30 border-slate-600 text-slate-500 hover:border-[#1ABC9C]/50'}`}>
+                              {seat.designator.slice(-1)}
+                            </button>
+                          </span>
+                        ))}
+                      </div>
                     ))}
                   </div>
-                ))}
-              </div>
-            ) : <p className="text-slate-500 text-center py-8">Seat map unavailable for this flight.</p>}
+                ) : <p className="text-slate-500 text-center py-8">Seat map unavailable for this flight.</p>}
+            </>
+          )}
         </div>
-        {selected && !done && (
+        {selected && !done && !isDuffel && (
           <div className="p-5 border-t border-white/[0.06] flex items-center justify-between">
             <p className="text-white text-sm">Seat <strong className="text-[#1ABC9C]">{selected}</strong></p>
             <button onClick={handleConfirm} disabled={saving} className="px-5 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-bold text-sm disabled:opacity-50">

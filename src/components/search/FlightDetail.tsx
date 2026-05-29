@@ -7,8 +7,6 @@ import {
   Luggage, 
   Armchair, 
   Leaf, 
-  ChevronRight,
-  Plane
 } from 'lucide-react';
 import { 
   cn, 
@@ -112,14 +110,6 @@ export default function FlightDetail({ flight }: FlightDetailProps) {
             <p className="text-[10px] text-slate-800 font-black">421 kg</p>
           </div>
         </div>
-      </div>
-
-      {/* CTA Footer */}
-      <div className="mt-auto p-6 pt-0">
-        <button className="w-full py-4 rounded-2xl font-black text-white bg-[#1ABC9C] flex items-center justify-center gap-2 shadow-lg shadow-[#1ABC9C]/20 hover:scale-[1.02] transition-all">
-          View Details
-          <ChevronRight className="w-5 h-5" />
-        </button>
       </div>
     </div>
   );

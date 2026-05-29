@@ -1018,6 +1018,7 @@ model AdminUser {
   email              String    @unique
   passwordHash       String?   @map("password_hash")
   fullName           String    @map("full_name")
+  phone              String?
   role               AdminRole @default(SUPPORT)
   isActive           Boolean   @default(true) @map("is_active")
   mustChangePassword Boolean   @default(false) @map("must_change_password")
@@ -1248,6 +1249,7 @@ model BookingPassengerUpdate {
 model AuditLog {
   id          String    @id @default(cuid())
   adminUserId String?   @map("admin_user_id")
+  bookingId   String?   @map("booking_id")
   action      String
   entityType  String    @map("entity_type")
   entityId    String?   @map("entity_id")
@@ -1261,6 +1263,7 @@ model AuditLog {
   adminUser AdminUser? @relation(fields: [adminUserId], references: [id], onDelete: SetNull)
 
   @@index([adminUserId])
+  @@index([bookingId])
   @@index([entityType, entityId])
   @@index([createdAt])
   @@map("audit_logs")
