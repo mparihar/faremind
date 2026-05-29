@@ -225,6 +225,30 @@ function MealCard({
 
   const currentLabel = meals.find(m => m.code === currentCode)?.label;
 
+  // Check if all passengers have a meal selected for this segment
+  const allPaxDone = useMemo(() => {
+    return passengers.every(p =>
+      mealSelections.some(m => m.passengerId === p.id && m.segmentKey === segment.key),
+    );
+  }, [passengers, mealSelections, segment.key]);
+
+  // Auto-advance to next passenger after meal selection
+  const handleMealSelect = useCallback((meal: MealOptionDef) => {
+    if (!pax) return;
+    onSelect(pax.id, segment.key, meal);
+
+    // Auto-advance to next passenger that doesn't have a meal yet
+    if (passengers.length > 1) {
+      const nextUnassigned = passengers.findIndex((p, i) => {
+        if (i <= activePax) return false;
+        return !mealSelections.some(m => m.passengerId === p.id && m.segmentKey === segment.key);
+      });
+      if (nextUnassigned !== -1) {
+        setTimeout(() => setActivePax(nextUnassigned), 200);
+      }
+    }
+  }, [pax, onSelect, segment.key, passengers, activePax, mealSelections]);
+
   return (
     <motion.div
       initial={{ opacity: 0, y: 16 }}
@@ -254,9 +278,20 @@ function MealCard({
               )}
             </div>
           </div>
-          {/* Selected meal badge */}
+          {/* Selected meal badge or all-done badge */}
           <AnimatePresence mode="wait">
-            {currentCode && (
+            {allPaxDone ? (
+              <motion.span
+                key="all-done"
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                className="flex items-center gap-1 text-[9px] font-bold text-emerald-400 bg-emerald-400/15 px-2 py-0.5 rounded-full shrink-0"
+              >
+                <Check className="w-2.5 h-2.5" strokeWidth={3} />
+                All set
+              </motion.span>
+            ) : currentCode ? (
               <motion.span
                 key={currentCode}
                 initial={{ opacity: 0, scale: 0.8 }}
@@ -266,7 +301,7 @@ function MealCard({
               >
                 {currentLabel}
               </motion.span>
-            )}
+            ) : null}
           </AnimatePresence>
         </div>
 
@@ -319,7 +354,7 @@ function MealCard({
                 meal={meal}
                 selected={currentCode === meal.code}
                 recommended={recommended === meal.code}
-                onSelect={() => pax && onSelect(pax.id, segment.key, meal)}
+                onSelect={() => handleMealSelect(meal)}
               />
             ))}
           </motion.div>

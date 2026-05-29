@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ArrowLeft, Lock, ChevronRight, Check, Info, AlertCircle,
@@ -519,6 +519,55 @@ export default function SeatsPage() {
   const activeSeatMap = seatMaps[activeSegIdx];
   const hasSeatMap = !loadingMap && !!activeSeatMap?.cabins?.[0]?.rows?.length;
 
+  // ── Auto-advance to next segment when all passengers are done ───────────────
+  const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const [autoAdvanceMsg, setAutoAdvanceMsg] = useState<string | null>(null);
+
+  // Check if all passengers have a seat or preference for the given segment
+  const allPaxDoneForSeg = useCallback((segKey: string, currentSelections: typeof seatSelections) => {
+    return passengers.every(p =>
+      currentSelections.some(s =>
+        s.passengerId === p.id && s.segmentKey === segKey && (s.seatNumber || s.preference),
+      ),
+    );
+  }, [passengers]);
+
+  // Auto-advance effect: when all passengers are done on current segment, jump to next
+  useEffect(() => {
+    if (segments.length <= 1) return; // only one segment, nothing to advance to
+    if (activeSegIdx >= segments.length - 1) return; // already on last segment
+    if (!activeSeg) return;
+
+    const done = allPaxDoneForSeg(activeSeg.key, seatSelections);
+    if (!done) {
+      // Clear any pending auto-advance if user deselects
+      if (autoAdvanceTimer.current) {
+        clearTimeout(autoAdvanceTimer.current);
+        autoAdvanceTimer.current = null;
+        setAutoAdvanceMsg(null);
+      }
+      return;
+    }
+
+    // All passengers done on this segment — auto-advance after a brief delay
+    const nextIdx = activeSegIdx + 1;
+    const nextSeg = segments[nextIdx];
+    setAutoAdvanceMsg(`All seats selected! Switching to ${nextSeg?.journeyLabel ?? 'next segment'}…`);
+
+    autoAdvanceTimer.current = setTimeout(() => {
+      setActiveSegIdx(nextIdx);
+      setAutoAdvanceMsg(null);
+      autoAdvanceTimer.current = null;
+    }, 800);
+
+    return () => {
+      if (autoAdvanceTimer.current) {
+        clearTimeout(autoAdvanceTimer.current);
+        autoAdvanceTimer.current = null;
+      }
+    };
+  }, [seatSelections, activeSegIdx, segments, activeSeg, allPaxDoneForSeg]); // eslint-disable-line react-hooks/exhaustive-deps
+
   // ── Seat selection handler ──────────────────────────────────────────────────
   const handleSeatClick = useCallback((
     designator: string,
@@ -559,6 +608,8 @@ export default function SeatsPage() {
   // ── Preference handler (fallback) ───────────────────────────────────────────
   const handlePrefSelect = useCallback((paxId: string, segKey: string, pref: SeatPreference) => {
     updateSeatSelection(paxId, segKey, { preference: pref, seatNumber: null, priceUsd: 0, serviceId: null });
+    // Note: auto-advance to next segment is handled by the useEffect above
+    // that watches seatSelections changes
   }, [updateSeatSelection]);
 
   // ── Assignments for active segment ─────────────────────────────────────────
@@ -599,6 +650,21 @@ export default function SeatsPage() {
                 Choose seats for each traveler. Prices are shown per seat.
               </p>
             </div>
+
+            {/* Auto-advance toast */}
+            <AnimatePresence>
+              {autoAdvanceMsg && (
+                <motion.div
+                  initial={{ opacity: 0, y: -8 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  exit={{ opacity: 0, y: -8 }}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-[#1ABC9C]/10 border border-[#1ABC9C]/25 text-[#1ABC9C] text-sm font-semibold"
+                >
+                  <Check className="w-4 h-4" strokeWidth={3} />
+                  {autoAdvanceMsg}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Segment tabs */}
             {activeSeg && (
