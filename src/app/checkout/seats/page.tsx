@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ChevronRight, Check, Info, AlertCircle,
+  ChevronRight, Check, Info, AlertCircle, Lock,
   Plane, Shield, Users, LayoutGrid, ArrowLeftRight, AlignJustify, Shuffle,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
