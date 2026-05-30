@@ -656,6 +656,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             <InfoRow label="Trip Type" value={booking.tripType} />
             <InfoRow label="Provider" value={booking.provider?.toUpperCase()} />
             <InfoRow label="Provider Booking ID" value={booking.providerBookingId} mono />
+            <InfoRow label="Internal Booking ID" value={booking.id} mono />
           </Section>
 
           <Section title="Customer">

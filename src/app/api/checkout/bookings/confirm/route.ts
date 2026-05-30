@@ -25,7 +25,12 @@ async function duffelRequest<T>(method: string, path: string, body?: Record<stri
   if (!response.ok) {
     const errorBody = await response.json().catch(() => ({ errors: [] }));
     const errors = errorBody.errors || [];
-    const msg = errors.map((e: any) => e.message).join('; ') || `HTTP ${response.status}`;
+    console.error('[Duffel] Full error response:', JSON.stringify(errorBody, null, 2));
+    const msg = errors.map((e: any) => {
+      let detail = e.message || '';
+      if (e.source?.pointer) detail += ` (at ${e.source.pointer})`;
+      return detail;
+    }).join('; ') || `HTTP ${response.status}`;
     throw new Error(`Duffel API error (${response.status}): ${msg}`);
   }
 
@@ -85,17 +90,27 @@ export async function POST(req: NextRequest) {
       try {
         // Normalize phone to E.164 format for Duffel
         const normalizePhone = (raw: string): string => {
-          if (!raw) return '+10000000000';
-          const digits = raw.replace(/\D/g, '');
+          if (!raw || !raw.trim()) return '+10000000000';
+          let cleaned = raw.trim();
+          const hasPlus = cleaned.startsWith('+');
+          // Strip everything except digits
+          const digits = cleaned.replace(/\D/g, '');
           if (digits.length === 0) return '+10000000000';
-          // Already has country code (11+ digits starting with 1 for US)
-          if (raw.startsWith('+')) return `+${digits}`;
-          // US/CA 10-digit number → prepend +1
+          
+          // 10 digits (with or without +) → assume US number, prepend +1
+          // This catches the common case where user enters area code + number
+          // without country code (e.g. 9726971532 or +9726971532)
           if (digits.length === 10) return `+1${digits}`;
-          // 11 digits starting with 1 → likely US with country code
+          
+          // 11 digits starting with 1 → US with country code
           if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
-          // Fallback: prepend +
-          return `+${digits}`;
+          
+          // If already has + and more than 10 digits, trust the country code
+          if (hasPlus && digits.length >= 11) return `+${digits}`;
+          
+          // Other lengths with 7+ digits — prepend +
+          if (digits.length >= 7) return `+${digits}`;
+          return '+10000000000';
         };
 
         // Verify offer is still valid and get passenger IDs from the offer
@@ -171,22 +186,33 @@ export async function POST(req: NextRequest) {
           };
         });
 
+        // Log phone normalization for debugging
+        duffelPassengers.forEach((dp, i) => {
+          console.log(`[Duffel] Passenger ${i}: phone raw="${passengers[i]?.phone}" → normalized="${dp.phone_number}"`);
+        });
+
         // Build seat services to send to Duffel at order creation.
         // Each seatSelection with a serviceId maps to a Duffel service add-on.
         const seatServices: { id: string; quantity: number }[] = [];
+        let seatServiceTotal = 0;
         if (Array.isArray(seatSelections)) {
           for (const seat of seatSelections) {
             if (seat.serviceId && seat.seatNumber) {
               seatServices.push({ id: seat.serviceId, quantity: 1 });
+              // Add the seat price to the total (price comes from the frontend store)
+              seatServiceTotal += (typeof seat.priceUsd === 'number' ? seat.priceUsd : 0);
             }
           }
         }
         if (seatServices.length > 0) {
-          console.log(`[Duffel] Including ${seatServices.length} seat service(s) in order: ${seatServices.map(s => s.id).join(', ')}`);
+          console.log(`[Duffel] Including ${seatServices.length} seat service(s) in order (extra cost: ${seatServiceTotal.toFixed(2)} ${totalCurrency}): ${seatServices.map(s => s.id).join(', ')}`);
         }
 
-        console.log(`[Duffel] Creating order with offer ${offerId}, ${duffelPassengers.length} passenger(s), IDs: ${duffelPassengers.map(p => p.id).join(', ')}`);
+        // Payment amount must match offer total + any service costs
+        const paymentAmount = (totalAmount + seatServiceTotal).toFixed(2);
 
+        console.log(`[Duffel] Creating order with offer ${offerId}, ${duffelPassengers.length} passenger(s), payment: ${paymentAmount} ${totalCurrency}, IDs: ${duffelPassengers.map(p => p.id).join(', ')}`);
+        console.log(`[Duffel] Full passenger payload:`, JSON.stringify(duffelPassengers, null, 2));
         // Create the order (booking) — payment via Duffel balance
         duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', {
           selected_offers: [offerId],
@@ -194,7 +220,7 @@ export async function POST(req: NextRequest) {
           type: 'instant',
           payments: [{
             type: 'balance',
-            amount: totalAmount.toFixed(2),
+            amount: paymentAmount,
             currency: totalCurrency,
           }],
           // Include seat selections as services so the airline assigns the exact seats
@@ -532,10 +558,17 @@ export async function POST(req: NextRequest) {
           if (!mealCode || mealCode === 'STANDARD' || mealCode === 'NONE') continue;
           const paxId = passengerIdMap[meal.passengerId];
           if (!paxId) continue;
-          const dbSegId = meal.segmentKey ? allKeyToDbId[meal.segmentKey] : null;
-          const journeyId = dbSegId
-            ? (allDbIdToJourney[dbSegId] ?? outJourney.id)
-            : outJourney.id;
+          const segKey = meal.segmentKey ?? '';
+          const dbSegId = segKey ? allKeyToDbId[segKey] : null;
+          // Map 'outbound'/'return' direction keys to correct journeyId
+          let journeyId: string;
+          if (segKey === 'return' && retJourney) {
+            journeyId = retJourney.id;
+          } else if (dbSegId) {
+            journeyId = allDbIdToJourney[dbSegId] ?? outJourney.id;
+          } else {
+            journeyId = outJourney.id;
+          }
           const isReturn = journeyId === retJourney?.id;
           await tx.bookingMeal.create({
             data: {
@@ -657,6 +690,21 @@ export async function POST(req: NextRequest) {
     const { mb: masterBooking, pnrResult } = txResult;
     const confirmedAt = new Date().toISOString();
 
+    // Fetch full booking with all relations for rich email itinerary
+    const fullBooking = await prisma.masterBooking.findUnique({
+      where: { id: masterBooking.id },
+      include: {
+        journeys: { include: { segments: true }, orderBy: { journeyOrder: 'asc' } },
+        passengers: { orderBy: { passengerOrder: 'asc' } },
+        seats: true,
+        meals: true,
+        baggage: true,
+        addons: true,
+        pnrs: true,
+        payments: true,
+      },
+    }).catch(() => null);
+
     // Fire email notifications (non-blocking)
     fireNotification({
       event_type: 'BOOKING_CONFIRMED',
@@ -678,6 +726,7 @@ export async function POST(req: NextRequest) {
         currency,
         confirmed_at: new Date(confirmedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
         payment_intent_id: paymentIntentId ?? '',
+        full_booking_data: fullBooking ?? undefined,
       },
     });
 

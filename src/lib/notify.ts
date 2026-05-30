@@ -6,6 +6,8 @@
  * is missing the call is silently skipped (logged).
  */
 
+import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
+
 const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 const SENDER_EMAIL  = process.env.BREVO_SENDER_EMAIL ?? 'support@faremind.ai';
 const SENDER_NAME   = 'FareMind';
@@ -112,7 +114,18 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
   const amount = String(d.total_amount ?? '');
 
   switch (eventType) {
-    case 'BOOKING_CONFIRMED':
+    case 'BOOKING_CONFIRMED': {
+      // If full booking data is provided, embed the complete itinerary
+      const fullBookingData = d.full_booking_data as Record<string, unknown> | undefined;
+      if (fullBookingData) {
+        const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
+        return {
+          subject: `Your FareMind flight is confirmed – ${ref}`,
+          html: itineraryHtml,
+          text: `Hi ${name}, your flight ${ref} (${route}) is confirmed. Total: ${amount}. View your full itinerary at ${process.env.NEXT_PUBLIC_APP_URL || 'https://faremind.ai'}/manage-booking`,
+        };
+      }
+      // Fallback: simple summary
       return {
         subject: `Your FareMind flight is confirmed – ${ref}`,
         html: wrap('Booking Confirmed', `
@@ -133,6 +146,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
         `),
         text: `Hi ${name}, your flight ${ref} (${route}) is confirmed. Total: ${amount}.`,
       };
+    }
 
     case 'BOOKING_PENDING':
       return {
@@ -253,7 +267,18 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
   const ts = new Date().toISOString();
 
   switch (eventType) {
-    case 'BOOKING_CONFIRMED':
+    case 'BOOKING_CONFIRMED': {
+      // If full booking data is provided, embed the same itinerary as customer
+      const fullBookingData = d.full_booking_data as Record<string, unknown> | undefined;
+      if (fullBookingData) {
+        const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
+        return {
+          subject: `[FareMind] New Booking Confirmed – ${ref}`,
+          html: itineraryHtml,
+          text: `New booking: ${ref} by ${name} (${email}), ${route}, ${amount}. Time: ${ts}`,
+        };
+      }
+      // Fallback
       return {
         subject: `[FareMind] New Booking Confirmed – ${ref}`,
         html: wrap('[Admin] Booking Confirmed', `
@@ -270,6 +295,7 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
         `),
         text: `New booking: ${ref} by ${name} (${email}), ${route}, ${amount}. Time: ${ts}`,
       };
+    }
 
     case 'BOOKING_PENDING':
       return {

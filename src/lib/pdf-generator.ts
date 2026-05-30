@@ -67,7 +67,7 @@ export function generatePdf(booking: any, action: 'download' | 'base64' = 'base6
     doc.setTextColor(...MUTED);
     doc.setFontSize(9);
     doc.setFont('helvetica', 'normal');
-    doc.text(`Airline PNR: ${booking.masterPnr}`, pw / 2, y + 28, { align: 'center' });
+    doc.text(`AIRLINE PNR: ${booking.masterPnr}`, pw / 2, y + 28, { align: 'center' });
   }
   y += 38;
 

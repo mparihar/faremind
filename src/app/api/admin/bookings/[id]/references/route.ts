@@ -28,7 +28,7 @@ export const POST = withAdmin(async (req: NextRequest, { admin, params }: any) =
         provider:         provider ?? null,
         airlineCode:      airlineCode ?? null,
         airlineName:      airlineName ?? null,
-        displayLabel:     pnrType === 'MASTER_AIRLINE_PNR' ? 'Full Trip PNR' : `PNR (${pnrCode})`,
+        displayLabel:     pnrType === 'MASTER_AIRLINE_PNR' ? 'AIRLINE PNR' : `PNR (${pnrCode})`,
       },
     });
 

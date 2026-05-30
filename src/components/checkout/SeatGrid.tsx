@@ -98,7 +98,7 @@ function SeatButton({
       lavatory: '🚻', galley: '🍽️', stairs: '↕', bassinet: '🍼', empty: '',
     };
     return (
-      <div className="w-11 h-11 sm:w-12 sm:h-12 flex items-center justify-center text-2xl text-slate-400 rounded select-none">
+      <div className="w-8 h-8 sm:w-9 sm:h-9 flex items-center justify-center text-lg text-slate-400 rounded select-none">
         {ICONS[element.type] ?? ''}
       </div>
     );
@@ -109,13 +109,13 @@ function SeatButton({
     return (
       <button
         disabled
-        className="w-11 h-11 sm:w-12 sm:h-12 rounded-lg bg-slate-200 border border-slate-300 cursor-not-allowed flex items-center justify-center"
+        className="w-8 h-8 sm:w-9 sm:h-9 rounded-md bg-slate-200 border border-slate-300 cursor-not-allowed flex items-center justify-center"
         aria-label={`${element.designator} — occupied`}
         onMouseEnter={handleMouseEnter}
         onMouseLeave={handleMouseLeave}
         ref={ref}
       >
-        <span className="text-sm font-bold text-slate-500">
+        <span className="text-[10px] font-bold text-slate-500">
           {element.designator?.replace(/\d+/g, '')}
         </span>
       </button>
@@ -136,10 +136,10 @@ function SeatButton({
         onMouseLeave={handleMouseLeave}
         initial={{ scale: 0.8 }}
         animate={{ scale: 1 }}
-        className={`w-11 h-11 sm:w-12 sm:h-12 rounded-lg border-2 ${paxBg} border-white ring-2 ${paxRing} flex items-center justify-center cursor-pointer shadow-md`}
+        className={`w-8 h-8 sm:w-9 sm:h-9 rounded-md border-2 ${paxBg} border-white ring-2 ${paxRing} flex items-center justify-center cursor-pointer shadow-md`}
         aria-label={`${element.designator} — assigned to passenger ${assignedPaxIndex + 1}`}
       >
-        <span className="text-sm font-extrabold text-white leading-none">
+        <span className="text-[10px] font-extrabold text-white leading-none">
           {assignedPaxIndex + 1}
         </span>
       </motion.button>
@@ -159,7 +159,7 @@ function SeatButton({
       onMouseEnter={handleMouseEnter}
       onMouseLeave={handleMouseLeave}
       whileTap={{ scale: 0.92 }}
-      className={`w-11 h-11 sm:w-12 sm:h-12 rounded-lg border flex items-center justify-center transition-all duration-100 ${hoverCls} ${
+      className={`w-8 h-8 sm:w-9 sm:h-9 rounded-md border flex items-center justify-center transition-all duration-100 ${hoverCls} ${
         premium
           ? 'bg-amber-400 border-amber-500'
           : isFree
@@ -168,7 +168,7 @@ function SeatButton({
       }`}
       aria-label={`${element.designator} — ${isFree ? 'free' : `$${element.price}`}`}
     >
-      <span className="text-sm font-bold text-white leading-none">
+      <span className="text-[10px] font-bold text-white leading-none">
         {element.designator?.replace(/\d+/g, '')}
       </span>
     </motion.button>
@@ -312,30 +312,30 @@ export default function SeatGrid({
         <div className="inline-block min-w-full">
 
           {/* Column headers */}
-          <div className="flex items-center gap-1 pl-12 mb-1.5">
+          <div className="flex items-center gap-0.5 pl-9 mb-1">
             {columnHeaders.flatMap((cols, si) => [
               ...cols.map(col => (
-                <div key={col} className="w-11 sm:w-12 text-center text-sm font-bold text-slate-600">
+            <div key={col} className="w-8 sm:w-9 text-center text-xs font-bold text-slate-600">
                   {col}
                 </div>
               )),
               si < sectionCount - 1
-                ? <div key={`ah-${si}`} className="w-5 sm:w-6" />
+                ? <div key={`ah-${si}`} className="w-4 sm:w-5" />
                 : null,
             ])}
           </div>
 
           {/* Rows */}
-          <div className="space-y-1">
+          <div className="space-y-0.5">
             {rows.map((row, rowIdx) => (
-              <div key={`row-${rowIdx}-${row.rowNumber}`} className={`flex items-center gap-1 ${row.isExitRow ? 'mt-2' : ''}`}>
+              <div key={`row-${rowIdx}-${row.rowNumber}`} className={`flex items-center gap-0.5 ${row.isExitRow ? 'mt-1.5' : ''}`}>
                 {/* Exit row marker */}
                 {row.isExitRow && (
                   <div className="absolute -left-1 text-xs font-bold text-orange-400 rotate-90 whitespace-nowrap" />
                 )}
 
                 {/* Row number */}
-                <div className="w-11 text-right pr-1.5 text-sm font-mono text-slate-500 shrink-0">
+                <div className="w-9 text-right pr-1 text-xs font-mono text-slate-500 shrink-0">
                   {row.isExitRow
                     ? <span className="text-orange-400 font-bold">{row.rowNumber}</span>
                     : row.rowNumber}
@@ -354,22 +354,22 @@ export default function SeatGrid({
                   const hasIcon = !hasSeat && iconEls.length > 0 && iconEls.length < expectedCols;
 
                   const aisleDiv = si < sectionCount - 1
-                    ? <div key={`aisle-${rowIdx}-${si}`} className="w-5 sm:w-6 flex items-center justify-center">
-                        <div className="w-px h-5 bg-slate-300" />
+                    ? <div key={`aisle-${rowIdx}-${si}`} className="w-4 sm:w-5 flex items-center justify-center">
+                        <div className="w-px h-4 bg-slate-300" />
                       </div>
                     : null;
 
                   // Non-seat icons that need to span the full section width
                   if (padNeeded > 0 && hasIcon) {
                     // use sm cell width (48px = w-12) so the container matches seat columns at sm: breakpoint
-                    const spanW = expectedCols * 48 + (expectedCols - 1) * 4;
+                    const spanW = expectedCols * 36 + (expectedCols - 1) * 2;
                     const ICONS: Record<string, string> = {
                       lavatory: '🚻', galley: '🍽️', stairs: '↕', bassinet: '🍼',
                     };
                     return [
                       <div
                         key={`span-${rowIdx}-${si}`}
-                        className="flex items-center justify-around shrink-0 h-11 sm:h-12"
+                        className="flex items-center justify-around shrink-0 h-8 sm:h-9"
                         style={{ width: `${spanW}px` }}
                       >
                         {iconEls.map((el, eli) => {
@@ -377,8 +377,8 @@ export default function SeatGrid({
                           return (
                             <div
                               key={eli}
-                              className="flex items-center justify-center text-2xl text-slate-400 bg-slate-100 rounded-xl shrink-0"
-                              style={{ width: `${pillW}px`, height: '40px' }}
+                              className="flex items-center justify-center text-lg text-slate-400 bg-slate-100 rounded-lg shrink-0"
+                              style={{ width: `${pillW}px`, height: '30px' }}
                             >
                               {ICONS[el.type]}
                             </div>
@@ -411,11 +411,11 @@ export default function SeatGrid({
 
                   return [
                     ...Array.from({ length: leftPad }, (_, i) => (
-                      <div key={`lpad-${rowIdx}-${si}-${i}`} className="w-11 h-11 sm:w-12 sm:h-12 shrink-0" />
+                      <div key={`lpad-${rowIdx}-${si}-${i}`} className="w-8 h-8 sm:w-9 sm:h-9 shrink-0" />
                     )),
                     ...seatEls,
                     ...Array.from({ length: rightPad }, (_, i) => (
-                      <div key={`rpad-${rowIdx}-${si}-${i}`} className="w-11 h-11 sm:w-12 sm:h-12 shrink-0" />
+                      <div key={`rpad-${rowIdx}-${si}-${i}`} className="w-8 h-8 sm:w-9 sm:h-9 shrink-0" />
                     )),
                     aisleDiv,
                   ];

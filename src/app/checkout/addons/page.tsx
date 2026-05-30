@@ -271,7 +271,7 @@ function TravelInsuranceSection({
                     )}
                   </div>
                   <p className="text-xs text-slate-500 leading-relaxed">{opt.desc}</p>
-                  {opt.warning && !isSelected && (
+                  {opt.warning && isSelected && (
                     <p className="text-xs text-amber-600 font-medium mt-1.5 flex items-center gap-1">
                       <AlertTriangle className="w-3 h-3" />
                       Traveling without protection is at your own risk

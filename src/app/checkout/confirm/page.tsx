@@ -461,14 +461,14 @@ export default function ConfirmPage() {
               {confirmation.pnrs && confirmation.pnrs.length > 0 && (
                 <div className="mt-3 mb-3 space-y-1.5">
                   {confirmation.pnrs.map((p, i) => (
-                    <div key={i} className="flex items-center justify-center gap-2">
-                      <span className="text-[10px] text-slate-500 w-28 text-right">{p.displayLabel}</span>
-                      <span className="font-mono font-black text-[#1ABC9C] tracking-widest text-sm">{p.pnrCode}</span>
+                    <div key={i} className="flex items-center justify-center gap-3">
+                      <span className="text-sm text-white font-medium">{p.displayLabel.replace('Full Trip PNR', 'AIRLINE PNR')}</span>
+                      <span className="font-mono font-black text-[#1ABC9C] tracking-widest text-lg">{p.pnrCode}</span>
                     </div>
                   ))}
                 </div>
               )}
-              <p className="text-xs text-slate-500 mb-4 font-mono">{confirmation.bookingId}</p>
+              {/* bookingId hidden from customer — visible in admin console */}
               <div className="flex items-center justify-center gap-2">
                 <CopyButton text={confirmation.masterBookingReference} className="bg-white/10 hover:bg-white/20 text-white border border-white/10" />
                 <button onClick={handleShare} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-white/10 hover:bg-white/20 border border-white/10 text-white text-xs font-semibold transition-all">
@@ -703,7 +703,6 @@ export default function ConfirmPage() {
           <p className="text-center text-xs text-slate-400 pb-6">
             Confirmation sent to{' '}
             <span className="font-semibold text-slate-600">{passengers[0]?.email || 'your email address'}</span>
-            {' · '}Booking ID: <span className="font-mono text-slate-500">{confirmation.bookingId}</span>
           </p>
         </motion.div>
 

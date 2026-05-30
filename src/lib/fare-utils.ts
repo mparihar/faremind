@@ -410,15 +410,16 @@ export function generateItineraryHtml(p: ItineraryParams): string {
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f8fafc;color:#1e293b;padding:40px 20px}
     .doc{max-width:640px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 32px rgba(0,0,0,.08)}
-    .hdr{background:#0f172a;padding:28px 36px;text-align:center}
-    .brand{color:#1abc9c;font-size:20px;font-weight:800;letter-spacing:1px}
+    .hdr{display:none}
+    .brand{font-size:22px;font-weight:900;letter-spacing:1px}
     .tagline{color:#64748b;font-size:12px;margin-top:4px}
     .body{padding:28px 36px}
     .section{margin-bottom:24px}
     .sec-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:12px;border-bottom:1px solid #f1f5f9;padding-bottom:6px}
-    .pnr-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:18px;text-align:center;margin-bottom:24px}
-    .pnr{font-family:'Courier New',monospace;font-size:32px;font-weight:900;letter-spacing:8px;color:#0f172a}
-    .pnr-label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+    .pnr-box{background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f3460 100%);border-radius:0;padding:32px 36px;text-align:center;position:relative;overflow:hidden}
+    .pnr-box::before{content:'';position:absolute;top:-40px;right:-40px;width:120px;height:120px;border-radius:50%;background:rgba(26,188,156,0.06)}
+    .pnr{font-family:'Courier New',monospace;font-size:32px;font-weight:900;letter-spacing:8px;color:#fff}
+    .pnr-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:8px}
     table{width:100%;border-collapse:collapse}
     .total-row td{padding-top:12px;border-top:2px solid #e2e8f0;font-weight:700}
     .total-amt{font-size:18px;color:#f97316;text-align:right}
@@ -437,17 +438,16 @@ export function generateItineraryHtml(p: ItineraryParams): string {
 </head>
 <body>
   <div class="doc">
-    <div class="hdr">
-      <div class="brand">FareMind</div>
-      <div class="tagline">Your smart flight booking companion</div>
+    <div class="pnr-box">
+        <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:4px 12px;margin-bottom:12px;">
+          <div style="width:6px;height:6px;border-radius:50%;background:#10b981;"></div>
+          <span style="font-size:11px;font-weight:700;color:#10b981;letter-spacing:0.5px;">Confirmed</span>
+        </div>
+        <div class="pnr-label">FAREMIND BOOKING REFERENCE</div>
+        <div class="pnr">${confirmation.masterBookingReference || confirmation.pnr}</div>
+        ${(confirmation.pnrs && confirmation.pnrs.length > 0) ? `<div style="margin-top:14px;">${confirmation.pnrs.map((pnr: any) => `<div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;"><span style="font-size:13px;color:#fff;font-weight:500;">AIRLINE PNR</span><span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${pnr.pnrCode}</span></div>`).join('<br/>')}</div>` : ''}
     </div>
     <div class="body">
-      <div class="pnr-box">
-        <div class="pnr-label">Booking Reference</div>
-        <div class="pnr">${confirmation.pnr}</div>
-        <div class="confirmed" style="margin-top:8px;font-size:13px;">✓ Confirmed</div>
-      </div>
-
       <div class="section">
         <div class="sec-title">Itinerary Summary</div>
         <table>
@@ -458,7 +458,7 @@ export function generateItineraryHtml(p: ItineraryParams): string {
           ${airlineName ? `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Airline</td><td style="padding:5px 0;text-align:right;font-size:13px;">${airlineName}</td></tr>` : ''}
           ${selectedFare ? `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Fare</td><td style="padding:5px 0;text-align:right;font-size:13px;">${selectedFare.name} · ${selectedFare.cabin.replace(/_/g, ' ')}</td></tr>` : ''}
           <tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Status</td><td style="padding:5px 0;text-align:right;font-size:13px;" class="confirmed">Confirmed</td></tr>
-          <tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Booking ID</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:12px;color:#94a3b8;">${confirmation.bookingId}</td></tr>
+          ${(confirmation.pnrs && confirmation.pnrs.length > 0) ? confirmation.pnrs.map((pnr: any) => `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">AIRLINE PNR</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:14px;font-weight:700;color:#1abc9c;">${pnr.pnrCode}</td></tr>`).join('') : ''}
         </table>
       </div>
 
@@ -601,6 +601,33 @@ export function generateItineraryHtmlFromBooking(booking: any): string {
     const paxMeals = allMeals.filter((m: any) => m.passengerId === p.id);
     const paxBags = allBaggage.filter((b: any) => !b.passengerId || b.passengerId === p.id);
 
+    // Personal details section
+    const hasPersonal = p.gender || p.dateOfBirth || p.email || p.phone;
+    const hasDocs = p.nationality || p.passportNumber || p.passportExpiry || p.passportIssuingCountry;
+
+    const personalHtml = (hasPersonal || hasDocs) ? `
+      <div style="border-radius:10px;border:1px solid #e2e8f0;background:#fafafa;padding:14px;margin-bottom:12px;">
+        ${hasPersonal ? `
+          <p style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:#94a3b8;margin:0 0 8px;">Personal Details</p>
+          <table style="width:100%;border-collapse:collapse;">
+            ${p.gender ? `<tr><td style="padding:4px 0;color:#64748b;font-size:13px;width:130px;">Gender</td><td style="padding:4px 0;font-size:13px;color:#1e293b;text-transform:capitalize;">${p.gender}</td></tr>` : ''}
+            ${p.dateOfBirth ? `<tr><td style="padding:4px 0;color:#64748b;font-size:13px;">Date of Birth</td><td style="padding:4px 0;font-size:13px;color:#1e293b;">${p.dateOfBirth}</td></tr>` : ''}
+            ${p.email ? `<tr><td style="padding:4px 0;color:#64748b;font-size:13px;">Email</td><td style="padding:4px 0;font-size:13px;color:#1e293b;">${p.email}</td></tr>` : ''}
+            ${p.phone ? `<tr><td style="padding:4px 0;color:#64748b;font-size:13px;">Phone</td><td style="padding:4px 0;font-size:13px;color:#1e293b;">${p.phone}</td></tr>` : ''}
+          </table>
+        ` : ''}
+        ${hasDocs ? `
+          <p style="font-size:9px;font-weight:800;text-transform:uppercase;letter-spacing:1.5px;color:#94a3b8;margin:${hasPersonal ? '12px' : '0'} 0 8px;">Travel Documents</p>
+          <table style="width:100%;border-collapse:collapse;">
+            ${p.nationality ? `<tr><td style="padding:4px 0;color:#64748b;font-size:13px;width:130px;">Nationality</td><td style="padding:4px 0;font-size:13px;color:#1e293b;">${p.nationality}</td></tr>` : ''}
+            ${p.passportNumber ? `<tr><td style="padding:4px 0;color:#64748b;font-size:13px;">Passport No.</td><td style="padding:4px 0;font-size:13px;font-family:'Courier New',monospace;color:#1e293b;">${p.passportNumber}</td></tr>` : ''}
+            ${p.passportExpiry ? `<tr><td style="padding:4px 0;color:#64748b;font-size:13px;">Expiry</td><td style="padding:4px 0;font-size:13px;color:#1e293b;">${p.passportExpiry}</td></tr>` : ''}
+            ${p.passportIssuingCountry ? `<tr><td style="padding:4px 0;color:#64748b;font-size:13px;">Issuing Country</td><td style="padding:4px 0;font-size:13px;color:#1e293b;">${p.passportIssuingCountry}</td></tr>` : ''}
+          </table>
+        ` : ''}
+      </div>
+    ` : '';
+
     const dirCards = journeys.map((j: any) => {
       const isOutbound = j.direction !== 'RETURN';
       const headerBg = isOutbound ? '#f0fdf4' : '#fff7ed';
@@ -615,9 +642,18 @@ export function generateItineraryHtmlFromBooking(booking: any): string {
       const seatStatus = seat ? _seatStatusLabel(seat.seatStatus) : 'Available at check-in';
 
       // Find meal for this passenger in this journey
-      const journeyMeals = paxMeals.filter((m: any) => m.journeyId === j.id);
+      // Try journeyId match first, then direction match, then any meal for this passenger
+      let journeyMeals = paxMeals.filter((m: any) => m.journeyId === j.id);
+      if (journeyMeals.length === 0) {
+        const dir = isOutbound ? 'OUTBOUND' : 'RETURN';
+        journeyMeals = paxMeals.filter((m: any) => m.direction === dir);
+      }
+      if (journeyMeals.length === 0 && journeys.length === 1) {
+        // Single journey — use any meal
+        journeyMeals = paxMeals;
+      }
       const meal = journeyMeals[0];
-      const mealVal = meal?.mealLabel || 'Not selected';
+      const mealVal = meal?.mealLabel || meal?.mealCode || 'Not selected';
 
       // Find baggage for this journey
       const journeyBags = paxBags.filter((b: any) => !b.journeyId || b.journeyId === j.id);
@@ -650,6 +686,7 @@ export function generateItineraryHtmlFromBooking(booking: any): string {
         </div>
         ${pi === 0 ? `<span style="font-size:10px;font-weight:700;color:#1abc9c;background:#f0fdf4;border:1px solid #d1fae5;padding:3px 10px;border-radius:20px;">Lead passenger</span>` : ''}
       </div>
+      ${personalHtml}
       ${dirCards}
     </div>`;
   }).join('');
@@ -704,15 +741,16 @@ export function generateItineraryHtmlFromBooking(booking: any): string {
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f8fafc;color:#1e293b;padding:40px 20px}
     .doc{max-width:640px;margin:0 auto;background:#fff;border-radius:16px;overflow:hidden;box-shadow:0 4px 32px rgba(0,0,0,.08)}
-    .hdr{background:#0f172a;padding:28px 36px;text-align:center}
-    .brand{color:#1abc9c;font-size:20px;font-weight:800;letter-spacing:1px}
+    .hdr{background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f3460 100%);padding:28px 36px;text-align:center}
+    .brand{font-size:22px;font-weight:900;letter-spacing:1px}
     .tagline{color:#64748b;font-size:12px;margin-top:4px}
     .body{padding:28px 36px}
     .section{margin-bottom:24px}
     .sec-title{font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:1px;color:#94a3b8;margin-bottom:12px;border-bottom:1px solid #f1f5f9;padding-bottom:6px}
-    .pnr-box{background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:18px;text-align:center;margin-bottom:24px}
-    .pnr{font-family:'Courier New',monospace;font-size:32px;font-weight:900;letter-spacing:8px;color:#0f172a}
-    .pnr-label{font-size:11px;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px}
+    .pnr-box{background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f3460 100%);border-radius:0;padding:32px 36px;text-align:center;position:relative;overflow:hidden}
+    .pnr-box::before{content:'';position:absolute;top:-40px;right:-40px;width:120px;height:120px;border-radius:50%;background:rgba(26,188,156,0.06)}
+    .pnr{font-family:'Courier New',monospace;font-size:32px;font-weight:900;letter-spacing:8px;color:#fff}
+    .pnr-label{font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:8px}
     table{width:100%;border-collapse:collapse}
     .total-row td{padding-top:12px;border-top:2px solid #e2e8f0;font-weight:700}
     .total-amt{font-size:18px;color:#f97316;text-align:right}
@@ -731,18 +769,16 @@ export function generateItineraryHtmlFromBooking(booking: any): string {
 </head>
 <body>
   <div class="doc">
-    <div class="hdr">
-      <div class="brand">FareMind</div>
-      <div class="tagline">Your smart flight booking companion</div>
+    <div class="pnr-box">
+        <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:4px 12px;margin-bottom:12px;">
+          <div style="width:6px;height:6px;border-radius:50%;background:#10b981;"></div>
+          <span style="font-size:11px;font-weight:700;color:#10b981;letter-spacing:0.5px;">${booking.bookingStatus === 'CANCELLED' ? 'Cancelled' : 'Confirmed'}</span>
+        </div>
+        <div class="pnr-label">FAREMIND BOOKING REFERENCE</div>
+        <div class="pnr">${ref}</div>
+        ${(booking.pnrs || []).length > 0 ? `<div style="margin-top:14px;">${(booking.pnrs || []).map((pnr: any) => `<div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;"><span style="font-size:13px;color:#fff;font-weight:500;">AIRLINE PNR</span><span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${pnr.pnrCode}</span></div>`).join('<br/>')}</div>` : (booking.masterPnr && booking.masterPnr !== ref ? `<div style="margin-top:14px;"><div style="display:inline-flex;align-items:center;gap:8px;"><span style="font-size:13px;color:#fff;font-weight:500;">AIRLINE PNR</span><span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${booking.masterPnr}</span></div></div>` : '')}
     </div>
     <div class="body">
-      <div class="pnr-box">
-        <div class="pnr-label">Booking Reference</div>
-        <div class="pnr">${ref}</div>
-        ${booking.masterPnr && booking.masterPnr !== ref ? `<div style="font-size:12px;color:#64748b;margin-top:6px;">Airline PNR: ${booking.masterPnr}</div>` : ''}
-        <div class="confirmed" style="margin-top:8px;font-size:13px;">✓ ${booking.bookingStatus === 'CANCELLED' ? 'Cancelled' : 'Confirmed'}</div>
-      </div>
-
       <div class="section">
         <div class="sec-title">Itinerary Summary</div>
         <table>
@@ -753,7 +789,7 @@ export function generateItineraryHtmlFromBooking(booking: any): string {
           ${airlineName ? `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Airline</td><td style="padding:5px 0;text-align:right;font-size:13px;">${airlineName}</td></tr>` : ''}
           ${fareClass ? `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Fare</td><td style="padding:5px 0;text-align:right;font-size:13px;text-transform:capitalize;">${fareClass}</td></tr>` : ''}
           <tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Status</td><td style="padding:5px 0;text-align:right;font-size:13px;" class="confirmed">${booking.bookingStatus === 'CANCELLED' ? 'Cancelled' : 'Confirmed'}</td></tr>
-          <tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Booking ID</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:12px;color:#94a3b8;">${booking.id || ''}</td></tr>
+          ${(booking.pnrs || []).map((pnr: any) => `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">AIRLINE PNR</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:14px;font-weight:700;color:#1abc9c;">${pnr.pnrCode}</td></tr>`).join('')}
         </table>
       </div>
 

@@ -69,13 +69,13 @@ function buildDisplayLabel(
   if (segmentLabel) return 'Segment PNR';
   switch (direction) {
     case 'ALL':
-      return 'Full Trip PNR';
+      return 'AIRLINE PNR';
     case 'OUTBOUND':
       return `Outbound PNR (${origin}→${destination})`;
     case 'RETURN':
       return `Return PNR (${destination}→${origin})`;
     default:
-      return 'Full Trip PNR';
+      return 'AIRLINE PNR';
   }
 }
 
