@@ -111,7 +111,7 @@ function Dropdown({ onClose, children, className }: DropdownProps) {
       transition={{ duration: 0.15, ease: 'easeOut' }}
       style={{ backgroundColor: '#ffffff' }}
       className={cn(
-        'absolute top-full mt-2 z-[9999] min-w-[200px]',
+        'absolute top-full mt-2 z-[9999] min-w-[200px] max-w-[calc(100vw-2rem)] left-0',
         'rounded-2xl bg-white border border-gray-200',
         'shadow-2xl shadow-black/20 p-2',
         className
@@ -559,22 +559,7 @@ export default function SmartPreferencesBar({
           </div>
         </motion.div>
 
-        {/* AI Microcopy */}
-        <AnimatePresence>
-          {prefs.aiIntelligence && (
-            <motion.div
-              initial={{ opacity: 0, y: -5 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: -5 }}
-              className="flex items-center justify-start px-1 mt-3"
-            >
-              <div className="bg-[#1ABC9C] text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
-                <Zap className="w-3 h-3 fill-white" />
-                AI optimizes price, duration, and stops automatically
-              </div>
-            </motion.div>
-          )}
-        </AnimatePresence>
+
 
         {/* Journey Dates */}
         {departureDate && (
@@ -951,22 +936,7 @@ export default function SmartPreferencesBar({
         </div> {/* Close Softened Filter Group */}
       </motion.div>
 
-      {/* AI Microcopy */}
-      <AnimatePresence>
-        {prefs.aiIntelligence && (
-          <motion.div
-            initial={{ opacity: 0, y: -5 }}
-            animate={{ opacity: 1, y: 0 }}
-            exit={{ opacity: 0, y: -5 }}
-            className="flex items-center justify-center px-3 mt-3"
-          >
-            <div className="bg-[#1ABC9C] text-white px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 shadow-sm">
-              <Zap className="w-3 h-3 fill-white" />
-              AI optimizes price, duration, and stops automatically
-            </div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+
 
       {/* Journey Dates */}
       {departureDate && (

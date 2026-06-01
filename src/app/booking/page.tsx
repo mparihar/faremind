@@ -148,7 +148,7 @@ function ReviewRow({ label, value, accent }: { label: string; value: string; acc
   );
 }
 
-const CARD_CLS = 'bg-white rounded-2xl border border-slate-200 shadow-sm p-5';
+const CARD_CLS = 'bg-white rounded-2xl border border-slate-200 shadow-sm p-4 sm:p-5';
 const CTA_CLS  = 'w-full flex items-center justify-center gap-2 px-6 py-3.5 rounded-2xl text-sm font-semibold text-white bg-[#1ABC9C] hover:bg-emerald-500 shadow-lg shadow-[#1ABC9C]/25 transition-all disabled:opacity-40 disabled:cursor-not-allowed';
 const INPUT_CLS = 'w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:border-[#1ABC9C]/50 focus:bg-white transition-all';
 

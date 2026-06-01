@@ -128,7 +128,7 @@ export default function WorkQueuesPage() {
                     </p>
                   )}
                   <div className="flex items-center gap-4 text-xs text-slate-500">
-                    <span className="flex items-center gap-1"><Clock size={10} /> {format(new Date(c.createdAt), 'dd MMM yyyy HH:mm')}</span>
+                    <span className="flex items-center gap-1"><Clock size={10} /> {format(new Date(c.createdAt), 'dd MMM yyyy hh:mm a')}</span>
                     {c.totalCost && <span className="text-amber-400 font-bold">Cost: {fmtMoney(Number(c.totalCost), c.currency)}</span>}
                     {c.assignedTo && <span>Assigned: {c.assignedTo}</span>}
                   </div>
@@ -170,7 +170,7 @@ export default function WorkQueuesPage() {
                     </p>
                   )}
                   <div className="flex items-center gap-4 text-xs text-slate-500">
-                    <span className="flex items-center gap-1"><Clock size={10} /> {format(new Date(c.createdAt), 'dd MMM yyyy HH:mm')}</span>
+                    <span className="flex items-center gap-1"><Clock size={10} /> {format(new Date(c.createdAt), 'dd MMM yyyy hh:mm a')}</span>
                     <span>Original: <span className="text-white font-bold">{fmtMoney(Number(c.originalAmount), c.currency)}</span></span>
                     {c.refundAmount && <span className="text-[#1ABC9C] font-bold">Refund: {fmtMoney(Number(c.refundAmount), c.currency)}</span>}
                   </div>

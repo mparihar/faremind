@@ -8,6 +8,7 @@ import {
   GitMerge, Bell, RefreshCw, ArrowRight, Plane,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import Link from 'next/link';
 
 interface Stats {
   totalBookings: number;
@@ -45,12 +46,12 @@ const STATUS_COLORS: Record<string, string> = {
   REBOOKED:   'bg-purple-400/15 text-purple-400',
 };
 
-function StatCard({ label, value, sub, icon: Icon, color }: {
+function StatCard({ label, value, sub, icon: Icon, color, href }: {
   label: string; value: string | number; sub?: string;
-  icon: React.ElementType; color: string;
+  icon: React.ElementType; color: string; href?: string;
 }) {
-  return (
-    <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5">
+  const content = (
+    <div className={`bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 h-full ${href ? 'hover:bg-slate-800 hover:border-slate-600 transition-all cursor-pointer' : ''}`}>
       <div className="flex items-start justify-between mb-3">
         <p className="text-slate-400 text-xs font-bold uppercase tracking-wider">{label}</p>
         <div className={`w-9 h-9 rounded-xl flex items-center justify-center ${color}`}>
@@ -61,6 +62,11 @@ function StatCard({ label, value, sub, icon: Icon, color }: {
       {sub && <p className="text-slate-400 text-xs mt-1">{sub}</p>}
     </div>
   );
+
+  if (href) {
+    return <Link href={href} className="block h-full">{content}</Link>;
+  }
+  return content;
 }
 
 export default function AdminDashboardPage() {
@@ -116,15 +122,15 @@ export default function AdminDashboardPage() {
 
       {/* Stats grid */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-8">
-        <StatCard label="Total Bookings"   value={stats?.totalBookings ?? 0}       icon={BookOpen}      color="bg-blue-400/10 text-blue-400" />
-        <StatCard label="Confirmed Today"  value={stats?.confirmedToday ?? 0}      icon={TrendingUp}    color="bg-emerald-400/10 text-emerald-400" sub="bookings confirmed today" />
-        <StatCard label="Cancelled Today"  value={stats?.cancelledToday ?? 0}      icon={XCircle}       color="bg-red-400/10 text-red-400" />
+        <StatCard label="Total Bookings"   value={stats?.totalBookings ?? 0}       icon={BookOpen}      color="bg-blue-400/10 text-blue-400" href="/admin/bookings" />
+        <StatCard label="Confirmed Today"  value={stats?.confirmedToday ?? 0}      icon={TrendingUp}    color="bg-emerald-400/10 text-emerald-400" sub="bookings confirmed today" href="/admin/bookings" />
+        <StatCard label="Cancelled Today"  value={stats?.cancelledToday ?? 0}      icon={XCircle}       color="bg-red-400/10 text-red-400" href="/admin/bookings" />
         <StatCard label="Pending Work"     value={stats?.pendingWork ?? 0}          icon={AlertTriangle} color="bg-amber-400/10 text-amber-400"
-          sub={`${stats?.pendingChanges ?? 0} changes · ${stats?.pendingCancellations ?? 0} cancellations`} />
+          sub={`${stats?.pendingChanges ?? 0} changes · ${stats?.pendingCancellations ?? 0} cancellations`} href="/admin/work-queues" />
         <StatCard label="Week Revenue"     value={fmt(stats?.weekRevenue ?? 0)}     icon={DollarSign}    color="bg-[#1ABC9C]/10 text-[#1ABC9C]" sub="last 7 days" />
         <StatCard label="Month Revenue"    value={fmt(stats?.monthRevenue ?? 0)}    icon={DollarSign}    color="bg-purple-400/10 text-purple-400" sub="this month" />
         <StatCard label="Price Alerts"     value={stats?.openAlerts ?? 0}           icon={Bell}          color="bg-orange-400/10 text-orange-400" sub="open alerts" />
-        <StatCard label="Work Queue Items" value={(stats?.pendingChanges ?? 0) + (stats?.pendingCancellations ?? 0)} icon={GitMerge} color="bg-sky-400/10 text-sky-400" />
+        <StatCard label="Work Queue Items" value={(stats?.pendingChanges ?? 0) + (stats?.pendingCancellations ?? 0)} icon={GitMerge} color="bg-sky-400/10 text-sky-400" href="/admin/work-queues" />
       </div>
 
       {/* Quick actions */}
@@ -177,7 +183,7 @@ export default function AdminDashboardPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/50">
-                {['PNR', 'Passenger', 'Route', 'Departure', 'Amount', 'Status'].map(h => (
+                {['AIRLINE PNR', 'Passenger', 'Route', 'Departure', 'Amount', 'Status'].map(h => (
                   <th key={h} className="px-6 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -196,7 +202,7 @@ export default function AdminDashboardPage() {
                   </td>
                   <td className="px-6 py-3.5 font-bold text-white text-sm">{b.originAirport} → {b.destinationAirport}</td>
                   <td className="px-6 py-3.5 text-slate-300 text-sm">
-                    {format(new Date(b.departureTime), 'dd MMM yyyy')}
+                    {format(new Date(b.departureTime), 'dd MMM yyyy hh:mm a')}
                   </td>
                   <td className="px-6 py-3.5 font-bold text-white text-sm">
                     {new Intl.NumberFormat('en-US', { style: 'currency', currency: b.currency }).format(Number(b.totalPrice))}

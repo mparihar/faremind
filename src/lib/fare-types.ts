@@ -37,7 +37,8 @@ export type AiBadge =
   | 'best_value'
   | 'most_flexible'
   | 'premium_upgrade'
-  | 'ai_pick';
+  | 'ai_pick'
+  | 'best_comfort';
 
 export interface FareOption {
   id: string;

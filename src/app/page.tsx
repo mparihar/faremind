@@ -140,17 +140,17 @@ export default function HomePage() {
               initial={{ opacity: 0, y: 20 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.1, duration: 0.3 }}
-              className="inline-flex items-center gap-2 px-5 py-2 rounded-full bg-[#1ABC9C] text-white shadow-sm mb-4"
+              className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-[#1ABC9C] text-white shadow-sm mb-4"
             >
               <Sparkles className="w-4 h-4 text-white" />
-              <span className="text-[12px] font-bold tracking-wide text-white uppercase">AI Powered Intelligence</span>
+              <span className="text-[12px] font-bold tracking-wide text-white uppercase">YOUR PERSONAL TRAVEL CONSULTANT</span>
             </motion.div>
 
             <motion.h1
               initial={{ opacity: 0, y: 30 }}
               animate={{ opacity: 1, y: 0 }}
               transition={{ delay: 0.2, duration: 0.7 }}
-              className="text-5xl sm:text-6xl lg:text-[64px] font-extrabold tracking-tight text-[#1a1a2e] mb-6 leading-[1.05]"
+              className="text-4xl sm:text-5xl lg:text-[54px] font-extrabold tracking-tight text-[#1a1a2e] mb-6 leading-[1.05]"
             >
               Travel with{' '}
               <span className="text-gradient-sun">Intelligence</span>
@@ -162,30 +162,26 @@ export default function HomePage() {
               transition={{ delay: 0.3, duration: 0.3 }}
               className="text-[15px] text-[#475569] font-medium max-w-3xl mx-auto leading-[1.6] mb-4 tracking-tight"
             >
-              FareMind searches across multiple airlines, continuously tracks prices and automatically rebooks if prices drop.
+              FareMind searches across multiple airlines while AI recommends the best personalized flight for your journey.
             </motion.p>
 
 
           </div>
 
           {/* Search Form */}
-          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.2 }} className="relative z-40">
+          <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.2 }} className="mt-6 relative z-40">
             <SearchForm onDateModeChange={setDateMode} />
           </motion.div>
 
-          {/* Smart Preferences Bar — hidden when flexible mode is active */}
-          {dateMode === 'specific' && (
-            <motion.div initial={{ opacity: 0, y: 15 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.65, duration: 0.5 }} className="mt-12 relative z-30">
-              <SmartPreferencesBar tripType="round_trip" />
-            </motion.div>
-          )}
+
+
 
           {/* Popular Routes */}
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             transition={{ delay: 0.8, duration: 0.6 }}
-            className="mt-16 max-w-7xl mx-auto"
+            className="mt-28 max-w-7xl mx-auto"
           >
             <div className="flex items-center justify-between mb-6">
               <div className="flex items-center gap-3">
@@ -196,7 +192,7 @@ export default function HomePage() {
               {!routesLoading && routes.some((r) => !r.isMock) && (
                 <span className="flex items-center gap-1.5 px-4 py-1 rounded-full bg-[#1ABC9C] text-white text-[10px] font-black uppercase tracking-wider shadow-sm">
                   <div className="w-1.5 h-1.5 rounded-full bg-white animate-pulse" />
-                  Live Duffel NDC
+                  Real-Time Flight Pricing
                 </span>
               )}
             </div>
@@ -219,7 +215,7 @@ export default function HomePage() {
                     <Link
                       key={`${route.from}-${route.to}`}
                       href={`/search?origin=${route.from}&destination=${route.to}&date=${searchDate}&adults=1&cabin=economy&trip=one_way`}
-                      className="group bg-white rounded-xl p-3 border border-gray-100 shadow-sm hover:shadow-2xl hover:border-[#1ABC9C]/30 hover:-translate-y-1 transition-all duration-300 flex flex-col"
+                      className="group bg-white rounded-xl p-4 border border-gray-100 shadow-sm hover:shadow-2xl hover:border-[#1ABC9C]/30 hover:-translate-y-1 transition-all duration-300 flex flex-col min-h-[150px]"
                     >
                       {/* Route header */}
                       <div className="flex items-center gap-2 mb-2">
@@ -306,7 +302,7 @@ export default function HomePage() {
               viewport={{ once: true }}
               className="text-lg text-gray-500 max-w-xl mx-auto"
             >
-              FareMind goes beyond searching — it thinks, monitors, and acts on your behalf.
+              FareMind goes beyond searching — it <span className="text-black font-semibold">thinks, monitors, and acts</span> on your behalf.
             </motion.p>
           </div>
 
@@ -343,7 +339,7 @@ export default function HomePage() {
             viewport={{ once: true }}
             className="text-4xl sm:text-5xl font-black text-[#1a1a2e] mb-2 tracking-tighter"
           >
-            How FareMind works
+            How <span className="text-white">Fare</span><span className="text-[#009CA6]">Mind</span> works
           </motion.h2>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
@@ -405,7 +401,7 @@ export default function HomePage() {
             viewport={{ once: true }}
             className="glass-card-scenic p-12 sm:p-16 border-sun-gold/20"
           >
-            <h2 className="text-4xl sm:text-6xl font-black text-[#1a1a2e] mb-8 tracking-tighter leading-tight">
+            <h2 className="text-4xl sm:text-5xl font-black text-[#1a1a2e] mb-8 tracking-tighter leading-tight">
               Your next adventure awaits
             </h2>
             <p className="text-xl text-gray-500 mb-10 max-w-2xl mx-auto font-medium">

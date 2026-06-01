@@ -194,6 +194,16 @@ interface ManageBookingStore {
 
 async function api<T>(path: string, opts?: RequestInit): Promise<T> {
   const res = await fetch(apiUrl(path), { ...opts, headers: { 'Content-Type': 'application/json', ...opts?.headers } });
+  
+  if (res.status === 401) {
+    if (typeof window !== 'undefined') {
+      const { useAuthStore } = require('@/store/useAuthStore');
+      useAuthStore.getState().logout();
+      window.location.href = '/';
+    }
+    throw new Error('Session expired');
+  }
+
   const data = await res.json();
   if (!res.ok) throw new Error(data.error || `HTTP ${res.status}`);
   return data;

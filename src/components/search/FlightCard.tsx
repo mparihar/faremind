@@ -201,7 +201,7 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
 
         {/* Bottom details */}
         {!isCompact && (
-          <div className="flex items-center gap-4 mt-4 pt-3 border-t border-slate-200/60">
+          <div className="flex items-center gap-2 sm:gap-4 mt-4 pt-3 border-t border-slate-200/60 flex-wrap">
             <span className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
               <Clock className="w-3.5 h-3.5 text-slate-400" />
               {formatDuration(displayDuration)}

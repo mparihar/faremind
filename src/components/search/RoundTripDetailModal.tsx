@@ -246,12 +246,11 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
             animate={{ scale: 1, opacity: 1, y: 0 }}
             exit={{ scale: 0.95, opacity: 0, y: 20 }}
             transition={{ duration: 0.22 }}
-            className="bg-white rounded-[2.5rem] shadow-2xl w-full flex flex-col overflow-hidden"
-            style={{ maxWidth: 1020, maxHeight: '88vh' }}
+            className="bg-white rounded-2xl sm:rounded-[2.5rem] shadow-2xl w-full flex flex-col overflow-hidden max-h-[100dvh] sm:max-h-[88vh] max-w-[1020px]"
           >
             {/* ── Header ── */}
-            <div className="px-7 pt-4 pb-4 bg-white border-b border-slate-100 shrink-0">
-              <div className="flex items-start justify-between gap-4">
+            <div className="px-4 sm:px-7 pt-3 sm:pt-4 pb-3 sm:pb-4 bg-white border-b border-slate-100 shrink-0">
+              <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
                 {/* Left: logo + name + route */}
                 <div className="flex items-center gap-4 min-w-0">
                   <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
@@ -263,7 +262,7 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                     />
                   </div>
                   <div className="min-w-0">
-                    <h2 className="text-2xl font-bold text-slate-900 tracking-tight uppercase leading-none truncate">
+                    <h2 className="text-lg sm:text-2xl font-bold text-slate-900 tracking-tight uppercase leading-none truncate">
                       {option.airlines[0] ?? 'Airline'}
                     </h2>
                     <div className="flex items-center gap-1.5 mt-1.5">
@@ -277,16 +276,16 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                 </div>
 
                 {/* Right: price + actions */}
-                <div className="flex items-start gap-5 shrink-0">
-                  <div className="text-right">
-                    <p className="text-3xl font-bold text-[#F97316] leading-none">
+                <div className="flex items-center sm:items-start gap-3 sm:gap-5 shrink-0">
+                  <div className="text-left sm:text-right">
+                    <p className="text-xl sm:text-3xl font-bold text-[#F97316] leading-none">
                       {formatPrice(option.totalPrice, option.currency)}
                     </p>
                     <p className="text-[9px] font-semibold text-slate-400 uppercase tracking-widest mt-1.5">
                       {option.currency} · Round-Trip · Incl. Taxes & Fees
                     </p>
                   </div>
-                  <div className="flex items-center gap-1.5">
+                  <div className="hidden sm:flex items-center gap-1.5">
                     {[
                       { icon: Share2,   tip: 'Share' },
                       { icon: Printer,  tip: 'Print',  onClick: () => window.print() },
@@ -313,11 +312,11 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
             </div>
 
             {/* ── Body ── */}
-            <div className="flex-1 flex items-stretch overflow-hidden bg-[#F8FAFC]">
+            <div className="flex-1 flex flex-col md:flex-row items-stretch overflow-hidden bg-[#F8FAFC] min-h-0">
 
               {/* Left: journey cards */}
-              <div className="flex-1 flex flex-col min-w-0 border-r border-slate-100">
-                <div className="flex-1 overflow-y-auto px-7 py-5 space-y-4 scrollbar-hide">
+              <div className="flex-1 flex flex-col min-w-0 md:border-r border-slate-100">
+                <div className="flex-1 overflow-y-auto px-4 sm:px-7 py-4 sm:py-5 space-y-4 scrollbar-hide">
                   {aiEnabled && (isBestAiPick || isTopAiPick) && (
                     <div className={`inline-flex items-center gap-2 px-3 py-1.5 rounded-xl text-white shadow-md ${
                       isBestAiPick
@@ -345,10 +344,10 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                 </div>
 
                 {/* ── CTA ── */}
-                <div className="px-7 py-4 bg-white border-t border-slate-100 shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)]">
+                <div className="px-4 sm:px-7 py-3 sm:py-4 bg-white border-t border-slate-100 shrink-0 shadow-[0_-4px_20px_-10px_rgba(0,0,0,0.05)]">
                   <button
                     onClick={onBook}
-                    className="w-full py-3 bg-[#1ABC9C] text-white rounded-[1.5rem] font-bold text-sm shadow-xl shadow-[#1ABC9C]/30 hover:brightness-105 active:scale-[0.99] transition-all flex items-center justify-center gap-3 relative overflow-hidden uppercase tracking-widest"
+                    className="w-full py-3 bg-[#1ABC9C] text-white rounded-[1.5rem] font-bold text-xs sm:text-sm shadow-xl shadow-[#1ABC9C]/30 hover:brightness-105 active:scale-[0.99] transition-all flex items-center justify-center gap-2 sm:gap-3 relative overflow-hidden uppercase tracking-widest"
                   >
                     <Plane className="w-4 h-4 -rotate-45" />
                     Select Fare · {formatPrice(option.totalPrice, option.currency)} →
@@ -360,7 +359,7 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
               </div>
 
               {/* Right: info panel */}
-              <div className="w-[360px] bg-white flex flex-col shrink-0 self-stretch overflow-hidden">
+              <div className="w-full md:w-[360px] bg-white flex flex-col shrink-0 self-stretch overflow-hidden border-t md:border-t-0 border-slate-100">
                 {/* Tabs */}
                 <div className="flex border-b border-slate-100 shrink-0">
                   {([

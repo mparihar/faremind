@@ -108,7 +108,7 @@ function PnrPopover({ pnrs, onClick }: { pnrs: BookingPnrRow[]; onClick: (pnr: s
   if (pnrs.length === 1) {
     return (
       <span
-        className="font-mono text-xs text-slate-300 font-semibold cursor-pointer hover:text-[#1ABC9C] transition-colors"
+        className="font-mono text-sm text-slate-300 font-semibold cursor-pointer hover:text-[#1ABC9C] transition-colors"
         onClick={(e) => { e.stopPropagation(); onClick(pnrs[0].pnrCode); }}
       >
         {pnrs[0].pnrCode}
@@ -120,9 +120,9 @@ function PnrPopover({ pnrs, onClick }: { pnrs: BookingPnrRow[]; onClick: (pnr: s
     <div className="relative" ref={ref}>
       <button
         onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
-        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-700/50 text-slate-300 text-[10px] font-bold hover:bg-slate-600/50 transition-all"
+        className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-700/50 text-slate-300 text-xs font-bold hover:bg-slate-600/50 transition-all"
       >
-        {pnrs.length} PNRs
+        {pnrs.length} AIRLINE PNRs
         <ChevronDown size={10} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
@@ -133,9 +133,9 @@ function PnrPopover({ pnrs, onClick }: { pnrs: BookingPnrRow[]; onClick: (pnr: s
               onClick={(e) => { e.stopPropagation(); onClick(p.pnrCode); setOpen(false); }}
               className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left hover:bg-slate-700/50 transition-all"
             >
-              <span className="font-mono text-xs text-white font-bold">{p.pnrCode}</span>
-              <span className="text-[10px] text-slate-500">{p.journeyDirection}</span>
-              {p.airlineCode && <span className="text-[10px] text-slate-500">{p.airlineCode}</span>}
+              <span className="font-mono text-sm text-white font-bold">{p.pnrCode}</span>
+              <span className="text-xs text-slate-500">{p.journeyDirection}</span>
+              {p.airlineCode && <span className="text-xs text-slate-500">{p.airlineCode}</span>}
             </button>
           ))}
         </div>
@@ -155,11 +155,11 @@ const DATA_COLUMNS = [
       const row = i.row.original;
       return (
         <div className="space-y-1 min-w-[100px]">
-          <span className="font-mono text-[#1ABC9C] font-black text-xs block">
+          <span className="font-mono text-[#1ABC9C] font-black text-sm block">
             {row.masterBookingReference ?? row.pnr ?? row.id.slice(0, 8)}
           </span>
           {row.isSplitTicket && (
-            <span className="inline-block px-1.5 py-0.5 rounded bg-amber-400/10 border border-amber-400/20 text-amber-400 text-[9px] font-bold uppercase tracking-wide">
+            <span className="inline-block px-1.5 py-0.5 rounded bg-amber-400/10 border border-amber-400/20 text-amber-400 text-xs font-bold uppercase tracking-wide">
               Split
             </span>
           )}
@@ -169,31 +169,31 @@ const DATA_COLUMNS = [
   }),
   col.display({
     id: 'pnrDisplay',
-    header: 'PNR(s)',
+    header: 'AIRLINE PNR(s)',
     cell: ({ row, table }) => {
       const pnrs = row.original.pnrs ?? [];
-      if (pnrs.length === 0) return <span className="text-slate-600 text-xs">—</span>;
+      if (pnrs.length === 0) return <span className="text-slate-600 text-sm">—</span>;
       return <PnrPopover pnrs={pnrs} onClick={() => (table.options.meta as any)?.navigateToBooking(row.original.id)} />;
     },
   }),
   col.accessor('provider', {
     header: 'Provider',
-    cell: i => <span className="text-slate-400 text-xs capitalize font-semibold">{i.getValue()}</span>,
+    cell: i => <span className="text-slate-400 text-sm capitalize font-semibold">{i.getValue()}</span>,
   }),
   col.accessor(r => `${r.user.firstName} ${r.user.lastName}`, {
     id: 'passenger',
     header: 'Lead Passenger',
     cell: i => (
       <div className="min-w-[120px]">
-        <p className="text-white font-semibold text-sm truncate">{i.getValue()}</p>
-        <p className="text-slate-500 text-xs truncate">{i.row.original.customerEmail ?? i.row.original.user.email}</p>
+        <p className="text-white font-semibold text-base truncate">{i.getValue()}</p>
+        <p className="text-slate-500 text-sm truncate">{i.row.original.customerEmail ?? i.row.original.user.email}</p>
       </div>
     ),
   }),
   col.accessor(r => `${r.originAirport} → ${r.destinationAirport}`, {
     id: 'route',
     header: 'Route',
-    cell: i => <span className="text-white font-bold text-sm whitespace-nowrap">{i.getValue()}</span>,
+    cell: i => <span className="text-white font-bold text-base whitespace-nowrap">{i.getValue()}</span>,
   }),
   col.accessor('tripType', {
     header: 'Trip',
@@ -201,26 +201,26 @@ const DATA_COLUMNS = [
       const v = i.getValue();
       const label = v === 'ROUND_TRIP' ? 'RT' : v === 'ONE_WAY' ? 'OW' : v === 'MULTI_CITY' ? 'MC' : v;
       const color = v === 'ROUND_TRIP' ? 'text-blue-400' : v === 'ONE_WAY' ? 'text-purple-400' : 'text-slate-400';
-      return <span className={`text-xs font-bold ${color}`}>{label}</span>;
+      return <span className={`text-sm font-bold ${color}`}>{label}</span>;
     },
   }),
   col.accessor('departureTime', {
     header: 'Departure',
-    cell: i => <span className="text-slate-300 text-xs whitespace-nowrap">{format(new Date(i.getValue()), 'dd MMM yyyy')}</span>,
+    cell: i => <span className="text-slate-300 text-sm whitespace-nowrap">{format(new Date(i.getValue()), 'dd MMM yyyy hh:mm a')}</span>,
   }),
   col.accessor('cabinClass', {
     header: 'Cabin',
-    cell: i => <span className="text-slate-400 text-xs capitalize">{i.getValue().toLowerCase().replace('_', ' ')}</span>,
+    cell: i => <span className="text-slate-400 text-sm capitalize">{i.getValue().toLowerCase().replace('_', ' ')}</span>,
   }),
   col.accessor(r => r.passengers.length, {
     id: 'paxCount',
     header: 'Pax',
-    cell: i => <span className="text-slate-300 text-sm text-center block">{i.getValue()}</span>,
+    cell: i => <span className="text-slate-300 text-base text-center block">{i.getValue()}</span>,
   }),
   col.accessor('totalPrice', {
     header: 'Amount',
     cell: i => (
-      <span className="text-white font-bold text-sm whitespace-nowrap">
+      <span className="text-white font-bold text-base whitespace-nowrap">
         {new Intl.NumberFormat('en-US', { style: 'currency', currency: i.row.original.currency }).format(Number(i.getValue()))}
       </span>
     ),
@@ -239,7 +239,7 @@ const DATA_COLUMNS = [
   }),
   col.accessor('createdAt', {
     header: 'Created',
-    cell: i => <span className="text-slate-500 text-xs whitespace-nowrap">{format(new Date(i.getValue()), 'dd MMM yyyy')}</span>,
+    cell: i => <span className="text-slate-500 text-sm whitespace-nowrap">{format(new Date(i.getValue()), 'dd MMM yyyy hh:mm a')}</span>,
   }),
 ];
 
@@ -290,7 +290,7 @@ export default function AdminBookingsPage() {
   useEffect(() => { load(); }, [load]);
 
   async function handleDelete(id: string, ref: string | null) {
-    const msg = `You are about to delete booking ${ref ?? id} and all associated passengers, PNRs, seats, meals, add-ons, payment records, and logs from FareMind.\n\nThis does not cancel the provider/airline booking unless cancellation flow is executed.\n\nContinue?`;
+    const msg = `You are about to delete booking ${ref ?? id} and all associated passengers, AIRLINE PNRs, seats, meals, add-ons, payment records, and logs from FareMind.\n\nThis does not cancel the provider/airline booking unless cancellation flow is executed.\n\nContinue?`;
     if (!window.confirm(msg)) return;
     setDeleting(id);
     const res = await adminFetch(`/api/admin/bookings/${id}`, { method: 'DELETE' });
@@ -372,7 +372,7 @@ export default function AdminBookingsPage() {
           <input
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search FBR, PNR, email, name, airport, Stripe ID, provider order…"
+            placeholder="Search FBR, AIRLINE PNR, email, name, airport, Stripe ID, provider order…"
             className="w-full pl-9 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:border-[#1ABC9C] transition-all"
           />
         </div>
@@ -467,7 +467,7 @@ export default function AdminBookingsPage() {
                   {hg.headers.map(header => (
                     <th
                       key={header.id}
-                      className="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider cursor-pointer select-none hover:text-slate-300 transition-colors whitespace-nowrap"
+                      className="px-4 py-3 text-left text-xs font-black text-slate-500 uppercase tracking-wider cursor-pointer select-none hover:text-slate-300 transition-colors whitespace-nowrap"
                       onClick={header.column.getToggleSortingHandler()}
                     >
                       <div className="flex items-center gap-1">

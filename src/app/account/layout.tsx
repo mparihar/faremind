@@ -10,6 +10,7 @@ import {
   Search, HelpCircle, ChevronDown, Gift,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useInactivityLogout } from '@/hooks/useInactivityLogout';
 
 const SIDEBAR_NAV = [
   { href: '/account', label: 'Dashboard', icon: LayoutDashboard, exact: true },
@@ -152,6 +153,12 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
       setReady(true);
     }
   }, []);
+
+  // 15 minutes inactivity logout
+  useInactivityLogout(15 * 60 * 1000, () => {
+    logout();
+    router.push('/');
+  });
 
   // Close mobile sidebar on route change
   useEffect(() => { setSidebarOpen(false); }, [pathname]);

@@ -355,7 +355,7 @@ export default function AdminUsersPage() {
                       </span>
                     </td>
                     <td className="px-5 py-3.5 text-slate-500 text-xs">
-                      {u.lastLoginAt ? format(new Date(u.lastLoginAt), 'dd MMM yyyy HH:mm') : 'Never'}
+                      {u.lastLoginAt ? format(new Date(u.lastLoginAt), 'dd MMM yyyy hh:mm a') : 'Never'}
                     </td>
                     <td className="px-5 py-3.5 text-slate-500 text-xs">
                       {format(new Date(u.createdAt), 'dd MMM yyyy')}

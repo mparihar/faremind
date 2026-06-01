@@ -471,7 +471,7 @@ export default function SearchForm({
                 <motion.div
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="absolute top-full mt-2 left-0 min-w-[360px] bg-white rounded-2xl border border-gray-200/80 p-2 z-[200] shadow-2xl shadow-black/15 ring-1 ring-black/5 max-h-80 overflow-y-auto"
+                  className="absolute top-full mt-2 left-0 w-[calc(100vw-2rem)] sm:min-w-[360px] sm:w-auto bg-white rounded-2xl border border-gray-200/80 p-2 z-[200] shadow-2xl shadow-black/15 ring-1 ring-black/5 max-h-80 overflow-y-auto"
                 >
                   {results.map((airport) => {
                     const location = [airport.city, airport.state, airport.country].filter(Boolean).join(', ');
@@ -533,7 +533,7 @@ export default function SearchForm({
                 <motion.div
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="absolute top-full mt-2 left-0 min-w-[360px] bg-white rounded-2xl border border-gray-200/80 p-2 z-[200] shadow-2xl shadow-black/15 ring-1 ring-black/5 max-h-80 overflow-y-auto"
+                  className="absolute top-full mt-2 left-0 w-[calc(100vw-2rem)] sm:min-w-[360px] sm:w-auto bg-white rounded-2xl border border-gray-200/80 p-2 z-[200] shadow-2xl shadow-black/15 ring-1 ring-black/5 max-h-80 overflow-y-auto"
                 >
                   {results.map((airport) => {
                     const location = [airport.city, airport.state, airport.country].filter(Boolean).join(', ');
@@ -856,7 +856,7 @@ export default function SearchForm({
                 <p className="text-xs text-gray-400 mt-1">Change one of the airports above to see best value months</p>
               </div>
             ) : flexLoading ? (
-              <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
                 {Array.from({ length: 12 }).map((_, i) => (
                   <div key={i} className="bg-gray-100 rounded-2xl h-32 animate-pulse" />
                 ))}
@@ -867,7 +867,7 @@ export default function SearchForm({
               </div>
             ) : (
               <>
-                <div className="grid grid-cols-3 sm:grid-cols-4 lg:grid-cols-6 gap-3">
+                <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-6 gap-2 sm:gap-3">
                   {(() => {
                     const passing    = displayMonths.filter((m) => m.passesFilter && m.price !== null);
                     const badgeFor = (m: typeof displayMonths[0]): { label: string; cls: string } | null => {

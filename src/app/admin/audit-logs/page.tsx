@@ -73,7 +73,7 @@ export default function AuditLogsPage() {
               ) : logs.map((log: any) => (
                 <tr key={log.id} className="hover:bg-white/2 transition-colors">
                   <td className="px-5 py-3 text-slate-500 text-xs whitespace-nowrap">
-                    {format(new Date(log.createdAt), 'dd MMM yyyy HH:mm:ss')}
+                    {format(new Date(log.createdAt), 'dd MMM yyyy hh:mm:ss a')}
                   </td>
                   <td className="px-5 py-3">
                     {log.adminUser ? (

@@ -42,7 +42,7 @@ export const useAdminStore = create<AdminState>()(
 // Auth is carried by HttpOnly cookie — no Authorization header needed.
 
 export async function adminFetch(path: string, options?: RequestInit) {
-  return fetch(path, {
+  const res = await fetch(path, {
     ...options,
     credentials: 'include',
     headers: {
@@ -50,4 +50,15 @@ export async function adminFetch(path: string, options?: RequestInit) {
       ...(options?.headers ?? {}),
     },
   });
+
+  if (res.status === 401) {
+    if (typeof window !== 'undefined') {
+      const { useAdminStore } = require('./useAdminStore');
+      useAdminStore.getState().clearAuth();
+      window.location.href = '/admin/login';
+    }
+    throw new Error('Admin session expired');
+  }
+
+  return res;
 }

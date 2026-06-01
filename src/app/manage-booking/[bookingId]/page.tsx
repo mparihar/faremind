@@ -119,7 +119,14 @@ function SeatMapModal({ bookingId, onClose, provider }: { bookingId: string; onC
 function PassengerModal({ bookingId, passengers, onClose }: { bookingId: string; passengers: any[]; onClose: () => void }) {
   const { updatePassenger } = useManageBookingStore();
   const [pax] = useState(passengers[0] || {});
-  const [form, setForm] = useState({ phone: pax.phone || '', email: pax.email || '', nationality: pax.nationality || '' });
+  const [form, setForm] = useState({ 
+    phone: pax.phone || '', 
+    email: pax.email || '', 
+    nationality: pax.nationality || '',
+    passportNumber: pax.passportNumber || '',
+    passportExpiry: pax.passportExpiry ? new Date(pax.passportExpiry).toISOString().split('T')[0] : '',
+    passportCountry: pax.passportCountry || ''
+  });
   const [saving, setSaving] = useState(false);
   const [done, setDone] = useState(false);
   async function handleSave() {
@@ -128,6 +135,18 @@ function PassengerModal({ bookingId, passengers, onClose }: { bookingId: string;
     if (form.phone !== (pax.phone || '')) updates.phone = form.phone;
     if (form.email !== (pax.email || '')) updates.email = form.email;
     if (form.nationality !== (pax.nationality || '')) updates.nationality = form.nationality;
+    if (form.passportNumber !== (pax.passportNumber || '')) updates.passportNumber = form.passportNumber;
+    if (form.passportCountry !== (pax.passportCountry || '')) updates.passportCountry = form.passportCountry;
+    
+    const existingExpiry = pax.passportExpiry ? new Date(pax.passportExpiry).toISOString().split('T')[0] : '';
+    if (form.passportExpiry !== existingExpiry) {
+      if (form.passportExpiry) {
+        updates.passportExpiry = new Date(form.passportExpiry).toISOString();
+      } else {
+        updates.passportExpiry = null as any;
+      }
+    }
+
     if (Object.keys(updates).length > 0) await updatePassenger(bookingId, pax.id, updates);
     setSaving(false); setDone(true);
     setTimeout(onClose, 1000);
@@ -150,7 +169,11 @@ function PassengerModal({ bookingId, passengers, onClose }: { bookingId: string;
               <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Email</label><input value={form.email} onChange={e => setForm(f => ({ ...f, email: e.target.value }))} className={iCls} /></div>
               <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Phone</label><input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className={iCls} /></div>
               <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Nationality</label><input value={form.nationality} onChange={e => setForm(f => ({ ...f, nationality: e.target.value }))} className={iCls} /></div>
+              <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Passport Number</label><input value={form.passportNumber} onChange={e => setForm(f => ({ ...f, passportNumber: e.target.value }))} className={iCls} /></div>
+              <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Passport Expiry</label><input type="date" value={form.passportExpiry} onChange={e => setForm(f => ({ ...f, passportExpiry: e.target.value }))} className={iCls} /></div>
+              <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Issuing Country</label><input value={form.passportCountry} onChange={e => setForm(f => ({ ...f, passportCountry: e.target.value }))} className={iCls} /></div>
             </div>
+            <p className="text-xs text-slate-500 italic">* Identity fields cannot be edited after booking.</p>
             <button onClick={handleSave} disabled={saving} className="w-full py-3 rounded-xl bg-[#1ABC9C] text-white font-bold text-sm disabled:opacity-50">{saving ? 'Saving…' : 'Save Changes'}</button>
           </div>
         )}
@@ -491,8 +514,8 @@ export default function BookingDetailPage() {
                 )}
                 {b.masterPnr && b.masterPnr !== b.masterBookingReference && (
                   <div className="flex items-center gap-2">
-                    <span className="text-[10px] uppercase tracking-wider font-bold"><span className="text-white">Airline</span> <span className="text-slate-500">PNR</span></span>
-                    <span className="text-white text-sm font-black font-mono tracking-wider">{b.masterPnr}</span>
+                    <span className="text-white text-sm font-black font-mono tracking-wider uppercase">AIRLINE PNR</span>
+                    <span className="text-[#1ABC9C] text-sm font-black font-mono tracking-wider">{b.masterPnr}</span>
                   </div>
                 )}
               </div>
@@ -553,7 +576,7 @@ export default function BookingDetailPage() {
                       <span className="text-[10px] font-bold text-[#1ABC9C] uppercase tracking-wider bg-[#1ABC9C]/10 px-2.5 py-0.5 rounded-full">
                         {j.direction === 'RETURN' ? 'Return' : 'Outbound'}
                       </span>
-                      <span className="text-xs text-slate-500">{new Date(j.departureDateTime || j.departureDate || b.departureDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                      <span className="text-xs text-slate-500">{new Date(j.departureDateTime || j.departureDate || b.departureDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="text-center"><p className="text-white font-bold text-xl">{j.originAirport || b.originAirport}</p><p className="text-slate-500 text-[11px]">{j.originCity || b.originCity}</p></div>

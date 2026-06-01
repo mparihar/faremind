@@ -303,7 +303,7 @@ export default function ManageBookingPage() {
                       </div>
 
                       <div>
-                        <label className={labelCls}>Booking Reference / PNR</label>
+                        <label className={labelCls}>Booking Reference</label>
                         <input type="text" value={store.lookupRef} onChange={e => store.setLookupRef(e.target.value.toUpperCase())}
                           placeholder="e.g. FM2AX9K3" className={inputCls} autoFocus />
                       </div>

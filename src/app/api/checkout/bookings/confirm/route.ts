@@ -560,9 +560,9 @@ export async function POST(req: NextRequest) {
           if (!paxId) continue;
           const segKey = meal.segmentKey ?? '';
           const dbSegId = segKey ? allKeyToDbId[segKey] : null;
-          // Map 'outbound'/'return' direction keys to correct journeyId
+          // Map 'outbound'/'return'/'out'/'ret' direction keys to correct journeyId
           let journeyId: string;
-          if (segKey === 'return' && retJourney) {
+          if ((segKey === 'return' || segKey === 'ret') && retJourney) {
             journeyId = retJourney.id;
           } else if (dbSegId) {
             journeyId = allDbIdToJourney[dbSegId] ?? outJourney.id;
@@ -682,6 +682,78 @@ export async function POST(req: NextRequest) {
           where: { id: mb.id },
           data: { ticketingStatus: 'ISSUED' },
         });
+      }
+
+      // 16. Commercial charge snapshot — write fee breakdown for audit trail
+      try {
+        const { calculateCommercialFees, calculateFallbackFees } = await import('@/lib/fee-engine');
+        const paxForEngine = passengers.map((p: any, i: number) => ({
+          id: `pax_${i}`,
+          type: p.type || 'adult',
+          baseFare: (pricing?.perPassenger?.[i]?.baseFare ?? 0) + (pricing?.perPassenger?.[i]?.taxes ?? 0),
+        }));
+        const feeCtx = {
+          provider: 'duffel',
+          tripType: isRoundTrip ? 'ROUND_TRIP' : 'ONE_WAY',
+          cabin: (selectedFare?.cabin ?? 'economy').toLowerCase(),
+          fareClass: selectedFare?.name ?? undefined,
+          passengers: paxForEngine,
+          supplierFareTotal: paxForEngine.reduce((s: number, p: any) => s + p.baseFare, 0),
+          bookingTotalBeforeFees: totalAmount,
+          currency,
+        };
+        let feeResult;
+        try { feeResult = await calculateCommercialFees(feeCtx); } catch { feeResult = calculateFallbackFees(feeCtx); }
+
+        const chargeInserts = [];
+        // Service fee
+        if (feeResult.serviceFee > 0) {
+          chargeInserts.push({
+            masterBookingId: mb.id, chargeType: 'SERVICE_FEE' as const, sourceType: 'PLATFORM' as const,
+            calculationModel: feeResult.charges.find((c: any) => c.chargeType === 'SERVICE_FEE')?.calculationModel ?? 'FIXED_PER_TRAVELER',
+            ruleId: feeResult.charges.find((c: any) => c.chargeType === 'SERVICE_FEE')?.ruleId ?? null,
+            unitAmount: feeResult.charges.find((c: any) => c.chargeType === 'SERVICE_FEE')?.unitAmount ?? feeResult.serviceFee,
+            quantity: passengers.length, totalAmount: feeResult.serviceFee, currency,
+            displayToCustomer: true, rawRuleSnapshot: feeResult.charges.find((c: any) => c.chargeType === 'SERVICE_FEE')?.ruleSnapshot ?? null,
+          });
+        }
+        // Markup (if any)
+        if (feeResult.markupFee > 0) {
+          chargeInserts.push({
+            masterBookingId: mb.id, chargeType: 'MARKUP_FEE' as const, sourceType: 'PLATFORM' as const,
+            calculationModel: feeResult.charges.find((c: any) => c.chargeType === 'MARKUP_FEE')?.calculationModel ?? 'PERCENTAGE_OF_FARE',
+            ruleId: feeResult.charges.find((c: any) => c.chargeType === 'MARKUP_FEE')?.ruleId ?? null,
+            unitAmount: feeResult.markupFee, quantity: 1, totalAmount: feeResult.markupFee, currency,
+            displayToCustomer: false, rawRuleSnapshot: feeResult.charges.find((c: any) => c.chargeType === 'MARKUP_FEE')?.ruleSnapshot ?? null,
+          });
+        }
+        // Protection
+        if (priceProtection && feeResult.protectionFeeTotal > 0) {
+          chargeInserts.push({
+            masterBookingId: mb.id, chargeType: 'PRICE_DROP_PROTECTION' as const, sourceType: 'ADMIN_CONFIG' as const,
+            calculationModel: feeResult.charges.find((c: any) => c.chargeType === 'PRICE_DROP_PROTECTION')?.calculationModel ?? 'PERCENTAGE_OF_FARE',
+            ruleId: feeResult.charges.find((c: any) => c.chargeType === 'PRICE_DROP_PROTECTION')?.ruleId ?? null,
+            unitAmount: feeResult.protectionFee, quantity: passengers.length, totalAmount: feeResult.protectionFeeTotal, currency,
+            displayToCustomer: true, rawRuleSnapshot: feeResult.charges.find((c: any) => c.chargeType === 'PRICE_DROP_PROTECTION')?.ruleSnapshot ?? null,
+          });
+        }
+        // Insurance
+        if (travelInsurance && feeResult.insuranceFeeTotal > 0) {
+          chargeInserts.push({
+            masterBookingId: mb.id, chargeType: 'TRAVEL_INSURANCE' as const, sourceType: 'ADMIN_CONFIG' as const,
+            calculationModel: feeResult.charges.find((c: any) => c.chargeType === 'TRAVEL_INSURANCE')?.calculationModel ?? 'PERCENTAGE_OF_BOOKING_TOTAL',
+            ruleId: feeResult.charges.find((c: any) => c.chargeType === 'TRAVEL_INSURANCE')?.ruleId ?? null,
+            unitAmount: feeResult.insuranceFee, quantity: passengers.length, totalAmount: feeResult.insuranceFeeTotal, currency,
+            displayToCustomer: true, rawRuleSnapshot: feeResult.charges.find((c: any) => c.chargeType === 'TRAVEL_INSURANCE')?.ruleSnapshot ?? null,
+          });
+        }
+        if (chargeInserts.length > 0) {
+          await tx.bookingCommercialCharge.createMany({ data: chargeInserts });
+          console.log(`[booking] ✅ Wrote ${chargeInserts.length} commercial charge snapshot(s)`);
+        }
+      } catch (feeErr) {
+        // Don't block booking creation if fee snapshot fails
+        console.error('[booking] ⚠️ Commercial charge snapshot failed (non-blocking):', feeErr);
       }
 
       return { mb, pnrResult };

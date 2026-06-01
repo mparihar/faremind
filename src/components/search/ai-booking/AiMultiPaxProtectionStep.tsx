@@ -84,7 +84,7 @@ export default function AiMultiPaxProtectionStep({
           Would you like <span className="font-bold text-white">Price Drop Protection</span>?
         </p>
         <p className="text-[12px] text-white/50 mt-1">
-          If the price drops after booking, get an 80% refund of the difference.
+          Refund 80% of any eligible fare decrease after booking.
           <br />Cost: {fmt(protectionFeePerPax)} per passenger
           {passengerCount > 1 && ` · ${fmt(protectionFeePerPax * passengerCount)} for all ${passengerCount}`}
         </p>

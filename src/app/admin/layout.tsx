@@ -5,6 +5,7 @@ import { useRouter, usePathname } from 'next/navigation';
 import { useAdminStore, adminFetch } from '@/store/useAdminStore';
 import AdminSidebar from '@/components/admin/AdminSidebar';
 import { RefreshCw } from 'lucide-react';
+import { useInactivityLogout } from '@/hooks/useInactivityLogout';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
   const router   = useRouter();
@@ -13,6 +14,13 @@ export default function AdminLayout({ children }: { children: React.ReactNode })
   const [checking, setChecking] = useState(true);
 
   const isLoginPage = pathname === '/admin/login';
+
+  useInactivityLogout(15 * 60 * 1000, () => {
+    if (!isLoginPage) {
+      clearAuth();
+      router.push('/admin/login');
+    }
+  });
 
   useEffect(() => {
     if (isLoginPage) { setChecking(false); return; }

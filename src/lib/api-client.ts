@@ -38,6 +38,15 @@ export async function apiFetch<T>(
     },
   });
 
+  if (response.status === 401) {
+    if (typeof window !== 'undefined') {
+      const { useAuthStore } = require('@/store/useAuthStore');
+      useAuthStore.getState().logout();
+      window.location.href = '/';
+    }
+    throw new Error('Session expired');
+  }
+
   if (!response.ok) {
     const error = await response.json().catch(() => ({ error: `HTTP ${response.status}` }));
     throw new Error(error.error || `API request failed: ${response.status}`);

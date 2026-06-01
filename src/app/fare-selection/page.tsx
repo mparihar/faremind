@@ -80,6 +80,18 @@ export default function FareSelectionPage() {
   const [activeCabin, setActiveCabin] = useState<string>('economy');
   const [confirming, setConfirming] = useState(false);
 
+  const { travelerCount, passengerBreakdown } = useMemo(() => {
+    if (typeof window === 'undefined') return { travelerCount: 1, passengerBreakdown: undefined };
+    try {
+      const ctx = JSON.parse(sessionStorage.getItem('fm_fare_context') || '{}');
+      const count = ctx.travelers || 1;
+      const breakdown = typeof ctx.adults === 'number'
+        ? { adults: ctx.adults, children: ctx.children ?? 0, infants: ctx.infants ?? 0 }
+        : undefined;
+      return { travelerCount: count, passengerBreakdown: breakdown };
+    } catch { return { travelerCount: 1, passengerBreakdown: undefined }; }
+  }, []);
+
   // Load payload from sessionStorage if store is empty (browser refresh)
   useEffect(() => {
     if (store.payload) return;
@@ -126,7 +138,19 @@ export default function FareSelectionPage() {
 
   const selectedFare = getSelectedFareOption(store);
   const protectionFee = store.protectionQuote?.protectionFeeUsd ?? 0;
-  const grandTotal = selectedFare ? selectedFare.totalPrice + (store.priceProtection ? protectionFee : 0) : 0;
+  const grandTotal = useMemo(() => {
+    if (!selectedFare) return 0;
+    const base = selectedFare.basePrice;
+    let fareTotal: number;
+    if (passengerBreakdown && travelerCount > 1) {
+      const { adults, children: childCount, infants } = passengerBreakdown;
+      fareTotal = adults * base + childCount * Math.round(base * 0.75) + infants * base;
+      fareTotal += Math.round(base * travelerCount * 0.015); // service fee
+    } else {
+      fareTotal = selectedFare.totalPrice;
+    }
+    return fareTotal + (store.priceProtection ? protectionFee : 0);
+  }, [selectedFare, passengerBreakdown, travelerCount, store.priceProtection, protectionFee]);
 
   // Fares in the active cabin
   const activeFares = useMemo(
@@ -199,7 +223,7 @@ export default function FareSelectionPage() {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
         <div className="text-center">
-          <div className="w-12 h-12 rounded-full border-4 border-[#1ABC9C]/30 border-t-[#1ABC9C] animate-spin mx-auto mb-4" />
+          <div className="w-12 h-12 rounded-full border-4 border-slate-200 border-t-slate-900 animate-spin mx-auto mb-4" />
           <p className="text-slate-500 text-sm font-medium">Finding the best fares for you…</p>
         </div>
       </div>
@@ -321,6 +345,8 @@ export default function FareSelectionPage() {
                 onSelect={() => handleSelectFare(fare.id)}
                 onToggleProtection={store.togglePriceProtection}
                 currency={payload.currency}
+                travelerCount={travelerCount}
+                passengerBreakdown={passengerBreakdown}
               />
             </div>
           ))}
@@ -335,7 +361,9 @@ export default function FareSelectionPage() {
               <p className="text-[11px] text-slate-500 font-medium">{selectedFare.name}</p>
               <div className="flex items-baseline gap-1.5">
                 <span className="text-[22px] font-extrabold text-slate-900">{fmtPrice(grandTotal, payload.currency)}</span>
-                <span className="text-[11px] text-slate-400">per traveler</span>
+                <span className="text-[11px] text-slate-400">
+                  {travelerCount > 1 ? `for ${travelerCount} travelers` : 'per traveler'}
+                </span>
               </div>
               {store.priceProtection && (
                 <p className="text-[10px] text-[#1ABC9C] font-semibold">+ Price Drop Protection included</p>

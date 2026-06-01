@@ -368,21 +368,50 @@ export function generateItineraryHtml(p: ItineraryParams): string {
 
   const renderSegmentsHtml = (segs: FlightSegment[], layovers: import('@/lib/round-trip-types').Layover[]) =>
     segs.map((seg, i) => `
-      <div style="margin-bottom:12px;">
-        <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
-          <div>
-            <div style="font-size:14px;font-weight:700;color:#1e293b;">${formatTime(seg.departure.time)} <span style="color:#64748b;font-weight:400;font-size:12px;">· ${seg.departure.airport}</span></div>
-            <div style="font-size:11px;color:#94a3b8;margin:2px 0;">${seg.departure.city}${seg.departure.terminal ? ' · T' + seg.departure.terminal : ''}</div>
-            <div style="margin:6px 0;font-size:11px;color:#94a3b8;">▾ ${formatDurationMinutes(seg.duration)}${seg.aircraft ? ' · ' + seg.aircraft : ''}</div>
-            <div style="font-size:14px;font-weight:700;color:#1e293b;">${formatTime(seg.arrival.time)} <span style="color:#64748b;font-weight:400;font-size:12px;">· ${seg.arrival.airport}</span></div>
-            <div style="font-size:11px;color:#94a3b8;margin-top:2px;">${seg.arrival.city}${seg.arrival.terminal ? ' · T' + seg.arrival.terminal : ''}</div>
-          </div>
-          <div style="text-align:right;">
-            <div style="font-size:12px;font-weight:600;color:#475569;">${seg.airline.name}</div>
-            <div style="font-size:12px;font-family:'Courier New',monospace;color:#94a3b8;margin-top:2px;">${seg.flightNumber}</div>
-          </div>
+      <div style="margin-bottom:16px;">
+        <div style="background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;">
+          <!-- Header -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-bottom:1px solid #e2e8f0;border-top-left-radius:12px;border-top-right-radius:12px;">
+            <tr>
+              <td style="padding:12px 16px;font-size:13px;font-weight:700;color:#1e293b;">
+                ✈️ ${seg.airline.name || ''}
+              </td>
+              <td style="padding:12px 16px;text-align:right;font-size:12px;color:#64748b;font-family:'Courier New',monospace;font-weight:600;">
+                ${seg.flightNumber || ''} &nbsp;•&nbsp; <span style="text-transform:uppercase;">${fareOption?.cabinClass || 'ECONOMY'}</span>
+              </td>
+            </tr>
+          </table>
+          
+          <!-- Body -->
+          <table width="100%" cellpadding="0" cellspacing="0" style="padding:16px;">
+            <tr>
+              <!-- Origin -->
+              <td width="35%" valign="top" style="text-align:left;">
+                <div style="font-size:18px;font-weight:800;color:#0f172a;">${formatTime(seg.departure.time)}</div>
+                <div style="font-size:12px;color:#64748b;margin-top:4px;">
+                   <span style="font-size:14px;font-weight:700;color:#1abc9c;">${seg.departure.airport}</span> &nbsp;•&nbsp; ${seg.departure.city}
+                </div>
+                ${seg.departure.terminal ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Terminal ${seg.departure.terminal}</div>` : ''}
+              </td>
+              
+              <!-- Duration/Line -->
+              <td width="30%" valign="top" style="text-align:center;padding-top:8px;">
+                <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">${formatDurationMinutes(seg.duration)}</div>
+                <div style="margin-top:6px;font-size:14px;color:#cbd5e1;">────── ✈ ──────</div>
+              </td>
+              
+              <!-- Destination -->
+              <td width="35%" valign="top" style="text-align:right;">
+                <div style="font-size:18px;font-weight:800;color:#0f172a;">${formatTime(seg.arrival.time)}</div>
+                <div style="font-size:12px;color:#64748b;margin-top:4px;">
+                   ${seg.arrival.city} &nbsp;•&nbsp; <span style="font-size:14px;font-weight:700;color:#1abc9c;">${seg.arrival.airport}</span>
+                </div>
+                ${seg.arrival.terminal ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Terminal ${seg.arrival.terminal}</div>` : ''}
+              </td>
+            </tr>
+          </table>
         </div>
-        ${layovers[i] ? `<div style="margin:4px 12px;padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:12px;color:#92400e;">⏱ ${formatDurationMinutes(layovers[i].durationMinutes)} layover · ${layovers[i].airportName} (${layovers[i].airport})${layovers[i].terminalChange ? ' · Terminal change' : ''}</div>` : ''}
+        ${layovers[i] ? `<div style="margin:4px 12px;padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:12px;color:#92400e;text-align:center;">⏱ ${formatDurationMinutes(layovers[i].durationMinutes)} layover · ${layovers[i].airportName} (${layovers[i].airport})${layovers[i].terminalChange ? ' · Terminal change' : ''}</div>` : ''}
       </div>`).join('');
 
   const outSegs = sourceRoundTrip ? renderSegmentsHtml(sourceRoundTrip.outboundJourney.segments, sourceRoundTrip.outboundJourney.layovers) : (sourceFlight ? renderSegmentsHtml(sourceFlight.segments, []) : '');
@@ -445,7 +474,7 @@ export function generateItineraryHtml(p: ItineraryParams): string {
         </div>
         <div class="pnr-label">FAREMIND BOOKING REFERENCE</div>
         <div class="pnr">${confirmation.masterBookingReference || confirmation.pnr}</div>
-        ${(confirmation.pnrs && confirmation.pnrs.length > 0) ? `<div style="margin-top:14px;">${confirmation.pnrs.map((pnr: any) => `<div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;"><span style="font-size:13px;color:#fff;font-weight:500;">AIRLINE PNR</span><span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${pnr.pnrCode}</span></div>`).join('<br/>')}</div>` : ''}
+        ${(confirmation.pnrs && confirmation.pnrs.length > 0) ? `<div style="margin-top:14px;">${confirmation.pnrs.map((pnr: any) => `<div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;"><span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span><span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${pnr.pnrCode}</span></div>`).join('<br/>')}</div>` : ''}
     </div>
     <div class="body">
       <div class="section">
@@ -458,7 +487,7 @@ export function generateItineraryHtml(p: ItineraryParams): string {
           ${airlineName ? `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Airline</td><td style="padding:5px 0;text-align:right;font-size:13px;">${airlineName}</td></tr>` : ''}
           ${selectedFare ? `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Fare</td><td style="padding:5px 0;text-align:right;font-size:13px;">${selectedFare.name} · ${selectedFare.cabin.replace(/_/g, ' ')}</td></tr>` : ''}
           <tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Status</td><td style="padding:5px 0;text-align:right;font-size:13px;" class="confirmed">Confirmed</td></tr>
-          ${(confirmation.pnrs && confirmation.pnrs.length > 0) ? confirmation.pnrs.map((pnr: any) => `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">AIRLINE PNR</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:14px;font-weight:700;color:#1abc9c;">${pnr.pnrCode}</td></tr>`).join('') : ''}
+          ${(confirmation.pnrs && confirmation.pnrs.length > 0) ? confirmation.pnrs.map((pnr: any) => `<tr><td style="padding:5px 0;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:14px;font-weight:700;color:#1abc9c;">${pnr.pnrCode}</td></tr>`).join('') : ''}
         </table>
       </div>
 
@@ -539,25 +568,47 @@ export function generateItineraryHtmlFromBooking(booking: any): string {
     const arrTerminal = seg.destinationTerminal || seg.arrivalTerminal || '';
     const aircraft = seg.aircraftType || seg.aircraft || '';
     return `
-    <div style="margin-bottom:12px;">
-      <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:12px;background:#f8fafc;border-radius:8px;border:1px solid #e2e8f0;">
-        <div>
-          <div style="font-size:14px;font-weight:700;color:#1e293b;">
-            ${depTime ? formatTime(depTime) : ''} <span style="color:#64748b;font-weight:400;font-size:12px;">· ${depAirport}</span>
-          </div>
-          <div style="font-size:11px;color:#94a3b8;margin:2px 0;">${depCity}${depTerminal ? ' · T' + depTerminal : ''}</div>
-          <div style="margin:6px 0;font-size:11px;color:#94a3b8;">▾ ${seg.durationMinutes ? formatDurationMinutes(seg.durationMinutes) : ''}${aircraft ? ' · ' + aircraft : ''}</div>
-          <div style="font-size:14px;font-weight:700;color:#1e293b;">
-            ${arrTime ? formatTime(arrTime) : ''} <span style="color:#64748b;font-weight:400;font-size:12px;">· ${arrAirport}</span>
-          </div>
-          <div style="font-size:11px;color:#94a3b8;margin-top:2px;">${arrCity}${arrTerminal ? ' · T' + arrTerminal : ''}</div>
-        </div>
-        <div style="text-align:right;">
-          <div style="font-size:12px;font-weight:600;color:#475569;">${seg.airlineName || ''}</div>
-          <div style="font-size:12px;font-family:'Courier New',monospace;color:#94a3b8;margin-top:2px;">${seg.flightNumber || seg.marketingFlightNumber || ''}</div>
-          ${(seg.cabin || seg.cabinClass) ? `<div style="font-size:11px;color:#94a3b8;margin-top:4px;text-transform:capitalize;">${seg.cabin || seg.cabinClass}</div>` : ''}
-        </div>
-      </div>
+    <div style="margin-bottom:16px;background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;">
+      <!-- Header -->
+      <table width="100%" cellpadding="0" cellspacing="0" style="background:#f8fafc;border-bottom:1px solid #e2e8f0;border-top-left-radius:12px;border-top-right-radius:12px;">
+        <tr>
+          <td style="padding:12px 16px;font-size:13px;font-weight:700;color:#1e293b;">
+            ✈️ ${seg.airlineName || ''}
+          </td>
+          <td style="padding:12px 16px;text-align:right;font-size:12px;color:#64748b;font-family:'Courier New',monospace;font-weight:600;">
+            ${seg.flightNumber || seg.marketingFlightNumber || ''} &nbsp;•&nbsp; <span style="text-transform:uppercase;">${seg.cabin || seg.cabinClass || fareClass || 'ECONOMY'}</span>
+          </td>
+        </tr>
+      </table>
+      
+      <!-- Body -->
+      <table width="100%" cellpadding="0" cellspacing="0" style="padding:16px;">
+        <tr>
+          <!-- Origin -->
+          <td width="35%" valign="top" style="text-align:left;">
+            <div style="font-size:18px;font-weight:800;color:#0f172a;">${depTime ? formatTime(depTime) : ''}</div>
+            <div style="font-size:12px;color:#64748b;margin-top:4px;">
+               <span style="font-size:14px;font-weight:700;color:#1abc9c;">${depAirport}</span> &nbsp;•&nbsp; ${depCity}
+            </div>
+            ${depTerminal ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Terminal ${depTerminal}</div>` : ''}
+          </td>
+          
+          <!-- Duration/Line -->
+          <td width="30%" valign="top" style="text-align:center;padding-top:8px;">
+            <div style="font-size:10px;font-weight:600;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">${seg.durationMinutes ? formatDurationMinutes(seg.durationMinutes) : ''}</div>
+            <div style="margin-top:6px;font-size:14px;color:#cbd5e1;">────── ✈ ──────</div>
+          </td>
+          
+          <!-- Destination -->
+          <td width="35%" valign="top" style="text-align:right;">
+            <div style="font-size:18px;font-weight:800;color:#0f172a;">${arrTime ? formatTime(arrTime) : ''}</div>
+            <div style="font-size:12px;color:#64748b;margin-top:4px;">
+               ${arrCity} &nbsp;•&nbsp; <span style="font-size:14px;font-weight:700;color:#1abc9c;">${arrAirport}</span>
+            </div>
+            ${arrTerminal ? `<div style="font-size:11px;color:#94a3b8;margin-top:2px;">Terminal ${arrTerminal}</div>` : ''}
+          </td>
+        </tr>
+      </table>
     </div>
   `; }).join('');
 

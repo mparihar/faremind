@@ -17,9 +17,12 @@ export type NotifyEventType =
   | 'BOOKING_FAILED'
   | 'BOOKING_CANCELLED'
   | 'BOOKING_UPDATED'
+  | 'PASSENGER_INFO_UPDATED'
   | 'DATE_CHANGE_SUBMITTED'
   | 'DATE_CHANGE_APPROVED'
   | 'DATE_CHANGE_REJECTED'
+  | 'FLIGHT_CHANGE_CONFIRMED'
+  | 'SEAT_SELECTION_UPDATED'
   | 'PAYMENT_SUCCESS'
   | 'PAYMENT_FAILED'
   | 'PRICE_DROP_ALERT'
@@ -122,7 +125,8 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
           </p>
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin-bottom:24px;">
             <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
-              <tr><td style="padding:6px 0;color:#64748b;">Booking Ref</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${ref}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">FareMind Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${String(d.booking_reference || ref)}</td></tr>
+              ${(d.airline_pnr || d.pnr) ? `<tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#1abc9c;">${String(d.airline_pnr || d.pnr)}</td></tr>` : ''}
               <tr><td style="padding:6px 0;color:#64748b;">Route</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${route}</td></tr>
               ${amount ? `<tr><td style="padding:6px 0;color:#64748b;">Total Charged</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:18px;color:#1abc9c;">${amount}</td></tr>` : ''}
             </table>
@@ -144,16 +148,186 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
         text: `Hi ${name}, your booking ${ref} for ${route} is being processed.`,
       };
 
-    case 'BOOKING_CANCELLED':
+    case 'BOOKING_CANCELLED': {
+      const cancelDate = new Date().toLocaleDateString();
+      const refundAmt = String(d.refund_amount ?? 'Non-refundable');
+      const refundStat = String(d.refund_status ?? (refundAmt !== 'Non-refundable' && refundAmt !== '$0.00' && refundAmt !== '' ? 'Pending' : 'Not Applicable'));
+      const fbr = String(d.booking_reference ?? ref);
+      
+      const refundHtml = refundAmt !== 'Non-refundable' && refundAmt !== '$0.00' && refundAmt !== '' ? `<li style="margin-bottom:4px;">Refund Amount: ${refundAmt}</li>` : '';
+      const refundText = refundAmt !== 'Non-refundable' && refundAmt !== '$0.00' && refundAmt !== '' ? `* Refund Amount: ${refundAmt}` : '';
+
       return {
-        subject: `Booking ${ref} has been cancelled`,
+        subject: `Booking Cancellation Confirmed – ${fbr}`,
         html: wrap('Booking Cancelled', `
-          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking Cancelled</h2>
-          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${name}, your booking <strong>${ref}</strong> for <strong>${route}</strong> has been cancelled.</p>
-          <p style="margin:0;color:#64748b;font-size:13px;">Any eligible refund will be processed within 5–10 business days.</p>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hello ${name},</p>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Your booking cancellation request has been successfully processed for booking <strong>${fbr}</strong>.</p>
+          
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:16px;font-weight:700;">Booking Information</h3>
+          <ul style="margin:0 0 16px;color:#64748b;font-size:14px;padding-left:20px;">
+            <li style="margin-bottom:4px;">Booking Status: Cancelled</li>
+            <li style="margin-bottom:4px;">Cancellation Date: ${cancelDate}</li>
+            ${refundHtml}
+            <li style="margin-bottom:4px;">Refund Status: ${refundStat}</li>
+          </ul>
+
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:16px;font-weight:700;">FareMind Booking Reference</h3>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">${fbr}</p>
+
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">Any applicable refunds will be processed according to the airline, supplier, and fare rules associated with your booking.</p>
+          
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">If you did not request this cancellation, please contact FareMind Support immediately.</p>
+          
+          <p style="margin:0;color:#64748b;font-size:14px;">Thank you for choosing FareMind.</p>
+          <p style="margin:16px 0 4px;color:#0f172a;font-size:14px;font-weight:600;">FareMind Team</p>
+          <p style="margin:0;color:#1abc9c;font-size:12px;font-weight:600;">Free Your Mind</p>
         `),
-        text: `Hi ${name}, your booking ${ref} for ${route} has been cancelled.`,
+        text: `Hello ${name},\n\nYour booking cancellation request has been successfully processed for booking ${fbr}.\n\nBooking Information\n\n* Booking Status: Cancelled\n* Cancellation Date: ${cancelDate}\n${refundText}\n* Refund Status: ${refundStat}\n\nFareMind Booking Reference\n${fbr}\n\nAny applicable refunds will be processed according to the airline, supplier, and fare rules associated with your booking.\n\nIf you did not request this cancellation, please contact FareMind Support immediately.\n\nThank you for choosing FareMind.\n\nFareMind Team\nFree Your Mind`,
       };
+    }
+
+    case 'PASSENGER_INFO_UPDATED': {
+      const paxName = String(d.passenger_name ?? '');
+      const fields = Array.isArray(d.updated_fields) ? d.updated_fields : [];
+      
+      const fieldLabels: Record<string, string> = {
+        email: 'Email Address',
+        phone: 'Phone Number',
+        nationality: 'Nationality',
+        passportNumber: 'Passport Number',
+        passportExpiry: 'Passport Expiry Date',
+        passportCountry: 'Passport Issuing Country'
+      };
+      
+      const updatedListHtml = fields.map(f => `<li style="margin-bottom:4px;">${fieldLabels[f] || f}</li>`).join('');
+      const updatedListText = fields.map(f => `* ${fieldLabels[f] || f}`).join('\n');
+
+      return {
+        subject: `Your passenger information has been updated – ${ref}`,
+        html: wrap('Passenger Updated', `
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hello ${name},</p>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Your passenger information has been successfully updated for booking <strong>${ref}</strong>.</p>
+          
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:16px;font-weight:700;">Passenger</h3>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">${paxName}</p>
+
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:16px;font-weight:700;">Updated Information</h3>
+          <ul style="margin:0 0 16px;color:#64748b;font-size:14px;padding-left:20px;">
+            ${updatedListHtml}
+          </ul>
+
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:16px;font-weight:700;">Booking Reference</h3>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">${ref}</p>
+
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">The updated information has been saved and applied to your booking. If any of these changes require airline or provider confirmation, the latest status will be reflected in your Manage Booking section.</p>
+          
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">If you did not request this update, please contact FareMind Support immediately.</p>
+          
+          <p style="margin:0;color:#64748b;font-size:14px;">Thank you for choosing FareMind.</p>
+          <p style="margin:16px 0 4px;color:#0f172a;font-size:14px;font-weight:600;">FareMind Team</p>
+          <p style="margin:0;color:#1abc9c;font-size:12px;font-weight:600;">Free Your Mind</p>
+        `),
+        text: `Hello ${name},\n\nYour passenger information has been successfully updated for booking ${ref}.\n\nPassenger\n${paxName}\n\nUpdated Information\n${updatedListText}\n\nBooking Reference\n${ref}\n\nThe updated information has been saved and applied to your booking. If any of these changes require airline or provider confirmation, the latest status will be reflected in your Manage Booking section.\n\nIf you did not request this update, please contact FareMind Support immediately.\n\nThank you for choosing FareMind.\n\nFareMind Team\nFree Your Mind`,
+      };
+    }
+
+    case 'FLIGHT_CHANGE_CONFIRMED': {
+      const paxName = String(d.passenger_name ?? '');
+      const oldFlight = String(d.old_flight_number ?? '');
+      const newFlight = String(d.new_flight_number ?? '');
+      const oldDep = String(d.old_departure ?? '');
+      const newDep = String(d.new_departure ?? '');
+      const oldArr = String(d.old_arrival ?? '');
+      const newArr = String(d.new_arrival ?? '');
+      const fareDiff = String(d.fare_difference ?? '');
+      
+      const fareDiffHtml = fareDiff && fareDiff !== '0.00' ? `<li style="margin-bottom:4px;">Fare Difference: ${fareDiff}</li>` : '';
+      const fareDiffText = fareDiff && fareDiff !== '0.00' ? `* Fare Difference: ${fareDiff}` : '';
+
+      return {
+        subject: `Your flight booking has been successfully updated – ${ref}`,
+        html: wrap('Flight Change Confirmed', `
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hello ${name},</p>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Your flight booking has been successfully updated for booking <strong>${ref}</strong>.</p>
+          
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:16px;font-weight:700;">Passenger</h3>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">${paxName}</p>
+
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:16px;font-weight:700;">Updated Information</h3>
+          <ul style="margin:0 0 16px;color:#64748b;font-size:14px;padding-left:20px;">
+            <li style="margin-bottom:4px;">Flight: ${oldFlight} &rarr; ${newFlight}</li>
+            <li style="margin-bottom:4px;">Departure: ${oldDep} &rarr; ${newDep}</li>
+            <li style="margin-bottom:4px;">Arrival: ${oldArr} &rarr; ${newArr}</li>
+            ${fareDiffHtml}
+          </ul>
+          
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">Only the changes listed above were updated as part of your request.</p>
+
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:16px;font-weight:700;">FareMind Booking Reference</h3>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">${ref}</p>
+
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">Please review your updated itinerary in the Manage Booking section.</p>
+          
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">If you did not request this change, please contact FareMind Support immediately.</p>
+          
+          <p style="margin:0;color:#64748b;font-size:14px;">Thank you for choosing FareMind.</p>
+          <p style="margin:16px 0 4px;color:#0f172a;font-size:14px;font-weight:600;">FareMind Team</p>
+          <p style="margin:0;color:#1abc9c;font-size:12px;font-weight:600;">Free Your Mind</p>
+        `),
+        text: `Hello ${name},\n\nYour flight booking has been successfully updated for booking ${ref}.\n\nPassenger\n${paxName}\n\nUpdated Information\n\n* Flight: ${oldFlight} -> ${newFlight}\n* Departure: ${oldDep} -> ${newDep}\n* Arrival: ${oldArr} -> ${newArr}\n${fareDiffText}\n\nOnly the changes listed above were updated as part of your request.\n\nFareMind Booking Reference\n${ref}\n\nPlease review your updated itinerary in the Manage Booking section.\n\nIf you did not request this change, please contact FareMind Support immediately.\n\nThank you for choosing FareMind.\n\nFareMind Team\nFree Your Mind`,
+      };
+    }
+
+    case 'SEAT_SELECTION_UPDATED': {
+      const paxName = String(d.passenger_name ?? '');
+      const fbr = String(d.booking_reference ?? ref);
+      
+      let listHtml = '';
+      let listText = '';
+      
+      const seats = d.seats as Array<{label: string, old: string, new: string}>;
+      if (Array.isArray(seats) && seats.length > 0) {
+        for (const s of seats) {
+          listHtml += `<li style="margin-bottom:4px;">${s.label}: ${s.old || 'None'} &rarr; ${s.new}</li>`;
+          listText += `* ${s.label}: ${s.old || 'None'} -> ${s.new}\n`;
+        }
+      } else {
+        const oldSeat = String(d.old_seat ?? 'None');
+        const newSeat = String(d.new_seat ?? '');
+        listHtml += `<li style="margin-bottom:4px;">Seat: ${oldSeat} &rarr; ${newSeat}</li>`;
+        listText += `* Seat: ${oldSeat} -> ${newSeat}\n`;
+      }
+
+      return {
+        subject: `Your seat selection has been successfully updated – ${fbr}`,
+        html: wrap('Seat Selection Updated', `
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hello ${name},</p>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Your seat selection has been successfully updated for booking <strong>${fbr}</strong>.</p>
+          
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:16px;font-weight:700;">Passenger</h3>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">${paxName}</p>
+
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:16px;font-weight:700;">Updated Information</h3>
+          <ul style="margin:0 0 16px;color:#64748b;font-size:14px;padding-left:20px;">
+            ${listHtml}
+          </ul>
+          
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">Only the changes listed above were updated as part of your request.</p>
+
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:16px;font-weight:700;">FareMind Booking Reference</h3>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">${fbr}</p>
+
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">The updated seat assignment has been saved to your booking.</p>
+          
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">If you did not request this change, please contact FareMind Support immediately.</p>
+          
+          <p style="margin:0;color:#64748b;font-size:14px;">Thank you for choosing FareMind.</p>
+          <p style="margin:16px 0 4px;color:#0f172a;font-size:14px;font-weight:600;">FareMind Team</p>
+          <p style="margin:0;color:#1abc9c;font-size:12px;font-weight:600;">Free Your Mind</p>
+        `),
+        text: `Hello ${name},\n\nYour seat selection has been successfully updated for booking ${fbr}.\n\nPassenger\n${paxName}\n\nUpdated Information\n\n${listText}\nOnly the changes listed above were updated as part of your request.\n\nFareMind Booking Reference\n${fbr}\n\nThe updated seat assignment has been saved to your booking.\n\nIf you did not request this change, please contact FareMind Support immediately.\n\nThank you for choosing FareMind.\n\nFareMind Team\nFree Your Mind`,
+      };
+    }
 
     case 'BOOKING_UPDATED':
     case 'DATE_CHANGE_SUBMITTED':
@@ -180,10 +354,48 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
       return {
         subject: `Payment confirmed – ${ref}`,
         html: wrap('Payment Confirmed', `
-          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Payment Confirmed ✅</h2>
-          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${name}, we've received your payment of <strong style="color:#1abc9c">${amount}</strong> for booking <strong>${ref}</strong>.</p>
+          <div style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f3460 100%);border-radius:12px;padding:32px 36px;text-align:center;position:relative;overflow:hidden;margin-bottom:24px;">
+            <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:4px 12px;margin-bottom:12px;">
+              <div style="width:6px;height:6px;border-radius:50%;background:#10b981;"></div>
+              <span style="font-size:11px;font-weight:700;color:#10b981;letter-spacing:0.5px;">Payment Confirmed</span>
+            </div>
+            <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:8px;">FAREMIND BOOKING REFERENCE</div>
+            <div style="font-family:'Courier New',monospace;font-size:32px;font-weight:900;letter-spacing:8px;color:#fff;">${ref}</div>
+            <div style="margin-top:14px;">
+              <div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;">
+                <span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span>
+                <span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${String(d.airline_pnr || d.pnr || '')}</span>
+              </div>
+            </div>
+          </div>
+
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">Hello ${name},</p>
+          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">We have successfully received your payment for booking <strong style="color:#0f172a">${ref}</strong>.</p>
+          
+          <h3 style="margin:0 0 12px;color:#0f172a;font-size:16px;font-weight:700;">Payment Details</h3>
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:24px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+              <tr><td style="padding:6px 0;color:#64748b;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:18px;color:#1abc9c;">${amount}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">FareMind Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${ref}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-family:'Courier New',monospace;font-weight:700;color:#1abc9c;letter-spacing:1px;">${String(d.airline_pnr || d.pnr || '')}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">Payment Status</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#10b981;">Confirmed</td></tr>
+            </table>
+          </div>
+          
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">Your booking remains active and no further action is required at this time.</p>
+          
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">You can view your itinerary, manage your booking, download travel documents, or make eligible changes through your <a href="${process.env.APP_URL || 'https://faremind.ai'}/manage-booking" style="color:#1abc9c;text-decoration:none;">FareMind account</a>.</p>
+          
+          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">If you did not authorize this payment, please contact FareMind Support immediately.</p>
+          
+          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">Thank you for choosing FareMind.</p>
+          
+          <p style="margin:0;color:#0f172a;font-size:14px;font-weight:600;">FareMind</p>
+          <p style="margin:4px 0;color:#1abc9c;font-size:12px;font-weight:600;">Your Personal Travel Consultant</p>
+          <p style="margin:4px 0 0;font-size:12px;"><a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a></p>
+          <p style="margin:4px 0 0;font-size:12px;"><a href="http://www.faremind.ai" style="color:#1abc9c;text-decoration:none;">www.faremind.ai</a></p>
         `),
-        text: `Hi ${name}, payment of ${amount} confirmed for booking ${ref}.`,
+        text: `Hello ${name},\n\nWe have successfully received your payment of ${amount} for booking ${ref}.\n\nPayment Details\nAmount Paid: ${amount}\nFareMind Booking Reference: ${ref}\nAirline PNR: ${String(d.airline_pnr || d.pnr || '')}\nPayment Status: Confirmed\n\nYour booking remains active and no further action is required at this time.\n\nThank you for choosing FareMind.`,
       };
 
     case 'PAYMENT_FAILED':
@@ -300,6 +512,13 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
         text: `UPDATED: ${ref} by ${name}. ${String(d.update_type ?? eventType)}`,
       };
 
+    case 'PASSENGER_INFO_UPDATED':
+      return {
+        subject: `[FareMind] Passenger Updated – ${ref}`,
+        html: wrap('[Admin] Passenger Updated', `<h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Passenger Updated</h2><p style="margin:0;color:#64748b;font-size:14px;">Booking <strong>${ref}</strong> passenger ${String(d.passenger_name)} updated fields: ${Array.isArray(d.updated_fields) ? d.updated_fields.join(', ') : ''}</p>`),
+        text: `UPDATED PASSENGER: ${ref} passenger ${String(d.passenger_name)}. Fields: ${Array.isArray(d.updated_fields) ? d.updated_fields.join(', ') : ''}`,
+      };
+
     case 'PAYMENT_FAILED':
       return {
         subject: `[ALERT] Payment Failed – ${email}`,
@@ -329,6 +548,7 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
 // Which events send to customer vs support
 const CUSTOMER_EVENTS = new Set<string>([
   'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
+  'PASSENGER_INFO_UPDATED',
   'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
   'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
   'PRICE_DROP_ALERT', 'PRICE_DROP_REFUND',
@@ -337,7 +557,7 @@ const CUSTOMER_EVENTS = new Set<string>([
 
 const SUPPORT_EVENTS = new Set<string>([
   'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_FAILED', 'BOOKING_CANCELLED',
-  'BOOKING_UPDATED', 'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
+  'BOOKING_UPDATED', 'PASSENGER_INFO_UPDATED', 'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
   'PAYMENT_FAILED', 'PRICE_DROP_REFUND', 'SUPPORT_MANUAL',
 ]);
 

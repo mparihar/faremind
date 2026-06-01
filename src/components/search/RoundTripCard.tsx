@@ -253,7 +253,7 @@ export default function RoundTripCard({ option, index, onSelect, onHover, isHove
       </div>
 
       {/* Footer: price + meta + CTA */}
-      <div className="flex items-center justify-between gap-4 px-5 py-4 bg-white/30 border-t border-white/50">
+      <div className="flex items-center justify-between gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-4 bg-white/30 border-t border-white/50 flex-wrap">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
             <Clock className="w-3.5 h-3.5 text-slate-400" />

@@ -572,6 +572,7 @@ model MasterBooking {
   cancellations          CancellationRecord[]
   passengerUpdates       BookingPassengerUpdate[]
   providerSyncs          ProviderSync[]
+  commercialCharges      BookingCommercialCharge[]
 
   @@index([masterBookingReference])
   @@index([masterPnr])
@@ -1032,6 +1033,14 @@ model AdminUser {
   sessions     AdminSession[]
   auditLogs    AuditLog[]
   bookingNotes BookingNote[]
+
+  // Commercial fee management relations
+  createdPlatformFees        PlatformFeeRule[]        @relation("PlatformFeeCreatedBy")
+  updatedPlatformFees        PlatformFeeRule[]        @relation("PlatformFeeUpdatedBy")
+  createdProtectionProducts  ProtectionProductRule[]   @relation("ProtectionProductCreatedBy")
+  updatedProtectionProducts  ProtectionProductRule[]   @relation("ProtectionProductUpdatedBy")
+  createdInsuranceProducts   TravelInsuranceRule[]     @relation("InsuranceProductCreatedBy")
+  updatedInsuranceProducts   TravelInsuranceRule[]     @relation("InsuranceProductUpdatedBy")
 
   @@index([email])
   @@map("admin_users")
@@ -1692,4 +1701,266 @@ enum CouponStatus {
   REFUNDED
   VOIDED
   UNAVAILABLE
+}
+
+// ═══════════════════════════════════════════════
+// COMMERCIAL FEE MANAGEMENT
+// ═══════════════════════════════════════════════
+
+enum FeeType {
+  SERVICE_FEE
+  MARKUP_FEE
+}
+
+enum CalculationModel {
+  FIXED_PER_BOOKING
+  FIXED_PER_TRAVELER
+  PERCENTAGE_OF_FARE
+  PERCENTAGE_OF_BOOKING_TOTAL
+  HYBRID
+}
+
+enum ProviderScopeEnum {
+  ALL
+  DUFFEL
+  MYSTIFLY
+  OTHER
+}
+
+enum CabinScopeEnum {
+  ALL
+  ECONOMY
+  ECONOMY_BASIC
+  ECONOMY_STANDARD
+  ECONOMY_FLEX
+  PREMIUM_ECONOMY
+  BUSINESS
+  FIRST
+}
+
+enum TripTypeScopeEnum {
+  ALL
+  ONE_WAY
+  ROUND_TRIP
+  MULTI_CITY
+}
+
+enum RouteScopeTypeEnum {
+  ALL
+  DOMESTIC
+  INTERNATIONAL
+  CUSTOM
+}
+
+enum ProtectionPricingModel {
+  FIXED_PER_TRAVELER
+  FIXED_PER_BOOKING
+  PERCENTAGE_OF_FARE
+  PROVIDER_QUOTED
+}
+
+enum InsurancePricingModel {
+  FIXED_PER_TRAVELER
+  FIXED_PER_BOOKING
+  PERCENTAGE_OF_BOOKING_TOTAL
+  PROVIDER_QUOTED
+}
+
+enum ChargeType {
+  SERVICE_FEE
+  MARKUP_FEE
+  PRICE_DROP_PROTECTION
+  TRAVEL_INSURANCE
+}
+
+enum ChargeSourceType {
+  PLATFORM
+  PROVIDER
+  ADMIN_CONFIG
+}
+
+// ── Platform Fee Rules ────────────────────────────
+
+model PlatformFeeRule {
+  id                String             @id @default(cuid())
+  feeType           FeeType            @map("fee_type")
+  feeName           String             @map("fee_name")
+  feeDescription    String?            @map("fee_description")
+  calculationModel  CalculationModel   @map("calculation_model")
+  fixedAmount       Decimal?           @map("fixed_amount") @db.Decimal(10, 2)
+  percentageValue   Decimal?           @map("percentage_value") @db.Decimal(6, 4)
+  currency          String             @default("USD")
+  appliesToAdult    Boolean            @default(true) @map("applies_to_adult")
+  appliesToChild    Boolean            @default(true) @map("applies_to_child")
+  appliesToInfant   Boolean            @default(true) @map("applies_to_infant")
+  providerScope     ProviderScopeEnum  @default(ALL) @map("provider_scope")
+  cabinScope        CabinScopeEnum     @default(ALL) @map("cabin_scope")
+  tripTypeScope     TripTypeScopeEnum  @default(ALL) @map("trip_type_scope")
+  routeScopeType    RouteScopeTypeEnum @default(ALL) @map("route_scope_type")
+  originCountry     String?            @map("origin_country")
+  destinationCountry String?           @map("destination_country")
+  active            Boolean            @default(true)
+  effectiveFrom     DateTime           @default(now()) @map("effective_from")
+  effectiveTo       DateTime?          @map("effective_to")
+  priority          Int                @default(1)
+
+  // Audit
+  createdByAdminId    String?          @map("created_by_admin_id")
+  createdByAdminEmail String?          @map("created_by_admin_email")
+  createdAt           DateTime         @default(now()) @map("created_at")
+  updatedByAdminId    String?          @map("updated_by_admin_id")
+  updatedByAdminEmail String?          @map("updated_by_admin_email")
+  updatedAt           DateTime         @updatedAt @map("updated_at")
+
+  // Soft delete
+  deletedAt         DateTime?          @map("deleted_at")
+  deletedBy         String?            @map("deleted_by")
+
+  // Relations
+  createdByAdmin    AdminUser?         @relation("PlatformFeeCreatedBy", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  updatedByAdmin    AdminUser?         @relation("PlatformFeeUpdatedBy", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([feeType, active])
+  @@index([providerScope])
+  @@index([cabinScope])
+  @@index([priority])
+  @@map("platform_fee_rules")
+}
+
+// ── Protection Product Rules ──────────────────────
+
+model ProtectionProductRule {
+  id                  String                 @id @default(cuid())
+  productType         String                 @default("PRICE_DROP_PROTECTION") @map("product_type")
+  providerName        String?                @map("provider_name")
+  providerProductCode String?                @map("provider_product_code")
+  productName         String                 @map("product_name")
+  productDescription  String?                @map("product_description")
+  pricingModel        ProtectionPricingModel @map("pricing_model")
+  fixedAmount         Decimal?               @map("fixed_amount") @db.Decimal(10, 2)
+  percentageValue     Decimal?               @map("percentage_value") @db.Decimal(6, 4)
+  currency            String                 @default("USD")
+  cabinScope          CabinScopeEnum         @default(ALL) @map("cabin_scope")
+  fareClassScope      String?                @map("fare_class_scope")
+  tripTypeScope       TripTypeScopeEnum      @default(ALL) @map("trip_type_scope")
+  routeScopeType      RouteScopeTypeEnum     @default(ALL) @map("route_scope_type")
+  originCountry       String?                @map("origin_country")
+  destinationCountry  String?                @map("destination_country")
+  minBookingAmount    Decimal?               @map("min_booking_amount") @db.Decimal(10, 2)
+  maxBookingAmount    Decimal?               @map("max_booking_amount") @db.Decimal(10, 2)
+  appliesToAdult      Boolean                @default(true) @map("applies_to_adult")
+  appliesToChild      Boolean                @default(true) @map("applies_to_child")
+  appliesToInfant     Boolean                @default(true) @map("applies_to_infant")
+  coverageSummary     String?                @map("coverage_summary")
+  termsUrl            String?                @map("terms_url")
+  active              Boolean                @default(true)
+  effectiveFrom       DateTime               @default(now()) @map("effective_from")
+  effectiveTo         DateTime?              @map("effective_to")
+  priority            Int                    @default(1)
+
+  // Audit
+  createdByAdminId    String?                @map("created_by_admin_id")
+  createdByAdminEmail String?                @map("created_by_admin_email")
+  createdAt           DateTime               @default(now()) @map("created_at")
+  updatedByAdminId    String?                @map("updated_by_admin_id")
+  updatedByAdminEmail String?                @map("updated_by_admin_email")
+  updatedAt           DateTime               @updatedAt @map("updated_at")
+
+  // Soft delete
+  deletedAt           DateTime?              @map("deleted_at")
+  deletedBy           String?                @map("deleted_by")
+
+  // Relations
+  createdByAdmin      AdminUser?             @relation("ProtectionProductCreatedBy", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  updatedByAdmin      AdminUser?             @relation("ProtectionProductUpdatedBy", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([productType, active])
+  @@index([pricingModel])
+  @@index([cabinScope])
+  @@index([priority])
+  @@map("protection_product_rules")
+}
+
+// ── Travel Insurance Rules ────────────────────────
+
+model TravelInsuranceRule {
+  id                        String                @id @default(cuid())
+  insuranceProviderName     String                @map("insurance_provider_name")
+  providerProductCode       String?               @map("provider_product_code")
+  planName                  String                @map("plan_name")
+  planDescription           String?               @map("plan_description")
+  pricingModel              InsurancePricingModel  @map("pricing_model")
+  fixedAmount               Decimal?              @map("fixed_amount") @db.Decimal(10, 2)
+  percentageValue           Decimal?              @map("percentage_value") @db.Decimal(6, 4)
+  currency                  String                @default("USD")
+  cabinScope                CabinScopeEnum        @default(ALL) @map("cabin_scope")
+  fareClassScope            String?               @map("fare_class_scope")
+  tripTypeScope             TripTypeScopeEnum     @default(ALL) @map("trip_type_scope")
+  routeScopeType            RouteScopeTypeEnum    @default(ALL) @map("route_scope_type")
+  originCountry             String?               @map("origin_country")
+  destinationCountry        String?               @map("destination_country")
+  minBookingAmount          Decimal?              @map("min_booking_amount") @db.Decimal(10, 2)
+  maxBookingAmount          Decimal?              @map("max_booking_amount") @db.Decimal(10, 2)
+  passengerTypeScope        String?               @map("passenger_type_scope")
+  coverageSummary           String?               @map("coverage_summary")
+  medicalCoverageAmount     Decimal?              @map("medical_coverage_amount") @db.Decimal(10, 2)
+  cancellationCoverageAmount Decimal?             @map("cancellation_coverage_amount") @db.Decimal(10, 2)
+  baggageCoverageAmount     Decimal?              @map("baggage_coverage_amount") @db.Decimal(10, 2)
+  termsUrl                  String?               @map("terms_url")
+  active                    Boolean               @default(true)
+  effectiveFrom             DateTime              @default(now()) @map("effective_from")
+  effectiveTo               DateTime?             @map("effective_to")
+  priority                  Int                   @default(1)
+
+  // Audit
+  createdByAdminId          String?               @map("created_by_admin_id")
+  createdByAdminEmail       String?               @map("created_by_admin_email")
+  createdAt                 DateTime              @default(now()) @map("created_at")
+  updatedByAdminId          String?               @map("updated_by_admin_id")
+  updatedByAdminEmail       String?               @map("updated_by_admin_email")
+  updatedAt                 DateTime              @updatedAt @map("updated_at")
+
+  // Soft delete
+  deletedAt                 DateTime?             @map("deleted_at")
+  deletedBy                 String?               @map("deleted_by")
+
+  // Relations
+  createdByAdmin            AdminUser?            @relation("InsuranceProductCreatedBy", fields: [createdByAdminId], references: [id], onDelete: SetNull)
+  updatedByAdmin            AdminUser?            @relation("InsuranceProductUpdatedBy", fields: [updatedByAdminId], references: [id], onDelete: SetNull)
+
+  @@index([active])
+  @@index([pricingModel])
+  @@index([cabinScope])
+  @@index([priority])
+  @@map("travel_insurance_rules")
+}
+
+// ── Booking Commercial Charges (Snapshot) ─────────
+
+model BookingCommercialCharge {
+  id                String           @id @default(cuid())
+  masterBookingId   String           @map("master_booking_id")
+  chargeType        ChargeType       @map("charge_type")
+  sourceType        ChargeSourceType @map("source_type")
+  ruleId            String?          @map("rule_id")
+  providerName      String?          @map("provider_name")
+  passengerId       String?          @map("passenger_id")
+  passengerType     String?          @map("passenger_type")
+  calculationModel  String           @map("calculation_model")
+  unitAmount        Decimal          @map("unit_amount") @db.Decimal(10, 2)
+  quantity          Int              @default(1)
+  percentageValue   Decimal?         @map("percentage_value") @db.Decimal(6, 4)
+  totalAmount       Decimal          @map("total_amount") @db.Decimal(10, 2)
+  currency          String           @default("USD")
+  displayToCustomer Boolean          @default(true) @map("display_to_customer")
+  appliedAt         DateTime         @default(now()) @map("applied_at")
+  rawRuleSnapshot   Json?            @map("raw_rule_snapshot")
+  rawProviderQuote  Json?            @map("raw_provider_quote")
+
+  // Relations
+  masterBooking     MasterBooking    @relation(fields: [masterBookingId], references: [id], onDelete: Cascade)
+
+  @@index([masterBookingId])
+  @@index([chargeType])
+  @@map("booking_commercial_charges")
 }

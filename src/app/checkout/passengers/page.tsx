@@ -179,11 +179,83 @@ const GENDERS = [
 ] as const;
 
 const COUNTRIES = [
-  'Australia', 'Brazil', 'Canada', 'China', 'France', 'Germany',
-  'India', 'Italy', 'Japan', 'Mexico', 'Netherlands', 'New Zealand',
-  'Singapore', 'South Korea', 'Spain', 'Sweden', 'Switzerland',
-  'UAE', 'United Kingdom', 'United States',
+  'Afghanistan', 'Albania', 'Algeria', 'Andorra', 'Angola', 'Antigua and Barbuda',
+  'Argentina', 'Armenia', 'Australia', 'Austria', 'Azerbaijan',
+  'Bahamas', 'Bahrain', 'Bangladesh', 'Barbados', 'Belarus', 'Belgium', 'Belize',
+  'Benin', 'Bhutan', 'Bolivia', 'Bosnia and Herzegovina', 'Botswana', 'Brazil',
+  'Brunei', 'Bulgaria', 'Burkina Faso', 'Burundi',
+  'Cabo Verde', 'Cambodia', 'Cameroon', 'Canada', 'Central African Republic', 'Chad',
+  'Chile', 'China', 'Colombia', 'Comoros', 'Congo (Brazzaville)', 'Congo (Kinshasa)',
+  'Costa Rica', 'Croatia', 'Cuba', 'Cyprus', 'Czech Republic', "Côte d'Ivoire",
+  'Denmark', 'Djibouti', 'Dominica', 'Dominican Republic',
+  'East Timor', 'Ecuador', 'Egypt', 'El Salvador', 'Equatorial Guinea', 'Eritrea',
+  'Estonia', 'Eswatini', 'Ethiopia',
+  'Fiji', 'Finland', 'France',
+  'Gabon', 'Gambia', 'Georgia', 'Germany', 'Ghana', 'Greece', 'Grenada', 'Guatemala',
+  'Guinea', 'Guinea-Bissau', 'Guyana',
+  'Haiti', 'Honduras', 'Hong Kong', 'Hungary',
+  'Iceland', 'India', 'Indonesia', 'Iran', 'Iraq', 'Ireland', 'Israel', 'Italy',
+  'Jamaica', 'Japan', 'Jordan',
+  'Kazakhstan', 'Kenya', 'Kiribati', 'Kosovo', 'Kuwait', 'Kyrgyzstan',
+  'Laos', 'Latvia', 'Lebanon', 'Lesotho', 'Liberia', 'Libya', 'Liechtenstein',
+  'Lithuania', 'Luxembourg',
+  'Macau', 'Madagascar', 'Malawi', 'Malaysia', 'Maldives', 'Mali', 'Malta',
+  'Marshall Islands', 'Mauritania', 'Mauritius', 'Mexico', 'Micronesia', 'Moldova',
+  'Monaco', 'Mongolia', 'Montenegro', 'Morocco', 'Mozambique', 'Myanmar',
+  'Namibia', 'Nauru', 'Nepal', 'Netherlands', 'New Zealand', 'Nicaragua', 'Niger',
+  'Nigeria', 'North Korea', 'North Macedonia', 'Norway',
+  'Oman',
+  'Pakistan', 'Palau', 'Palestine', 'Panama', 'Papua New Guinea', 'Paraguay', 'Peru',
+  'Philippines', 'Poland', 'Portugal',
+  'Qatar',
+  'Romania', 'Russia', 'Rwanda',
+  'Saint Kitts and Nevis', 'Saint Lucia', 'Saint Vincent and the Grenadines', 'Samoa',
+  'San Marino', 'Sao Tome and Principe', 'Saudi Arabia', 'Senegal', 'Serbia',
+  'Seychelles', 'Sierra Leone', 'Singapore', 'Slovakia', 'Slovenia', 'Solomon Islands',
+  'Somalia', 'South Africa', 'South Korea', 'South Sudan', 'Spain', 'Sri Lanka',
+  'Sudan', 'Suriname', 'Sweden', 'Switzerland', 'Syria',
+  'Taiwan', 'Tajikistan', 'Tanzania', 'Thailand', 'Togo', 'Tonga',
+  'Trinidad and Tobago', 'Tunisia', 'Turkey', 'Turkmenistan', 'Tuvalu',
+  'UAE', 'Uganda', 'Ukraine', 'United Kingdom', 'United States', 'Uruguay', 'Uzbekistan',
+  'Vanuatu', 'Vatican City', 'Venezuela', 'Vietnam',
+  'Yemen',
+  'Zambia', 'Zimbabwe',
 ];
+
+// ─── Age Calculation ──────────────────────────────────────────────────────────
+
+/**
+ * Calculate exact age in years on a given reference date.
+ * Returns the age as a precise number (years).
+ */
+function calculateAgeOnDate(dob: string, refDate: string): number {
+  const birth = new Date(dob + 'T00:00:00');
+  const ref = new Date(refDate + 'T00:00:00');
+  if (isNaN(birth.getTime()) || isNaN(ref.getTime())) return -1;
+  let age = ref.getFullYear() - birth.getFullYear();
+  const monthDiff = ref.getMonth() - birth.getMonth();
+  if (monthDiff < 0 || (monthDiff === 0 && ref.getDate() < birth.getDate())) {
+    age--;
+  }
+  return age;
+}
+
+/**
+ * Determine the correct passenger type based on age at travel date.
+ * - Infant: < 2 years
+ * - Child: 2–11 years
+ * - Adult: 12+ years
+ */
+function getPassengerTypeByAge(ageAtTravel: number): 'adult' | 'child' | 'infant' {
+  if (ageAtTravel < 0) return 'adult'; // fallback
+  if (ageAtTravel < 2) return 'infant';
+  if (ageAtTravel < 12) return 'child';
+  return 'adult';
+}
+
+function typeLabel(type: 'adult' | 'child' | 'infant'): string {
+  return type === 'adult' ? 'Adult' : type === 'child' ? 'Child (2-11)' : 'Infant (under 2)';
+}
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
@@ -199,11 +271,28 @@ interface PassengerErrors {
   phone?: string;
 }
 
-function validatePassenger(pax: PassengerInfo): PassengerErrors {
+function validatePassenger(pax: PassengerInfo, departureDate?: string): PassengerErrors {
   const errors: PassengerErrors = {};
   if (!pax.firstName.trim()) errors.firstName = 'First name is required';
   if (!pax.lastName.trim()) errors.lastName = 'Last name is required';
-  if (!pax.dateOfBirth) errors.dateOfBirth = 'Date of birth is required';
+
+  // Date of birth + age validation
+  if (!pax.dateOfBirth) {
+    errors.dateOfBirth = 'Date of birth is required';
+  } else if (departureDate) {
+    const age = calculateAgeOnDate(pax.dateOfBirth, departureDate);
+    if (age < 0) {
+      errors.dateOfBirth = 'Invalid date of birth';
+    } else {
+      const computedType = getPassengerTypeByAge(age);
+      if (computedType !== pax.type) {
+        const expected = typeLabel(pax.type);
+        const actual = typeLabel(computedType);
+        errors.dateOfBirth = `Age mismatch: This traveler is ${age} years old on the travel date, which is categorized as "${actual}", but this slot is for "${expected}". Please correct the date of birth.`;
+      }
+    }
+  }
+
   if (!pax.nationality) errors.nationality = 'Nationality is required';
   if (!pax.passportCountry) errors.passportCountry = 'Passport country is required';
   if (pax.nationality && pax.passportCountry && pax.nationality !== pax.passportCountry)
@@ -452,10 +541,21 @@ interface PassengerCardProps {
   errors: PassengerErrors;
   touched: boolean;
   onChange: (field: keyof PassengerInfo, value: string) => void;
+  departureDate?: string;
 }
 
-function PassengerCard({ pax, index, errors, touched, onChange }: PassengerCardProps) {
-  const typeLabel = pax.type === 'adult' ? 'Adult' : pax.type === 'child' ? 'Child' : 'Infant';
+function PassengerCard({ pax, index, errors, touched, onChange, departureDate }: PassengerCardProps) {
+  const expectedTypeLabel = pax.type === 'adult' ? 'Adult' : pax.type === 'child' ? 'Child' : 'Infant';
+
+  // Compute age-based type
+  const ageInfo = pax.dateOfBirth && departureDate
+    ? (() => {
+        const age = calculateAgeOnDate(pax.dateOfBirth, departureDate);
+        if (age < 0) return null;
+        const computed = getPassengerTypeByAge(age);
+        return { age, computedType: computed, matches: computed === pax.type };
+      })()
+    : null;
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-4">
@@ -465,8 +565,18 @@ function PassengerCard({ pax, index, errors, touched, onChange }: PassengerCardP
         </div>
         <h3 className="text-sm font-bold text-slate-900">
           Traveler {index + 1}{' '}
-          <span className="text-slate-400 font-normal">({typeLabel})</span>
+          <span className="text-slate-400 font-normal">({expectedTypeLabel})</span>
         </h3>
+        {ageInfo && (
+          <span className={`ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
+            ageInfo.matches
+              ? 'bg-emerald-100 text-emerald-700'
+              : 'bg-red-100 text-red-700'
+          }`}>
+            {ageInfo.matches ? <Check className="w-3 h-3" /> : <AlertCircle className="w-3 h-3" />}
+            Age {ageInfo.age} · {typeLabel(ageInfo.computedType)}
+          </span>
+        )}
       </div>
 
       {/* Name row */}
@@ -523,10 +633,29 @@ function PassengerCard({ pax, index, errors, touched, onChange }: PassengerCardP
             type="date"
             value={pax.dateOfBirth}
             onChange={e => onChange('dateOfBirth', e.target.value)}
-            hasError={touched && !!errors.dateOfBirth}
+            hasError={(touched && !!errors.dateOfBirth) || (ageInfo ? !ageInfo.matches : false)}
             max={new Date().toISOString().split('T')[0]}
           />
-          {touched && <FieldError message={errors.dateOfBirth} />}
+          {/* Show mismatch warning immediately (no need to wait for touched) */}
+          {ageInfo && !ageInfo.matches && (
+            <div className="mt-1.5 flex items-start gap-1.5 p-2 rounded-lg bg-amber-50 border border-amber-200">
+              <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">
+                <strong>Age mismatch:</strong> This traveler will be <strong>{ageInfo.age} years old</strong> on the
+                travel date, which classifies as <strong>{typeLabel(ageInfo.computedType)}</strong>.
+                This slot requires an <strong>{expectedTypeLabel}</strong>.
+                Please enter the correct date of birth.
+              </p>
+            </div>
+          )}
+          {/* Show age confirmation when correct */}
+          {ageInfo && ageInfo.matches && (
+            <p className="mt-1 text-xs text-emerald-600 font-medium flex items-center gap-1">
+              <Check className="w-3 h-3" />
+              Age {ageInfo.age} on travel date — {typeLabel(ageInfo.computedType)} ✓
+            </p>
+          )}
+          {touched && !ageInfo && <FieldError message={errors.dateOfBirth} />}
         </div>
         <div>
           <FieldLabel required>Nationality</FieldLabel>
@@ -598,6 +727,21 @@ export default function PassengersPage() {
   const selectedFare = useCheckoutStore(s => s.selectedFare);
   const sessionId = useCheckoutStore(s => s.sessionId);
   const updatePassenger = useCheckoutStore(s => s.updatePassenger);
+  const sourceFlight = useCheckoutStore(s => s.sourceFlight);
+  const sourceRoundTrip = useCheckoutStore(s => s.sourceRoundTrip);
+
+  // Get the departure date of the first flight segment
+  const departureDate = (() => {
+    // One-way: use sourceFlight.segments
+    if (sourceFlight?.segments && sourceFlight.segments.length > 0) {
+      return sourceFlight.segments[0].departure.time.split('T')[0];
+    }
+    // Round-trip: use outboundJourney.departureTime
+    if (sourceRoundTrip?.outboundJourney?.departureTime) {
+      return sourceRoundTrip.outboundJourney.departureTime.split('T')[0];
+    }
+    return undefined;
+  })();
 
   const [touched, setTouched] = useState(false);
   const [submitting, setSubmitting] = useState(false);
@@ -609,8 +753,8 @@ export default function PassengersPage() {
     }
   }, [selectedFare, sessionId, router]);
 
-  const allErrors = passengers.map(p => validatePassenger(p));
-  const valid = isFormValid(passengers);
+  const allErrors = passengers.map(p => validatePassenger(p, departureDate));
+  const valid = isFormValid(passengers, departureDate);
 
   const handleChange = useCallback(
     (paxId: string, field: keyof PassengerInfo, value: string) => {
@@ -656,6 +800,19 @@ export default function PassengersPage() {
           </p>
         </div>
 
+        {/* Age categorization info */}
+        {departureDate && (
+          <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-500" />
+            <div>
+              <p className="font-semibold">Age is verified based on travel date: {new Date(departureDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              <p className="text-xs text-blue-600 mt-1">
+                Adult: 12+ years &bull; Child: 2–11 years &bull; Infant: under 2 years (age at departure)
+              </p>
+            </div>
+          </div>
+        )}
+
         {/* Primary Contact (passengers[0]) */}
         {primaryPax && (
           <PrimaryContactBox
@@ -675,6 +832,7 @@ export default function PassengersPage() {
             errors={allErrors[i] ?? {}}
             touched={touched}
             onChange={(field, value) => handleChange(pax.id, field, value)}
+            departureDate={departureDate}
           />
         ))}
 

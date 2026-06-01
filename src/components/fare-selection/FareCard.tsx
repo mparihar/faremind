@@ -1,7 +1,7 @@
 'use client';
 
 import type { FareOption } from '@/lib/fare-types';
-import { Shield, Check, X, Minus, Zap, DollarSign, Repeat2, Star } from 'lucide-react';
+import { Shield, Check, X, Minus, Zap, DollarSign, Repeat2, Star, Armchair } from 'lucide-react';
 
 interface FareCardProps {
   fare: FareOption;
@@ -11,6 +11,8 @@ interface FareCardProps {
   onSelect: () => void;
   onToggleProtection: () => void;
   currency: string;
+  travelerCount: number;
+  passengerBreakdown?: { adults: number; children: number; infants: number };
 }
 
 const BADGE_CONFIG = {
@@ -19,6 +21,7 @@ const BADGE_CONFIG = {
   ai_pick:         { label: 'AI Best Choice',   color: 'bg-[#1ABC9C]/15 text-[#1ABC9C]',  icon: Zap },
   most_flexible:   { label: 'Best Flexibility', color: 'bg-purple-100 text-purple-700',   icon: Repeat2 },
   premium_upgrade: { label: 'Premium Upgrade',  color: 'bg-amber-100 text-amber-700',     icon: Star },
+  best_comfort:    { label: 'Best Comfort',     color: 'bg-sky-100 text-sky-700',         icon: Armchair },
 };
 
 const CABIN_RING: Record<string, string> = {
@@ -58,14 +61,37 @@ function FeatureRow({ status, label }: Feature) {
 // ─── Main component ───────────────────────────────────────────────────────────
 
 export default function FareCard({
-  fare, selected, priceProtection, protectionFee, onSelect, onToggleProtection, currency,
+  fare,
+  selected,
+  priceProtection,
+  protectionFee,
+  onSelect,
+  onToggleProtection,
+  currency,
+  travelerCount,
+  passengerBreakdown,
 }: FareCardProps) {
   const border     = CABIN_BORDER[fare.cabin] || 'border-slate-200';
   const ring       = CABIN_RING[fare.cabin]   || 'ring-[#1ABC9C]/40';
-  const grandTotal = fare.totalPrice + (selected && priceProtection ? protectionFee : 0);
 
-  const displayBadge = fare.aiBadges.find(b => b !== 'ai_pick') ?? fare.aiBadges[0];
-  const badgeCfg     = displayBadge ? BADGE_CONFIG[displayBadge] : null;
+  // Compute the correct total for all passengers
+  // Children get 75% of the adult fare (matching buildLocalPricing)
+  const perPersonBase = fare.basePrice;
+  let allPassengerFareTotal: number;
+  if (passengerBreakdown && travelerCount > 1) {
+    const { adults, children: childCount, infants } = passengerBreakdown;
+    const adultTotal = adults * perPersonBase;
+    const childTotal = childCount * Math.round(perPersonBase * 0.75);
+    const infantTotal = infants * perPersonBase; // infants priced same as adults in buildLocalPricing
+    const subtotal = adultTotal + childTotal + infantTotal;
+    const serviceFee = Math.round(perPersonBase * travelerCount * 0.015);
+    allPassengerFareTotal = subtotal + serviceFee;
+  } else {
+    allPassengerFareTotal = fare.totalPrice;
+  }
+  const totalProtectionFee = protectionFee * travelerCount;
+  const grandTotal = allPassengerFareTotal + (selected && priceProtection ? totalProtectionFee : 0);
+
 
   const features: Feature[] = [
     {
@@ -119,16 +145,21 @@ export default function FareCard({
       {/* ── Card body ── */}
       <div className="p-5 flex flex-col flex-1 gap-4">
 
-        {/* Badge */}
-        <div className="min-h-[24px]">
-          {badgeCfg && (() => {
-            const Icon = badgeCfg.icon;
-            return (
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${badgeCfg.color}`}>
-                <Icon size={10} strokeWidth={2.5} /> {badgeCfg.label}
-              </span>
-            );
-          })()}
+        {/* Badge(s) */}
+        <div className="min-h-[24px] flex flex-wrap gap-1.5">
+          {fare.aiBadges
+            .filter(b => b !== 'ai_pick') // ai_pick is duplicate of best_value
+            .slice(0, 2) // show up to 2 badges
+            .map(badge => {
+              const cfg = BADGE_CONFIG[badge];
+              if (!cfg) return null;
+              const Icon = cfg.icon;
+              return (
+                <span key={badge} className={`inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold ${cfg.color}`}>
+                  <Icon size={10} strokeWidth={2.5} /> {cfg.label}
+                </span>
+              );
+            })}
         </div>
 
         {/* Fare name + price */}
@@ -136,7 +167,9 @@ export default function FareCard({
           <h3 className="text-[15px] font-extrabold text-slate-900 leading-tight">{fare.name}</h3>
           <div className="mt-1.5 flex items-baseline gap-1.5">
             <span className="text-[26px] font-black text-[#F97316] leading-none">{fmtPrice(grandTotal, currency)}</span>
-            <span className="text-xs text-slate-400">/ traveler</span>
+            <span className="text-xs text-slate-400">
+              Total
+            </span>
           </div>
           {selected && priceProtection && (
             <p className="text-[11px] text-[#1ABC9C] font-semibold mt-0.5">incl. price protection</p>
@@ -194,11 +227,12 @@ export default function FareCard({
                 <Shield size={15} className="text-[#1ABC9C] shrink-0" />
                 <div className="min-w-0">
                   <p className="text-[12px] font-bold text-slate-800">Price Protection</p>
-                  <p className="text-[11px] text-slate-500 leading-tight">80% refund if price drops</p>
+                  <p className="text-[11px] text-slate-500 leading-tight">Refund 80% of any eligible fare decrease after booking.</p>
                 </div>
               </div>
               <div className="text-right shrink-0">
                 <p className="text-[13px] font-bold text-slate-900">+{fmtPrice(protectionFee, currency)}</p>
+                <p className="text-[9px] text-slate-400">per traveler</p>
                 <button
                   onClick={onToggleProtection}
                   className={`mt-1 px-3 py-1 rounded-lg text-[11px] font-bold transition-all ${

@@ -34,6 +34,8 @@ function getBadge(fare: FareOption, index: number, total: number): { label: stri
     return { label: 'Lowest price', color: 'bg-blue-50 text-blue-600 border-blue-200' };
   if (fare.aiBadges.includes('ai_pick') || fare.aiBadges.includes('best_value'))
     return { label: 'Best value', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' };
+  if (fare.aiBadges.includes('best_comfort'))
+    return { label: 'Best Comfort', color: 'bg-sky-50 text-sky-600 border-sky-200' };
   if (fare.aiBadges.includes('most_flexible') || index === total - 1)
     return { label: 'Most flexible', color: 'bg-amber-50 text-amber-600 border-amber-200' };
   return { label: 'Best value', color: 'bg-emerald-50 text-emerald-600 border-emerald-200' };

@@ -227,7 +227,7 @@ export default function FlexibleDateStrip({
       <div className="flex items-center gap-1.5 mb-2.5">
         <CalendarDays className="w-3.5 h-3.5 text-slate-400" />
         <p className="text-[10px] font-black uppercase tracking-widest text-slate-400">Flexible dates</p>
-        <span className="text-[9px] text-slate-300 font-medium">· adjust departure or return ±3 days</span>
+        <span className="text-[9px] text-black font-medium">· adjust departure or return ±3 days</span>
         <span className="ml-auto flex items-center gap-1 text-[9px] text-[#1ABC9C] font-semibold">
           <ShieldCheck className="w-3 h-3" /> Live prices
         </span>

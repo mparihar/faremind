@@ -113,6 +113,9 @@ interface CheckoutStore {
   priceProtection: boolean;
   travelInsurance: boolean;
 
+  // Computed fees from fee engine (cached from /api/fees/compute)
+  computedFees: { serviceFee: number; markupFee: number; protectionFee: number; protectionFeeTotal: number; insuranceFee: number; insuranceFeeTotal: number } | null;
+
   // Step 5 — Review
   acceptedTerms: boolean;
 
@@ -143,6 +146,7 @@ interface CheckoutStore {
     sourceFlight: UnifiedFlight | null,
     sourceRoundTrip: RoundTripOption | null,
     travelerCount: number,
+    passengerBreakdown?: { adults: number; children: number; infants: number },
   ) => void;
 
   setPassengers: (passengers: PassengerInfo[]) => void;
@@ -157,6 +161,7 @@ interface CheckoutStore {
   setExtraBags: (n: number) => void;
   toggleProtection: () => void;
   toggleInsurance: () => void;
+  setComputedFees: (fees: CheckoutStore['computedFees']) => void;
 
   setAcceptedTerms: (v: boolean) => void;
   setPricing: (p: PricingBreakdown) => void;
@@ -193,7 +198,7 @@ const INITIAL: Omit<CheckoutStore,
   'initFromStores' | 'setSessionId' | 'setPassengers' | 'updatePassenger' |
   'setSeatSelections' | 'updateSeatSelection' |
   'setMealSelections' | 'updateMealSelection' |
-  'setExtraBags' | 'toggleProtection' | 'toggleInsurance' |
+  'setExtraBags' | 'toggleProtection' | 'toggleInsurance' | 'setComputedFees' |
   'setAcceptedTerms' | 'setPricing' | 'setPaymentIntent' |
   'setPaymentStatus' | 'setPaymentError' | 'setConfirmation' |
   'setError' | 'reset'
@@ -211,6 +216,7 @@ const INITIAL: Omit<CheckoutStore,
   extraBags: 0,
   priceProtection: false,
   travelInsurance: false,
+  computedFees: null,
   acceptedTerms: false,
   pricing: null,
   paymentIntentId: null,
@@ -225,15 +231,26 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
 
   setSessionId: (sessionId) => set({ sessionId }),
 
-  initFromStores: (selectedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount) => {
+  initFromStores: (selectedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown) => {
     const count  = Math.max(1, travelerCount);
-    const passengers = Array.from({ length: count }, (_, i) => makePassenger(i));
+    // Build passengers with correct types based on breakdown
+    let passengers: PassengerInfo[];
+    if (passengerBreakdown) {
+      const { adults, children: childCount, infants } = passengerBreakdown;
+      passengers = [];
+      let idx = 0;
+      for (let i = 0; i < Math.max(1, adults); i++) passengers.push(makePassenger(idx++, 'adult'));
+      for (let i = 0; i < childCount; i++) passengers.push(makePassenger(idx++, 'child'));
+      for (let i = 0; i < infants; i++) passengers.push(makePassenger(idx++, 'infant'));
+    } else {
+      passengers = Array.from({ length: count }, (_, i) => makePassenger(i));
+    }
     set({
       selectedFare,
       fareOption,
       sourceFlight,
       sourceRoundTrip,
-      travelerCount: count,
+      travelerCount: passengers.length,
       currency: selectedFare?.currency ?? 'USD',
       priceProtection: selectedFare?.priceProtection ?? false,
       passengers,
@@ -267,6 +284,7 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
   setExtraBags:     (extraBags)     => set({ extraBags }),
   toggleProtection: ()              => set((s) => ({ priceProtection: !s.priceProtection })),
   toggleInsurance:  ()              => set((s) => ({ travelInsurance: !s.travelInsurance })),
+  setComputedFees:  (computedFees)  => set({ computedFees }),
 
   setAcceptedTerms:  (acceptedTerms)  => set({ acceptedTerms }),
   setPricing:        (pricing)        => set({ pricing }),
@@ -282,7 +300,7 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
 // ─── Computed helpers ─────────────────────────────────────────────────────────
 
 export function buildLocalPricing(store: CheckoutStore): PricingBreakdown {
-  const { selectedFare, passengers, extraBags, priceProtection, travelInsurance, seatSelections, mealSelections, currency } = store;
+  const { selectedFare, passengers, extraBags, priceProtection, travelInsurance, seatSelections, mealSelections, currency, computedFees } = store;
   const perPersonBase = selectedFare?.basePrice ?? 0;
   const taxRate = 0.156; // ~15.6% taxes estimate
 
@@ -295,12 +313,26 @@ export function buildLocalPricing(store: CheckoutStore): PricingBreakdown {
   const seatFees = seatSelections.reduce((s, x) => s + (x.priceUsd ?? 0), 0);
   const mealFees = mealSelections.reduce((s, x) => s + (x.priceUsd ?? 0), 0);
   const baggageFees = extraBags * 35;
-  const rawProtectionFee = selectedFare?.protectionFee && selectedFare.protectionFee > 0
-    ? selectedFare.protectionFee
-    : Math.min(Math.max(Math.round((selectedFare?.basePrice ?? 0) * 0.06), 49), 399);
-  const protectionFee  = priceProtection  ? rawProtectionFee : 0;
-  const insuranceFee   = travelInsurance  ? Math.round(perPersonBase * passengers.length * 0.04) : 0;
-  const serviceFee     = Math.round(perPersonBase * passengers.length * 0.015);
+
+  // Use admin-configured fees from the fee engine if available, otherwise fallback
+  let serviceFee: number;
+  let protectionFee: number;
+  let insuranceFee: number;
+
+  if (computedFees) {
+    // DB-driven fees from /api/fees/compute
+    serviceFee = computedFees.serviceFee;
+    protectionFee = priceProtection ? computedFees.protectionFeeTotal : 0;
+    insuranceFee = travelInsurance ? computedFees.insuranceFeeTotal : 0;
+  } else {
+    // Hardcoded fallback (backward compatibility)
+    serviceFee = Math.round(perPersonBase * passengers.length * 0.015);
+    const perPersonProtection = selectedFare?.protectionFee && selectedFare.protectionFee > 0
+      ? selectedFare.protectionFee
+      : Math.min(Math.max(Math.round((selectedFare?.basePrice ?? 0) * 0.06), 49), 399);
+    protectionFee = priceProtection ? perPersonProtection * passengers.length : 0;
+    insuranceFee = travelInsurance ? Math.round(perPersonBase * passengers.length * 0.04) : 0;
+  }
 
   const subtotal = perPassenger.reduce((s, p) => s + p.subtotal, 0)
     + seatFees + mealFees + baggageFees + protectionFee + insuranceFee + serviceFee;

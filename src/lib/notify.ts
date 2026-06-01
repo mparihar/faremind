@@ -135,7 +135,8 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
           </p>
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin-bottom:24px;">
             <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
-              <tr><td style="padding:6px 0;color:#64748b;">Booking Ref</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${ref}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">FareMind Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${String(d.booking_reference || ref)}</td></tr>
+              ${(d.airline_pnr || d.pnr) ? `<tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#1abc9c;">${String(d.airline_pnr || d.pnr)}</td></tr>` : ''}
               <tr><td style="padding:6px 0;color:#64748b;">Route</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${route}</td></tr>
               ${amount ? `<tr><td style="padding:6px 0;color:#64748b;">Total Charged</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:18px;color:#1abc9c;">${amount}</td></tr>` : ''}
             </table>
@@ -194,10 +195,48 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
       return {
         subject: `Payment confirmed – ${ref}`,
         html: wrap('Payment Confirmed', `
-          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Payment Confirmed ✅</h2>
-          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${name}, we've received your payment of <strong style="color:#1abc9c">${amount}</strong> for booking <strong>${ref}</strong>.</p>
+          <div style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f3460 100%);border-radius:12px;padding:32px 36px;text-align:center;position:relative;overflow:hidden;margin-bottom:24px;">
+            <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:4px 12px;margin-bottom:12px;">
+              <div style="width:6px;height:6px;border-radius:50%;background:#10b981;"></div>
+              <span style="font-size:11px;font-weight:700;color:#10b981;letter-spacing:0.5px;">Payment Confirmed</span>
+            </div>
+            <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:8px;">FAREMIND BOOKING REFERENCE</div>
+            <div style="font-family:'Courier New',monospace;font-size:32px;font-weight:900;letter-spacing:8px;color:#fff;">${ref}</div>
+            <div style="margin-top:14px;">
+              <div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;">
+                <span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span>
+                <span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${String(d.airline_pnr || d.pnr || '')}</span>
+              </div>
+            </div>
+          </div>
+
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">Hello ${name},</p>
+          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">We have successfully received your payment for booking <strong style="color:#0f172a">${ref}</strong>.</p>
+          
+          <h3 style="margin:0 0 12px;color:#0f172a;font-size:16px;font-weight:700;">Payment Details</h3>
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:24px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+              <tr><td style="padding:6px 0;color:#64748b;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:18px;color:#1abc9c;">${amount}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">FareMind Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${ref}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-family:'Courier New',monospace;font-weight:700;color:#1abc9c;letter-spacing:1px;">${String(d.airline_pnr || d.pnr || '')}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">Payment Status</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#10b981;">Confirmed</td></tr>
+            </table>
+          </div>
+          
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">Your booking remains active and no further action is required at this time.</p>
+          
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">You can view your itinerary, manage your booking, download travel documents, or make eligible changes through your <a href="${process.env.APP_URL || 'https://faremind.ai'}/manage-booking" style="color:#1abc9c;text-decoration:none;">FareMind account</a>.</p>
+          
+          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">If you did not authorize this payment, please contact FareMind Support immediately.</p>
+          
+          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">Thank you for choosing FareMind.</p>
+          
+          <p style="margin:0;color:#0f172a;font-size:14px;font-weight:600;">FareMind</p>
+          <p style="margin:4px 0;color:#1abc9c;font-size:12px;font-weight:600;">Your Personal Travel Consultant</p>
+          <p style="margin:4px 0 0;font-size:12px;"><a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a></p>
+          <p style="margin:4px 0 0;font-size:12px;"><a href="http://www.faremind.ai" style="color:#1abc9c;text-decoration:none;">www.faremind.ai</a></p>
         `),
-        text: `Hi ${name}, payment of ${amount} confirmed for booking ${ref}.`,
+        text: `Hello ${name},\n\nWe have successfully received your payment of ${amount} for booking ${ref}.\n\nPayment Details\nAmount Paid: ${amount}\nFareMind Booking Reference: ${ref}\nAirline PNR: ${String(d.airline_pnr || d.pnr || '')}\nPayment Status: Confirmed\n\nYour booking remains active and no further action is required at this time.\n\nThank you for choosing FareMind.`,
       };
 
     case 'PAYMENT_FAILED':

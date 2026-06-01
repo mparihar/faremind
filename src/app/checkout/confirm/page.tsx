@@ -657,8 +657,8 @@ export default function ConfirmPage() {
                   <div className="min-w-0">
                     <p className="text-sm font-bold text-slate-900 mb-1">Price monitoring is now active</p>
                     <p className="text-xs text-slate-600 leading-relaxed">
-                      We&apos;ll notify you if the price drops after booking and refund <strong>80%</strong> of the
-                      difference as FareMind credit. Check your dashboard to view price history.
+                      Refund <strong>80%</strong> of any eligible fare decrease after booking,
+                      credited as FareMind credit. Check your dashboard to view price history.
                     </p>
                   </div>
                 </div>

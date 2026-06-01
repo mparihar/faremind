@@ -130,10 +130,12 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
   const effectiveHoveredId = props.hoveredFlightId !== undefined ? props.hoveredFlightId : internalHoveredId;
   const mapRef = useRef<any>(null);
 
-  const { geojsonData, connectionAirports, outFlightInfo, retFlightInfo } = useMemo(() => {
+  const { geojsonData, connectionAirports, outFlightInfo, retFlightInfo, arcMidpoints } = useMemo(() => {
     const features: any[] = [];
     // Track direction for each connection airport so markers can be color-coded
     const connDirMap: Record<string, 'outbound' | 'return'> = {};
+    // Midpoints with bearing for directional arrows
+    const arcMidpoints: { lng: number; lat: number; bearing: number; color: string; flightId: string }[] = [];
 
     // Flight info to embed into origin/destination pins (from first item)
     let outFlightInfo: { duration: string; price: number; flightCode: string; stops: number } | null = null as { duration: string; price: number; flightCode: string; stops: number } | null;
@@ -248,6 +250,15 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
             },
             geometry: outArc,
           });
+          // Compute midpoint arrow for this arc
+          try {
+            const arcLine = turf.lineString(outArc.coordinates);
+            const len = turf.length(arcLine);
+            const mid = turf.along(arcLine, len / 2);
+            const midPlus = turf.along(arcLine, Math.min(len, len / 2 + 10));
+            const b = turf.bearing(mid, midPlus);
+            arcMidpoints.push({ lng: mid.geometry.coordinates[0], lat: mid.geometry.coordinates[1], bearing: b, color: outArcColor, flightId: id });
+          } catch { /* skip */ }
         }
       }
 
@@ -269,6 +280,15 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
               },
               geometry: retArc,
             });
+            // Compute midpoint arrow for return arc
+            try {
+              const arcLine = turf.lineString(retArc.coordinates);
+              const len = turf.length(arcLine);
+              const mid = turf.along(arcLine, len / 2);
+              const midPlus = turf.along(arcLine, Math.min(len, len / 2 + 10));
+              const b = turf.bearing(mid, midPlus);
+              arcMidpoints.push({ lng: mid.geometry.coordinates[0], lat: mid.geometry.coordinates[1], bearing: b, color: retArcColor, flightId: id });
+            } catch { /* skip */ }
           }
         }
       }
@@ -279,6 +299,7 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
       connectionAirports: Object.entries(connDirMap).map(([code, dir]) => ({ code, direction: dir })),
       outFlightInfo,
       retFlightInfo,
+      arcMidpoints,
     };
   }, [flights, roundTrips, tripType, origin, destination]);
 
@@ -292,26 +313,41 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
         if (!map) return;
         
         const lats = [originCoords[1], destCoords[1]];
-        const lngs = [originCoords[0], destCoords[0]];
-        const west = Math.min(...lngs);
-        const east = Math.max(...lngs);
         const south = Math.min(...lats);
         const north = Math.max(...lats);
 
-        // Tighter framing: small margin so the trip corridor fills the viewport
-        const lngSpan = Math.abs(east - west);
+        // Handle antimeridian: if the "naive" east-west span > 180°,
+        // the shorter route goes the other way around the globe.
+        let west = Math.min(originCoords[0], destCoords[0]);
+        let east = Math.max(originCoords[0], destCoords[0]);
+        const naiveSpan = east - west;
+
+        if (naiveSpan > 180) {
+          // Swap: the "east" side is actually the point with the smaller longitude,
+          // shifted by +360 so fitBounds wraps across the antimeridian.
+          const newWest = east;         // the larger lng becomes the western edge
+          const newEast = west + 360;   // the smaller lng wraps to the other side
+          west = newWest;
+          east = newEast;
+        }
+
+        const lngSpan = east - west;
         const latSpan = Math.abs(north - south);
-        const margin = Math.max(lngSpan, latSpan) * 0.12; // 12% breathing room
-        const minMargin = 2; // at least 2° so very close airports still look good
+        const margin = Math.max(lngSpan, latSpan) * 0.55; // 55% breathing room for a zoomed-out world view
+        const minMargin = 12;
         const m = Math.max(margin, minMargin);
 
+        // Clamp to valid geographic ranges
+        const bSouth = Math.max(-85, south - m * 0.6);
+        const bNorth = Math.min(85, north + m * 1.0);
+        const bWest = west - m;
+        const bEast = east + m;
+
         map.fitBounds(
-          [[west - m, south - m * 0.5], [east + m, north + m * 0.8]],
+          [[bWest, bSouth], [bEast, bNorth]],
           {
-            // Top padding is large because pins (anchor=bottom) extend ~160px upward
-            // Left/right padding is kept small so both pins fit in the narrow map panel
-            padding: { top: 190, bottom: 30, left: 30, right: 30 },
-            maxZoom: 5,
+            padding: { top: 80, bottom: 40, left: 210, right: 60 },
+            maxZoom: 1.2,
             duration: 0,
           }
         );
@@ -369,7 +405,7 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
     <div style={{ width: '100%', height: '100%' }}>
       <Map
         ref={mapRef}
-        initialViewState={{ longitude: 0, latitude: 20, zoom: 1.5 }}
+        initialViewState={{ longitude: 0, latitude: 20, zoom: 1 }}
         mapStyle="https://basemaps.cartocdn.com/gl/voyager-gl-style/style.json"
         interactiveLayerIds={['arcs-hover-target']}
         onMouseMove={onMouseMove}
@@ -448,6 +484,27 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
           />
         </Source>
 
+        {/* Directional arrows at midpoint of each route arc */}
+        {arcMidpoints.map((mp, i) => (
+          <Marker key={`arrow-${i}`} longitude={mp.lng} latitude={mp.lat} anchor="center">
+            <div
+              style={{
+                transform: `rotate(${mp.bearing - 90}deg)`,
+                color: mp.color,
+                fontSize: '16px',
+                fontWeight: 900,
+                lineHeight: 1,
+                textShadow: '0 0 4px rgba(255,255,255,0.9), 0 0 2px rgba(255,255,255,0.7)',
+                opacity: effectiveHoveredId && effectiveHoveredId !== mp.flightId ? 0.15 : 1,
+                transition: 'opacity 0.15s',
+                pointerEvents: 'none',
+              }}
+            >
+              ▶
+            </div>
+          </Marker>
+        ))}
+
         {/* Origin pin (dark navy) — with outbound flight info always embedded */}
         {(() => {
           const originMeta = getAirportMeta(origin);
@@ -455,85 +512,85 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
           return (
             <>
               <Marker longitude={getAirportCoords(origin)[0]} latitude={getAirportCoords(origin)[1]} anchor="bottom">
-                <div className="flex flex-col items-center" style={{ filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.4))', zIndex: 50 }}>
-                  <div className="relative text-white text-center" style={{ background: '#0F172A', borderRadius: '18px', padding: '12px 12px 10px', minWidth: '110px' }}>
+                <div className="flex flex-col items-center" style={{ filter: 'drop-shadow(0 3px 12px rgba(0,0,0,0.35))', zIndex: 50 }}>
+                  <div className="relative text-white text-center" style={{ background: '#0F172A', borderRadius: '14px', padding: '8px 10px 7px', minWidth: '90px' }}>
                     {/* Top accent ring */}
-                    <div className="absolute top-[-8px] left-1/2 -translate-x-1/2 w-[16px] h-[16px] rounded-full border-[3px] border-white/90" style={{ background: '#0F172A' }} />
-                    <p className="text-[17px] font-black leading-none tracking-[0.08em]">{origin}</p>
-                    {originMeta.city && <p className="text-[12px] font-semibold opacity-90 mt-1 leading-tight">{originMeta.city}</p>}
-                    {originMeta.location && <p className="text-[10px] font-medium opacity-55 leading-tight">{originMeta.location}</p>}
+                    <div className="absolute top-[-6px] left-1/2 -translate-x-1/2 w-[12px] h-[12px] rounded-full border-[2.5px] border-white/90" style={{ background: '#0F172A' }} />
+                    <p className="text-[13px] font-black leading-none tracking-[0.08em]">{origin}</p>
+                    {originMeta.city && <p className="text-[9px] font-semibold opacity-90 mt-0.5 leading-tight">{originMeta.city}</p>}
+                    {originMeta.location && <p className="text-[8px] font-medium opacity-55 leading-tight">{originMeta.location}</p>}
                     {/* Outbound flight info — always visible */}
-                    <div className="mt-2 pt-2 border-t border-white/15">
+                    <div className="mt-1.5 pt-1.5 border-t border-white/15">
                       {outFlightInfo ? (
                         <>
-                          <div className="flex items-center justify-center gap-1.5 mb-1">
-                            <span className="inline-flex items-center px-2 py-[2px] rounded-full text-[8px] font-black uppercase tracking-wider bg-white/15">
+                          <div className="flex items-center justify-center gap-1 mb-0.5">
+                            <span className="inline-flex items-center px-1.5 py-[1px] rounded-full text-[6px] font-black uppercase tracking-wider bg-white/15">
                               ✈ OUT
                             </span>
-                            <span className="text-[13px] font-extrabold tracking-wide">{outFlightInfo.duration}</span>
+                            <span className="text-[10px] font-extrabold tracking-wide">{outFlightInfo.duration}</span>
                           </div>
-                          <div className="flex items-center justify-center gap-1.5">
-                            <span className="text-[12px] font-black text-emerald-400">${outFlightInfo.price}</span>
-                            <span className="text-[9px] font-mono opacity-50">{outFlightInfo.flightCode}</span>
+                          <div className="flex items-center justify-center gap-1">
+                            <span className="text-[10px] font-black text-emerald-400">${outFlightInfo.price}</span>
+                            <span className="text-[7px] font-mono opacity-50">{outFlightInfo.flightCode}</span>
                           </div>
-                          <p className="text-[9px] opacity-50 mt-0.5">
+                          <p className="text-[7px] opacity-50 mt-0.5">
                             {outFlightInfo.stops === 0 ? 'Non-stop' : `${outFlightInfo.stops} stop${outFlightInfo.stops > 1 ? 's' : ''}`}
                           </p>
                         </>
                       ) : (
-                        <div className="flex items-center justify-center gap-1.5">
-                          <span className="inline-flex items-center px-2 py-[2px] rounded-full text-[8px] font-black uppercase tracking-wider bg-white/15">
+                        <div className="flex items-center justify-center gap-1">
+                          <span className="inline-flex items-center px-1.5 py-[1px] rounded-full text-[6px] font-black uppercase tracking-wider bg-white/15">
                             ✈ OUT
                           </span>
-                          <span className="text-[11px] font-semibold opacity-50">Loading…</span>
+                          <span className="text-[9px] font-semibold opacity-50">Loading…</span>
                         </div>
                       )}
                     </div>
                   </div>
                   {/* Pointer triangle */}
-                  <div style={{ width: 0, height: 0, borderLeft: '11px solid transparent', borderRight: '11px solid transparent', borderTop: '13px solid #0F172A', marginTop: '-1px' }} />
+                  <div style={{ width: 0, height: 0, borderLeft: '8px solid transparent', borderRight: '8px solid transparent', borderTop: '10px solid #0F172A', marginTop: '-1px' }} />
                   {/* Ground dot */}
-                  <div className="w-3.5 h-3.5 rounded-full border-[2.5px] border-white" style={{ background: '#0F172A', marginTop: '-2px' }} />
+                  <div className="w-2.5 h-2.5 rounded-full border-[2px] border-white" style={{ background: '#0F172A', marginTop: '-1px' }} />
                 </div>
               </Marker>
 
               {/* Destination pin (orange) — with return flight info always embedded */}
               <Marker longitude={getAirportCoords(destination)[0]} latitude={getAirportCoords(destination)[1]} anchor="bottom">
-                <div className="flex flex-col items-center" style={{ filter: 'drop-shadow(0 4px 16px rgba(0,0,0,0.4))', zIndex: 50 }}>
-                  <div className="relative text-white text-center" style={{ background: '#F97316', borderRadius: '18px', padding: '12px 16px 10px', minWidth: '140px' }}>
-                    <div className="absolute top-[-8px] left-1/2 -translate-x-1/2 w-[16px] h-[16px] rounded-full border-[3px] border-white/90" style={{ background: '#F97316' }} />
-                    <p className="text-[17px] font-black leading-none tracking-[0.08em]">{destination}</p>
-                    {destMeta.city && <p className="text-[12px] font-semibold opacity-95 mt-1 leading-tight">{destMeta.city}</p>}
-                    {destMeta.location && <p className="text-[10px] font-medium opacity-60 leading-tight">{destMeta.location}</p>}
+                <div className="flex flex-col items-center" style={{ filter: 'drop-shadow(0 3px 12px rgba(0,0,0,0.35))', zIndex: 50 }}>
+                  <div className="relative text-white text-center" style={{ background: '#F97316', borderRadius: '14px', padding: '8px 10px 7px', minWidth: '90px' }}>
+                    <div className="absolute top-[-6px] left-1/2 -translate-x-1/2 w-[12px] h-[12px] rounded-full border-[2.5px] border-white/90" style={{ background: '#F97316' }} />
+                    <p className="text-[13px] font-black leading-none tracking-[0.08em]">{destination}</p>
+                    {destMeta.city && <p className="text-[9px] font-semibold opacity-95 mt-0.5 leading-tight">{destMeta.city}</p>}
+                    {destMeta.location && <p className="text-[8px] font-medium opacity-60 leading-tight">{destMeta.location}</p>}
                     {/* Return flight info — always visible */}
-                    <div className="mt-2 pt-2 border-t border-white/20">
+                    <div className="mt-1.5 pt-1.5 border-t border-white/20">
                       {retFlightInfo ? (
                         <>
-                          <div className="flex items-center justify-center gap-1.5 mb-1">
-                            <span className="inline-flex items-center px-2 py-[2px] rounded-full text-[8px] font-black uppercase tracking-wider bg-black/20">
+                          <div className="flex items-center justify-center gap-1 mb-0.5">
+                            <span className="inline-flex items-center px-1.5 py-[1px] rounded-full text-[6px] font-black uppercase tracking-wider bg-black/20">
                               ✈ RET
                             </span>
-                            <span className="text-[13px] font-extrabold tracking-wide">{retFlightInfo.duration}</span>
+                            <span className="text-[10px] font-extrabold tracking-wide">{retFlightInfo.duration}</span>
                           </div>
-                          <div className="flex items-center justify-center gap-1.5">
-                            <span className="text-[9px] font-mono opacity-70">{retFlightInfo.flightCode}</span>
+                          <div className="flex items-center justify-center gap-1">
+                            <span className="text-[7px] font-mono opacity-70">{retFlightInfo.flightCode}</span>
                           </div>
-                          <p className="text-[9px] opacity-60 mt-0.5">
+                          <p className="text-[7px] opacity-60 mt-0.5">
                             {retFlightInfo.stops === 0 ? 'Non-stop' : `${retFlightInfo.stops} stop${retFlightInfo.stops > 1 ? 's' : ''}`}
                           </p>
                         </>
                       ) : (
-                        <div className="flex items-center justify-center gap-1.5">
-                          <span className="inline-flex items-center px-2 py-[2px] rounded-full text-[8px] font-black uppercase tracking-wider bg-black/20">
+                        <div className="flex items-center justify-center gap-1">
+                          <span className="inline-flex items-center px-1.5 py-[1px] rounded-full text-[6px] font-black uppercase tracking-wider bg-black/20">
                             ✈ RET
                           </span>
-                          <span className="text-[11px] font-semibold opacity-50">Loading…</span>
+                          <span className="text-[9px] font-semibold opacity-50">Loading…</span>
                         </div>
                       )}
                     </div>
                   </div>
-                  <div style={{ width: 0, height: 0, borderLeft: '11px solid transparent', borderRight: '11px solid transparent', borderTop: '13px solid #F97316', marginTop: '-1px' }} />
-                  <div className="w-3.5 h-3.5 rounded-full border-[2.5px] border-white" style={{ background: '#F97316', marginTop: '-2px' }} />
+                  <div style={{ width: 0, height: 0, borderLeft: '8px solid transparent', borderRight: '8px solid transparent', borderTop: '10px solid #F97316', marginTop: '-1px' }} />
+                  <div className="w-2.5 h-2.5 rounded-full border-[2px] border-white" style={{ background: '#F97316', marginTop: '-1px' }} />
                 </div>
               </Marker>
             </>

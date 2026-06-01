@@ -21,7 +21,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'summary',    label: 'Booking Summary',    icon: Hash },
   { id: 'journey',    label: 'Journey Details',    icon: Plane },
   { id: 'passengers', label: 'Passengers',         icon: User },
-  { id: 'tickets',    label: 'Tickets / PNRs',     icon: Ticket },
+  { id: 'tickets',    label: 'Tickets / AIRLINE PNRs',     icon: Ticket },
   { id: 'seats',      label: 'Seats',              icon: Armchair },
   { id: 'meals',      label: 'Meals',              icon: UtensilsCrossed },
   { id: 'addons',     label: 'Add-ons',            icon: Package },
@@ -72,7 +72,7 @@ function fmtDuration(mins: number) {
   return `${h}h ${m}m`;
 }
 
-function fmtDate(dt: string | null | undefined, fmt = 'dd MMM yyyy, HH:mm') {
+function fmtDate(dt: string | null | undefined, fmt = 'dd MMM yyyy, hh:mm a') {
   if (!dt) return '—';
   try { return format(new Date(dt), fmt); } catch { return '—'; }
 }
@@ -137,7 +137,7 @@ function SegmentCard({ seg, index, total }: { seg: any; index: number; total: nu
             {seg.originTerminal && (
               <p className="text-slate-500 text-xs">Terminal {seg.originTerminal}{seg.originGate ? ` · Gate ${seg.originGate}` : ''}</p>
             )}
-            <p className="text-white text-sm font-bold mt-2">{fmtDate(seg.departureDateTime, 'HH:mm')}</p>
+            <p className="text-white text-sm font-bold mt-2">{fmtDate(seg.departureDateTime, 'hh:mm a')}</p>
             <p className="text-slate-400 text-xs">{fmtDate(seg.departureDateTime, 'EEE dd MMM yyyy')}</p>
           </div>
           <div className="flex flex-col items-center gap-1">
@@ -155,7 +155,7 @@ function SegmentCard({ seg, index, total }: { seg: any; index: number; total: nu
             {seg.destinationTerminal && (
               <p className="text-slate-500 text-xs">Terminal {seg.destinationTerminal}{seg.destinationGate ? ` · Gate ${seg.destinationGate}` : ''}</p>
             )}
-            <p className="text-white text-sm font-bold mt-2">{fmtDate(seg.arrivalDateTime, 'HH:mm')}</p>
+            <p className="text-white text-sm font-bold mt-2">{fmtDate(seg.arrivalDateTime, 'hh:mm a')}</p>
             <p className="text-slate-400 text-xs">{fmtDate(seg.arrivalDateTime, 'EEE dd MMM yyyy')}</p>
           </div>
         </div>
@@ -211,7 +211,7 @@ function JourneyPanel({ journey }: { journey: any }) {
         <div className="flex items-center gap-4 text-xs text-slate-500">
           {journey.primaryAirline && <span><Globe size={10} className="inline mr-1" />{journey.primaryAirline}</span>}
           {journey.cabinSummary && <span><Tag size={10} className="inline mr-1" />{journey.cabinSummary.toUpperCase()}</span>}
-          <span><Clock size={10} className="inline mr-1" />{fmtDate(journey.departureDateTime, 'HH:mm')} → {fmtDate(journey.arrivalDateTime, 'HH:mm')}</span>
+          <span><Clock size={10} className="inline mr-1" />{fmtDate(journey.departureDateTime, 'hh:mm a')} → {fmtDate(journey.arrivalDateTime, 'hh:mm a')}</span>
         </div>
       </div>
       {segs.length > 0 ? (
@@ -386,7 +386,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const otherAddons = addons.filter((a: any) => a.type !== 'SEAT' && a.type !== 'MEAL');
 
   return (
-    <div className="p-6 max-w-7xl">
+    <div className="p-6 max-w-7xl min-w-0 w-full overflow-x-hidden">
 
       {/* ── Confirm delete dialog ── */}
       {confirmDel && (() => {
@@ -413,7 +413,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   </p>
                   <ul className="text-slate-400 text-xs space-y-0.5 ml-4 list-disc">
                     <li>{booking.passengers?.length ?? 0} passenger(s)</li>
-                    <li>{pnrs.length} PNR(s)</li>
+                    <li>{pnrs.length} AIRLINE PNR(s)</li>
                     <li>{tickets.length} ticket(s)</li>
                     <li>{seats.length} seat(s), {meals.length} meal(s), {otherAddons.length} add-on(s)</li>
                     <li>{booking.payments?.length ?? 0} payment record(s)</li>
@@ -504,7 +504,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       </div>
 
       {/* ── Tab bar ── */}
-      <div className="flex gap-0.5 mb-6 border-b border-slate-700/50 overflow-x-auto scrollbar-hide">
+      <div className="flex gap-0.5 mb-6 border-b border-slate-700/50 overflow-x-auto overflow-y-hidden max-w-full">
         {TABS.map(t => {
           const Icon = t.icon;
           const count =
@@ -525,7 +525,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 setTab(t.id);
                 if (t.id === 'auditLog' && auditLogs.length === 0 && !auditLoading) loadAuditLogs();
               }}
-              className={`flex items-center gap-1.5 px-3.5 py-2.5 text-sm font-bold border-b-2 -mb-px whitespace-nowrap transition-all ${
+              className={`flex shrink-0 items-center gap-1.5 px-3.5 py-2.5 text-sm font-bold border-b-2 -mb-px whitespace-nowrap transition-all ${
                 tab === t.id
                   ? 'border-[#1ABC9C] text-[#1ABC9C]'
                   : 'border-transparent text-slate-400 hover:text-white'
@@ -544,7 +544,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       {/* ── PNR selector bar (only when multiple PNRs exist) ── */}
       {pnrs.length > 1 && (
         <div className="flex items-center gap-2 mb-5 p-3 bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-x-auto scrollbar-hide">
-          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0 mr-1">Filter PNR</span>
+          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0 mr-1">Filter AIRLINE PNR</span>
           <button
             onClick={() => setSelectedPnrId(null)}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 border ${
@@ -628,7 +628,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Master PNR</label>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Master AIRLINE PNR</label>
                     <input className={inp} value={editBookingData.masterPnr ?? ''} onChange={e => setEditBookingData(d => ({ ...d, masterPnr: e.target.value }))} placeholder="e.g. ABC123" />
                   </div>
                   <div>
@@ -724,7 +724,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                       <span className="px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-400 text-[10px] font-bold border border-amber-400/20">Split Ticket</span>
                     )}
                   </div>
-                  <span className="text-[10px] text-slate-500 italic">Select a PNR to scope all tabs</span>
+                  <span className="text-[10px] text-slate-500 italic">Select an AIRLINE PNR to scope all tabs</span>
                 </div>
 
                 {booking.riskLabel && (
@@ -767,7 +767,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                         <div className="space-y-1">
                           <div className="flex items-center gap-1.5">
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_COLORS[pnr.pnrType] ?? 'bg-slate-400/15 text-slate-400'}`}>
-                              {pnr.pnrType.replace(/_/g, ' ')}
+                              {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'AIRLINE PNR' : pnr.pnrType.replace(/_/g, ' ')}
                             </span>
                             <span className="text-slate-500 text-[10px] font-semibold">{dirIcon}</span>
                           </div>
@@ -786,7 +786,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                         {/* Active indicator */}
                         {isActive && (
                           <p className="mt-2.5 text-[#1ABC9C] text-[10px] font-bold uppercase tracking-wider">
-                            ● Tabs scoped to this PNR
+                            ● Tabs scoped to this AIRLINE PNR
                           </p>
                         )}
                       </button>
@@ -809,7 +809,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         return (
           <div className="space-y-8">
             {visibleJourneys.length === 0 ? (
-              <p className="text-slate-500 text-sm">No journey data for the selected PNR filter.</p>
+              <p className="text-slate-500 text-sm">No journey data for the selected AIRLINE PNR filter.</p>
             ) : (
               visibleJourneys.map((journey: any) => {
                 const journeyPnrs = pnrs.filter((p: any) =>
@@ -819,7 +819,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <div key={journey.id} className="space-y-2">
                     {journeyPnrs.length > 0 && (
                       <div className="flex items-center gap-2 px-1">
-                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">PNR</span>
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">AIRLINE PNR</span>
                         {journeyPnrs.map((p: any) => (
                           <span
                             key={p.id}
@@ -980,7 +980,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       )}
 
       {/* ══════════════════════════════════════════════════════════
-          TAB: TICKETS / PNRs
+          TAB: TICKETS / AIRLINE PNRs
           ══════════════════════════════════════════════════════════ */}
       {tab === 'tickets' && (() => {
         const visibleTickets = selectedPnr
@@ -1001,7 +1001,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-700/50">
-                  {['Passenger', 'Ticket Number', 'E-Ticket', 'Airline', 'PNR Ref', 'Status'].map(h => (
+                  {['Passenger', 'Ticket Number', 'E-Ticket', 'Airline', 'AIRLINE PNR Ref', 'Status'].map(h => (
                     <th key={h} className="pb-2 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider pr-4">{h}</th>
                   ))}
                 </tr>
@@ -1032,7 +1032,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               return (
                 <Section
                   key={pnrCode}
-                  title={`Tickets — PNR ${pnrCode === '__no_pnr__' ? 'Unassigned' : pnrCode} (${rows.length})`}
+                  title={`Tickets — AIRLINE PNR ${pnrCode === '__no_pnr__' ? 'Unassigned' : pnrCode} (${rows.length})`}
                 >
                   {pnrMeta && (
                     <div className="flex items-center gap-2 mb-3">
@@ -1050,7 +1050,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             <Section title={`E-Tickets (${visibleTickets.length})`}>
               {visibleTickets.length === 0 ? (
                 <p className="text-slate-500 text-sm">
-                  {selectedPnr ? `No tickets for PNR ${selectedPnr.pnrCode}.` : 'No tickets issued yet.'}
+                  {selectedPnr ? `No tickets for AIRLINE PNR ${selectedPnr.pnrCode}.` : 'No tickets issued yet.'}
                 </p>
               ) : (
                 <TicketTable rows={visibleTickets} />
@@ -1059,13 +1059,13 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           )}
 
           <Section
-            title={`PNR Records (${booking.pnrs?.length ?? 0})`}
+            title={`AIRLINE PNR Records (${booking.pnrs?.length ?? 0})`}
             action={isOps ? (
               <button
                 onClick={() => setAddRefOpen(v => !v)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700/50 text-slate-300 hover:text-white text-xs font-bold transition-all"
               >
-                <Plus size={11} /> Add PNR
+                <Plus size={11} /> Add AIRLINE PNR
               </button>
             ) : undefined}
           >
@@ -1073,15 +1073,15 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               <div className="mb-4 p-4 bg-slate-900/50 border border-slate-700 rounded-xl space-y-3">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
-                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">PNR Type</label>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">AIRLINE PNR Type</label>
                     <select className={sel} value={addRefData.pnrType} onChange={e => setAddRefData(d => ({ ...d, pnrType: e.target.value }))}>
                       {['MASTER_AIRLINE_PNR','AIRLINE_PNR','PROVIDER_PNR','SPLIT_TICKET_PNR','SUB_PNR'].map(t => (
-                        <option key={t} value={t} className="bg-slate-800">{t.replace(/_/g, ' ')}</option>
+                        <option key={t} value={t} className="bg-slate-800">{t === 'MASTER_AIRLINE_PNR' ? 'AIRLINE PNR' : t.replace(/_/g, ' ')}</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">PNR Code *</label>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">AIRLINE PNR *</label>
                     <input className={inp} value={addRefData.pnrCode} onChange={e => setAddRefData(d => ({ ...d, pnrCode: e.target.value }))} placeholder="e.g. ABC123" />
                   </div>
                   <div>
@@ -1108,19 +1108,19 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setAddRefOpen(false)} className="px-3 py-1.5 rounded-xl border border-slate-600 text-slate-400 hover:text-white text-xs transition-all"><X size={11} className="inline mr-1" />Cancel</button>
                   <button onClick={addReference} disabled={saving || !addRefData.pnrCode.trim()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1ABC9C] hover:bg-[#1ABC9C]/80 text-white text-xs font-bold disabled:opacity-50 transition-all">
-                    <Plus size={11} />{saving ? 'Adding…' : 'Add PNR'}
+                    <Plus size={11} />{saving ? 'Adding…' : 'Add AIRLINE PNR'}
                   </button>
                 </div>
               </div>
             )}
             {(booking.pnrs?.length ?? 0) === 0 ? (
-              <p className="text-slate-500 text-sm">No PNRs stored.</p>
+              <p className="text-slate-500 text-sm">No AIRLINE PNRs stored.</p>
             ) : (
               <div className="space-y-2">
                 {booking.pnrs?.map((pnr: any) => (
                   <div key={pnr.id} className="flex items-center gap-4 p-3 bg-slate-900/40 rounded-xl">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold w-40 text-center ${STATUS_COLORS[pnr.pnrType] ?? 'bg-slate-400/15 text-slate-400'}`}>
-                      {pnr.pnrType.replace(/_/g, ' ')}
+                      {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'AIRLINE PNR' : pnr.pnrType.replace(/_/g, ' ')}
                     </span>
                     <span className="font-mono text-white font-black text-sm flex-1">{pnr.pnrCode}</span>
                     {pnr.isPrimary && (
@@ -1134,9 +1134,9 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                     <Badge value={pnr.status} />
                     {isOps && !pnr.isPrimary && (
                       <button
-                        onClick={() => setConfirmDel({ apiPath: `/api/admin/bookings/${id}/references/${pnr.id}`, label: `PNR ${pnr.pnrCode}` })}
+                        onClick={() => setConfirmDel({ apiPath: `/api/admin/bookings/${id}/references/${pnr.id}`, label: `AIRLINE PNR ${pnr.pnrCode}` })}
                         className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
-                        title="Delete PNR"
+                        title="Delete AIRLINE PNR"
                       >
                         <Trash2 size={12} />
                       </button>
@@ -1157,7 +1157,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         <div className="space-y-4">
         {selectedPnr && (
           <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-2xl">
-            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Showing add-ons for PNR</span>
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Showing add-ons for AIRLINE PNR</span>
             <span className="font-mono font-black text-[#1ABC9C] text-xs">{selectedPnr.pnrCode}</span>
             <Badge value={selectedPnr.journeyDirection} />
             {selectedPnr.airlineName && <span className="text-xs text-slate-400">{selectedPnr.airlineName}</span>}
@@ -1223,7 +1223,22 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           ══════════════════════════════════════════════════════════ */}
       {tab === 'payments' && (() => {
         const addonTotal = addons.reduce((s: number, a: any) => s + Number(a.totalPrice), 0);
-        const baseFare = Number(booking.totalPrice) - addonTotal;
+        let taxes = Number(booking.taxes ?? 0);
+        let serviceFee = Number(booking.platformFee ?? 0);
+
+        // Fallback: if taxes and service fees weren't stored in DB, estimate them based on checkout formulas
+        if (taxes === 0 && serviceFee === 0) {
+          const flightTotalWithServiceFee = Number(booking.totalPrice) - addonTotal;
+          // In checkout, serviceFee is 1.5% of flight total
+          const flightTotal = flightTotalWithServiceFee / 1.015;
+          serviceFee = flightTotal * 0.015;
+          
+          // taxes are 15.6% of base fare (baseFare * 1.156 = flightTotal)
+          const estBaseFare = flightTotal / 1.156;
+          taxes = flightTotal - estBaseFare;
+        }
+
+        const baseFare = Number(booking.totalPrice) - addonTotal - taxes - serviceFee;
 
         // Group addons by type for breakdown
         const addonGroups: Record<string, { label: string; items: any[]; total: number }> = {};
@@ -1286,6 +1301,16 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                     ))}
                   </React.Fragment>
                 ))}
+                <tr>
+                  <td className="px-5 py-3 text-white font-bold">Taxes & Fees</td>
+                  <td className="px-5 py-3 text-slate-400 font-semibold">Government & airport taxes</td>
+                  <td className="px-5 py-3 text-white font-bold text-right">{fmtMoney(taxes, booking.currency)}</td>
+                </tr>
+                <tr>
+                  <td className="px-5 py-3 text-white font-bold">Service Fee</td>
+                  <td className="px-5 py-3 text-slate-400 font-semibold">FareMind platform fee</td>
+                  <td className="px-5 py-3 text-white font-bold text-right">{fmtMoney(serviceFee, booking.currency)}</td>
+                </tr>
               </tbody>
               <tfoot>
                 <tr className="border-t-2 border-slate-600/50 bg-slate-900/30">
@@ -1317,11 +1342,11 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 {booking.pnrStrategy && (
                   <>
                     <tr>
-                      <td className="px-5 py-3 text-slate-400 font-semibold">PNR Strategy</td>
+                      <td className="px-5 py-3 text-slate-400 font-semibold">AIRLINE PNR Strategy</td>
                       <td className="px-5 py-3"><Badge value={booking.pnrStrategy} /></td>
                     </tr>
                     <tr>
-                      <td className="px-5 py-3 text-slate-400 font-semibold">PNR Count</td>
+                      <td className="px-5 py-3 text-slate-400 font-semibold">AIRLINE PNR Count</td>
                       <td className="px-5 py-3 text-white font-bold">{booking.pnrCount ?? pnrs.length}</td>
                     </tr>
                     {booking.isSplitTicket && (
@@ -1400,7 +1425,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                       }`}>{ev.actorType}</span>
                     </div>
                     {ev.description && <p className="text-slate-400 text-sm leading-relaxed">{ev.description}</p>}
-                    <p className="text-slate-600 text-[10px] mt-1">{fmtDate(ev.createdAt, 'dd MMM yyyy HH:mm:ss')}</p>
+                    <p className="text-slate-600 text-[10px] mt-1">{fmtDate(ev.createdAt, 'dd MMM yyyy hh:mm:ss a')}</p>
                   </div>
                 ))}
               </div>
@@ -1741,7 +1766,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                           </div>
                         )}
                         <p className="text-slate-600 text-[10px] mt-1">
-                          {fmtDate(log.createdAt, 'dd MMM yyyy HH:mm:ss')}
+                          {fmtDate(log.createdAt, 'dd MMM yyyy hh:mm:ss a')}
                           {log.ipAddress && ` · ${log.ipAddress}`}
                         </p>
                       </div>
@@ -1755,14 +1780,14 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       )}
 
       {/* ══════════════════════════════════════════════════════════
-          BOTTOM: MASTER BOOKING ↔ PNR ASSOCIATION TABLE
+          BOTTOM: MASTER BOOKING ↔ AIRLINE PNR ASSOCIATION TABLE
           Always visible regardless of selected tab
           ══════════════════════════════════════════════════════════ */}
       {pnrs.length > 0 && (
         <div className="mt-8 bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-700/50 flex items-center gap-3">
             <Hash size={14} className="text-[#1ABC9C]" />
-            <h3 className="text-white font-bold text-sm">Master Booking ↔ PNR Association</h3>
+            <h3 className="text-white font-bold text-sm">Master Booking ↔ AIRLINE PNR Association</h3>
             {booking.pnrStrategy && <Badge value={booking.pnrStrategy} />}
             {booking.connectionProtStatus && <Badge value={booking.connectionProtStatus} />}
             {booking.isSplitTicket && (
@@ -1774,7 +1799,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/50 bg-slate-900/30">
-                {['Master Ref', 'PNR Code', 'Type', 'Direction', 'Airline', 'Provider', 'Provider Order ID', 'Primary', 'Status'].map(h => (
+                {['Master Ref', 'AIRLINE PNR', 'Type', 'Direction', 'Airline', 'Provider', 'Provider Order ID', 'Primary', 'Status'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -1795,7 +1820,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <td className="px-4 py-3 font-mono text-white font-black">{pnr.pnrCode}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_COLORS[pnr.pnrType] ?? 'bg-slate-400/15 text-slate-400'}`}>
-                      {pnr.pnrType.replace(/_/g, ' ')}
+                      {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'AIRLINE PNR' : pnr.pnrType.replace(/_/g, ' ')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-400">{pnr.journeyDirection}</td>

@@ -23,11 +23,12 @@ const FARE_TEMPLATES: FareTemplate[] = [
   { name: 'Business Extra', cabin: 'business', priceMultiplier: 5.0, carryOn: true, carryOnPieces: 2, carryOnWeightKg: 18, checked: 3, checkedWeightKg: 32, extraBagFeeUsd: null, refundable: true, refundFeeUsd: 0, changeable: true, changeFeeUsd: 0, seatSelection: 'free', seatSelectionFeeUsd: null, upgradeable: true, loungeAccess: true, priorityBoarding: true, milesEarning: 'full' },
 ];
 
-type AiBadge = 'cheapest' | 'best_value' | 'most_flexible' | 'premium_upgrade' | 'ai_pick';
+type AiBadge = 'cheapest' | 'best_value' | 'most_flexible' | 'premium_upgrade' | 'ai_pick' | 'best_comfort';
 
 const BADGE_HEADLINES: Record<AiBadge, string> = {
   cheapest: 'Lowest Price', best_value: 'AI Best Choice', ai_pick: 'AI Best Choice',
   most_flexible: 'Best Flexibility', premium_upgrade: 'Premium Upgrade',
+  best_comfort: 'Best Comfort',
 };
 
 const plugin: FastifyPluginAsync = async (fastify) => {
@@ -63,10 +64,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const fareInputs: FareInput[] = FARE_TEMPLATES.map((t, i) => ({
         id: `fare_${i}_${offer_id || 'mock'}`,
-        totalPrice: Math.round(basePriceNum * t.priceMultiplier * travelers),
+        totalPrice: Math.round(basePriceNum * t.priceMultiplier),
         checked: t.checked, refundable: t.refundable, refundFeeUsd: t.refundFeeUsd,
         changeable: t.changeable, changeFeeUsd: t.changeFeeUsd,
         seatSelection: t.seatSelection, cabin: t.cabin, name: t.name,
+        priorityBoarding: t.priorityBoarding, loungeAccess: t.loungeAccess, milesEarning: t.milesEarning,
       }));
 
       const scored   = computeAiScores(fareInputs, ctx);
@@ -74,7 +76,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const fareOptions = FARE_TEMPLATES.map((t, i) => {
         const id    = `fare_${i}_${offer_id || 'mock'}`;
-        const total = Math.round(basePriceNum * t.priceMultiplier * travelers);
+        const total = Math.round(basePriceNum * t.priceMultiplier);
         const s     = scoreMap.get(id)!;
         return {
           id, offerId: offer_id, cabin: t.cabin, name: t.name,
@@ -95,11 +97,19 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const allSorted = [...fareOptions].sort((a, b) => b.aiScore - a.aiScore);
       const topPick   = allSorted.find((f) => f.aiBadges.includes('ai_pick')) ?? allSorted[0];
-      const others    = [
+      const othersRaw = [
         fareOptions.find((f) => f.aiBadges.includes('cheapest') && f.id !== topPick.id),
         fareOptions.find((f) => f.aiBadges.includes('most_flexible') && f.id !== topPick.id),
+        fareOptions.find((f) => f.aiBadges.includes('best_comfort') && f.id !== topPick.id),
         fareOptions.find((f) => f.aiBadges.includes('premium_upgrade') && f.id !== topPick.id),
       ].filter(Boolean);
+
+      const seenIds = new Set<string>();
+      const others = othersRaw.filter((f) => {
+        if (!f || seenIds.has(f.id)) return false;
+        seenIds.add(f.id);
+        return true;
+      });
 
       const journeySummary = `${origin} → ${destination} · ${stopsNum === 0 ? 'Non-stop' : `${stopsNum} stop${stopsNum > 1 ? 's' : ''}`}`;
 

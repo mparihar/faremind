@@ -160,7 +160,7 @@ function PriceDropProtectionSection({
             </div>
           </div>
           <p className="text-sm text-slate-500 leading-relaxed mb-3">
-            If the price drops after booking, we&apos;ll refund 80% of the difference as FareMind credit.
+            Refund 80% of any eligible fare decrease after booking, credited as FareMind credit.
             Peace of mind for your next adventure.
           </p>
           <div className="flex items-center gap-2">
@@ -209,6 +209,7 @@ function TravelInsuranceSection({
       desc: 'Trip cancellation, medical emergencies, lost baggage, and 24/7 travel assistance.',
       price: fee,
       icon: <ShieldCheck className="w-5 h-5" />,
+      warning: true,
     },
     {
       id: 'without',
@@ -271,7 +272,7 @@ function TravelInsuranceSection({
                     )}
                   </div>
                   <p className="text-xs text-slate-500 leading-relaxed">{opt.desc}</p>
-                  {opt.warning && isSelected && (
+                  {opt.warning && (
                     <p className="text-xs text-amber-600 font-medium mt-1.5 flex items-center gap-1">
                       <AlertTriangle className="w-3 h-3" />
                       Traveling without protection is at your own risk
@@ -483,7 +484,7 @@ export default function AddonsPage() {
                   <ShieldCheck className="w-4 h-4 text-[#1ABC9C] mt-0.5 shrink-0" />
                   <p className="text-xs text-slate-600 leading-relaxed">
                     <span className="font-semibold text-[#1ABC9C]">Price protection active. </span>
-                    We&apos;ll monitor this route and refund 80% of any price drop as FareMind credit.
+                    We&apos;ll monitor this route and refund 80% of any eligible fare decrease as FareMind credit.
                   </p>
                 </div>
               )}

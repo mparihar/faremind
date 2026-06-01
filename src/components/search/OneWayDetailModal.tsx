@@ -48,12 +48,11 @@ export default function OneWayDetailModal({ journey, totalPrice, currency, cabin
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.95, opacity: 0, y: 20 }}
           transition={{ duration: 0.22 }}
-          className="bg-[#F8FAFC] rounded-[2.5rem] shadow-2xl w-full flex flex-col overflow-hidden"
-          style={{ maxWidth: 1020, maxHeight: '92vh' }}
+          className="bg-[#F8FAFC] rounded-2xl sm:rounded-[2.5rem] shadow-2xl w-full flex flex-col overflow-hidden max-w-[1020px] max-h-[100dvh] sm:max-h-[92vh]"
         >
           {/* ── Header ── */}
-          <div className="px-8 pt-5 pb-4 bg-white border-b border-slate-100 shrink-0">
-            <div className="flex items-start justify-between gap-4">
+          <div className="px-4 sm:px-8 pt-4 sm:pt-5 pb-3 sm:pb-4 bg-white border-b border-slate-100 shrink-0">
+            <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-3 sm:gap-4">
               <div className="flex items-center gap-4 min-w-0">
                 <div className="w-11 h-11 rounded-2xl bg-slate-100 flex items-center justify-center shrink-0">
                   <img
@@ -64,7 +63,7 @@ export default function OneWayDetailModal({ journey, totalPrice, currency, cabin
                   />
                 </div>
                 <div className="min-w-0">
-                  <h2 className="text-2xl font-bold text-slate-900 tracking-tight uppercase leading-none">
+                  <h2 className="text-lg sm:text-2xl font-bold text-slate-900 tracking-tight uppercase leading-none">
                     {journey.departureAirport} TO {journey.arrivalAirport}
                   </h2>
                   <p className="text-[10px] font-bold text-slate-400 uppercase tracking-widest mt-1.5">
@@ -73,14 +72,14 @@ export default function OneWayDetailModal({ journey, totalPrice, currency, cabin
                 </div>
               </div>
 
-              <div className="flex items-start gap-5 shrink-0">
-                <div className="text-right">
-                  <p className="text-2xl font-bold text-slate-900 leading-none">{formatPrice(totalPrice, currency)}</p>
+              <div className="flex items-center sm:items-start gap-3 sm:gap-5 shrink-0">
+                <div className="text-left sm:text-right">
+                  <p className="text-lg sm:text-2xl font-bold text-slate-900 leading-none">{formatPrice(totalPrice, currency)}</p>
                   <p className="text-[9px] font-bold text-slate-400 uppercase tracking-widest mt-1.5">
                     {currency} · {priceLabel}
                   </p>
                 </div>
-                <div className="flex items-center gap-1.5">
+                <div className="hidden sm:flex items-center gap-1.5">
                   {[
                     { icon: Share2, label: 'Share' },
                     { icon: Printer, label: 'Print', onClick: () => window.print() },
@@ -107,10 +106,10 @@ export default function OneWayDetailModal({ journey, totalPrice, currency, cabin
           </div>
 
           {/* ── Body ── */}
-          <div className="flex-1 flex overflow-hidden">
+          <div className="flex-1 flex flex-col md:flex-row overflow-hidden min-h-0">
 
-            {/* Left: segments — no scrollbar, compact so 3 stops fit */}
-            <div className="flex-1 overflow-y-auto scrollbar-hide px-6 py-4">
+            {/* Left: segments */}
+            <div className="flex-1 overflow-y-auto scrollbar-hide px-4 sm:px-6 py-4">
               {journey.segments.map((seg, idx) => (
                 <div key={seg.id ?? idx}>
                   {/* ── Flight card ── */}
@@ -237,7 +236,7 @@ export default function OneWayDetailModal({ journey, totalPrice, currency, cabin
             </div>
 
             {/* Right: info panel */}
-            <div className="w-[300px] border-l border-slate-100 bg-white flex flex-col shrink-0">
+            <div className="w-full md:w-[300px] md:border-l border-t md:border-t-0 border-slate-100 bg-white flex flex-col shrink-0">
               {/* Panel title */}
               <div className="px-6 py-3 border-b border-slate-100 shrink-0">
                 <p className="text-[9px] font-bold text-slate-900 uppercase tracking-[0.12em]">Journey at a Glance</p>

@@ -361,11 +361,24 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const fmtOrig = fmtCurrency(originalAmount, booking.currency);
       const fmtPenalty = fmtCurrency(penaltyAmount, booking.currency);
 
-      emails.sendCancellationEmail({
-        email: booking.customerEmail, name: booking.customerName, bookingRef: booking.masterBookingReference,
-        route, originalAmount: fmtOrig, penaltyAmount: fmtPenalty, refundAmount: fmtRef,
-        refundMethod: resolvedRefundMethod === 'AIRLINE_CREDIT' ? 'Airline Credit' : 'Original Payment Method',
-      }).catch((err: unknown) => fastify.log.warn({ err }, '[manage-booking] customer cancel email failed'));
+      if (booking.customerEmail) {
+        fireNotification({
+          event_type: 'BOOKING_CANCELLED',
+          booking_id: bookingId,
+          customer_email: booking.customerEmail,
+          data: {
+            booking_reference: booking.masterBookingReference,
+            pnr: booking.masterPnr,
+            customer_name: booking.customerName ?? '',
+            customer_email: booking.customerEmail,
+            origin: booking.originAirport,
+            destination: booking.destinationAirport,
+            route,
+            refund_amount: result.refundAmount > 0 ? fmtRef : 'Non-refundable',
+            refund_status: result.refundAmount > 0 ? 'Pending' : 'Not Applicable',
+          },
+        });
+      }
 
       emails.sendAdminCancellationEmail({
         bookingRef: booking.masterBookingReference, customerName: booking.customerName, customerEmail: booking.customerEmail,
@@ -467,6 +480,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Record seat change in DB
       const existingSeat = booking.seats.find(s => s.passengerId === passengerId && s.segmentId === segmentId);
 
+      const resolvedJourneyId = journeyId || booking.journeys?.[0]?.id;
+      const resolvedSegmentId = segmentId || booking.segments?.[0]?.id;
+
       // Update the bookingSeat table so admin console reflects the latest seat
       if (existingSeat) {
         // Update existing seat record
@@ -481,8 +497,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         }).catch((err: unknown) => fastify.log.warn({ err }, '[manage-booking/seats] Failed to update bookingSeat'));
       } else {
         // Create new seat record
-        const resolvedJourneyId = journeyId || booking.journeys?.[0]?.id;
-        const resolvedSegmentId = segmentId || booking.segments?.[0]?.id;
         if (resolvedJourneyId && resolvedSegmentId) {
           await prisma.bookingSeat.create({
             data: {
@@ -525,29 +539,26 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // Email notification for seat change
       if (booking.customerEmail) {
-        emails.sendSeatChangedEmail({
-          email: booking.customerEmail,
-          name: booking.customerName,
-          bookingRef: booking.masterBookingReference,
-          segment: '',
-          oldSeat: existingSeat?.seatNumber || 'None',
-          newSeat: seatDesignator,
-        }).catch((err: unknown) => fastify.log.warn({ err }, '[manage-booking] seat change email failed'));
+        const pax = booking.passengers.find((p: any) => p.id === passengerId);
+        const paxName = pax ? `${pax.firstName} ${pax.lastName}` : '';
+        
+        const segIdx = booking.segments?.findIndex((s: any) => s.id === resolvedSegmentId) ?? 0;
+        const totalSegs = booking.segments?.length || 1;
+        const seatLabel = segIdx === 0 ? 'Outbound Seat' : (segIdx === totalSegs - 1 && totalSegs > 1 ? 'Return Seat' : 'Seat');
 
         fireNotification({
-          event_type: 'BOOKING_UPDATED',
+          event_type: 'SEAT_SELECTION_UPDATED',
           booking_id: bookingId,
           customer_email: booking.customerEmail || undefined,
           data: {
             booking_reference: booking.masterBookingReference,
-            pnr: booking.masterPnr,
             customer_name: booking.customerName ?? '',
-            customer_email: booking.customerEmail ?? '',
-            origin: booking.originAirport,
-            destination: booking.destinationAirport,
-            route: `${booking.originAirport} - ${booking.destinationAirport}`,
-            update_type: 'Seat Change',
-            update_details: `Seat changed from ${existingSeat?.seatNumber || 'None'} to ${seatDesignator}`,
+            passenger_name: paxName,
+            seats: [{
+              label: seatLabel,
+              old: existingSeat?.seatNumber || 'None',
+              new: seatDesignator
+            }]
           },
         });
       }
@@ -573,7 +584,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const { bookingId } = request.params as { bookingId: string };
       const { passengerId, updates } = request.body as { passengerId: string; updates: Record<string, string> };
       if (!passengerId || !updates) return reply.code(400).send({ error: 'passengerId and updates required' });
-      const EDITABLE = ['phone', 'email', 'passportExpiry', 'passportNumber', 'nationality'];
+      const EDITABLE = ['phone', 'email', 'passportExpiry', 'passportNumber', 'nationality', 'passportCountry'];
       const invalid = Object.keys(updates).filter(k => !EDITABLE.includes(k));
       if (invalid.length) return reply.code(400).send({ error: `Cannot update: ${invalid.join(', ')}. Restricted fields require airline approval.` });
       const booking = await mbq.getMasterBookingFull(bookingId);
@@ -611,19 +622,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Email notification for passenger update
       if (booking.customerEmail) {
         fireNotification({
-          event_type: 'BOOKING_UPDATED',
+          event_type: 'PASSENGER_INFO_UPDATED',
           booking_id: bookingId,
           customer_email: booking.customerEmail || undefined,
           data: {
             booking_reference: booking.masterBookingReference,
-            pnr: booking.masterPnr,
             customer_name: booking.customerName ?? '',
-            customer_email: booking.customerEmail ?? '',
-            origin: booking.originAirport,
-            destination: booking.destinationAirport,
-            route: `${booking.originAirport} - ${booking.destinationAirport}`,
-            update_type: 'Passenger Update',
-            update_details: `Updated: ${Object.keys(updates).join(', ')} for ${passenger.firstName} ${passenger.lastName}`,
+            passenger_name: `${passenger.firstName} ${passenger.lastName}`,
+            updated_fields: Object.keys(updates),
           },
         });
       }
@@ -855,35 +861,45 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         actorType: 'system',
       });
 
-      // Email notification for confirmed date change
+      // Email notification for confirmed flight change
       if (booking.customerEmail) {
+        const paxNames = booking.passengers.map(p => `${p.firstName} ${p.lastName}`).join(', ');
+        const oldSeg = (booking.pnrs[0] as any)?.segments?.[0];
+        const newSeg = (result.raw as any)?.slices?.[0]?.segments?.[0] || (result.raw as any)?.slices?.add?.[0]?.segments?.[0];
+
+        const oldFlight = oldSeg ? `${oldSeg.airlineCode}${oldSeg.flightNumber}` : 'N/A';
+        const newFlight = newSeg ? `${newSeg.marketing_carrier?.iata_code || newSeg.marketing_carrier?.name || ''}${newSeg.marketing_carrier_flight_number || newSeg.flightNumber || ''}` : 'N/A';
+        
+        const formatDt = (dt: any) => {
+          if (!dt) return 'N/A';
+          try { return new Date(dt).toLocaleString() } catch { return String(dt) }
+        };
+
+        const oldDep = oldSeg ? `${formatDt(oldSeg.departureTime)} (${oldSeg.originAirport})` : 'N/A';
+        const newDep = newSeg ? `${formatDt(newSeg.departing_at || newSeg.departureTime)} (${newSeg.origin?.iata_code || newSeg.origin || 'N/A'})` : 'N/A';
+        const oldArr = oldSeg ? `${formatDt(oldSeg.arrivalTime)} (${oldSeg.destinationAirport})` : 'N/A';
+        const newArr = newSeg ? `${formatDt(newSeg.arriving_at || newSeg.arrivalTime)} (${newSeg.destination?.iata_code || newSeg.destination || 'N/A'})` : 'N/A';
+        
+        const fareDiffVal = (result.newTotalAmount ?? 0) - Number(booking.totalAmount);
+        const fareDiff = fareDiffVal > 0 ? fmtCurrency(fareDiffVal, result.newTotalCurrency) : '';
+
         fireNotification({
-          event_type: 'DATE_CHANGE_APPROVED',
+          event_type: 'FLIGHT_CHANGE_CONFIRMED',
           booking_id: bookingId,
           customer_email: booking.customerEmail || undefined,
           data: {
             booking_reference: booking.masterBookingReference,
-            pnr: booking.masterPnr,
             customer_name: booking.customerName ?? '',
-            customer_email: booking.customerEmail ?? '',
-            origin: booking.originAirport,
-            destination: booking.destinationAirport,
-            route: `${booking.originAirport} - ${booking.destinationAirport}`,
-            update_type: 'Flight Change',
-            update_details: `Flight changed. New total: ${fmtCurrency(result.newTotalAmount, result.newTotalCurrency)}`,
-            new_total: fmtCurrency(result.newTotalAmount, result.newTotalCurrency),
+            passenger_name: paxNames,
+            old_flight_number: oldFlight,
+            new_flight_number: newFlight,
+            old_departure: oldDep,
+            new_departure: newDep,
+            old_arrival: oldArr,
+            new_arrival: newArr,
+            fare_difference: fareDiff,
           },
         });
-
-        emails.sendFlightChangedEmail({
-          email: booking.customerEmail,
-          name: booking.customerName,
-          bookingRef: booking.masterBookingReference,
-          oldRoute: `${booking.originAirport} → ${booking.destinationAirport}`,
-          newRoute: `${booking.originAirport} → ${booking.destinationAirport}`,
-          fareDifference: fmtCurrency((result.newTotalAmount ?? 0) - Number(booking.totalAmount), result.newTotalCurrency),
-          newTotal: fmtCurrency(result.newTotalAmount, result.newTotalCurrency),
-        }).catch((err: unknown) => fastify.log.warn({ err }, '[manage-booking] flight change email failed'));
       }
 
       return {

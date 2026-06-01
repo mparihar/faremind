@@ -144,6 +144,8 @@ export const GET = withAdmin(async (_req: NextRequest, { params }: any) => {
     provider:           mb.primaryProvider,
     providerBookingId:  null,
     totalPrice:         Number(mb.totalAmount),
+    taxes:              mb.pnrs.reduce((s: number, p: any) => s + Number(p.taxes ?? 0), 0),
+    platformFee:        mb.pnrs.reduce((s: number, p: any) => s + Number(p.platformFee ?? 0), 0),
     currency:           mb.currency,
     refundable:         false,
     changeable:         false,

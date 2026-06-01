@@ -3,7 +3,7 @@
 import { useSearchParams, useRouter } from 'next/navigation';
 import { useEffect, useState, useMemo, useRef, Suspense, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Loader2, Plane, Wifi, WifiOff, Sparkles, Star, TrendingDown, Zap, ChevronDown, X } from 'lucide-react';
+import { Loader2, Plane, Wifi, WifiOff, Sparkles, Star, TrendingDown, Zap, ChevronDown, X, SlidersHorizontal } from 'lucide-react';
 import { useSearchStore } from '@/store/useSearchStore';
 import { usePreferencesStore, type SortPreference } from '@/store/usePreferencesStore';
 import { useFareStore } from '@/store/useFareStore';
@@ -98,6 +98,7 @@ function SearchContent() {
   const [viewMode, setViewMode] = useState<'list' | 'map'>('map');
   const [sortMode, setSortMode] = useState<'cheapest' | 'fastest'>('cheapest');
   const [showSortDropdown, setShowSortDropdown] = useState(false);
+  const [showMobileFilters, setShowMobileFilters] = useState(false);
   const sortRef = useRef<HTMLDivElement>(null);
   const headerRef = useRef<HTMLDivElement>(null);
   const [headerHeight, setHeaderHeight] = useState(88);
@@ -148,6 +149,8 @@ function SearchContent() {
   const destination = searchParams.get('destination') || '';
   const date = searchParams.get('date') || '';
   const adults = searchParams.get('adults') || '1';
+  const childrenParam = searchParams.get('children') || '0';
+  const infantsParam = searchParams.get('infants') || '0';
   const cabin = searchParams.get('cabin') || 'economy';
   const returnDateParam = searchParams.get('return') || '';
   const tripParam = searchParams.get('trip') || 'one_way';
@@ -449,13 +452,20 @@ function SearchContent() {
     sessionStorage.setItem('fm_fare_context', JSON.stringify({
       offerId: flight.providerOfferId,
       basePrice: flight.totalPrice,
-      travelers: parseInt(adults, 10),
+      travelers: parseInt(adults, 10) + parseInt(childrenParam, 10) + parseInt(infantsParam, 10),
+      adults: parseInt(adults, 10),
+      children: parseInt(childrenParam, 10),
+      infants: parseInt(infantsParam, 10),
       currency: flight.currency || 'USD',
       origin,
       destination,
       stops: flight.stops,
       durationMinutes: flight.totalDuration,
       layoverMinutes,
+      date,
+      cabin,
+      trip: tripParam,
+      returnDate: returnDateParam,
     }));
     setShowFareModal(true);
   };
@@ -664,7 +674,7 @@ function SearchContent() {
                       )}
                     </div>
                     <div className="flex items-center gap-1 text-[9px] text-[#00ff41]/50 uppercase tracking-wider">
-                      <span>{adults}&nbsp;PAX</span>
+                      <span>{parseInt(adults, 10) + parseInt(childrenParam, 10) + parseInt(infantsParam, 10)}&nbsp;PAX</span>
                       <span className="text-[#00ff41]/25">·</span>
                       <span>{cabin.toUpperCase()}</span>
                       {tripParam === 'round_trip' && (
@@ -684,7 +694,7 @@ function SearchContent() {
                 <div className={`hidden sm:flex items-center gap-1.5 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm ${
                   !searchMeta.usedMockData ? 'bg-[#1ABC9C] text-white' : 'bg-[#F97316] text-white'
                 }`}>
-                  {!searchMeta.usedMockData ? <><Wifi className="w-3 h-3" /> Live Duffel NDC</> : <><WifiOff className="w-3 h-3" /> Demo Data</>}
+                  {!searchMeta.usedMockData ? <><Wifi className="w-3 h-3" /> Real-Time Flight Pricing</> : <><WifiOff className="w-3 h-3" /> Demo Data</>}
                 </div>
               )}
               <button
@@ -772,12 +782,20 @@ function SearchContent() {
                     fareStore.setSourceRoundTrip(rt);
                     sessionStorage.setItem('fm_fare_context', JSON.stringify({
                       offerId: rt.providerOfferId, basePrice: rt.totalPrice,
-                      travelers: parseInt(adults, 10), currency: rt.currency || 'USD',
+                      travelers: parseInt(adults, 10) + parseInt(childrenParam, 10) + parseInt(infantsParam, 10),
+                      adults: parseInt(adults, 10),
+                      children: parseInt(childrenParam, 10),
+                      infants: parseInt(infantsParam, 10),
+                      currency: rt.currency || 'USD',
                       origin: rt.outboundJourney.departureAirport,
                       destination: rt.outboundJourney.arrivalAirport,
                       stops: rt.maxStopsOneWay,
                       durationMinutes: rt.outboundJourney.durationMinutes,
                       layoverMinutes: [],
+                      date,
+                      cabin,
+                      trip: tripParam,
+                      returnDate: returnDateParam,
                     }));
                     setShowFareModal(true);
                   }
@@ -967,6 +985,69 @@ function SearchContent() {
           </AnimatePresence>
 
           <div className="flex gap-5 items-start">
+            {/* Mobile filter button — visible below lg breakpoint in list view */}
+            <div className="lg:hidden fixed bottom-6 left-4 z-50">
+              <button
+                onClick={() => setShowMobileFilters(true)}
+                className="flex items-center gap-2 px-4 py-3 rounded-2xl bg-[#1a1a2e] text-white text-sm font-bold shadow-2xl shadow-black/30 hover:bg-[#2a2a4e] active:scale-95 transition-all"
+              >
+                <SlidersHorizontal className="w-4 h-4" />
+                Filters
+                {(selectedAirlines.size + selectedClasses.size + selectedFeatures.size) > 0 && (
+                  <span className="w-5 h-5 rounded-full bg-[#1ABC9C] text-white text-[10px] font-bold flex items-center justify-center">
+                    {selectedAirlines.size + selectedClasses.size + selectedFeatures.size}
+                  </span>
+                )}
+              </button>
+            </div>
+
+            {/* Mobile filter drawer */}
+            <AnimatePresence>
+              {showMobileFilters && (
+                <>
+                  <motion.div
+                    initial={{ opacity: 0 }}
+                    animate={{ opacity: 1 }}
+                    exit={{ opacity: 0 }}
+                    className="fixed inset-0 bg-black/50 backdrop-blur-sm z-[100] lg:hidden"
+                    onClick={() => setShowMobileFilters(false)}
+                  />
+                  <motion.div
+                    initial={{ x: '-100%' }}
+                    animate={{ x: 0 }}
+                    exit={{ x: '-100%' }}
+                    transition={{ type: 'spring', damping: 28, stiffness: 300 }}
+                    className="fixed left-0 top-0 bottom-0 w-[280px] bg-white z-[101] shadow-2xl lg:hidden flex flex-col"
+                  >
+                    <div className="flex items-center justify-between px-4 py-3 border-b border-slate-200">
+                      <h3 className="text-sm font-bold text-slate-900">Filters</h3>
+                      <button
+                        onClick={() => setShowMobileFilters(false)}
+                        className="w-8 h-8 rounded-lg bg-slate-100 flex items-center justify-center text-slate-500 hover:text-slate-800 transition-all"
+                      >
+                        <X className="w-4 h-4" />
+                      </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                      <FilterPanel
+                        airlines={airlineFilterOptions}
+                        classes={classFilterOptions}
+                        features={featureFilterOptions}
+                        selectedAirlines={selectedAirlines}
+                        selectedClasses={selectedClasses}
+                        selectedFeatures={selectedFeatures}
+                        onToggleAirline={toggleAirline}
+                        onToggleClass={toggleClass}
+                        onToggleFeature={toggleFeature}
+                        onClearAll={() => { clearAllFilters(); setShowMobileFilters(false); }}
+                        loading={loading}
+                      />
+                    </div>
+                  </motion.div>
+                </>
+              )}
+            </AnimatePresence>
+
             {/* Filter sidebar — desktop only */}
             <div className="hidden lg:flex flex-col w-56 flex-none sticky top-24">
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden" style={{ height: 'calc(100vh - 7rem)' }}>
@@ -1175,13 +1256,20 @@ function SearchContent() {
             sessionStorage.setItem('fm_fare_context', JSON.stringify({
               offerId: selectedRoundTrip.providerOfferId,
               basePrice: selectedRoundTrip.totalPrice,
-              travelers: parseInt(adults, 10),
+              travelers: parseInt(adults, 10) + parseInt(childrenParam, 10) + parseInt(infantsParam, 10),
+              adults: parseInt(adults, 10),
+              children: parseInt(childrenParam, 10),
+              infants: parseInt(infantsParam, 10),
               currency: selectedRoundTrip.currency || 'USD',
               origin,
               destination,
               stops: selectedRoundTrip.maxStopsOneWay,
               durationMinutes: selectedRoundTrip.outboundJourney.durationMinutes,
               layoverMinutes: [],
+              date,
+              cabin,
+              trip: tripParam,
+              returnDate: returnDateParam,
             }));
             setSelectedRoundTrip(null);
             setShowFareModal(true);
@@ -1207,7 +1295,7 @@ function SearchContent() {
             origin,
             destination,
             tripType: tripParam,
-            passengers: parseInt(adults, 10),
+            passengers: parseInt(adults, 10) + parseInt(childrenParam, 10) + parseInt(infantsParam, 10),
             departureDate: date,
           }}
           onResult={setAiAssistResult}

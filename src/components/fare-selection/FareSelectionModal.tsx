@@ -49,6 +49,18 @@ export default function FareSelectionModal({ onClose }: Props) {
   const [activeCabin, setActiveCabin] = useState<string>('economy');
   const [confirming, setConfirming] = useState(false);
 
+  const { travelerCount, passengerBreakdown } = useMemo(() => {
+    if (typeof window === 'undefined') return { travelerCount: 1, passengerBreakdown: undefined as { adults: number; children: number; infants: number } | undefined };
+    try {
+      const ctx = JSON.parse(sessionStorage.getItem('fm_fare_context') || '{}');
+      const count = ctx.travelers || 1;
+      const breakdown = typeof ctx.adults === 'number'
+        ? { adults: ctx.adults, children: ctx.children ?? 0, infants: ctx.infants ?? 0 }
+        : undefined;
+      return { travelerCount: count, passengerBreakdown: breakdown };
+    } catch { return { travelerCount: 1, passengerBreakdown: undefined as { adults: number; children: number; infants: number } | undefined }; }
+  }, []);
+
   // Load fare options from sessionStorage context
   useEffect(() => {
     if (useFareStore.getState().payload) return;
@@ -87,6 +99,9 @@ export default function FareSelectionModal({ onClose }: Props) {
 
   const handleSelectFare = useCallback(async (id: string) => {
     store.selectFare(id);
+    // Clear the stale protection quote immediately so the UI doesn't flash
+    // the old fare's protection fee while the new quote loads
+    store.setProtectionQuote(null as any);
     const allFares = store.payload?.fareGroups.flatMap(g => g.fares) ?? [];
     const fare = allFares.find(f => f.id === id);
     if (!fare) return;
@@ -100,9 +115,20 @@ export default function FareSelectionModal({ onClose }: Props) {
 
   const selectedFare = getSelectedFareOption(store);
   const protectionFee = store.protectionQuote?.protectionFeeUsd ?? 0;
-  const grandTotal = selectedFare
-    ? selectedFare.totalPrice + (store.priceProtection ? protectionFee : 0)
-    : 0;
+  const totalProtectionFee = protectionFee * travelerCount;
+  const grandTotal = useMemo(() => {
+    if (!selectedFare) return 0;
+    const base = selectedFare.basePrice;
+    let fareTotal: number;
+    if (passengerBreakdown && travelerCount > 1) {
+      const { adults, children: childCount, infants } = passengerBreakdown;
+      fareTotal = adults * base + childCount * Math.round(base * 0.75) + infants * base;
+      fareTotal += Math.round(base * travelerCount * 0.015);
+    } else {
+      fareTotal = selectedFare.totalPrice;
+    }
+    return fareTotal + (store.priceProtection ? totalProtectionFee : 0);
+  }, [selectedFare, passengerBreakdown, travelerCount, store.priceProtection, totalProtectionFee]);
 
   const activeFares = useMemo(
     () => store.payload?.fareGroups.find(g => g.cabin === activeCabin)?.fares ?? [],
@@ -136,7 +162,7 @@ export default function FareSelectionModal({ onClose }: Props) {
       totalPrice:     selectedFare.totalPrice,
       priceProtection: store.priceProtection,
       protectionFee:  store.priceProtection ? protectionFee : 0,
-      grandTotal:     selectedFare.totalPrice + (store.priceProtection ? protectionFee : 0),
+      grandTotal:     selectedFare.totalPrice + (store.priceProtection ? totalProtectionFee : 0),
       currency:       store.payload?.currency || 'USD',
     };
 
@@ -199,12 +225,11 @@ export default function FareSelectionModal({ onClose }: Props) {
           animate={{ scale: 1, opacity: 1, y: 0 }}
           exit={{ scale: 0.96, opacity: 0, y: 16 }}
           transition={{ duration: 0.2 }}
-          className="bg-[#F8FAFC] rounded-[2.5rem] shadow-2xl w-full flex flex-col overflow-hidden"
-          style={{ maxWidth: 1020, maxHeight: '88vh' }}
+          className="bg-[#F8FAFC] rounded-2xl sm:rounded-[2.5rem] shadow-2xl w-full max-w-[1020px] flex flex-col overflow-hidden max-h-[100dvh] sm:max-h-[88vh]"
           onClick={(e) => e.stopPropagation()}
         >
           {/* ── Modal header ── */}
-          <div className="px-6 py-4 bg-white border-b border-slate-100 shrink-0 flex items-center justify-between gap-4">
+          <div className="px-4 sm:px-6 py-3 sm:py-4 bg-white border-b border-slate-100 shrink-0 flex items-center justify-between gap-3 sm:gap-4">
             <div className="flex items-center gap-2 min-w-0">
               <Plane size={14} className="text-[#1ABC9C] shrink-0" />
               <div className="min-w-0">
@@ -218,7 +243,7 @@ export default function FareSelectionModal({ onClose }: Props) {
               {selectedFare && payload && (
                 <div className="text-right">
                   <div className="text-xl font-bold text-[#F97316] leading-none">{fmtPrice(grandTotal, payload.currency)}</div>
-                  <div className="text-[9px] text-slate-400 mt-0.5">per traveler</div>
+                  <div className="text-[9px] text-slate-400 mt-0.5">Total</div>
                 </div>
               )}
               <button
@@ -234,7 +259,7 @@ export default function FareSelectionModal({ onClose }: Props) {
           {store.loading && (
             <div className="flex-1 flex items-center justify-center py-16">
               <div className="text-center">
-                <div className="w-10 h-10 rounded-full border-4 border-[#1ABC9C]/30 border-t-[#1ABC9C] animate-spin mx-auto mb-3" />
+                <div className="w-10 h-10 rounded-full border-4 border-slate-200 border-t-slate-900 animate-spin mx-auto mb-3" />
                 <p className="text-slate-500 text-sm font-medium">Finding the best fares…</p>
               </div>
             </div>
@@ -279,7 +304,7 @@ export default function FareSelectionModal({ onClose }: Props) {
                     <Zap size={13} className="text-[#1ABC9C]" strokeWidth={2.5} />
                     <span className="text-[10px] font-bold text-[#1ABC9C] uppercase tracking-wider">AI Recommendations</span>
                   </div>
-                  <div className="grid grid-cols-2 gap-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                     <AiChip
                       headline={payload.aiRecommendations.topPick.headline}
                       reason={payload.aiRecommendations.topPick.reason}
@@ -315,13 +340,12 @@ export default function FareSelectionModal({ onClose }: Props) {
                   ))}
                 </div>
 
-                {/* Fare tiles — horizontal grid */}
+                {/* Fare tiles — horizontal scroll */}
                 <div
-                  className="grid gap-3 pb-4 items-stretch"
-                  style={{ gridTemplateColumns: `repeat(${activeFares.length}, minmax(0, 1fr))` }}
+                  className="flex gap-3 pb-4 items-stretch overflow-x-auto snap-x snap-mandatory scrollbar-hide"
                 >
                   {activeFares.map(fare => (
-                    <div key={fare.id} id={`fare-${fare.id}`} className="flex">
+                    <div key={fare.id} id={`fare-${fare.id}`} className="flex min-w-[240px] sm:min-w-[280px] flex-1 snap-start">
                       <FareCard
                         fare={fare}
                         selected={store.selectedFareId === fare.id}
@@ -330,6 +354,8 @@ export default function FareSelectionModal({ onClose }: Props) {
                         onSelect={() => handleSelectFare(fare.id)}
                         onToggleProtection={store.togglePriceProtection}
                         currency={payload.currency}
+                        travelerCount={travelerCount}
+                        passengerBreakdown={passengerBreakdown}
                       />
                     </div>
                   ))}
@@ -340,12 +366,14 @@ export default function FareSelectionModal({ onClose }: Props) {
 
           {/* ── Sticky footer CTA ── */}
           {!store.loading && payload && selectedFare && (
-            <div className="px-5 py-4 bg-white border-t border-slate-100 shrink-0 flex items-center justify-between gap-4">
+            <div className="px-4 sm:px-5 py-3 sm:py-4 bg-white border-t border-slate-100 shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
               <div>
                 <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">{selectedFare.name}</p>
                 <div className="flex items-baseline gap-2">
                   <span className="text-3xl font-bold text-[#F97316] leading-none">{fmtPrice(grandTotal, payload.currency)}</span>
-                  <span className="text-[10px] text-slate-400 font-medium">per traveler</span>
+                  <span className="text-[10px] text-slate-400 font-medium">
+                    Total
+                  </span>
                 </div>
                 <p className="text-[9px] text-slate-400 mt-0.5">
                   {store.priceProtection ? 'incl. protection · ' : ''}+ small service fee at checkout
@@ -354,7 +382,7 @@ export default function FareSelectionModal({ onClose }: Props) {
               <button
                 onClick={handleContinue}
                 disabled={confirming}
-                className="flex items-center gap-2 px-7 py-3 rounded-2xl bg-[#1ABC9C] hover:bg-emerald-500 active:scale-[0.98] text-white font-bold text-[14px] transition-all disabled:opacity-60 shadow-lg shadow-[#1ABC9C]/30"
+                className="flex items-center gap-2 px-7 py-3 rounded-2xl bg-[#1ABC9C] hover:bg-emerald-500 active:scale-[0.98] text-white font-bold text-[14px] transition-all disabled:opacity-60 shadow-lg shadow-[#1ABC9C]/30 w-full sm:w-auto justify-center"
               >
                 {confirming ? (
                   <span className="flex items-center gap-2">

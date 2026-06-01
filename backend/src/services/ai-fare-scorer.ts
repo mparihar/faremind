@@ -30,6 +30,10 @@ export interface FareInput {
   seatSelection: 'free' | 'fee' | 'not_available';
   cabin: string;
   name: string;
+  // Comfort-relevant fields
+  priorityBoarding?: boolean;
+  loungeAccess?: boolean;
+  milesEarning?: 'full' | 'reduced' | 'none';
 }
 
 export interface FlightContext {
@@ -51,7 +55,7 @@ export interface AiScoreBreakdown {
   finalScore: number;
 }
 
-export type AiBadge = 'cheapest' | 'best_value' | 'most_flexible' | 'premium_upgrade' | 'ai_pick';
+export type AiBadge = 'cheapest' | 'best_value' | 'most_flexible' | 'premium_upgrade' | 'ai_pick' | 'best_comfort';
 
 export interface ScoredFare {
   id: string;
@@ -116,6 +120,107 @@ function normPrediction(ps: number): number {
   return 0.6;                 // neutral
 }
 
+// ─── Comfort Score (independent of AI score) ─────────────────────────────────
+
+interface ComfortResult {
+  comfortScore: number;
+  comfortReasons: string[];
+}
+
+function inferCabinLevelScore(cabin: string, name: string): number {
+  const lower = name.toLowerCase();
+  // Check cabin class first
+  if (cabin === 'first') return 100;
+  if (cabin === 'business') {
+    if (lower.includes('flex')) return 85;
+    return 80;
+  }
+  if (cabin === 'premium_economy') {
+    if (lower.includes('flex')) return 50;
+    return 45;
+  }
+  // Economy variants — infer from fare name
+  if (lower.includes('flex') || lower.includes('flexible')) return 24;
+  if (lower.includes('classic')) return 20;
+  if (lower.includes('standard') || lower.includes('regular')) return 18;
+  if (lower.includes('saver')) return 14;
+  if (lower.includes('light')) return 12;
+  if (lower.includes('basic')) return 10;
+  return 18; // default economy
+}
+
+function computeComfortScore(fare: FareInput): ComfortResult {
+  const reasons: string[] = [];
+
+  // 1. Cabin comfort (max 35)
+  const cabinLevel = inferCabinLevelScore(fare.cabin, fare.name);
+  const cabinComfort = Math.min((cabinLevel / 100) * 35, 35);
+  if (fare.cabin === 'business') reasons.push('Business class cabin');
+  else if (fare.cabin === 'first') reasons.push('First class cabin');
+  else if (fare.cabin === 'premium_economy') reasons.push('Premium Economy cabin');
+
+  // 2. Seat comfort (max 25)
+  let seatComfort = 0;
+  if (fare.seatSelection === 'free') { seatComfort += 8; reasons.push('Free seat selection'); }
+  else if (fare.seatSelection === 'fee') { seatComfort += 2; }
+  // Infer extra legroom / better pitch from cabin class
+  if (fare.cabin === 'business' || fare.cabin === 'first') {
+    seatComfort += 12; // extra legroom (7) + better pitch (5)
+    reasons.push('Extra legroom & lie-flat seat');
+  } else if (fare.cabin === 'premium_economy') {
+    seatComfort += 7; // extra legroom
+    reasons.push('Extra legroom seating');
+  }
+  // Preferred seat from free selection on non-basic fares
+  if (fare.seatSelection === 'free' && fare.cabin !== 'economy') seatComfort += 5;
+  seatComfort = Math.min(seatComfort, 25);
+
+  // 3. Baggage comfort (max 10)
+  let baggageComfort = 0;
+  if (fare.checked >= 2) { baggageComfort += 8; reasons.push(`${fare.checked} checked bags included`); }
+  else if (fare.checked === 1) { baggageComfort += 5; reasons.push('1 checked bag included'); }
+  if (fare.checked > 0 || fare.cabin !== 'economy') baggageComfort += 2; // carry-on always included
+  baggageComfort = Math.min(baggageComfort, 10);
+
+  // 4. Boarding comfort (max 10)
+  let boardingComfort = 0;
+  if (fare.cabin === 'business' || fare.cabin === 'first') {
+    boardingComfort = 10; reasons.push('Premium boarding');
+  } else if (fare.priorityBoarding) {
+    boardingComfort = 7; reasons.push('Priority boarding');
+  } else {
+    boardingComfort = 2;
+  }
+  boardingComfort = Math.min(boardingComfort, 10);
+
+  // 5. Flexibility comfort (max 10)
+  let flexComfort = 0;
+  if (fare.refundable) { flexComfort += 5; reasons.push('Fully refundable'); }
+  if (fare.changeable && fare.changeFeeUsd === 0) { flexComfort += 5; reasons.push('Free changes'); }
+  else if (fare.changeable) { flexComfort += 2; }
+  flexComfort = Math.min(flexComfort, 10);
+
+  // 6. Service amenity (max 10)
+  let amenityScore = 0;
+  if (fare.loungeAccess) { amenityScore += 5; reasons.push('Lounge access'); }
+  // Infer meal from cabin
+  if (fare.cabin === 'business' || fare.cabin === 'first') { amenityScore += 3; reasons.push('Meal service included'); }
+  if (fare.milesEarning === 'full') { amenityScore += 2; }
+  amenityScore = Math.min(amenityScore, 10);
+
+  const total = Math.round((cabinComfort + seatComfort + baggageComfort + boardingComfort + flexComfort + amenityScore) * 100) / 100;
+
+  return { comfortScore: Math.min(total, 100), comfortReasons: reasons };
+}
+
+// Cabin class rank for tie-breaking
+function cabinRank(cabin: string): number {
+  if (cabin === 'first') return 4;
+  if (cabin === 'business') return 3;
+  if (cabin === 'premium_economy') return 2;
+  return 1;
+}
+
 // ─── Step 2: Weighted combination ────────────────────────────────────────────
 
 function computeBreakdown(
@@ -162,7 +267,7 @@ function computeBreakdown(
 // ─── Step 3: Badge classification ────────────────────────────────────────────
 
 function classifyBadges(
-  fares: Array<{ id: string; totalPrice: number; breakdown: AiScoreBreakdown; cabin: string }>,
+  fares: Array<{ id: string; totalPrice: number; breakdown: AiScoreBreakdown; cabin: string; fareInput: FareInput }>,
 ): Record<string, AiBadge[]> {
   // CHEAPEST: min price
   const cheapestId = [...fares].sort((a, b) => a.totalPrice - b.totalPrice)[0].id;
@@ -183,6 +288,21 @@ function classifyBadges(
     ? [...premiumCandidates].sort((a, b) => b.breakdown.finalScore - a.breakdown.finalScore)[0].id
     : null;
 
+  // BEST COMFORT: highest comfort score across all cabins
+  const comfortScored = fares.map(f => ({ ...f, comfort: computeComfortScore(f.fareInput) }));
+  const bestComfortId = [...comfortScored].sort((a, b) => {
+    if (b.comfort.comfortScore !== a.comfort.comfortScore) return b.comfort.comfortScore - a.comfort.comfortScore;
+    // Tie-breakers: cabin rank → seat score → bags → lower price → higher AI score
+    const cr = cabinRank(b.cabin) - cabinRank(a.cabin);
+    if (cr !== 0) return cr;
+    const sr = b.breakdown.seatScore - a.breakdown.seatScore;
+    if (sr !== 0) return sr;
+    const br = b.fareInput.checked - a.fareInput.checked;
+    if (br !== 0) return br;
+    if (a.totalPrice !== b.totalPrice) return a.totalPrice - b.totalPrice;
+    return b.breakdown.finalScore - a.breakdown.finalScore;
+  })[0].id;
+
   const map: Record<string, AiBadge[]> = {};
   for (const f of fares) {
     const badges: AiBadge[] = [];
@@ -193,6 +313,7 @@ function classifyBadges(
     }
     if (f.id === mostFlexId && !badges.includes('best_value')) badges.push('most_flexible');
     if (f.id === premiumId && f.cabin !== 'economy') badges.push('premium_upgrade');
+    if (f.id === bestComfortId) badges.push('best_comfort');
     map[f.id] = badges;
   }
   return map;
@@ -227,6 +348,13 @@ function generateExplanation(fare: FareInput, bd: AiScoreBreakdown, badges: AiBa
     return parts.length > 0
       ? `Most flexible: ${parts.join(', ')}.`
       : 'Best flexibility score — fully refundable and changeable with no fees.';
+  }
+  if (badges.includes('best_comfort')) {
+    const { comfortReasons } = computeComfortScore(fare);
+    const topReasons = comfortReasons.slice(0, 4);
+    return topReasons.length > 0
+      ? `Best Comfort: ${topReasons.join(', ').toLowerCase()}.`
+      : 'Most comfortable option based on cabin quality, seating, baggage, and amenities.';
   }
   if (badges.includes('premium_upgrade')) {
     const perks: string[] = [];
@@ -275,7 +403,7 @@ export function computeAiScores(fares: FareInput[], ctx: FlightContext): ScoredF
 
   const badgeMap = classifyBadges(
     withBreakdowns.map(({ fare, breakdown }) => ({
-      id: fare.id, totalPrice: fare.totalPrice, breakdown, cabin: fare.cabin,
+      id: fare.id, totalPrice: fare.totalPrice, breakdown, cabin: fare.cabin, fareInput: fare,
     })),
   );
 

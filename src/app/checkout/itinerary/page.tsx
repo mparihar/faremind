@@ -96,6 +96,40 @@ function SegmentCard({ seg }: { seg: DisplaySeg }) {
   const dur = formatDuration(seg.durationMin);
   const stopsLabel = seg.stops === 0 ? 'Non-stop' : seg.stops === 1 ? '1 stop' : `${seg.stops} stops`;
 
+  const handleChangeFlight = () => {
+    // Reconstruct search URL preserving passenger counts from session context
+    try {
+      const raw = sessionStorage.getItem('fm_fare_context');
+      const ctx = raw ? JSON.parse(raw) : {};
+      const origin = ctx.origin || seg.from;
+      const destination = ctx.destination || seg.to;
+      const adults = ctx.adults ?? 1;
+      const children = ctx.children ?? 0;
+      const infants = ctx.infants ?? 0;
+      const date = ctx.date || '';
+      const cabin = ctx.cabin || 'economy';
+      const trip = ctx.trip || 'one_way';
+      const returnDate = ctx.returnDate || '';
+
+      const params = new URLSearchParams({
+        origin,
+        destination,
+        adults: String(adults),
+        children: String(children),
+        infants: String(infants),
+        cabin,
+        trip,
+      });
+      if (date) params.set('date', date);
+      if (returnDate) params.set('return', returnDate);
+
+      router.push(`/search?${params.toString()}`);
+    } catch {
+      // Fallback to browser back
+      router.back();
+    }
+  };
+
   return (
     <div className="space-y-3">
       {/* Segment label badge */}
@@ -151,7 +185,7 @@ function SegmentCard({ seg }: { seg: DisplaySeg }) {
           Flight details <ChevronRight size={12} />
         </button>
         <button
-          onClick={() => router.back()}
+          onClick={handleChangeFlight}
           className="text-xs font-semibold text-slate-400 hover:text-slate-600 transition-colors flex items-center gap-1"
         >
           Change flight <ChevronRight size={12} />
@@ -265,12 +299,15 @@ export default function CheckoutItineraryPage() {
     const sourceFlight    = useFareStore.getState().sourceFlight    ?? (ssGet('fm_source_flight')     as import('@/lib/types').UnifiedFlight | null);
     const sourceRoundTrip = useFareStore.getState().sourceRoundTrip ?? (ssGet('fm_source_round_trip') as import('@/lib/round-trip-types').RoundTripOption | null);
 
-    // 5. Traveler count from context
-    const ctx          = ssGet('fm_fare_context') as { travelers?: number } | null;
+    // 5. Traveler count and breakdown from context
+    const ctx          = ssGet('fm_fare_context') as { travelers?: number; adults?: number; children?: number; infants?: number } | null;
     const travelerCount = typeof ctx?.travelers === 'number' ? ctx.travelers : 1;
+    const passengerBreakdown = (typeof ctx?.adults === 'number')
+      ? { adults: ctx.adults, children: ctx.children ?? 0, infants: ctx.infants ?? 0 }
+      : undefined;
 
     // 6. Init checkout store
-    checkoutStore.initFromStores(resolvedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount);
+    checkoutStore.initFromStores(resolvedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown);
 
     const snapshot = useCheckoutStore.getState();
     setPricing(buildLocalPricing(snapshot));
@@ -559,7 +596,7 @@ export default function CheckoutItineraryPage() {
                   <div>
                     <p className="text-xs font-bold text-[#1ABC9C]">Price Drop Protection active</p>
                     <p className="text-xs text-slate-600 mt-0.5">
-                      80% refund if the price drops after booking
+                      Refund 80% of any eligible fare decrease after booking.
                     </p>
                   </div>
                 </div>

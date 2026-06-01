@@ -213,7 +213,7 @@ export default function FloatingAIAssistant({
 
   return (
     // Fixed bottom-left container
-    <div className="fixed bottom-14 left-56 z-50 flex flex-col items-start gap-3">
+    <div className="fixed bottom-4 sm:bottom-6 left-4 sm:left-56 z-50 flex flex-col items-start gap-3">
 
       {/* ── Expanded Chat Panel ──────────────────────────────────────────── */}
       <AnimatePresence>
@@ -224,8 +224,8 @@ export default function FloatingAIAssistant({
             animate={{ opacity: 1, scale: 1,    y: 0  }}
             exit={{   opacity: 0, scale: 0.94,  y: 12 }}
             transition={{ type: 'spring', stiffness: 400, damping: 32 }}
-            className="w-[380px] max-sm:w-[calc(100vw-24px)] flex flex-col rounded-2xl overflow-hidden shadow-[0_12px_48px_rgba(13,148,136,0.18),0_2px_12px_rgba(0,0,0,0.10)] border border-teal-200/60"
-            style={{ maxHeight: 580, background: '#ffffff' }}
+            className="w-[calc(100vw-2rem)] sm:w-[420px] md:w-[440px] max-sm:fixed max-sm:inset-2 max-sm:w-auto flex flex-col rounded-2xl overflow-hidden shadow-[0_12px_48px_rgba(13,148,136,0.18),0_2px_12px_rgba(0,0,0,0.10)] border border-teal-200/60"
+            style={{ minHeight: 'min(580px, calc(100dvh - 6rem))', maxHeight: 'min(750px, calc(100dvh - 4rem))', background: '#ffffff' }}
           >
 
             {/* Co-Pilot accent bar */}
