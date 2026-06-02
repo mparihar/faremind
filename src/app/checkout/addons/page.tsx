@@ -15,9 +15,11 @@ import {
   Info,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
+import { useOfferGuard } from '@/hooks/useOfferGuard';
 import { cn } from '@/lib/utils';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
 import { apiFetch } from '@/lib/api-client';
+import { useFeeLoader } from '@/hooks/useFeeLoader';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -365,8 +367,12 @@ function PriceSummary({
 
 export default function AddonsPage() {
   const router = useRouter();
+  const { isExpired, OfferGuardUI } = useOfferGuard();
   const store = useCheckoutStore();
   const [submitting, setSubmitting] = useState(false);
+
+  // Load DB-driven fees — populates computedFees in checkout store
+  useFeeLoader();
 
   const {
     fareOption,
@@ -387,13 +393,13 @@ export default function AddonsPage() {
   if (!selectedFare || !sessionId) return null;
 
   const includedBags = fareOption?.baggage.checked ?? 0;
-  const protectionFee =
-    selectedFare?.protectionFee && selectedFare.protectionFee > 0
+
+  // Use DB-driven fees if available, otherwise fall back to hardcoded
+  const protectionFee = store.computedFees
+    ? store.computedFees.protectionFee
+    : selectedFare?.protectionFee && selectedFare.protectionFee > 0
       ? selectedFare.protectionFee
-      : Math.min(
-          Math.max(Math.round((selectedFare?.basePrice ?? 0) * 0.06), 49),
-          399
-        );
+      : Math.min(Math.max(Math.round((selectedFare?.basePrice ?? 0) * 0.06), 49), 399);
 
   const pricing = buildLocalPricing({
     ...store,
@@ -431,6 +437,7 @@ export default function AddonsPage() {
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
       <CheckoutHeader stepIndex={STEP_INDEX} />
+      {OfferGuardUI()}
 
       <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -450,7 +457,9 @@ export default function AddonsPage() {
 
             <TravelInsuranceSection
               enabled={travelInsurance}
-              fee={pricing.insuranceFee > 0 ? pricing.insuranceFee : Math.round((selectedFare?.basePrice ?? 0) * passengers.length * 0.04)}
+              fee={store.computedFees
+                ? store.computedFees.insuranceFeeTotal
+                : pricing.insuranceFee > 0 ? pricing.insuranceFee : Math.round((selectedFare?.basePrice ?? 0) * passengers.length * 0.04)}
               onToggle={store.toggleInsurance}
             />
 

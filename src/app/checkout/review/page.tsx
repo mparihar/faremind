@@ -13,9 +13,11 @@ import {
   Luggage,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
+import { useOfferGuard } from '@/hooks/useOfferGuard';
 import { cn, formatTime, formatDuration } from '@/lib/utils';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
 import { apiFetch } from '@/lib/api-client';
+import { useFeeLoader } from '@/hooks/useFeeLoader';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -183,6 +185,7 @@ function PriceBreakdownCard({
 
 export default function ReviewPage() {
   const router = useRouter();
+  const { isExpired, OfferGuardUI } = useOfferGuard();
   const store = useCheckoutStore();
   const [acceptedTerms, setAcceptedTerms] = useState(false);
 
@@ -202,6 +205,9 @@ export default function ReviewPage() {
   } = store;
 
   const pricing = buildLocalPricing(store);
+
+  // Load DB-driven fees — populates computedFees in checkout store
+  useFeeLoader();
 
   useEffect(() => {
     if (!selectedFare || !sessionId) router.replace('/');
@@ -355,6 +361,7 @@ export default function ReviewPage() {
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
       <CheckoutHeader stepIndex={STEP_INDEX} />
+      {OfferGuardUI()}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -592,7 +599,7 @@ export default function ReviewPage() {
             <div className="lg:hidden">
               <button
                 onClick={handleProceed}
-                disabled={!acceptedTerms}
+                disabled={!acceptedTerms || isExpired}
                 className="w-full py-4 rounded-2xl bg-[#1ABC9C] hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-[#1ABC9C]/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Proceed to Payment

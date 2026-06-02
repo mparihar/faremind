@@ -11,12 +11,14 @@ import {
   AlertCircle,
   Check,
   Loader2,
+  Mic,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
 import { cn } from '@/lib/utils';
 import { useCheckoutStore } from '@/store/useCheckoutStore';
 import type { PassengerInfo } from '@/store/useCheckoutStore';
 import { apiFetch } from '@/lib/api-client';
+import { useOfferGuard } from '@/hooks/useOfferGuard';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -723,6 +725,7 @@ function PassengerCard({ pax, index, errors, touched, onChange, departureDate }:
 
 export default function PassengersPage() {
   const router = useRouter();
+  const { isExpired, OfferGuardUI } = useOfferGuard();
   const passengers = useCheckoutStore(s => s.passengers);
   const selectedFare = useCheckoutStore(s => s.selectedFare);
   const sessionId = useCheckoutStore(s => s.sessionId);
@@ -791,6 +794,7 @@ export default function PassengersPage() {
   return (
     <div className="min-h-screen bg-slate-50">
       <CheckoutHeader stepIndex={STEP_INDEX} />
+      {OfferGuardUI()}
 
       <main className="max-w-7xl mx-auto px-4 py-8">
         <div className="mb-6">
@@ -800,13 +804,21 @@ export default function PassengersPage() {
           </p>
         </div>
 
+        {/* Voice Assistant Hint */}
+        <div className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[#ECFDF5] border border-[#5EEAD4] text-[#0F766E] text-xs">
+          <Mic className="w-3.5 h-3.5 text-[#14B8A6] shrink-0" />
+          <span className="font-medium">
+            Use FareMind Travel Assistant to fill traveler details by voice.
+          </span>
+        </div>
+
         {/* Age categorization info */}
         {departureDate && (
-          <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-blue-50 border border-blue-200 text-blue-800 text-sm">
-            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-blue-500" />
+          <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-[#ECFDF5] border border-[#5EEAD4] text-[#134E4A] text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-[#14B8A6]" />
             <div>
-              <p className="font-semibold">Age is verified based on travel date: {new Date(departureDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              <p className="text-xs text-blue-600 mt-1">
+              <p className="font-semibold text-[#0F766E]">Age is verified based on travel date: {new Date(departureDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              <p className="text-xs text-[#134E4A] mt-1">
                 Adult: 12+ years &bull; Child: 2–11 years &bull; Infant: under 2 years (age at departure)
               </p>
             </div>
@@ -855,7 +867,7 @@ export default function PassengersPage() {
         {/* CTA */}
         <button
           onClick={handleSubmit}
-          disabled={submitting || (touched && !valid)}
+          disabled={submitting || (touched && !valid) || isExpired}
           className="w-full py-4 rounded-2xl bg-[#1ABC9C] hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-[#1ABC9C]/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed disabled:shadow-none"
         >
           {submitting ? (

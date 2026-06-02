@@ -326,6 +326,9 @@ export function buildLocalPricing(store: CheckoutStore): PricingBreakdown {
     insuranceFee = travelInsurance ? computedFees.insuranceFeeTotal : 0;
   } else {
     // Hardcoded fallback (backward compatibility)
+    if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
+      console.warn('[buildLocalPricing] ⚠️ Using hardcoded fee fallback — computedFees is null. Call useFeeLoader() or /api/fees/compute.');
+    }
     serviceFee = Math.round(perPersonBase * passengers.length * 0.015);
     const perPersonProtection = selectedFare?.protectionFee && selectedFare.protectionFee > 0
       ? selectedFare.protectionFee

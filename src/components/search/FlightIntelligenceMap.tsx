@@ -217,54 +217,32 @@ export default function FlightIntelligenceMap(props: FlightIntelligenceMapProps)
   const originCoords = getAirportCoords(origin);
   const destCoords = getAirportCoords(destination);
 
-  // ── Map centering — fitBounds on the actual offset arc geometries, tightly framed ──
+  // ── Map centering — show both airports at a comfortable zoom-out level ──
   useEffect(() => {
     if (originCoords[0] === 0 || destCoords[0] === 0) return;
 
-    const baseOut = safeGreatCircle(originCoords, destCoords);
-    const baseRet = safeGreatCircle(destCoords, originCoords);
-    if (!baseOut) return;
+    // Unwrap longitudes to avoid antimeridian jump
+    let oLng = originCoords[0];
+    let dLng = destCoords[0];
+    while (dLng - oLng > 180) dLng -= 360;
+    while (dLng - oLng < -180) dLng += 360;
 
-    // Collect all coordinates from both offset arcs so the bbox covers everything
-    // Return uses 40 km offset (matches returnArcGeom) to avoid over-expanding northward
-    const allCoords: [number, number][] = [
-      ...offsetArc(baseOut, 160).coordinates,
-      ...(baseRet ? offsetArc(baseRet, 40).coordinates : []),
-      originCoords,
-      destCoords,
-    ] as [number, number][];
+    const centerLng = (oLng + dLng) / 2;
+    const centerLat = (originCoords[1] + destCoords[1]) / 2;
 
-    const lats = allCoords.map(c => c[1]);
-    const lngs = allCoords.map(c => c[0]);
-    const west  = Math.min(...lngs);
-    const east  = Math.max(...lngs);
-    const north = Math.max(...lats);
-    // Clamp south so empty ocean below the airports isn't included in the frame
-    const rawSouth = Math.min(...lats);
-    const minAirportLat = Math.min(originCoords[1], destCoords[1]);
-    const south = Math.max(rawSouth, minAirportLat - 12);
+    // Calculate zoom based on the geographic span — but cap it low so it never zooms in tight
+    const lngSpan = Math.abs(dLng - oLng);
+    const latSpan = Math.abs(originCoords[1] - destCoords[1]);
+    const span = Math.max(lngSpan, latSpan);
 
-    const fit = () => {
-      const map = mapRef.current?.getMap?.();
-      if (!map) return;
-      map.fitBounds([[west, south], [east, north]], {
-        padding: { top: 80, bottom: 50, left: 80, right: 80 },
-        duration: 0,
-        maxZoom: 8,
-      });
-    };
+    // World-view zoom: the larger the span, the more zoomed out
+    // span ~0-30° → zoom 3, span ~30-90° → zoom 2, span 90°+ → zoom 1.5
+    let zoom = 1.5;
+    if (span < 30) zoom = 2.8;
+    else if (span < 60) zoom = 2.2;
+    else if (span < 90) zoom = 1.8;
 
-    // Try immediately; if map not yet loaded, retry on 'load'
-    const map = mapRef.current?.getMap?.();
-    if (map && map.loaded()) {
-      fit();
-    } else if (map) {
-      map.once('load', fit);
-    } else {
-      // Map not mounted yet — retry after first paint
-      const id = requestAnimationFrame(fit);
-      return () => cancelAnimationFrame(id);
-    }
+    setViewState({ longitude: centerLng, latitude: centerLat, zoom });
   }, [origin, destination]);
 
   // ── Permanent route arcs (independent of flights) ─────────────────────────

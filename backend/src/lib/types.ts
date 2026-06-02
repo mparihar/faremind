@@ -73,4 +73,10 @@ export interface UnifiedFlight {
   seatsRemaining?: number;
   tags?: FlightTag[];
   breakdown?: ScoreBreakdown;
+  offerExpiresAt?: string; // ISO 8601 — provider offer expiry timestamp
+
+  // ── Internal markup (never shown to customer) ──
+  providerTotalFare?: number;
+  fareMindMarkupAmount?: number;
+  markupRuleId?: string;
 }

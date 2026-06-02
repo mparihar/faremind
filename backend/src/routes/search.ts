@@ -3,6 +3,7 @@ import { searchFlights, getProviderStatus } from '../services/orchestrator';
 import { logSearch } from '../lib/db-queries';
 import { scoreFlights, WEIGHTS } from '../lib/flight/score';
 import { cacheGet, cacheSet, searchKey } from '../services/cache';
+import { applyMarkupToOffers } from '../services/markup-service';
 import type { UnifiedFlight } from '../lib/types';
 
 const CABIN_CLASSES = ['economy', 'premium_economy', 'business', 'first'] as const;
@@ -60,6 +61,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }).catch((err) => console.warn('[Search] Log failed:', err.message));
 
       let rankedFlights = mergedFlights;
+
+      // ── Apply internal markup before scoring ─────────────────────────────
+      await applyMarkupToOffers(rankedFlights);
 
       if (mergedFlights.length > 0) {
         const metrics = mergedFlights.map((f) => ({ id: f.id, price: f.totalPrice, durationMin: f.totalDuration, stops: f.stops }));

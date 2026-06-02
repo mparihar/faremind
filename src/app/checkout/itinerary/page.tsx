@@ -11,14 +11,18 @@ import {
   Lock,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
+import { OfferExpiryTimer } from '@/components/checkout/OfferExpiryTimer';
+import { OfferExpiryModals } from '@/components/checkout/OfferExpiryModals';
 import { useFareStore } from '@/store/useFareStore';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
+import { useOfferSessionStore } from '@/store/useOfferSessionStore';
 import type { PricingBreakdown } from '@/store/useCheckoutStore';
 import type { FareOption } from '@/lib/fare-types';
 import type { JourneySegment } from '@/lib/round-trip-types';
 import type { FlightSegment } from '@/lib/types';
 import { formatTime, formatDuration, formatDate, cn, formatPrice } from '@/lib/utils';
 import { apiFetch } from '@/lib/api-client';
+import { useFeeLoader } from '@/hooks/useFeeLoader';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -229,10 +233,14 @@ export default function CheckoutItineraryPage() {
   const router = useRouter();
   const fareStore = useFareStore();
   const checkoutStore = useCheckoutStore();
+  const offerSession = useOfferSessionStore();
 
   const [pricing, setPricing] = useState<PricingBreakdown | null>(null);
   const [ready, setReady] = useState(false);
   const [navigating, setNavigating] = useState(false);
+
+  // Load DB-driven fees — populates computedFees in checkout store
+  const { loading: feesLoading } = useFeeLoader();
 
   const handleNextCheckout = async () => {
     const fare = checkoutStore.selectedFare;
@@ -309,10 +317,37 @@ export default function CheckoutItineraryPage() {
     // 6. Init checkout store
     checkoutStore.initFromStores(resolvedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown);
 
+    // 7. Start offer expiry session
+    const offerExpiresAt = sourceFlight?.offerExpiresAt ?? sourceRoundTrip?.offerExpiresAt;
+    const providerOfferId = sourceFlight?.providerOfferId ?? sourceRoundTrip?.providerOfferId ?? resolvedFare.offerId;
+    const providerName = sourceFlight?.provider ?? sourceRoundTrip?.provider ?? 'duffel';
+    useOfferSessionStore.getState().startSession({
+      provider: providerName,
+      providerOfferId,
+      expiresAt: offerExpiresAt,
+      searchCriteria: ctx ? {
+        origin: (ctx as any).origin,
+        destination: (ctx as any).destination,
+        departureDate: (ctx as any).date,
+        returnDate: (ctx as any).returnDate,
+        adults: (ctx as any).adults,
+        children: (ctx as any).children,
+        infants: (ctx as any).infants,
+        cabinClass: (ctx as any).cabin,
+      } : undefined,
+    });
+
     const snapshot = useCheckoutStore.getState();
     setPricing(buildLocalPricing(snapshot));
     setReady(true);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Rebuild pricing when DB fees arrive
+  useEffect(() => {
+    if (!feesLoading && checkoutStore.selectedFare) {
+      setPricing(buildLocalPricing(useCheckoutStore.getState()));
+    }
+  }, [feesLoading, checkoutStore.computedFees]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ── Build display segments ─────────────────────────────────────────────────
   const displaySegs = useMemo<DisplaySeg[]>(() => {
@@ -424,9 +459,17 @@ export default function CheckoutItineraryPage() {
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
       <CheckoutHeader stepIndex={STEP_INDEX} />
+      <OfferExpiryModals />
+
+      {/* ── Offer Expiry Banner ── */}
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+        <OfferExpiryTimer
+          onRefreshResults={() => router.push('/flights')}
+        />
+      </div>
 
       {/* ── Page content ── */}
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
           {/* ════════════════════════════════════════════
@@ -485,8 +528,7 @@ export default function CheckoutItineraryPage() {
               <Shield size={18} className="text-[#1ABC9C] flex-none mt-0.5" strokeWidth={2} />
               <p className="text-sm text-slate-700 leading-snug">
                 <span className="font-semibold text-[#1ABC9C]">Good to know: </span>
-                Seats and bags can be added in the next steps. Your selection is held for{' '}
-                <span className="font-semibold">10 minutes</span>.
+                Seats and bags can be added in the next steps. Your fare is held while the countdown timer is active.
               </p>
             </div>
           </div>

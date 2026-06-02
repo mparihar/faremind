@@ -7,6 +7,7 @@ import {
   Shield, Sparkles, ChevronDown,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
+import { useOfferGuard } from '@/hooks/useOfferGuard';
 import { motion, AnimatePresence } from 'framer-motion';
 import { cn, formatTime, formatDate, formatPrice } from '@/lib/utils';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
@@ -14,6 +15,7 @@ import type { MealOptionDef } from '@/lib/meal-types';
 import type { PassengerInfo } from '@/store/useCheckoutStore';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
+import { useFeeLoader } from '@/hooks/useFeeLoader';
 
 const STEP_INDEX = 3;
 
@@ -452,10 +454,14 @@ interface SegmentMeals {
 
 export default function MealsPage() {
   const router = useRouter();
+  const { isExpired, OfferGuardUI } = useOfferGuard();
   const {
     selectedFare, sessionId, sourceFlight, sourceRoundTrip,
     passengers, mealSelections, updateMealSelection,
   } = useCheckoutStore();
+
+  // Load DB-driven fees — populates computedFees in checkout store
+  useFeeLoader();
 
   const [segmentMeals, setSegmentMeals] = useState<(SegmentMeals | null)[]>([]);
   const [loading, setLoading] = useState(true);
@@ -512,6 +518,7 @@ export default function MealsPage() {
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
       <CheckoutHeader stepIndex={STEP_INDEX} />
+      {OfferGuardUI()}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-6 flex flex-col gap-5">
 

@@ -158,5 +158,6 @@ export function normalizeDuffelRoundTripOffer(offer: DuffelOffer): RoundTripOpti
       changeable: offer.conditions?.change_before_departure?.allowed ?? false,
     },
     baggage: { carryOn, checked },
+    offerExpiresAt: offer.expires_at || undefined,
   };
 }

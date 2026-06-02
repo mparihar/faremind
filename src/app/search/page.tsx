@@ -376,7 +376,37 @@ function SearchContent() {
     return Array.from(seen.entries()).map(([code, name]) => ({ code, name }));
   }, [results]);
 
-  // ── Filter panel options (computed from raw results, never from filtered) ──
+  // ── Apply all preferences to round-trip options ────────────────────────────
+  // (Must be defined before filter-panel option counts that depend on it)
+  const prefsFilteredRT = useMemo<RoundTripOption[]>(() => {
+    let filtered = effectiveRT;
+    if (prefs.budgetActive) {
+      filtered = filtered.filter(rt => rt.totalPrice >= prefs.budgetMin && rt.totalPrice <= prefs.budgetMax);
+    }
+    if (prefs.maxDuration != null) {
+      filtered = filtered.filter(rt => rt.totalDurationMinutes <= prefs.maxDuration!);
+    }
+    if (prefs.stops === 'nonstop') {
+      filtered = filtered.filter(rt => rt.totalStops === 0);
+    } else if (prefs.stops === '1stop') {
+      filtered = filtered.filter(rt => rt.maxStopsOneWay <= 1);
+    } else if (prefs.stops === '2stop') {
+      filtered = filtered.filter(rt => rt.maxStopsOneWay <= 2);
+    }
+    if (prefs.departureWindow != null) {
+      filtered = filtered.filter(rt => {
+        const h = new Date(rt.outboundJourney.departureTime).getHours();
+        if (prefs.departureWindow === 'morning')   return h >= 5 && h < 12;
+        if (prefs.departureWindow === 'afternoon') return h >= 12 && h < 17;
+        if (prefs.departureWindow === 'evening')   return h >= 17 && h < 21;
+        if (prefs.departureWindow === 'night')     return h >= 21 || h < 5;
+        return true;
+      });
+    }
+    return filtered;
+  }, [effectiveRT, prefs.budgetActive, prefs.budgetMin, prefs.budgetMax, prefs.maxDuration, prefs.stops, prefs.departureWindow]);
+
+  // ── Filter panel options (computed from prefs-filtered results) ──
   const CLASS_LABELS: Record<string, string> = {
     economy: 'Economy', premium_economy: 'Premium Economy', business: 'Business', first: 'First Class',
   };
@@ -384,12 +414,13 @@ function SearchContent() {
   const airlineFilterOptions = useMemo<FilterOption[]>(() => {
     const map = new Map<string, { count: number; min: number }>();
     if (tripParam === 'round_trip') {
-      roundTripOptions.forEach(rt => rt.airlines.forEach(name => {
+      // Use prefsFilteredRT so counts reflect what's visible after budget/stops/duration filters
+      prefsFilteredRT.forEach(rt => rt.airlines.forEach(name => {
         const e = map.get(name) || { count: 0, min: Infinity };
         map.set(name, { count: e.count + 1, min: Math.min(e.min, rt.totalPrice) });
       }));
     } else {
-      results.forEach(f => {
+      effectiveOneWay.forEach(f => {
         const e = map.get(f.airline.name) || { count: 0, min: Infinity };
         map.set(f.airline.name, { count: e.count + 1, min: Math.min(e.min, f.totalPrice) });
       });
@@ -397,7 +428,7 @@ function SearchContent() {
     return Array.from(map.entries())
       .map(([name, { count, min }]) => ({ id: name, label: name, count, minPrice: isFinite(min) ? min : null }))
       .sort((a, b) => (a.minPrice ?? 0) - (b.minPrice ?? 0));
-  }, [results, roundTripOptions, tripParam]);
+  }, [effectiveOneWay, prefsFilteredRT, tripParam]);
 
   const classFilterOptions = useMemo<FilterOption[]>(() => {
     // Always show all standard classes; count=0 ones are shown disabled
@@ -408,7 +439,7 @@ function SearchContent() {
       { key: 'first',            label: 'First Class' },
     ];
     const map = new Map<string, { count: number; min: number }>();
-    const src = tripParam === 'round_trip' ? roundTripOptions : results;
+    const src = tripParam === 'round_trip' ? prefsFilteredRT : effectiveOneWay;
     src.forEach(item => {
       const cls = (item as { cabinClass: string }).cabinClass;
       const e = map.get(cls) || { count: 0, min: Infinity };
@@ -418,7 +449,7 @@ function SearchContent() {
       const d = map.get(key);
       return { id: key, label, note, count: d?.count ?? 0, minPrice: d && isFinite(d.min) ? d.min : null };
     });
-  }, [results, roundTripOptions, tripParam]);
+  }, [effectiveOneWay, prefsFilteredRT, tripParam]);
 
   const featureFilterOptions = useMemo<FilterOption[]>(() => {
     type FlightLike = { baggage: { carryOn: number; checked: number }; fareRules: { refundable: boolean; changeable: boolean }; totalPrice: number };
@@ -428,13 +459,13 @@ function SearchContent() {
       { key: 'refundable', label: 'Refundable fare',    test: f => !!f.fareRules?.refundable },
       { key: 'changeable', label: 'Changes included',   test: f => !!f.fareRules?.changeable },
     ];
-    const src = (tripParam === 'round_trip' ? roundTripOptions : results) as FlightLike[];
+    const src = (tripParam === 'round_trip' ? prefsFilteredRT : effectiveOneWay) as FlightLike[];
     return defs.map(({ key, label, test }): FilterOption | null => {
       const matching = src.filter(test);
       if (!matching.length) return null;
       return { id: key, label, count: matching.length, minPrice: Math.min(...matching.map(f => f.totalPrice)) };
     }).filter((x): x is FilterOption => x !== null);
-  }, [results, roundTripOptions, tripParam]);
+  }, [effectiveOneWay, prefsFilteredRT, tripParam]);
 
   const handleSelectFlight = (flight: UnifiedFlight) => {
     fareStore.reset();
@@ -470,36 +501,7 @@ function SearchContent() {
     setShowFareModal(true);
   };
 
-  // ── Apply all preferences to round-trip options ────────────────────────────
-  const prefsFilteredRT = useMemo<RoundTripOption[]>(() => {
-    let filtered = effectiveRT;
-    if (prefs.budgetActive) {
-      filtered = filtered.filter(rt => rt.totalPrice >= prefs.budgetMin && rt.totalPrice <= prefs.budgetMax);
-    }
-    if (prefs.maxDuration != null) {
-      filtered = filtered.filter(rt => rt.totalDurationMinutes <= prefs.maxDuration!);
-    }
-    if (prefs.stops === 'nonstop') {
-      filtered = filtered.filter(rt => rt.totalStops === 0);
-    } else if (prefs.stops === '1stop') {
-      filtered = filtered.filter(rt => rt.maxStopsOneWay <= 1);
-    } else if (prefs.stops === '2stop') {
-      filtered = filtered.filter(rt => rt.maxStopsOneWay <= 2);
-    }
-    if (prefs.departureWindow != null) {
-      filtered = filtered.filter(rt => {
-        const h = new Date(rt.outboundJourney.departureTime).getHours();
-        if (prefs.departureWindow === 'morning')   return h >= 5 && h < 12;
-        if (prefs.departureWindow === 'afternoon') return h >= 12 && h < 17;
-        if (prefs.departureWindow === 'evening')   return h >= 17 && h < 21;
-        if (prefs.departureWindow === 'night')     return h >= 21 || h < 5;
-        return true;
-      });
-    }
-    return filtered;
-  }, [effectiveRT, prefs.budgetActive, prefs.budgetMin, prefs.budgetMax, prefs.maxDuration, prefs.stops, prefs.departureWindow]);
-
-  const panelFilteredRT = useMemo(() => { console.log('[DEBUG] effectiveRT.length:', effectiveRT.length, 'prefsFilteredRT.length:', prefsFilteredRT.length, 'selectedAirlines:', selectedAirlines.size, 'selectedClasses:', selectedClasses.size, 'selectedFeatures:', selectedFeatures.size);
+  const panelFilteredRT = useMemo(() => {
     let f = prefsFilteredRT;
     if (selectedAirlines.size > 0) f = f.filter(rt => rt.airlines.some(a => selectedAirlines.has(a)));
     if (selectedClasses.size  > 0) f = f.filter(rt => selectedClasses.has(rt.cabinClass));

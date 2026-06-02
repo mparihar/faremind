@@ -9,6 +9,7 @@
 import { useState } from 'react';
 import { Package, Heart, ChevronRight, Check } from 'lucide-react';
 import { EXTRA_BAG_PRICE, INSURANCE_RATE } from '@/lib/ai-booking-types';
+import { useAiBookingStore } from '@/store/useAiBookingStore';
 
 interface Props {
   passengerCount: number;
@@ -28,7 +29,11 @@ export default function AiMultiPaxAddOnsStep({
   const [travelInsurance, setTravelInsurance] = useState(false);
   const [selections, setSelections] = useState<string[]>([]);
 
-  const insuranceFee = Math.round(baseFarePrice * INSURANCE_RATE);
+  const computedFees = useAiBookingStore(s => s.computedFees);
+  // Use DB-driven insurance fee if available, otherwise fallback to hardcoded rate
+  const insuranceFee = computedFees
+    ? Math.round(computedFees.insuranceFeeTotal / Math.max(1, passengerCount))
+    : Math.round(baseFarePrice * INSURANCE_RATE);
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n);
 

@@ -1,7 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useCallback } from 'react';
 import {
   Sparkles,
   TrendingDown,
@@ -16,8 +16,10 @@ import {
   ChevronRight,
 } from 'lucide-react';
 import SearchForm from '@/components/search/SearchForm';
+import type { SearchFormHandle } from '@/components/search/SearchForm';
 import SmartPreferencesBar from '@/components/search/SmartPreferencesBar';
 import { usePreferencesStore } from '@/store/usePreferencesStore';
+import { useVoiceStore } from '@/store/useVoiceStore';
 import { cn } from '@/lib/utils';
 
 import Link from 'next/link';
@@ -105,8 +107,42 @@ export default function HomePage() {
   const [routes, setRoutes] = useState<LiveRoute[]>(FALLBACK_ROUTES);
   const [routesLoading] = useState(false);
   const [dateMode, setDateMode] = useState<'specific' | 'flexible'>('specific');
+  const setSearchFormRef = useVoiceStore((s) => s.setSearchFormRef);
+
+  // Use callback ref so the voice store gets set immediately when SearchForm mounts
+  const searchFormCallbackRef = useCallback((handle: SearchFormHandle | null) => {
+    setSearchFormRef(handle);
+  }, [setSearchFormRef]);
 
   useEffect(() => { resetAll(); }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Check for pending voice search from sessionStorage (cross-page navigation)
+  useEffect(() => {
+    const pending = sessionStorage.getItem('faremind_voice_search');
+    if (!pending) return;
+
+    // Always remove immediately to prevent stale re-application on next reload
+    sessionStorage.removeItem('faremind_voice_search');
+
+    const apply = () => {
+      const ref = useVoiceStore.getState().searchFormRef;
+      if (ref) {
+        try {
+          const data = JSON.parse(pending);
+          ref.fillFromVoice(data);
+          // Don't auto-trigger search — let user verify & click Search Flights
+        } catch { /* ignore */ }
+      }
+    };
+
+    // SearchForm ref may not be registered yet — retry after a short delay
+    const ref = useVoiceStore.getState().searchFormRef;
+    if (ref) {
+      apply();
+    } else {
+      setTimeout(apply, 500);
+    }
+  }, []);
 
   useEffect(() => {
     fetch('/api/popular-routes')
@@ -170,7 +206,7 @@ export default function HomePage() {
 
           {/* Search Form */}
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.2 }} className="mt-6 relative z-40">
-            <SearchForm onDateModeChange={setDateMode} />
+            <SearchForm ref={searchFormCallbackRef} onDateModeChange={setDateMode} />
           </motion.div>
 
 

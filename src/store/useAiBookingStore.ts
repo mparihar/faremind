@@ -27,6 +27,7 @@ import {
 } from '@/lib/ai-booking-types';
 import { useCheckoutStore, makePassenger } from '@/store/useCheckoutStore';
 import type { SelectedFare, FareOption } from '@/lib/fare-types';
+import { fetchComputedFeesForContext, type ComputedFees } from '@/hooks/useFeeLoader';
 
 // ─── Empty passenger ──────────────────────────────────────────────────────────
 
@@ -72,6 +73,7 @@ function computePriceSummary(
   protectionFeePerPax: number,
   addOns: AiAddOns,
   passengerSeats: PassengerSeatSelection[],
+  computedFees?: ComputedFees | null,
 ): AiPriceSummary {
   const empty: AiPriceSummary = {
     passengerCount: 1, baseFarePerPax: 0, baseFare: 0, serviceFee: 0, taxes: 0,
@@ -84,14 +86,26 @@ function computePriceSummary(
   const baseFarePerPax = fareDetails.totalPrice;
   const baseFare = baseFarePerPax * paxCount;
   const taxes = Math.round(baseFare * TAX_RATE);
-  const serviceFee = Math.round(baseFare * SERVICE_FEE_RATE);
+
+  // Use DB-driven service fee if available, otherwise fallback to hardcoded rate
+  const serviceFee = computedFees
+    ? computedFees.serviceFee
+    : Math.round(baseFare * SERVICE_FEE_RATE);
 
   const protectedCount = protections.filter(p => p.selected).length;
-  const protectionFee = protectedCount * protectionFeePerPax;
+  // Use DB-driven protection fee if available
+  const effectiveProtectionPerPax = computedFees
+    ? computedFees.protectionFee
+    : protectionFeePerPax;
+  const protectionFee = protectedCount * effectiveProtectionPerPax;
 
   const baggageFee = addOns.extraBags * EXTRA_BAG_PRICE * paxCount;
+
+  // Use DB-driven insurance fee if available, otherwise fallback
   const insuranceFee = addOns.travelInsurance
-    ? Math.round(baseFarePerPax * INSURANCE_RATE) * paxCount
+    ? (computedFees
+        ? computedFees.insuranceFeeTotal
+        : Math.round(baseFarePerPax * INSURANCE_RATE) * paxCount)
     : 0;
 
   const seatSelectionFee = totalSeatFees(passengerSeats);
@@ -240,6 +254,10 @@ interface AiBookingStore extends AiBookingSession {
   selectedFareOption: FareOption | null;
   hydrateCheckoutStore: () => { selectedFare: SelectedFare; fareOption: FareOption | null };
   recomputePrice: () => void;
+
+  // DB-driven commercial fees
+  computedFees: ComputedFees | null;
+  fetchComputedFees: () => Promise<void>;
 }
 
 // ─── Initial state ────────────────────────────────────────────────────────────
@@ -258,7 +276,7 @@ const INITIAL: Omit<AiBookingStore,
   'setSeatPreference' | 'setSelectedSeat' | 'setSelectedReturnSeat' | 'setPassengerSeat' |
   'setMealPreference' | 'setPassengerMeal' | 'setAllMeals' |
   'setExtraBags' | 'toggleInsurance' |
-  'reset' | 'hydrateCheckoutStore' | 'recomputePrice'
+  'reset' | 'hydrateCheckoutStore' | 'recomputePrice' | 'fetchComputedFees'
 > = {
   status: 'flight_selection',
   selectedFlight: null,
@@ -285,6 +303,7 @@ const INITIAL: Omit<AiBookingStore,
 
   addOns: { ...DEFAULT_ADDONS },
   priceSummary: { ...INITIAL_PRICE },
+  computedFees: null,
 };
 
 // ─── Store ────────────────────────────────────────────────────────────────────
@@ -295,12 +314,30 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
   setStatus: (status) => set({ status }),
 
   selectFlight: (flight, roundTrip) => {
+    // Start with hardcoded fallback, then fetch DB values
     const protectionFee = Math.min(Math.max(Math.round(flight.totalPrice * 0.06), 49), 399);
     set({
       selectedFlight: flight,
       selectedRoundTrip: roundTrip ?? null,
       protectionFee,
       status: 'fare_selection',
+    });
+
+    // Async: fetch DB-driven fees
+    fetchComputedFeesForContext({
+      fareTotal: flight.totalPrice,
+      passengerCount: get().passengerCount,
+      cabin: flight.cabinClass || 'economy',
+      currency: flight.currency || 'USD',
+    }).then(fees => {
+      if (fees) {
+        const s = get();
+        set({
+          computedFees: fees,
+          protectionFee: fees.protectionFee,
+          priceSummary: computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, fees.protectionFee, s.addOns, s.passengerSeats, fees),
+        });
+      }
     });
   },
 
@@ -309,7 +346,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     if (!selectedFlight) return;
 
     const fareDetails = buildFareDetails(selectedFlight, fareClass);
-    const priceSummary = computePriceSummary(fareDetails, passengerCount, passengerProtections, protectionFee, addOns, passengerSeats);
+    const priceSummary = computePriceSummary(fareDetails, passengerCount, passengerProtections, protectionFee, addOns, passengerSeats, get().computedFees);
 
     set({
       fareDetails,
@@ -345,7 +382,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
       excludedFeatures: [],
     };
 
-    const priceSummary = computePriceSummary(fareDetails, passengerCount, passengerProtections, protectionFee, addOns, passengerSeats);
+    const priceSummary = computePriceSummary(fareDetails, passengerCount, passengerProtections, protectionFee, addOns, passengerSeats, get().computedFees);
 
     set({
       fareDetails,
@@ -371,7 +408,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     const protections = createPassengerProtections(count);
     passengerProtections.forEach((p, i) => { if (i < count) protections[i] = { ...p }; });
 
-    const priceSummary = computePriceSummary(fareDetails, count, protections, protectionFee, addOns, passengerSeats);
+    const priceSummary = computePriceSummary(fareDetails, count, protections, protectionFee, addOns, passengerSeats, get().computedFees);
 
     set({
       passengerCount: count,
@@ -390,7 +427,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     const next = !priceProtection;
     // Toggle all passengers
     const protections = passengerProtections.map(p => ({ ...p, selected: next }));
-    const priceSummary = computePriceSummary(fareDetails, passengerCount, protections, protectionFee, addOns, passengerSeats);
+    const priceSummary = computePriceSummary(fareDetails, passengerCount, protections, protectionFee, addOns, passengerSeats, get().computedFees);
     set({ priceProtection: next, passengerProtections: protections, priceSummary });
   },
 
@@ -401,14 +438,14 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
       protections[paxIndex] = { ...protections[paxIndex], selected };
     }
     const anyProtected = protections.some(p => p.selected);
-    const priceSummary = computePriceSummary(fareDetails, passengerCount, protections, protectionFee, addOns, passengerSeats);
+    const priceSummary = computePriceSummary(fareDetails, passengerCount, protections, protectionFee, addOns, passengerSeats, get().computedFees);
     set({ passengerProtections: protections, priceProtection: anyProtected, priceSummary });
   },
 
   setAllProtections: (selected) => {
     const { fareDetails, passengerCount, protectionFee, addOns, passengerSeats } = get();
     const protections = get().passengerProtections.map(p => ({ ...p, selected }));
-    const priceSummary = computePriceSummary(fareDetails, passengerCount, protections, protectionFee, addOns, passengerSeats);
+    const priceSummary = computePriceSummary(fareDetails, passengerCount, protections, protectionFee, addOns, passengerSeats, get().computedFees);
     set({ passengerProtections: protections, priceProtection: selected, priceSummary });
   },
 
@@ -461,7 +498,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     const idx = seats.findIndex(ss => ss.passengerIndex === 0 && ss.journeyType === 'outbound');
     if (idx >= 0) seats[idx] = { ...seats[idx], seat };
     else seats.push({ passengerIndex: 0, journeyType: 'outbound', seat });
-    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, s.addOns, seats);
+    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, s.addOns, seats, s.computedFees);
     set({ passengerSeats: seats, selectedSeat: seat, priceSummary });
   },
 
@@ -471,7 +508,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     const idx = seats.findIndex(ss => ss.passengerIndex === 0 && ss.journeyType === 'return');
     if (idx >= 0) seats[idx] = { ...seats[idx], seat };
     else seats.push({ passengerIndex: 0, journeyType: 'return', seat });
-    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, s.addOns, seats);
+    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, s.addOns, seats, s.computedFees);
     set({ passengerSeats: seats, selectedReturnSeat: seat, priceSummary });
   },
 
@@ -486,7 +523,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     const selectedSeat = seats.find(ss => ss.passengerIndex === 0 && ss.journeyType === 'outbound')?.seat ?? null;
     const selectedReturnSeat = seats.find(ss => ss.passengerIndex === 0 && ss.journeyType === 'return')?.seat ?? null;
 
-    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, s.addOns, seats);
+    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, s.addOns, seats, s.computedFees);
     set({ passengerSeats: seats, selectedSeat, selectedReturnSeat, priceSummary });
   },
 
@@ -528,18 +565,21 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
   setExtraBags: (n) => {
     const s = get();
     const next = { ...s.addOns, extraBags: n };
-    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, next, s.passengerSeats);
+    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, next, s.passengerSeats, s.computedFees);
     set({ addOns: next, priceSummary });
   },
 
   toggleInsurance: () => {
     const s = get();
     const travelInsurance = !s.addOns.travelInsurance;
+    // Use DB-driven insurance fee if available
     const insuranceFee = travelInsurance && s.fareDetails
-      ? Math.round(s.fareDetails.totalPrice * INSURANCE_RATE)
+      ? (s.computedFees
+          ? Math.round(s.computedFees.insuranceFeeTotal / Math.max(1, s.passengerCount))
+          : Math.round(s.fareDetails.totalPrice * INSURANCE_RATE))
       : 0;
     const next = { ...s.addOns, travelInsurance, insuranceFee };
-    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, next, s.passengerSeats);
+    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, next, s.passengerSeats, s.computedFees);
     set({ addOns: next, priceSummary });
   },
 
@@ -547,8 +587,29 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
 
   recomputePrice: () => {
     const s = get();
-    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, s.addOns, s.passengerSeats);
+    const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, s.addOns, s.passengerSeats, s.computedFees);
     set({ priceSummary });
+  },
+
+  // ── Fetch DB-driven fees ─────────────────────────────────────────────────────
+
+  fetchComputedFees: async () => {
+    const s = get();
+    if (!s.fareDetails) return;
+    const fees = await fetchComputedFeesForContext({
+      fareTotal: s.fareDetails.totalPrice,
+      passengerCount: s.passengerCount,
+      cabin: s.fareDetails.fareClass || 'economy',
+      currency: s.fareDetails.currency || 'USD',
+    });
+    if (fees) {
+      const current = get();
+      set({
+        computedFees: fees,
+        protectionFee: fees.protectionFee,
+        priceSummary: computePriceSummary(current.fareDetails, current.passengerCount, current.passengerProtections, fees.protectionFee, current.addOns, current.passengerSeats, fees),
+      });
+    }
   },
 
   // ── Reset ───────────────────────────────────────────────────────────────────

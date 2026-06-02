@@ -3,6 +3,7 @@
 import { useRouter } from 'next/navigation';
 import { ArrowLeft, Lock, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { OfferExpiryTimer } from './OfferExpiryTimer';
 
 // ── Step definition ───────────────────────────────────────────────────────────
 
@@ -94,6 +95,7 @@ export function CheckoutHeader({ stepIndex }: { stepIndex: number }) {
         <div className="flex-1 overflow-hidden">
           <StepChips currentStep={stepIndex} />
         </div>
+        <OfferExpiryTimer compact />
         <div className="flex items-center gap-1.5 text-slate-400 text-xs font-semibold flex-none">
           <Lock className="w-3 h-3" />
           <span className="hidden sm:inline">Secure Checkout</span>

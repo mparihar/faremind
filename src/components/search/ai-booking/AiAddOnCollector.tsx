@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Package, Shield, Heart, ChevronRight, Check } from 'lucide-react';
 import { formatPrice } from '@/lib/utils';
 import { EXTRA_BAG_PRICE, INSURANCE_RATE } from '@/lib/ai-booking-types';
+import { useAiBookingStore } from '@/store/useAiBookingStore';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -35,7 +36,11 @@ export default function AiAddOnCollector({
   const [travelInsurance, setTravelInsurance] = useState(false);
   const [selections, setSelections] = useState<string[]>([]);
 
-  const insuranceFee = Math.round(baseFarePrice * INSURANCE_RATE);
+  const computedFees = useAiBookingStore(s => s.computedFees);
+  // Use DB-driven insurance fee if available, otherwise fallback to hardcoded rate
+  const insuranceFee = computedFees
+    ? Math.round(computedFees.insuranceFeeTotal) // Total for all passengers
+    : Math.round(baseFarePrice * INSURANCE_RATE);
 
   const handleOption = (option: number) => {
     switch (option) {

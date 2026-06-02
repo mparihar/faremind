@@ -24,6 +24,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useAdminStore } from '@/store/useAdminStore';
+import FareMindTravelAssistantButton from '@/components/voice/FareMindTravelAssistantButton';
 
 const NAV_ITEMS = [
   { href: '/', label: 'Search', icon: Plane },
@@ -139,6 +140,26 @@ export default function Navbar() {
               const isActive = item.href === '/account'
                 ? pathname.startsWith('/account')
                 : pathname === href || (href !== '/' && pathname.startsWith(href + '/'));
+
+              // "Search" (/) — force full page reload so the hero form is always clean
+              if (item.href === '/') {
+                return (
+                  <button
+                    key={item.href}
+                    onClick={() => { window.location.href = '/'; }}
+                    className={cn(
+                      'relative flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200',
+                      isActive
+                        ? 'text-white bg-white/[0.08] border border-white/[0.08]'
+                        : 'text-white/60 hover:text-white hover:bg-white/[0.05] border border-transparent'
+                    )}
+                  >
+                    <Icon className="w-4 h-4" />
+                    {item.label}
+                  </button>
+                );
+              }
+
               return (
                 <Link
                   key={item.href}
@@ -207,6 +228,8 @@ export default function Navbar() {
 
           {/* Right side */}
           <div className="hidden md:flex items-center gap-3">
+            {/* FareMind Travel Assistant */}
+            <FareMindTravelAssistantButton />
             {user ? (
               <div ref={userRef} className="relative">
                 <button
@@ -307,6 +330,26 @@ export default function Navbar() {
                 const Icon = item.icon;
                 const href = (item.href === '/manage-booking' && user) ? '/account/manage-booking' : item.href;
                 const isActive = pathname === href;
+
+                // "Search" (/) — force full page reload so hero form is clean
+                if (item.href === '/') {
+                  return (
+                    <button
+                      key={item.href}
+                      onClick={() => { setMobileOpen(false); window.location.href = '/'; }}
+                      className={cn(
+                        'flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-medium transition-all w-full',
+                        isActive
+                          ? 'text-white bg-white/[0.08] border border-white/[0.1]'
+                          : 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                      )}
+                    >
+                      <Icon className="w-5 h-5" />
+                      {item.label}
+                    </button>
+                  );
+                }
+
                 return (
                   <Link
                     key={item.href}
@@ -324,6 +367,13 @@ export default function Navbar() {
                   </Link>
                 );
               })}
+
+              {/* Mobile Travel Assistant */}
+              <div className="pt-2 border-t border-white/[0.06]">
+                <div className="px-4 py-2">
+                  <FareMindTravelAssistantButton />
+                </div>
+              </div>
 
               {/* Mobile Help & Support */}
               <div className="pt-2 border-t border-white/[0.06]">

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, useCallback, useMemo } from 'react';
+import { useState, useRef, useEffect, useCallback, useMemo, forwardRef, useImperativeHandle } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -26,6 +26,13 @@ import { useSearchStore } from '@/store/useSearchStore';
 import { usePreferencesStore } from '@/store/usePreferencesStore';
 import type { CabinClass, TripType } from '@/lib/types';
 import SmartPreferencesBar from '@/components/search/SmartPreferencesBar';
+import type { VoiceFormData } from '@/actions/voiceActionEngine';
+
+/** Imperative handle exposed by SearchForm for voice assistant integration */
+export interface SearchFormHandle {
+  fillFromVoice: (data: VoiceFormData) => void;
+  triggerSearch: () => void;
+}
 
 const CABIN_OPTIONS: { value: CabinClass; label: string }[] = [
   { value: 'economy', label: 'Economy' },
@@ -119,7 +126,7 @@ interface SearchFormProps {
   initialCabin?: CabinClass;
 }
 
-export default function SearchForm({
+const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function SearchForm({
   variant = 'hero',
   onDateModeChange,
   initialOrigin = '',
@@ -130,7 +137,7 @@ export default function SearchForm({
   initialReturnDate,
   initialTripType,
   initialCabin,
-}: SearchFormProps) {
+}, ref) {
   const router = useRouter();
   const { setQuery, setLoading, loading } = useSearchStore();
   const prefs = usePreferencesStore();
@@ -303,6 +310,74 @@ export default function SearchForm({
     router.push(`/search?${params.toString()}`);
   };
 
+  // ── Expose imperative handle for voice assistant ──────────────────────────
+  // Voice data ref — stores the latest voice-filled data so triggerSearch
+  // can use it directly without relying on React state closures.
+  const voiceDataRef = useRef<VoiceFormData | null>(null);
+
+  useImperativeHandle(ref, () => ({
+    fillFromVoice(data: VoiceFormData) {
+      voiceDataRef.current = data;
+      setOrigin(data.origin);
+      setOriginCode(data.originCode);
+      setDestination(data.destination);
+      setDestCode(data.destCode);
+      setDepartureDate(data.departureDate);
+      if (data.returnDate) setReturnDate(data.returnDate);
+      setPassengers(data.passengers);
+      setCabinClass(data.cabinClass);
+      setTripType(data.tripType);
+      setDateMode('specific');
+      setOriginError(false);
+      setDestError(false);
+    },
+    triggerSearch() {
+      // Read from voiceDataRef to avoid stale closure over React state
+      const vd = voiceDataRef.current;
+      if (vd && vd.originCode && vd.destCode && vd.departureDate) {
+        const query = {
+          origin: vd.originCode,
+          destination: vd.destCode,
+          departureDate: vd.departureDate,
+          returnDate: vd.tripType === 'round_trip' ? vd.returnDate : undefined,
+          passengers: vd.passengers,
+          cabinClass: vd.cabinClass,
+          tripType: vd.tripType,
+        };
+        setQuery(query);
+        setLoading(true);
+
+        const params = new URLSearchParams({
+          origin: vd.originCode,
+          destination: vd.destCode,
+          date: vd.departureDate,
+          ...(vd.tripType === 'round_trip' && vd.returnDate ? { return: vd.returnDate } : {}),
+          adults: vd.passengers.adults.toString(),
+          children: vd.passengers.children.toString(),
+          infants: vd.passengers.infants.toString(),
+          cabin: vd.cabinClass,
+          trip: vd.tripType,
+        });
+
+        const prefQP = prefs.toQueryParams();
+        Object.entries(prefQP).forEach(([key, val]) => {
+          if (val) params.set(key, val);
+        });
+
+        if (prefs.sort === 'any') {
+          params.set('sort', 'value');
+          prefs.setSort('value');
+        }
+
+        voiceDataRef.current = null;
+        router.push(`/search?${params.toString()}`);
+      } else {
+        // Fallback: try normal handleSearch (for non-voice triggers)
+        handleSearch();
+      }
+    },
+  }));
+
   // Flex month tile click — one-way: single select; round trip: two-step outbound → return
   const handleFlexMonthClick = (month: FlexMonth) => {
     if (tripType === 'one_way') {
@@ -453,6 +528,8 @@ export default function SearchForm({
                 type="text"
                 placeholder="Where from?"
                 value={origin}
+                autoComplete="off"
+                name="fm-origin-airport"
                 onChange={(e) => { setOrigin(e.target.value); setOriginCode(''); setOriginError(false); setShowOriginDropdown(true); }}
                 onFocus={() => {
                   if (originCode) { setOrigin(''); setOriginCode(''); }
@@ -515,6 +592,8 @@ export default function SearchForm({
                 type="text"
                 placeholder="Where to?"
                 value={destination}
+                autoComplete="off"
+                name="fm-dest-airport"
                 onChange={(e) => { setDestination(e.target.value); setDestCode(''); setDestError(false); setShowDestDropdown(true); }}
                 onFocus={() => {
                   if (destCode) { setDestination(''); setDestCode(''); }
@@ -1076,4 +1155,6 @@ export default function SearchForm({
       </AnimatePresence>
     </div>
   );
-}
+});
+
+export default SearchForm;

@@ -45,6 +45,37 @@ async function main() {
     console.log('  → SERVICE_FEE rule already exists, skipping');
   }
 
+  // 1b. Default Markup Fee: 2% of provider fare
+  const existingMarkupFee = await prisma.platformFeeRule.findFirst({
+    where: { feeType: 'MARKUP_FEE', deletedAt: null },
+  });
+
+  if (!existingMarkupFee) {
+    await prisma.platformFeeRule.create({
+      data: {
+        feeType: 'MARKUP_FEE',
+        feeName: 'Default Markup',
+        feeDescription: 'Internal margin applied to all provider fares before display',
+        calculationModel: 'PERCENTAGE_OF_FARE',
+        percentageValue: 2.0000,
+        currency: 'USD',
+        appliesToAdult: true,
+        appliesToChild: true,
+        appliesToInfant: true,
+        providerScope: 'ALL',
+        cabinScope: 'ALL',
+        tripTypeScope: 'ALL',
+        routeScopeType: 'ALL',
+        active: true,
+        priority: 1,
+        createdByAdminEmail: 'system@faremind.com',
+      },
+    });
+    console.log('  ✓ Created default MARKUP_FEE rule (2% of fare)');
+  } else {
+    console.log('  → MARKUP_FEE rule already exists, skipping');
+  }
+
   // 2. Default Price Drop Protection: 6% of fare, $49-$399 bounds
   const existingProtection = await prisma.protectionProductRule.findFirst({
     where: { productType: 'PRICE_DROP_PROTECTION', deletedAt: null },
