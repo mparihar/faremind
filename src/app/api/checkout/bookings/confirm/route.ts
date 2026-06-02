@@ -2,6 +2,13 @@ import { NextRequest, NextResponse } from 'next/server';
 import prisma from '@/lib/db';
 import { fireNotification } from '@/lib/notify';
 import { determinePnrStrategy } from '@/lib/pnr-strategy';
+import {
+  computeFinancialBreakdown,
+  validateCheckoutPricing,
+  checkProviderPriceChange,
+  type FinancialBreakdown,
+} from '@/lib/checkout-validation';
+import { stripe } from '@/lib/stripe';
 
 // ── Duffel API client (direct import for Next.js API route) ──────────────────
 const DUFFEL_API_URL = process.env.DUFFEL_API_URL || 'https://api.duffel.com';
@@ -80,11 +87,155 @@ export async function POST(req: NextRequest) {
 
     const isRoundTrip = !!sourceRoundTrip;
 
-    // ── Step 0: Create REAL Duffel order ─────────────────────────────────────
-    // The offerId comes from the search response, stored on selectedFare
+    // ══════════════════════════════════════════════════════════════════════════
+    // PHASE 1 — Financial Breakdown & Pricing Validation
+    // ══════════════════════════════════════════════════════════════════════════
+    // Compute the backend source-of-truth for pricing BEFORE calling provider.
+    // The provider API must only receive providerPayableTotal, never the
+    // customer grand total which includes markup, service fee, insurance, etc.
+
     const offerId = selectedFare?.offerId || selectedFare?.id || selectedFare?.duffelOfferId;
+
+    // Resolve the stored provider fare from the search/markup phase
+    const storedProviderFare: number | null =
+      sourceFlight?.providerTotalFare
+      ?? sourceRoundTrip?.providerTotalFare
+      ?? null;
+
+    // Resolve fee amounts from the frontend pricing breakdown
+    // Note: markup is already baked into the fare price (not in `pricing`).
+    // The markup amount is stored on the source flight/RT from the markup service.
+    const frontendMarkup =
+      sourceFlight?.fareMindMarkupAmount
+      ?? sourceRoundTrip?.fareMindMarkupAmount
+      ?? 0;
+    const frontendServiceFee = pricing?.serviceFee ?? 0;
+    const frontendProtectionFee = priceProtection ? (pricing?.protectionFee ?? 0) : 0;
+    const frontendInsuranceFee = travelInsurance ? (pricing?.insuranceFee ?? 0) : 0;
+    const frontendSeatFees = pricing?.seatFees ?? 0;
+    const frontendTotal = pricing?.total ?? selectedFare?.totalPrice ?? 0;
+
+    // Compute financial breakdown using backend source-of-truth
+    // providerTotalFare is the authoritative base from the markup service
+    const baseProviderFare = storedProviderFare
+      ?? (selectedFare?.basePrice ?? (frontendTotal - frontendMarkup - frontendServiceFee - frontendProtectionFee - frontendInsuranceFee - frontendSeatFees));
+
+    let financials: FinancialBreakdown = computeFinancialBreakdown({
+      providerTotalFare: baseProviderFare,
+      markupAmount: frontendMarkup,
+      serviceFeeAmount: frontendServiceFee,
+      seatServiceTotal: frontendSeatFees,
+      priceProtectionAmount: frontendProtectionFee,
+      travelInsuranceAmount: frontendInsuranceFee,
+    });
+
+    // Validate: does the frontend total match our backend-computed total?
+    const pricingCheck = validateCheckoutPricing(frontendTotal, financials.customerGrandTotal);
+    if (!pricingCheck.valid) {
+      console.error(`[Checkout] ❌ ${pricingCheck.error}`);
+      return NextResponse.json(
+        {
+          error: 'Pricing mismatch — the displayed price does not match our records. Please try again.',
+          errorCode: pricingCheck.errorCode,
+          detail: process.env.NODE_ENV === 'development' ? pricingCheck.error : undefined,
+        },
+        { status: 409 }
+      );
+    }
+
+    console.log(
+      `[Checkout] Financial breakdown — provider: $${financials.providerPayableTotal.toFixed(2)}, ` +
+      `markup: $${financials.markupAmount.toFixed(2)}, svcFee: $${financials.serviceFeeAmount.toFixed(2)}, ` +
+      `protection: $${financials.priceProtectionAmount.toFixed(2)}, insurance: $${financials.travelInsuranceAmount.toFixed(2)}, ` +
+      `customer total: $${financials.customerGrandTotal.toFixed(2)}`
+    );
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PHASE 1b — Stripe Authorization Verification
+    // ══════════════════════════════════════════════════════════════════════════
+    // Verify that Stripe has AUTHORIZED (not captured) the customer's payment.
+    // With capture_method: 'manual', the status should be 'requires_capture'.
+    // We capture ONLY after the provider order succeeds.
+    // If anything fails, we cancel the authorization — customer is never charged.
+
+    let stripeVerified = false;
+    if (paymentIntentId && !paymentIntentId.startsWith('pi_demo_')) {
+      try {
+        const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+
+        if (pi.status !== 'requires_capture' && pi.status !== 'succeeded') {
+          console.error(`[Checkout] ❌ Stripe PaymentIntent ${paymentIntentId} status: ${pi.status} (expected 'requires_capture')`);
+          return NextResponse.json(
+            {
+              error: 'Payment authorization has not been completed. Please try again.',
+              errorCode: 'PAYMENT_NOT_AUTHORIZED',
+            },
+            { status: 402 }
+          );
+        }
+
+        // Verify authorized amount matches the customer grand total
+        const authorizedAmountDollars = pi.amount / 100;
+        const expectedDollars = financials.customerGrandTotal;
+        const paymentDelta = Math.abs(authorizedAmountDollars - expectedDollars);
+
+        if (paymentDelta > 0.50) {
+          console.error(
+            `[Checkout] ❌ Stripe amount mismatch: authorized $${authorizedAmountDollars.toFixed(2)} ` +
+            `vs expected $${expectedDollars.toFixed(2)} (delta: $${paymentDelta.toFixed(2)})`
+          );
+          // Cancel the authorization — customer is not charged
+          await stripe.paymentIntents.cancel(paymentIntentId).catch(() => null);
+          return NextResponse.json(
+            {
+              error: 'Payment amount does not match the booking total.',
+              errorCode: 'PAYMENT_AMOUNT_MISMATCH',
+            },
+            { status: 409 }
+          );
+        }
+
+        stripeVerified = true;
+        console.log(
+          `[Checkout] ✅ Stripe authorization verified — ${paymentIntentId}: ` +
+          `$${authorizedAmountDollars.toFixed(2)} authorized (expected: $${expectedDollars.toFixed(2)})`
+        );
+      } catch (stripeErr: any) {
+        console.error('[Checkout] ❌ Failed to verify Stripe authorization:', stripeErr.message);
+        return NextResponse.json(
+          {
+            error: 'Unable to verify payment. Please try again.',
+            errorCode: 'PAYMENT_VERIFICATION_FAILED',
+          },
+          { status: 502 }
+        );
+      }
+    } else {
+      console.warn(`[Checkout] Stripe verification skipped — demo intent or no paymentIntentId`);
+    }
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PHASE 2 — Provider Order Creation
+    // ══════════════════════════════════════════════════════════════════════════
+    // FareMind pays the provider ONLY the providerPayableTotal.
+    // Markup, service fee, insurance, protection are NOT sent to the provider.
+
     let duffelOrder: DuffelOrder | null = null;
-    let duffelPassengerMap: Record<string, string> = {}; // our pax index → duffel passenger id
+    let duffelPassengerMap: Record<string, string> = {};
+    let providerPayableAmount = financials.providerPayableTotal;
+    let providerCurrency = currency;
+
+    // Helper: cancel Stripe authorization — customer is never charged
+    const cancelStripeAuth = async (reason: string) => {
+      if (stripeVerified && paymentIntentId && !paymentIntentId.startsWith('pi_demo_')) {
+        try {
+          await stripe.paymentIntents.cancel(paymentIntentId);
+          console.log(`[Stripe] Authorization cancelled (${paymentIntentId}) — reason: ${reason}`);
+        } catch (cancelErr: any) {
+          console.error(`[Stripe] Failed to cancel authorization: ${cancelErr.message}`);
+        }
+      }
+    };
 
     if (offerId && DUFFEL_API_TOKEN) {
       try {
@@ -116,14 +267,45 @@ export async function POST(req: NextRequest) {
         // Verify offer is still valid and get passenger IDs from the offer
         const offer = await duffelRequest<any>('GET', `/air/offers/${offerId}?return_available_services=false`);
         if (new Date(offer.expires_at) < new Date()) {
+          await cancelStripeAuth('offer expired');
           return NextResponse.json(
-            { error: 'This flight offer has expired. Please search again.' },
+            { error: 'This flight offer has expired. Please search again.', errorCode: 'OFFER_EXPIRED' },
             { status: 400 }
           );
         }
 
-        const totalAmount = parseFloat(offer.total_amount);
+        // Re-validated provider fare from the fresh offer fetch
+        const revalidatedProviderFare = parseFloat(offer.total_amount);
         const totalCurrency = offer.total_currency;
+        providerCurrency = totalCurrency;
+
+        // ── Provider Price-Change Guard ──────────────────────────────────
+        // If the provider price has changed significantly since the user
+        // selected the offer, reject checkout to prevent unexpected charges.
+        const priceCheck = checkProviderPriceChange(storedProviderFare, revalidatedProviderFare);
+        if (!priceCheck.valid) {
+          console.warn(`[Checkout] ❌ ${priceCheck.error}`);
+          await cancelStripeAuth('provider price changed');
+          return NextResponse.json(
+            {
+              error: 'The flight price has changed since you selected it. Please search again for updated pricing.',
+              errorCode: priceCheck.errorCode,
+              detail: process.env.NODE_ENV === 'development' ? priceCheck.error : undefined,
+            },
+            { status: 409 }
+          );
+        }
+
+        // Use the REVALIDATED provider fare as the authoritative amount
+        // Recompute financials with the fresh provider fare
+        financials = computeFinancialBreakdown({
+          providerTotalFare: revalidatedProviderFare,
+          markupAmount: financials.markupAmount,
+          serviceFeeAmount: financials.serviceFeeAmount,
+          seatServiceTotal: financials.seatServiceTotal,
+          priceProtectionAmount: financials.priceProtectionAmount,
+          travelInsuranceAmount: financials.travelInsuranceAmount,
+        });
 
         // Duffel offers come with pre-assigned passenger IDs (e.g. pas_0000ABC...).
         // We MUST use these exact IDs when creating the order.
@@ -135,6 +317,7 @@ export async function POST(req: NextRequest) {
             `[Duffel] Passenger count mismatch: offer has ${offerPassengers.length} passenger(s) but checkout has ${passengers.length}. ` +
             `The offer was likely searched for a different number of travelers.`
           );
+          await cancelStripeAuth('passenger count mismatch');
           return NextResponse.json(
             { error: `This offer was booked for ${offerPassengers.length} traveler(s) but you have ${passengers.length}. Please search again with the correct number of passengers.` },
             { status: 400 }
@@ -199,7 +382,6 @@ export async function POST(req: NextRequest) {
           for (const seat of seatSelections) {
             if (seat.serviceId && seat.seatNumber) {
               seatServices.push({ id: seat.serviceId, quantity: 1 });
-              // Add the seat price to the total (price comes from the frontend store)
               seatServiceTotal += (typeof seat.priceUsd === 'number' ? seat.priceUsd : 0);
             }
           }
@@ -208,27 +390,59 @@ export async function POST(req: NextRequest) {
           console.log(`[Duffel] Including ${seatServices.length} seat service(s) in order (extra cost: ${seatServiceTotal.toFixed(2)} ${totalCurrency}): ${seatServices.map(s => s.id).join(', ')}`);
         }
 
-        // Payment amount must match offer total + any service costs
-        const paymentAmount = (totalAmount + seatServiceTotal).toFixed(2);
+        // ── PROVIDER PAYABLE AMOUNT ──────────────────────────────────────
+        // This is the ONLY amount sent to Duffel: provider fare + seat services.
+        // Markup, service fee, insurance, protection are NEVER sent to provider.
+        providerPayableAmount = revalidatedProviderFare + seatServiceTotal;
+        const providerPaymentStr = providerPayableAmount.toFixed(2);
 
-        console.log(`[Duffel] Creating order with offer ${offerId}, ${duffelPassengers.length} passenger(s), payment: ${paymentAmount} ${totalCurrency}, IDs: ${duffelPassengers.map(p => p.id).join(', ')}`);
-        console.log(`[Duffel] Full passenger payload:`, JSON.stringify(duffelPassengers, null, 2));
-        // Create the order (booking) — payment via Duffel balance
-        duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', {
+        console.log(
+          `[Duffel] Creating order — offer: ${offerId}, pax: ${duffelPassengers.length}, ` +
+          `providerPayable: $${providerPaymentStr} ${totalCurrency} ` +
+          `(provider fare: $${revalidatedProviderFare.toFixed(2)} + seats: $${seatServiceTotal.toFixed(2)}), ` +
+          `customer grand total: $${financials.customerGrandTotal.toFixed(2)}`
+        );
+
+        // Build the provider order request payload
+        const duffelOrderRequest = {
           selected_offers: [offerId],
           passengers: duffelPassengers,
-          type: 'instant',
+          type: 'instant' as const,
           payments: [{
-            type: 'balance',
-            amount: paymentAmount,
+            type: 'balance' as const,
+            amount: providerPaymentStr,
             currency: totalCurrency,
           }],
-          // Include seat selections as services so the airline assigns the exact seats
           ...(seatServices.length > 0 ? { services: seatServices } : {}),
           metadata: { booked_via: 'faremind', session_id: sessionId || '' },
-        });
+        };
+
+        // Create the order (booking) — payment via Duffel balance
+        // Provider receives ONLY providerPayableAmount, NOT the customer total
+        duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', duffelOrderRequest);
 
         console.log(`[Duffel] ✅ Order created: ${duffelOrder.id} (PNR: ${duffelOrder.booking_reference})`);
+
+        // ══════════════════════════════════════════════════════════════════
+        // STRIPE CAPTURE — Provider order succeeded, NOW charge the card
+        // ══════════════════════════════════════════════════════════════════
+        if (stripeVerified && paymentIntentId && !paymentIntentId.startsWith('pi_demo_')) {
+          try {
+            const captured = await stripe.paymentIntents.capture(paymentIntentId);
+            console.log(
+              `[Stripe] ✅ Payment captured: ${captured.id} — $${(captured.amount / 100).toFixed(2)} ${captured.currency}`
+            );
+          } catch (captureErr: any) {
+            // CRITICAL: Duffel order exists but Stripe capture failed.
+            // Log this for manual intervention — the booking is valid,
+            // but payment needs to be retried.
+            console.error(
+              `[Stripe] ❌ CRITICAL: Capture failed for ${paymentIntentId} after Duffel order ${duffelOrder.id}: ${captureErr.message}`
+            );
+            // Continue with booking — the order exists at the airline.
+            // A background job or admin action should retry capture.
+          }
+        }
 
         // Map Duffel passenger IDs to our indexes
         duffelOrder.passengers.forEach((dp, i) => {
@@ -237,8 +451,14 @@ export async function POST(req: NextRequest) {
 
       } catch (duffelErr: any) {
         console.error('[Duffel] ❌ Order creation failed:', duffelErr.message);
+        // Cancel Stripe authorization — customer is NOT charged
+        await cancelStripeAuth(`Duffel order failed: ${duffelErr.message}`);
         return NextResponse.json(
-          { error: `Booking failed: ${duffelErr.message}` },
+          {
+            error: `Booking failed: ${duffelErr.message}`,
+            errorCode: 'PROVIDER_ORDER_FAILED',
+            customerMessage: 'Unfortunately the fare is no longer available. Your card was not charged. Please refresh flight results.',
+          },
           { status: 502 }
         );
       }
@@ -310,6 +530,26 @@ export async function POST(req: NextRequest) {
           ticketingStatus: 'NOT_STARTED',
           totalAmount,
           currency,
+
+          // Financial — Provider Settlement
+          providerPayableTotal: providerPayableAmount,
+          providerCurrency: providerCurrency,
+          providerOfferId: offerId ?? null,
+          providerOrderId: duffelOrder?.id ?? null,
+
+          // Financial — FareMind Revenue
+          markupAmount: financials.markupAmount,
+          serviceFeeAmount: financials.serviceFeeAmount,
+          fareMindRevenueTotal: financials.fareMindRevenueTotal,
+
+          // Financial — Third-Party Vendor Payables
+          priceProtectionAmount: financials.priceProtectionAmount,
+          travelInsuranceAmount: financials.travelInsuranceAmount,
+          thirdPartyPayableTotal: financials.thirdPartyPayableTotal,
+
+          // Financial — Seat/Ancillary
+          seatServiceTotal: financials.seatServiceTotal,
+
           primaryProvider: 'duffel',
           rawProviderPayload: { sourceFlight: sourceFlight ?? null, sourceRoundTrip: sourceRoundTrip ?? null },
         },
@@ -677,6 +917,36 @@ export async function POST(req: NextRequest) {
           },
         }).catch(() => null);
 
+        // 15b. Store the outgoing ORDER_REQUEST payload for audit
+        // This records exactly what FareMind sent to Duffel, including
+        // the providerPayableAmount (NOT the customer grand total).
+        await tx.bookingProviderPayload.create({
+          data: {
+            bookingId: mb.id,
+            provider: 'duffel',
+            payloadType: 'ORDER_REQUEST',
+            payloadJson: {
+              endpoint: 'POST /air/orders',
+              providerPayableAmount,
+              providerCurrency,
+              customerGrandTotal: totalAmount,
+              financialBreakdown: {
+                providerTotalFare: financials.providerTotalFare,
+                markupAmount: financials.markupAmount,
+                serviceFeeAmount: financials.serviceFeeAmount,
+                seatServiceTotal: financials.seatServiceTotal,
+                priceProtectionAmount: financials.priceProtectionAmount,
+                travelInsuranceAmount: financials.travelInsuranceAmount,
+                fareMindRevenueTotal: financials.fareMindRevenueTotal,
+                thirdPartyPayableTotal: financials.thirdPartyPayableTotal,
+                providerPayableTotal: financials.providerPayableTotal,
+              },
+              selected_offers: [offerId],
+              passengerCount: passengers.length,
+            },
+          },
+        }).catch(() => null);
+
         // Update ticketing status — Duffel instant orders are auto-ticketed
         await tx.masterBooking.update({
           where: { id: mb.id },
@@ -822,6 +1092,15 @@ export async function POST(req: NextRequest) {
         confirmed_at: new Date(confirmedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
       },
     });
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PHASE 3 — Customer-Safe Confirmation Response
+    // ══════════════════════════════════════════════════════════════════════════
+    // Return ONLY customer-facing data. Explicitly exclude:
+    //   - providerPayableTotal, providerOrderId, providerOfferId
+    //   - markupAmount, serviceFeeAmount, fareMindRevenueTotal
+    //   - thirdPartyPayableTotal, raw provider payloads
+    //   - internal reconciliation data
 
     return NextResponse.json({
       success: true,

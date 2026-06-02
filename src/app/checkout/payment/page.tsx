@@ -15,10 +15,13 @@ import {
   Shield,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
+import { useOfferGuard } from '@/hooks/useOfferGuard';
+import { useOfferSessionStore } from '@/store/useOfferSessionStore';
 import { cn } from '@/lib/utils';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { apiFetch } from '@/lib/api-client';
+import { useFeeLoader } from '@/hooks/useFeeLoader';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -158,6 +161,7 @@ interface CardFields {
 
 export default function PaymentPage() {
   const router = useRouter();
+  const { isExpired, OfferGuardUI } = useOfferGuard();
   const store = useCheckoutStore();
   const { user } = useAuthStore();
   const [processing, setProcessing] = useState(false);
@@ -186,6 +190,9 @@ export default function PaymentPage() {
   } = store;
 
   const pricing = buildLocalPricing(store);
+
+  // Load DB-driven fees — populates computedFees in checkout store
+  useFeeLoader();
 
   useEffect(() => {
     if (!selectedFare || !sessionId) router.replace('/');
@@ -239,36 +246,68 @@ export default function PaymentPage() {
   const handleCompleteBooking = async () => {
     if (!isCardValid || processing) return;
 
+    // Pre-payment expiry guard
+    const sessionStatus = useOfferSessionStore.getState().status;
+    if (sessionStatus === 'EXPIRED') {
+      setBookingError('This fare has expired. Please refresh flight results and select a new fare.');
+      return;
+    }
+
     setProcessing(true);
     setBookingError(null);
     store.setPaymentStatus('processing');
 
     try {
-      // 1. Create payment intent
-      const intentRes = await apiFetch<{ paymentIntentId: string; clientSecret?: string }>(
+      // 1. Create Stripe PaymentIntent with the customer grand total
+      const primaryPax = passengers[0];
+      const intentRes = await apiFetch<{ paymentIntentId: string; clientSecret?: string; error?: string }>(
         '/api/checkout/payment/create-intent',
         {
           method: 'POST',
           body: JSON.stringify({
             amount: pricing.total,
             currency: currency ?? 'USD',
-            description: 'FareMind booking',
+            description: `FareMind booking — ${routeLabel}`,
+            customerEmail: primaryPax?.email || '',
+            sessionId,
           }),
         }
-      ).catch(() => ({ paymentIntentId: `pi_demo_${Date.now()}` }));
+      );
+
+      if (!intentRes.paymentIntentId) {
+        throw new Error(intentRes.error || 'Failed to create payment intent');
+      }
 
       const paymentIntentId = intentRes.paymentIntentId;
       store.setPaymentIntent(paymentIntentId);
 
-      // 2. Confirm payment
-      await apiFetch('/api/checkout/payment/confirm', {
-        method: 'POST',
-        body: JSON.stringify({
-          paymentIntentId,
-          sessionId,
-          last4: card.number.replace(/\s/g, '').slice(-4),
-        }),
-      }).catch(() => ({ success: true }));
+      // 2. Confirm Stripe payment with card details
+      const confirmRes = await apiFetch<{ success: boolean; status?: string; error?: string; errorCode?: string }>(
+        '/api/checkout/payment/confirm',
+        {
+          method: 'POST',
+          body: JSON.stringify({
+            paymentIntentId,
+            sessionId,
+            card: {
+              number: card.number,
+              expiry: card.expiry,
+              cvc: card.cvc,
+              name: card.name,
+            },
+            billing: {
+              address: card.address,
+              city: card.city,
+              zip: card.zip,
+              country: card.country,
+            },
+          }),
+        }
+      );
+
+      if (!confirmRes.success) {
+        throw new Error(confirmRes.error || 'Payment was declined. Please check your card details.');
+      }
 
       // 3. Confirm booking — calls Next.js route directly (writes to DB)
       const bookingRes = await fetch('/api/checkout/bookings/confirm', {
@@ -306,13 +345,9 @@ export default function PaymentPage() {
           userId: user?.id ?? null,
         }),
       })
-        .then((r) => r.json())
-        .catch(() => ({
-          success: true,
-          pnr: `FM${Math.random().toString(36).slice(2, 8).toUpperCase()}`,
-          bookingId: `bk_${Date.now()}`,
-        })) as {
+        .then((r) => r.json()) as {
           success: boolean; pnr?: string; bookingId?: string; error?: string;
+          errorCode?: string;
           masterBookingReference?: string;
           pnrStrategy?: string | null;
           isSplitTicket?: boolean;
@@ -322,7 +357,9 @@ export default function PaymentPage() {
         };
 
       if (!bookingRes.success && 'error' in bookingRes && bookingRes.error) {
-        throw new Error(bookingRes.error);
+        // Use the customer-friendly message if available (e.g. "Your card was not charged")
+        const displayMsg = (bookingRes as any).customerMessage || bookingRes.error;
+        throw new Error(displayMsg);
       }
 
       // 4. Store confirmation
@@ -398,6 +435,7 @@ export default function PaymentPage() {
       }).catch(() => {});
 
       store.setPaymentStatus('succeeded');
+      useOfferSessionStore.getState().markBooked();
       router.push('/checkout/confirm');
     } catch (err) {
       const msg =
@@ -412,6 +450,7 @@ export default function PaymentPage() {
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
       <CheckoutHeader stepIndex={STEP_INDEX} />
+      {OfferGuardUI()}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
@@ -674,7 +713,7 @@ export default function PaymentPage() {
               {/* Desktop complete booking CTA */}
               <button
                 onClick={handleCompleteBooking}
-                disabled={processing || !isCardValid}
+                disabled={processing || !isCardValid || isExpired}
                 className="w-full py-4 rounded-2xl bg-[#1ABC9C] hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-[#1ABC9C]/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {processing ? (

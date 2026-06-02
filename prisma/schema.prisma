@@ -531,9 +531,28 @@ model MasterBooking {
   paymentStatus          MbPaymentStatus    @default(PENDING) @map("payment_status")
   ticketingStatus        MbTicketingStatus  @default(NOT_STARTED) @map("ticketing_status")
 
-  // Financial
+  // Financial — Customer Grand Total
   totalAmount            Decimal            @map("total_amount") @db.Decimal(10, 2)
   currency               String             @default("USD")
+
+  // Financial — Provider Settlement
+  providerPayableTotal   Decimal?           @map("provider_payable_total") @db.Decimal(10, 2)
+  providerCurrency       String?            @map("provider_currency")
+  providerOfferId        String?            @map("provider_offer_id")
+  providerOrderId        String?            @map("provider_order_id")
+
+  // Financial — FareMind Revenue
+  markupAmount           Decimal?           @map("markup_amount") @db.Decimal(10, 2)
+  serviceFeeAmount       Decimal?           @map("service_fee_amount") @db.Decimal(10, 2)
+  fareMindRevenueTotal   Decimal?           @map("faremind_revenue_total") @db.Decimal(10, 2)
+
+  // Financial — Third-Party Vendor Payables
+  priceProtectionAmount  Decimal?           @map("price_protection_amount") @db.Decimal(10, 2)
+  travelInsuranceAmount  Decimal?           @map("travel_insurance_amount") @db.Decimal(10, 2)
+  thirdPartyPayableTotal Decimal?           @map("third_party_payable_total") @db.Decimal(10, 2)
+
+  // Financial — Seat/Ancillary Service Totals
+  seatServiceTotal       Decimal?           @map("seat_service_total") @db.Decimal(10, 2)
 
   // Provider
   primaryProvider        String             @default("duffel") @map("primary_provider")
@@ -1963,4 +1982,31 @@ model BookingCommercialCharge {
   @@index([masterBookingId])
   @@index([chargeType])
   @@map("booking_commercial_charges")
+}
+
+// ═══════════════════════════════════════════════
+// Booking Offer Session — Tracks offer expiry during checkout
+// ═══════════════════════════════════════════════
+
+model BookingOfferSession {
+  id                    String    @id @default(cuid())
+  provider              String                              // e.g. "duffel", "mystifly"
+  providerOfferId       String
+  offerRequestId        String?
+  offerExpiryTimestamp   DateTime                            // provider expiry or fallback
+  fallbackExpiryMinutes Int       @default(20)
+  searchStartedAt       DateTime?
+  bookingStartedAt      DateTime  @default(now())
+  status                String    @default("ACTIVE")        // ACTIVE | WARNING | EXPIRED | BOOKED | CANCELLED
+  warningsShown         Int       @default(0)
+  expiredAt             DateTime?
+  refreshedAt           DateTime?
+  paymentBlockedAt      DateTime?
+  searchCriteria        Json?                               // stores origin, dest, dates, pax for refresh
+  createdAt             DateTime  @default(now())
+  updatedAt             DateTime  @updatedAt
+
+  @@index([providerOfferId])
+  @@index([status])
+  @@map("booking_offer_sessions")
 }
