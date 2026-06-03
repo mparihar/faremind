@@ -186,7 +186,38 @@ export default function AiBookingSummaryCard({
               <UtensilsCrossed className="w-2.5 h-2.5 text-[#1ABC9C]" />
               <span className="text-[11px] text-slate-400 font-bold uppercase">Meal</span>
             </div>
-            <p className="text-[12px] text-slate-700 font-medium">{mealLabel || 'Standard'}</p>
+            {(() => {
+              // Derive outbound & return meal labels from passengerMeals
+              const obMeals = passengerMeals.filter(m => m.journeyType === 'outbound');
+              const rtMeals = passengerMeals.filter(m => m.journeyType === 'return');
+
+              if (obMeals.length === 0 && rtMeals.length === 0) {
+                return <p className="text-[12px] text-slate-700 font-medium">{mealLabel || 'Standard'}</p>;
+              }
+
+              const uniqueCodes = (meals: typeof obMeals) => [...new Set(meals.map(m => m.mealCode))];
+              const formatCodes = (codes: string[]) => codes.length === 1 ? codes[0] : codes.join(', ');
+
+              const obCodes = uniqueCodes(obMeals);
+              const rtCodes = uniqueCodes(rtMeals);
+
+              return (
+                <>
+                  {obCodes.length > 0 && (
+                    <p className="text-[12px] text-slate-700 font-medium">
+                      ✈️ <span className="font-bold text-[#1ABC9C]">{formatCodes(obCodes)}</span>
+                      <span className="text-slate-400 ml-1">(outbound)</span>
+                    </p>
+                  )}
+                  {rtCodes.length > 0 && (
+                    <p className="text-[12px] text-slate-700 font-medium mt-0.5">
+                      🔄 <span className="font-bold text-[#1ABC9C]">{formatCodes(rtCodes)}</span>
+                      <span className="text-slate-400 ml-1">(return)</span>
+                    </p>
+                  )}
+                </>
+              );
+            })()}
           </div>
         </div>
 

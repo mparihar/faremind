@@ -93,12 +93,12 @@ export const useOfferSessionStore = create<OfferSessionStore>((set, get) => ({
     try {
       const res = await apiFetch('/api/booking-session/offer-session/start', {
         method: 'POST',
-        body: {
+        body: JSON.stringify({
           provider,
           providerOfferId,
           offerExpiryTimestamp: expiresAt,
           searchCriteria,
-        },
+        }),
       });
 
       const remaining = res.remainingSeconds ?? 0;
@@ -133,9 +133,23 @@ export const useOfferSessionStore = create<OfferSessionStore>((set, get) => ({
       console.warn('[OfferSession] Failed to start session, using local-only timer:', err);
 
       // Fallback: local-only timer (no DB record)
+      // Fetch admin-configured expiry from public config endpoint
+      let fallbackMinutes = 20;
+      try {
+        const configRes = await fetch('/api/config/offer-expiry');
+        if (configRes.ok) {
+          const configData = await configRes.json();
+          if (configData.minutes && configData.minutes >= 5 && configData.minutes <= 60) {
+            fallbackMinutes = configData.minutes;
+          }
+        }
+      } catch {
+        // Use default 20 minutes if config fetch fails
+      }
+
       const fallbackExpiry = expiresAt
         ? new Date(expiresAt).toISOString()
-        : new Date(Date.now() + 20 * 60 * 1000).toISOString();
+        : new Date(Date.now() + fallbackMinutes * 60 * 1000).toISOString();
       const remaining = Math.max(0, Math.floor((new Date(fallbackExpiry).getTime() - Date.now()) / 1000));
 
       set({

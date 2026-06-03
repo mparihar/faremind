@@ -2010,3 +2010,38 @@ model BookingOfferSession {
   @@index([status])
   @@map("booking_offer_sessions")
 }
+
+// ═══════════════════════════════════════════════
+// SYSTEM CONFIGURATION
+// ═══════════════════════════════════════════════
+
+model SystemConfig {
+  id          String   @id @default(cuid())
+  key         String   @unique             // e.g. "offer_expiry_minutes"
+  value       String                       // stored as string, parsed by consumer
+  description String?
+  updatedBy   String?  @map("updated_by")  // admin email who last changed it
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@map("system_configs")
+}
+
+// ═══════════════════════════════════════════════
+// NOTIFICATION RECIPIENTS — Admin Console
+// ═══════════════════════════════════════════════
+
+model NotificationRecipient {
+  id          String   @id @default(cuid())
+  email       String   @unique
+  name        String
+  role        String   @default("support")    // "super_admin" | "admin" | "support"
+  events      String[] @default([])           // [] = all events, or specific event types
+  isActive    Boolean  @default(true) @map("is_active")
+  addedBy     String?  @map("added_by")       // email of who added this recipient
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  @@index([isActive])
+  @@map("notification_recipients")
+}

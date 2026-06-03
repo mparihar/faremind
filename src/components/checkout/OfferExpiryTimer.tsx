@@ -93,7 +93,7 @@ export function OfferExpiryTimer({
   if (status === 'WARNING') {
     if (compact) {
       return (
-        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-amber-500/20 text-amber-400 text-xs font-semibold animate-pulse">
+        <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#FFFBEB] border border-[#FBBF24] text-[#B45309] text-xs font-semibold animate-pulse">
           <AlertTriangle className="w-3.5 h-3.5" />
           <span>{formatCountdown(remainingSeconds)}</span>
         </div>
@@ -101,19 +101,19 @@ export function OfferExpiryTimer({
     }
 
     return (
-      <div className="bg-gradient-to-r from-amber-500/15 to-orange-500/10 border border-amber-500/40 rounded-xl px-4 py-3 animate-[pulse_2s_ease-in-out_infinite]">
+      <div className="bg-[#FFFBEB] border border-[#FBBF24] rounded-xl px-4 py-3 animate-[pulse_2s_ease-in-out_infinite]">
         <div className="flex items-center gap-3">
-          <div className="w-9 h-9 rounded-lg bg-amber-500/20 flex items-center justify-center flex-none">
-            <AlertTriangle className="w-5 h-5 text-amber-400" />
+          <div className="w-9 h-9 rounded-lg bg-[#FBBF24]/20 flex items-center justify-center flex-none">
+            <AlertTriangle className="w-5 h-5 text-[#B45309]" />
           </div>
           <div className="flex-1">
             <div className="flex items-center gap-2">
-              <p className="text-sm font-semibold text-amber-400">Fare expires soon</p>
-              <span className="text-lg font-bold text-amber-300 tabular-nums tracking-wider">
+              <p className="text-sm font-semibold text-[#B45309]">Fare expires soon</p>
+              <span className="text-lg font-bold text-[#B45309] tabular-nums tracking-wider">
                 {formatCountdown(remainingSeconds)}
               </span>
             </div>
-            <p className="text-xs text-amber-400/70 mt-0.5">
+            <p className="text-xs text-[#B45309]/70 mt-0.5">
               Please complete checkout. Prices and availability may change after this timer expires.
             </p>
           </div>
@@ -125,27 +125,27 @@ export function OfferExpiryTimer({
   // ─── Active (Normal) State ───
   if (compact) {
     return (
-      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-teal-500/15 text-teal-400 text-xs font-semibold">
-        <Clock className="w-3.5 h-3.5" />
+      <div className="flex items-center gap-1.5 px-2.5 py-1 rounded-full bg-[#ECFDF5] border border-[#5EEAD4] text-[#0F766E] text-xs font-semibold">
+        <Clock className="w-3.5 h-3.5 text-[#0F766E]" />
         <span className="tabular-nums">{formatCountdown(remainingSeconds)}</span>
       </div>
     );
   }
 
   return (
-    <div className="bg-gradient-to-r from-teal-500/10 to-emerald-500/10 border border-teal-500/25 rounded-xl px-4 py-3">
+    <div className="bg-white border border-slate-200 rounded-xl px-4 py-3 shadow-sm">
       <div className="flex items-center gap-3">
-        <div className="w-9 h-9 rounded-lg bg-teal-500/15 flex items-center justify-center flex-none">
-          <Clock className="w-5 h-5 text-teal-400" />
+        <div className="w-9 h-9 rounded-lg bg-[#0F766E]/10 flex items-center justify-center flex-none">
+          <Clock className="w-5 h-5 text-[#0F766E]" />
         </div>
         <div className="flex-1">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-semibold text-teal-300">Fare held for</p>
-            <span className="text-lg font-bold text-teal-200 tabular-nums tracking-wider">
+            <p className="text-sm font-semibold text-[#0F766E]">Fare held for</p>
+            <span className="text-lg font-bold text-[#0F766E] tabular-nums tracking-wider">
               {formatCountdown(remainingSeconds)}
             </span>
           </div>
-          <p className="text-xs text-teal-400/60 mt-0.5">
+          <p className="text-xs mt-0.5" style={{ color: '#B45309' }}>
             Complete booking before the timer expires to avoid price or availability changes.
           </p>
         </div>

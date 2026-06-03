@@ -34,6 +34,11 @@ export default function AiMultiPaxAddOnsStep({
   const insuranceFee = computedFees
     ? Math.round(computedFees.insuranceFeeTotal / Math.max(1, passengerCount))
     : Math.round(baseFarePrice * INSURANCE_RATE);
+
+  // Product metadata from DB (with sensible defaults)
+  const insuranceName = computedFees?.insuranceProductName || 'Travel Insurance';
+  const insuranceCoverage = computedFees?.insuranceCoverage || computedFees?.insuranceDescription || '';
+
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n);
 
@@ -142,10 +147,13 @@ export default function AiMultiPaxAddOnsStep({
           <div className="flex items-center gap-2">
             <Heart className="w-4 h-4 text-[#1ABC9C] flex-none" />
             <div>
-              <span className="text-[14px] font-semibold text-slate-700">Travel insurance</span>
+              <span className="text-[14px] font-semibold text-slate-700">{insuranceName}</span>
               <span className="text-[12px] text-slate-400 ml-1">
                 ({fmt(insuranceFee)}/pax{passengerCount > 1 ? ` · ${fmt(insuranceFee * passengerCount)} total` : ''})
               </span>
+              {insuranceCoverage && (
+                <p className="text-[11px] text-slate-400 mt-0.5 leading-snug">{insuranceCoverage}</p>
+              )}
             </div>
           </div>
           {travelInsurance ? (

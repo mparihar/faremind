@@ -7,11 +7,12 @@
  */
 
 import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
+import { prisma } from '@/lib/db';
 
 const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 const SENDER_EMAIL  = process.env.BREVO_SENDER_EMAIL ?? 'support@faremind.ai';
-const SENDER_NAME   = 'FareMind';
-const ADMIN_EMAIL   = process.env.ADMIN_EMAIL ?? process.env.SUPPORT_EMAIL ?? 'gayatri.parihar@gmail.com';
+const SENDER_NAME   = 'FAREMIND';
+const SUPER_ADMIN_EMAIL = 'mparihar@gmail.com';
 
 export type NotifyEventType =
   | 'BOOKING_CONFIRMED'
@@ -85,7 +86,7 @@ function wrap(title: string, body: string): string {
       <span style="color:#1abc9c;font-size:18px;font-weight:900;">F</span>
     </td>
     <td style="padding-left:12px;">
-      <span style="color:#0f172a;font-size:15px;font-weight:800;">FareMind</span>
+      <span style="font-size:15px;font-weight:800;"><span style="color:#FFFFFF;">FARE</span><span style="color:#009CA6;">MIND</span></span>
       <span style="display:block;color:#94a3b8;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;">${title}</span>
     </td>
   </tr></table>
@@ -95,7 +96,7 @@ function wrap(title: string, body: string): string {
 </td></tr>
 <tr><td style="padding:16px 32px;border-top:1px solid #f1f5f9;background:#fafafa;">
   <p style="margin:0;color:#94a3b8;font-size:11px;text-align:center;">
-    &copy; ${year} FareMind &middot; Need help? <a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a>
+    &copy; ${year} FAREMIND &middot; Need help? <a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a>
   </p>
 </td></tr>
 </table></td></tr></table></body></html>`;
@@ -120,14 +121,14 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
       if (fullBookingData) {
         const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
         return {
-          subject: `Your FareMind flight is confirmed – ${ref}`,
+          subject: `Your FAREMIND flight is confirmed – ${ref}`,
           html: itineraryHtml,
           text: `Hi ${name}, your flight ${ref} (${route}) is confirmed. Total: ${amount}. View your full itinerary at ${process.env.NEXT_PUBLIC_APP_URL || 'https://faremind.ai'}/manage-booking`,
         };
       }
       // Fallback: simple summary
       return {
-        subject: `Your FareMind flight is confirmed – ${ref}`,
+        subject: `Your FAREMIND flight is confirmed – ${ref}`,
         html: wrap('Booking Confirmed', `
           <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking Confirmed ✈️</h2>
           <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">
@@ -135,7 +136,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
           </p>
           <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin-bottom:24px;">
             <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
-              <tr><td style="padding:6px 0;color:#64748b;">FareMind Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${String(d.booking_reference || ref)}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">FAREMIND Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${String(d.booking_reference || ref)}</td></tr>
               ${(d.airline_pnr || d.pnr) ? `<tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#1abc9c;">${String(d.airline_pnr || d.pnr)}</td></tr>` : ''}
               <tr><td style="padding:6px 0;color:#64748b;">Route</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${route}</td></tr>
               ${amount ? `<tr><td style="padding:6px 0;color:#64748b;">Total Charged</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:18px;color:#1abc9c;">${amount}</td></tr>` : ''}
@@ -200,7 +201,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
               <div style="width:6px;height:6px;border-radius:50%;background:#10b981;"></div>
               <span style="font-size:11px;font-weight:700;color:#10b981;letter-spacing:0.5px;">Payment Confirmed</span>
             </div>
-            <div style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:8px;">FAREMIND BOOKING REFERENCE</div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:8px;"><span style="color:#ffffff;">FARE</span><span style="color:#009CA6;">MIND</span> <span style="color:#64748b;">BOOKING REFERENCE</span></div>
             <div style="font-family:'Courier New',monospace;font-size:32px;font-weight:900;letter-spacing:8px;color:#fff;">${ref}</div>
             <div style="margin-top:14px;">
               <div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;">
@@ -217,7 +218,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
           <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:24px;">
             <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
               <tr><td style="padding:6px 0;color:#64748b;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:18px;color:#1abc9c;">${amount}</td></tr>
-              <tr><td style="padding:6px 0;color:#64748b;">FareMind Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${ref}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">FAREMIND Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${ref}</td></tr>
               <tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-family:'Courier New',monospace;font-weight:700;color:#1abc9c;letter-spacing:1px;">${String(d.airline_pnr || d.pnr || '')}</td></tr>
               <tr><td style="padding:6px 0;color:#64748b;">Payment Status</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#10b981;">Confirmed</td></tr>
             </table>
@@ -225,23 +226,23 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
           
           <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">Your booking remains active and no further action is required at this time.</p>
           
-          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">You can view your itinerary, manage your booking, download travel documents, or make eligible changes through your <a href="${process.env.APP_URL || 'https://faremind.ai'}/manage-booking" style="color:#1abc9c;text-decoration:none;">FareMind account</a>.</p>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">You can view your itinerary, manage your booking, download travel documents, or make eligible changes through your <a href="${process.env.APP_URL || 'https://faremind.ai'}/manage-booking" style="color:#1abc9c;text-decoration:none;">FAREMIND account</a>.</p>
           
-          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">If you did not authorize this payment, please contact FareMind Support immediately.</p>
+          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">If you did not authorize this payment, please contact FAREMIND Support immediately.</p>
           
-          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">Thank you for choosing FareMind.</p>
+          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">Thank you for choosing FAREMIND.</p>
           
-          <p style="margin:0;color:#0f172a;font-size:14px;font-weight:600;">FareMind</p>
+          <p style="margin:0;color:#0f172a;font-size:14px;font-weight:600;">FAREMIND</p>
           <p style="margin:4px 0;color:#1abc9c;font-size:12px;font-weight:600;">Your Personal Travel Consultant</p>
           <p style="margin:4px 0 0;font-size:12px;"><a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a></p>
           <p style="margin:4px 0 0;font-size:12px;"><a href="http://www.faremind.ai" style="color:#1abc9c;text-decoration:none;">www.faremind.ai</a></p>
         `),
-        text: `Hello ${name},\n\nWe have successfully received your payment of ${amount} for booking ${ref}.\n\nPayment Details\nAmount Paid: ${amount}\nFareMind Booking Reference: ${ref}\nAirline PNR: ${String(d.airline_pnr || d.pnr || '')}\nPayment Status: Confirmed\n\nYour booking remains active and no further action is required at this time.\n\nThank you for choosing FareMind.`,
+        text: `Hello ${name},\n\nWe have successfully received your payment of ${amount} for booking ${ref}.\n\nPayment Details\nAmount Paid: ${amount}\nFAREMIND Booking Reference: ${ref}\nAirline PNR: ${String(d.airline_pnr || d.pnr || '')}\nPayment Status: Confirmed\n\nYour booking remains active and no further action is required at this time.\n\nThank you for choosing FAREMIND.`,
       };
 
     case 'PAYMENT_FAILED':
       return {
-        subject: `Payment issue with your FareMind booking`,
+        subject: `Payment issue with your FAREMIND booking`,
         html: wrap('Payment Issue', `
           <h2 style="margin:0 0 8px;color:#ef4444;font-size:20px;font-weight:800;">Payment Issue</h2>
           <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${name}, we couldn't process your payment for booking <strong>${ref}</strong>. Please try again or use a different payment method.</p>
@@ -312,14 +313,14 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
       if (fullBookingData) {
         const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
         return {
-          subject: `[FareMind] New Booking Confirmed – ${ref}`,
+          subject: `[FAREMIND] New Booking Confirmed – ${ref}`,
           html: itineraryHtml,
           text: `New booking: ${ref} by ${name} (${email}), ${route}, ${amount}. Time: ${ts}`,
         };
       }
       // Fallback
       return {
-        subject: `[FareMind] New Booking Confirmed – ${ref}`,
+        subject: `[FAREMIND] New Booking Confirmed – ${ref}`,
         html: wrap('[Admin] Booking Confirmed', `
           <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">New Booking Confirmed</h2>
           <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;">
@@ -359,7 +360,7 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
 
     case 'BOOKING_CANCELLED':
       return {
-        subject: `[FareMind] Booking Cancelled – ${ref}`,
+        subject: `[FAREMIND] Booking Cancelled – ${ref}`,
         html: wrap('[Admin] Cancelled', `
           <h2 style="margin:0 0 8px;color:#ef4444;font-size:20px;font-weight:800;">Booking Cancelled</h2>
           <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Booking <strong>${ref}</strong> by ${name} (${email}) for ${route} has been cancelled.</p>
@@ -372,13 +373,23 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
     case 'DATE_CHANGE_APPROVED':
     case 'DATE_CHANGE_REJECTED':
       return {
-        subject: `[FareMind] Booking Updated – ${ref}`,
+        subject: `[FAREMIND] Booking Updated – ${ref}`,
         html: wrap('[Admin] Updated', `
           <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking Updated</h2>
           <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Booking <strong>${ref}</strong> by ${name} (${email}) updated: ${String(d.update_type ?? eventType)}</p>
           ${d.update_details ? `<p style="margin:0;color:#64748b;font-size:13px;">${String(d.update_details)}</p>` : ''}
         `),
         text: `UPDATED: ${ref} by ${name}. ${String(d.update_type ?? eventType)} ${String(d.update_details ?? '')}`,
+      };
+
+    case 'PAYMENT_SUCCESS':
+      return {
+        subject: `[FAREMIND] Payment Received – ${ref}`,
+        html: wrap('[Admin] Payment Success', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Payment Received</h2>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Payment of <strong style="color:#1abc9c;">${amount}</strong> received from ${name} (${email}) for booking <strong>${ref}</strong>.</p>
+        `),
+        text: `PAYMENT SUCCESS: ${ref} by ${name} (${email}), amount: ${amount}`,
       };
 
     case 'PAYMENT_FAILED':
@@ -393,7 +404,7 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
 
     case 'PRICE_DROP_REFUND':
       return {
-        subject: `[FareMind] Price Drop Refund Triggered – ${ref}`,
+        subject: `[FAREMIND] Price Drop Refund Triggered – ${ref}`,
         html: wrap('[Admin] Price Drop Refund', `
           <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Price Drop Refund</h2>
           <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Booking <strong>${ref}</strong> by ${name} qualifies for a refund of <strong style="color:#1abc9c;">${String(d.refund_amount ?? d.savings ?? '')}</strong>.</p>
@@ -418,8 +429,35 @@ const CUSTOMER_EVENTS = new Set<string>([
 const SUPPORT_EVENTS = new Set<string>([
   'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_FAILED', 'BOOKING_CANCELLED',
   'BOOKING_UPDATED', 'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
-  'PAYMENT_FAILED', 'PRICE_DROP_REFUND', 'SUPPORT_MANUAL',
+  'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
+  'PRICE_DROP_REFUND', 'SUPPORT_MANUAL',
 ]);
+
+// ═══════════════════════════════════════════════════════════
+// Dynamic recipient lookup from DB
+// ═══════════════════════════════════════════════════════════
+
+async function getAdminRecipients(eventType: string): Promise<string[]> {
+  try {
+    const recipients = await prisma.notificationRecipient.findMany({
+      where: { isActive: true },
+    });
+
+    const emails = new Set<string>();
+    emails.add(SUPER_ADMIN_EMAIL);
+
+    for (const r of recipients) {
+      if (r.events.length === 0 || r.events.includes(eventType)) {
+        emails.add(r.email.toLowerCase());
+      }
+    }
+
+    return Array.from(emails);
+  } catch (err) {
+    console.warn('[notify] Failed to query recipients, falling back to super admin:', err);
+    return [SUPER_ADMIN_EMAIL];
+  }
+}
 
 // ═══════════════════════════════════════════════════════════
 // Public API — same signature as before, all callers work
@@ -437,11 +475,14 @@ export async function fireNotification(payload: NotifyPayload): Promise<void> {
       }
     }
 
-    // Support/admin email
+    // Support/admin emails — send to ALL configured recipients
     if (SUPPORT_EVENTS.has(event_type)) {
       const spec = buildSupportEmail(event_type, data);
       if (spec) {
-        sendBrevo(ADMIN_EMAIL, spec.subject, spec.html, spec.text).catch(() => {});
+        const adminEmails = await getAdminRecipients(event_type);
+        for (const adminEmail of adminEmails) {
+          sendBrevo(adminEmail, spec.subject, spec.html, spec.text).catch(() => {});
+        }
       }
     }
   } catch (err) {

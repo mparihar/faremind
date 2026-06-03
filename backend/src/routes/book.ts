@@ -4,9 +4,7 @@ import { createBooking as dbCreateBooking, createPayment, addLedgerEntry, create
 import { prisma } from '../lib/db';
 import { fireNotification } from '../lib/notify';
 
-function generateMockPNR(): string {
-  return Array.from({ length: 6 }, () => 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789'[Math.floor(Math.random() * 36)]).join('');
-}
+
 
 const plugin: FastifyPluginAsync = async (fastify) => {
   fastify.post('/', async (request, reply) => {
@@ -20,38 +18,40 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'First passenger must have firstName, lastName, and email' });
       }
 
-      let providerBookingId: string | undefined;
-      let pnr: string;
-      let bookingStatus: 'CONFIRMED' | 'PENDING' = 'CONFIRMED';
+      if (!providerOfferId) {
+        return reply.code(400).send({ error: 'Missing providerOfferId — cannot create booking without a valid provider offer' });
+      }
 
       const isDuffelConfigured = (process.env.DUFFEL_API_TOKEN || '').length > 10;
+      if (!isDuffelConfigured) {
+        return reply.code(503).send({ error: 'Booking service is not configured. Please contact support.' });
+      }
 
-      if (provider === 'duffel' && isDuffelConfigured && providerOfferId) {
-        try {
-          const order = await duffelClient.createBooking({
-            offerId: providerOfferId,
-            passengers: passengers.map((p: any, i: number) => ({
-              id: `passenger_${i}`, given_name: p.firstName, family_name: p.lastName,
-              born_on: p.dateOfBirth, gender: p.gender || 'male', email: p.email,
-              phone_number: p.phone || '+10000000000', title: p.gender === 'female' ? 'ms' : 'mr',
-            })),
-            paymentAmount: flight.totalPrice, paymentCurrency: flight.currency || 'USD',
-          });
-          providerBookingId = order.id;
-          pnr = order.booking_reference;
-        } catch (error) {
-          console.error('[Booking] Duffel failed:', error);
-          pnr = generateMockPNR();
-          bookingStatus = 'PENDING';
-        }
+      let providerBookingId: string | undefined;
+      let pnr: string;
+      const bookingStatus: 'CONFIRMED' | 'PENDING' = 'CONFIRMED';
+
+      if (provider === 'duffel') {
+        const order = await duffelClient.createBooking({
+          offerId: providerOfferId,
+          passengers: passengers.map((p: any, i: number) => ({
+            id: `passenger_${i}`, given_name: p.firstName, family_name: p.lastName,
+            born_on: p.dateOfBirth, gender: p.gender || 'male', email: p.email,
+            phone_number: p.phone || '+10000000000', title: p.gender === 'female' ? 'ms' : 'mr',
+            type: p.type || 'adult',
+          })),
+          paymentAmount: flight.totalPrice, paymentCurrency: flight.currency || 'USD',
+        });
+        providerBookingId = order.id;
+        pnr = order.booking_reference;
       } else {
-        pnr = generateMockPNR();
+        return reply.code(400).send({ error: `Unsupported provider: ${provider}` });
       }
 
       const segments = flight.segments || [];
       const firstSeg = segments[0];
       const lastSeg = segments[segments.length - 1];
-      const resolvedUserId = userId || 'demo-user';
+      const resolvedUserId = userId || 'anonymous';
 
       let booking;
       try {

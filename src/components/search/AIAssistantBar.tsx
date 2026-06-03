@@ -96,7 +96,7 @@ export default function AIAssistantBar({ flights, context, onResult, result }: A
             <div className="w-5 h-5 rounded-md bg-gradient-to-br from-[#1ABC9C] to-[#0e9e83] flex items-center justify-center shadow-sm">
               <Sparkles className="w-3 h-3 text-white" />
             </div>
-            <span className="text-xs font-black text-slate-700 uppercase tracking-wider">FareMind AI</span>
+            <span className="text-xs font-black text-slate-700 uppercase tracking-wider">FAREMIND AI</span>
           </div>
           <span className="text-[11px] text-slate-400 hidden sm:block">Ask anything about these flights</span>
           <button
@@ -182,7 +182,7 @@ export default function AIAssistantBar({ flights, context, onResult, result }: A
                     />
                   ))}
                 </div>
-                <span className="text-xs text-slate-500 italic">FareMind AI analyzing your preferences…</span>
+                <span className="text-xs text-slate-500 italic">FAREMIND AI analyzing your preferences…</span>
               </div>
             )}
 

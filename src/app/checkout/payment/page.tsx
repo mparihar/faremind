@@ -1,11 +1,10 @@
 // FILE: src/app/checkout/payment/page.tsx
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useMemo } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Lock,
-  Check,
   CreditCard,
   ShieldCheck,
   AlertCircle,
@@ -14,6 +13,15 @@ import {
   Plane,
   Shield,
 } from 'lucide-react';
+import { loadStripe } from '@stripe/stripe-js';
+import {
+  Elements,
+  CardNumberElement,
+  CardExpiryElement,
+  CardCvcElement,
+  useStripe,
+  useElements,
+} from '@stripe/react-stripe-js';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
 import { useOfferGuard } from '@/hooks/useOfferGuard';
 import { useOfferSessionStore } from '@/store/useOfferSessionStore';
@@ -27,6 +35,10 @@ import { useFeeLoader } from '@/hooks/useFeeLoader';
 
 const STEP_INDEX = 6;
 
+const stripePromise = loadStripe(
+  process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || ''
+);
+
 const fmt = (amount: number) =>
   new Intl.NumberFormat('en-US', {
     style: 'currency',
@@ -34,21 +46,7 @@ const fmt = (amount: number) =>
     maximumFractionDigits: 0,
   }).format(amount);
 
-// ─── Card formatting helpers ──────────────────────────────────────────────────
-
-const fmtCard = (v: string) =>
-  v
-    .replace(/\D/g, '')
-    .slice(0, 16)
-    .replace(/(.{4})/g, '$1 ')
-    .trim();
-
-const fmtExp = (v: string) => {
-  const d = v.replace(/\D/g, '').slice(0, 4);
-  return d.length > 2 ? d.slice(0, 2) + '/' + d.slice(2) : d;
-};
-
-// ─── Country options (abbreviated) ───────────────────────────────────────────
+// ─── Country options ──────────────────────────────────────────────────────────
 
 const COUNTRIES = [
   'United States',
@@ -64,7 +62,23 @@ const COUNTRIES = [
   'Other',
 ] as const;
 
+// ─── Stripe Elements style ───────────────────────────────────────────────────
 
+const STRIPE_ELEMENT_STYLE = {
+  base: {
+    fontSize: '14px',
+    color: '#0F172A',
+    fontFamily: 'Inter, system-ui, sans-serif',
+    '::placeholder': {
+      color: '#94A3B8',
+    },
+    letterSpacing: '0.025em',
+  },
+  invalid: {
+    color: '#EF4444',
+    iconColor: '#EF4444',
+  },
+};
 
 // ─── Order Summary Sidebar ────────────────────────────────────────────────────
 
@@ -146,37 +160,28 @@ function OrderSummaryCard({
   );
 }
 
-// ─── Page ─────────────────────────────────────────────────────────────────────
+// ─── Inner Payment Form (has access to Stripe hooks) ─────────────────────────
 
-interface CardFields {
-  number: string;
-  name: string;
-  expiry: string;
-  cvc: string;
-  country: string;
-  address: string;
-  city: string;
-  zip: string;
-}
-
-export default function PaymentPage() {
+function PaymentFormInner() {
   const router = useRouter();
   const { isExpired, OfferGuardUI } = useOfferGuard();
   const store = useCheckoutStore();
   const { user } = useAuthStore();
+  const stripe = useStripe();
+  const elements = useElements();
+
   const [processing, setProcessing] = useState(false);
   const [bookingError, setBookingError] = useState<string | null>(null);
+  const [cardholderName, setCardholderName] = useState('');
+  const [billingCountry, setBillingCountry] = useState('United States');
+  const [billingAddress, setBillingAddress] = useState('');
+  const [billingCity, setBillingCity] = useState('');
+  const [billingZip, setBillingZip] = useState('');
 
-  const [card, setCard] = useState<CardFields>({
-    number: '',
-    name: '',
-    expiry: '',
-    cvc: '',
-    country: 'United States',
-    address: '',
-    city: '',
-    zip: '',
-  });
+  // Track Stripe Element completeness
+  const [cardNumberComplete, setCardNumberComplete] = useState(false);
+  const [cardExpiryComplete, setCardExpiryComplete] = useState(false);
+  const [cardCvcComplete, setCardCvcComplete] = useState(false);
 
   const {
     selectedFare,
@@ -219,32 +224,19 @@ export default function PaymentPage() {
   })();
 
   // ── Validation ─────────────────────────────────────────────────────────────
-  const isExpiryValid = (() => {
-    if (card.expiry.length !== 5) return false;
-    const [mm, yy] = card.expiry.split('/');
-    const month = parseInt(mm, 10);
-    const year = parseInt(yy, 10);
-    if (isNaN(month) || isNaN(year) || month < 1 || month > 12) return false;
-    const now = new Date();
-    const currentMonth = now.getMonth() + 1;  // 1-indexed
-    const currentYear = now.getFullYear() % 100; // 2-digit
-    // Card must expire in a future month/year
-    return year > currentYear || (year === currentYear && month >= currentMonth);
-  })();
-
-  const isCardValid =
-    card.name.trim().length > 0 &&
-    card.number.replace(/\s/g, '').length === 16 &&
-    isExpiryValid &&
-    card.cvc.length >= 3 &&
-    card.country.trim().length > 0 &&
-    card.address.trim().length > 0 &&
-    card.city.trim().length > 0 &&
-    card.zip.trim().length > 0;
+  const isFormValid =
+    cardholderName.trim().length > 0 &&
+    cardNumberComplete &&
+    cardExpiryComplete &&
+    cardCvcComplete &&
+    billingCountry.trim().length > 0 &&
+    billingAddress.trim().length > 0 &&
+    billingCity.trim().length > 0 &&
+    billingZip.trim().length > 0;
 
   // ── Booking flow ───────────────────────────────────────────────────────────
   const handleCompleteBooking = async () => {
-    if (!isCardValid || processing) return;
+    if (!isFormValid || processing || !stripe || !elements) return;
 
     // Pre-payment expiry guard
     const sessionStatus = useOfferSessionStore.getState().status;
@@ -260,56 +252,73 @@ export default function PaymentPage() {
     try {
       // 1. Create Stripe PaymentIntent with the customer grand total
       const primaryPax = passengers[0];
-      const intentRes = await apiFetch<{ paymentIntentId: string; clientSecret?: string; error?: string }>(
-        '/api/checkout/payment/create-intent',
-        {
-          method: 'POST',
-          body: JSON.stringify({
-            amount: pricing.total,
-            currency: currency ?? 'USD',
-            description: `FareMind booking — ${routeLabel}`,
-            customerEmail: primaryPax?.email || '',
-            sessionId,
-          }),
-        }
-      );
+      const intentRaw = await fetch('/api/checkout/payment/create-intent', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount: pricing.total,
+          currency: currency ?? 'USD',
+          description: `FAREMIND booking — ${routeLabel}`,
+          customerEmail: primaryPax?.email || '',
+          sessionId,
+        }),
+      });
+      const intentRes = await intentRaw.json() as { paymentIntentId: string; clientSecret?: string; error?: string };
 
-      if (!intentRes.paymentIntentId) {
+      if (!intentRaw.ok || !intentRes.paymentIntentId || !intentRes.clientSecret) {
         throw new Error(intentRes.error || 'Failed to create payment intent');
       }
 
-      const paymentIntentId = intentRes.paymentIntentId;
+      const { paymentIntentId, clientSecret } = intentRes;
       store.setPaymentIntent(paymentIntentId);
 
-      // 2. Confirm Stripe payment with card details
-      const confirmRes = await apiFetch<{ success: boolean; status?: string; error?: string; errorCode?: string }>(
-        '/api/checkout/payment/confirm',
+      // 2. Confirm payment via Stripe.js (PCI-compliant — card data never touches our server)
+      const cardNumberElement = elements.getElement(CardNumberElement);
+      if (!cardNumberElement) {
+        throw new Error('Card input not ready. Please refresh and try again.');
+      }
+
+      const { error: stripeError, paymentIntent } = await stripe.confirmCardPayment(
+        clientSecret,
         {
-          method: 'POST',
-          body: JSON.stringify({
-            paymentIntentId,
-            sessionId,
-            card: {
-              number: card.number,
-              expiry: card.expiry,
-              cvc: card.cvc,
-              name: card.name,
+          payment_method: {
+            card: cardNumberElement,
+            billing_details: {
+              name: cardholderName,
+              address: {
+                line1: billingAddress,
+                city: billingCity,
+                postal_code: billingZip,
+                country: billingCountry === 'United States' ? 'US'
+                       : billingCountry === 'United Kingdom' ? 'GB'
+                       : billingCountry === 'Canada' ? 'CA'
+                       : billingCountry === 'Australia' ? 'AU'
+                       : billingCountry === 'Germany' ? 'DE'
+                       : billingCountry === 'France' ? 'FR'
+                       : billingCountry === 'India' ? 'IN'
+                       : billingCountry === 'Japan' ? 'JP'
+                       : billingCountry === 'Singapore' ? 'SG'
+                       : billingCountry === 'UAE' ? 'AE'
+                       : 'US',
+              },
+              email: primaryPax?.email || undefined,
             },
-            billing: {
-              address: card.address,
-              city: card.city,
-              zip: card.zip,
-              country: card.country,
-            },
-          }),
+          },
         }
       );
 
-      if (!confirmRes.success) {
-        throw new Error(confirmRes.error || 'Payment was declined. Please check your card details.');
+      if (stripeError) {
+        throw new Error(stripeError.message || 'Payment was declined. Please check your card details.');
       }
 
-      // 3. Confirm booking — calls Next.js route directly (writes to DB)
+      // With capture_method: 'manual', status will be 'requires_capture'
+      if (paymentIntent?.status !== 'requires_capture' && paymentIntent?.status !== 'succeeded') {
+        throw new Error(`Unexpected payment status: ${paymentIntent?.status}. Please try again.`);
+      }
+
+      console.log(`[Payment] ✅ Stripe authorization successful: ${paymentIntentId} (status: ${paymentIntent.status})`);
+
+      // 3. Confirm booking — calls Next.js route directly (creates Duffel order + captures Stripe)
       const bookingRes = await fetch('/api/checkout/bookings/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -363,7 +372,9 @@ export default function PaymentPage() {
       }
 
       // 4. Store confirmation
-      const last4 = card.number.replace(/\s/g, '').slice(-4);
+      const last4 = paymentIntent?.payment_method
+        ? (paymentIntent as any).payment_method_details?.card?.last4 || '****'
+        : '****';
       const pnr = bookingRes.pnr ?? `FM${Math.random().toString(36).slice(2, 8).toUpperCase()}`;
       const bookingId = bookingRes.bookingId ?? `bk_${Date.now()}`;
       const passengerNames = passengers.map(
@@ -447,6 +458,10 @@ export default function PaymentPage() {
     }
   };
 
+  // ── Stripe Element wrapper style ──────────────────────────────────────────
+  const elementContainerClass =
+    'w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-sm focus-within:border-[#1ABC9C]/50 focus-within:bg-white transition-all';
+
   return (
     <div className="min-h-screen bg-[#F8FAFC]">
       <CheckoutHeader stepIndex={STEP_INDEX} />
@@ -466,7 +481,7 @@ export default function PaymentPage() {
                   <h2 className="text-base font-bold text-slate-900">Payment Details</h2>
                   <Lock className="w-3.5 h-3.5 text-slate-400" />
                 </div>
-                {/* Card brand logos placeholder */}
+                {/* Card brand logos */}
                 <div className="flex items-center gap-1.5">
                   {['VISA', 'MC', 'AMEX'].map((b) => (
                     <span
@@ -483,26 +498,20 @@ export default function PaymentPage() {
               </p>
 
               <div className="space-y-4">
-                {/* Card number */}
+                {/* Card number — Stripe Element */}
                 <div>
                   <label className="block text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">
                     Card Number <span className="text-red-400">*</span>
                   </label>
-                  <input
-                    type="text"
-                    placeholder="1234 5678 9012 3456"
-                    value={card.number}
-                    onChange={(e) =>
-                      setCard((prev) => ({ ...prev, number: fmtCard(e.target.value) }))
-                    }
-                    maxLength={19}
-                    inputMode="numeric"
-                    autoComplete="cc-number"
-                    className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:border-[#1ABC9C]/50 focus:bg-white transition-all"
-                  />
+                  <div className={elementContainerClass}>
+                    <CardNumberElement
+                      options={{ style: STRIPE_ELEMENT_STYLE, showIcon: true }}
+                      onChange={(e) => setCardNumberComplete(e.complete)}
+                    />
+                  </div>
                 </div>
 
-                {/* Cardholder name */}
+                {/* Cardholder name — regular input (not PCI-sensitive) */}
                 <div>
                   <label className="block text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">
                     Cardholder Name <span className="text-red-400">*</span>
@@ -510,64 +519,40 @@ export default function PaymentPage() {
                   <input
                     type="text"
                     placeholder="John Doe"
-                    value={card.name}
-                    onChange={(e) =>
-                      setCard((prev) => ({ ...prev, name: e.target.value }))
-                    }
+                    value={cardholderName}
+                    onChange={(e) => setCardholderName(e.target.value)}
                     autoComplete="cc-name"
                     className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:border-[#1ABC9C]/50 focus:bg-white transition-all"
                   />
                 </div>
 
-                {/* Expiry + CVC */}
+                {/* Expiry + CVC — Stripe Elements */}
                 <div className="grid grid-cols-2 gap-4">
                   <div>
                     <label className="block text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">
                       Expiry (MM/YY) <span className="text-red-400">*</span>
                     </label>
-                    <input
-                      type="text"
-                      placeholder="MM/YY"
-                      value={card.expiry}
-                      onChange={(e) =>
-                        setCard((prev) => ({ ...prev, expiry: fmtExp(e.target.value) }))
-                      }
-                      maxLength={5}
-                      inputMode="numeric"
-                      autoComplete="cc-exp"
-                      className={`w-full px-4 py-3 rounded-xl bg-slate-50 border text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:bg-white transition-all ${
-                        card.expiry.length === 5 && !isExpiryValid
-                          ? 'border-red-400 focus:border-red-400'
-                          : 'border-slate-200 focus:border-[#1ABC9C]/50'
-                      }`}
-                    />
-                    {card.expiry.length === 5 && !isExpiryValid && (
-                      <p className="text-[11px] text-red-500 mt-1">Card is expired</p>
-                    )}
+                    <div className={elementContainerClass}>
+                      <CardExpiryElement
+                        options={{ style: STRIPE_ELEMENT_STYLE }}
+                        onChange={(e) => setCardExpiryComplete(e.complete)}
+                      />
+                    </div>
                   </div>
                   <div>
                     <label className="block text-xs text-slate-500 uppercase tracking-wider font-medium mb-2">
                       CVC <span className="text-red-400">*</span>
                     </label>
-                    <input
-                      type="text"
-                      placeholder="123"
-                      value={card.cvc}
-                      onChange={(e) =>
-                        setCard((prev) => ({
-                          ...prev,
-                          cvc: e.target.value.replace(/\D/g, '').slice(0, 4),
-                        }))
-                      }
-                      maxLength={4}
-                      inputMode="numeric"
-                      autoComplete="cc-csc"
-                      className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:border-[#1ABC9C]/50 focus:bg-white transition-all"
-                    />
+                    <div className={elementContainerClass}>
+                      <CardCvcElement
+                        options={{ style: STRIPE_ELEMENT_STYLE }}
+                        onChange={(e) => setCardCvcComplete(e.complete)}
+                      />
+                    </div>
                   </div>
                 </div>
 
-                {/* Billing address */}
+                {/* Billing address — regular inputs */}
                 <div className="border-t border-slate-100 pt-4">
                   <p className="text-xs font-semibold text-slate-400 uppercase tracking-wider mb-4">
                     Billing Address
@@ -580,10 +565,8 @@ export default function PaymentPage() {
                       </label>
                       <div className="relative">
                         <select
-                          value={card.country}
-                          onChange={(e) =>
-                            setCard((prev) => ({ ...prev, country: e.target.value }))
-                          }
+                          value={billingCountry}
+                          onChange={(e) => setBillingCountry(e.target.value)}
                           className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-sm focus:outline-none focus:border-[#1ABC9C]/50 focus:bg-white transition-all appearance-none"
                         >
                           {COUNTRIES.map((c) => (
@@ -604,10 +587,8 @@ export default function PaymentPage() {
                       <input
                         type="text"
                         placeholder="123 Main Street"
-                        value={card.address}
-                        onChange={(e) =>
-                          setCard((prev) => ({ ...prev, address: e.target.value }))
-                        }
+                        value={billingAddress}
+                        onChange={(e) => setBillingAddress(e.target.value)}
                         autoComplete="street-address"
                         className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:border-[#1ABC9C]/50 focus:bg-white transition-all"
                       />
@@ -622,10 +603,8 @@ export default function PaymentPage() {
                         <input
                           type="text"
                           placeholder="New York"
-                          value={card.city}
-                          onChange={(e) =>
-                            setCard((prev) => ({ ...prev, city: e.target.value }))
-                          }
+                          value={billingCity}
+                          onChange={(e) => setBillingCity(e.target.value)}
                           autoComplete="address-level2"
                           className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:border-[#1ABC9C]/50 focus:bg-white transition-all"
                         />
@@ -637,10 +616,8 @@ export default function PaymentPage() {
                         <input
                           type="text"
                           placeholder="10001"
-                          value={card.zip}
-                          onChange={(e) =>
-                            setCard((prev) => ({ ...prev, zip: e.target.value }))
-                          }
+                          value={billingZip}
+                          onChange={(e) => setBillingZip(e.target.value)}
                           autoComplete="postal-code"
                           className="w-full px-4 py-3 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 placeholder-slate-400 text-sm focus:outline-none focus:border-[#1ABC9C]/50 focus:bg-white transition-all"
                         />
@@ -662,7 +639,7 @@ export default function PaymentPage() {
                 </p>
                 <p className="text-xs text-slate-500 leading-relaxed">
                   You&apos;ll receive an email confirmation instantly after payment.
-                  All bookings include FareMind&apos;s 24/7 support and booking guarantee.
+                  All bookings include FAREMIND&apos;s 24/7 support and booking guarantee.
                 </p>
               </div>
             </div>
@@ -682,7 +659,7 @@ export default function PaymentPage() {
             <div className="lg:hidden">
               <button
                 onClick={handleCompleteBooking}
-                disabled={processing || !isCardValid}
+                disabled={processing || !isFormValid || !stripe}
                 className="w-full py-4 rounded-2xl bg-[#1ABC9C] hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-[#1ABC9C]/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {processing ? (
@@ -713,7 +690,7 @@ export default function PaymentPage() {
               {/* Desktop complete booking CTA */}
               <button
                 onClick={handleCompleteBooking}
-                disabled={processing || !isCardValid || isExpired}
+                disabled={processing || !isFormValid || isExpired || !stripe}
                 className="w-full py-4 rounded-2xl bg-[#1ABC9C] hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-[#1ABC9C]/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {processing ? (
@@ -729,7 +706,7 @@ export default function PaymentPage() {
                 )}
               </button>
 
-              {!isCardValid && !processing && (
+              {!isFormValid && !processing && (
                 <p className="text-xs text-center text-slate-400">
                   Fill in all card details to continue
                 </p>
@@ -744,5 +721,26 @@ export default function PaymentPage() {
         </div>
       </div>
     </div>
+  );
+}
+
+// ─── Page (wraps with Stripe Elements Provider) ──────────────────────────────
+
+export default function PaymentPage() {
+  return (
+    <Elements
+      stripe={stripePromise}
+      options={{
+        appearance: {
+          theme: 'stripe',
+          variables: {
+            colorPrimary: '#1ABC9C',
+            borderRadius: '12px',
+          },
+        },
+      }}
+    >
+      <PaymentFormInner />
+    </Elements>
   );
 }

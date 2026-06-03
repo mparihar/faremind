@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Ticket, ClipboardList, Bell, TrendingDown,
   CreditCard, User, Headphones, LogOut, ChevronRight, Menu, X,
-  Search, HelpCircle, ChevronDown, Gift,
+  Search, HelpCircle, ChevronDown, Gift, Shield,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
@@ -21,6 +21,10 @@ const SIDEBAR_NAV = [
   { href: '/account/notifications', label: 'Notifications', icon: Bell },
   { href: '/account/profile', label: 'Profile', icon: User },
   { href: '/account/support', label: 'Support', icon: Headphones },
+];
+
+const ADMIN_NAV = [
+  { href: '/account/admin/notifications', label: 'Email Recipients', icon: Shield },
 ];
 
 function isActive(pathname: string, href: string, exact?: boolean) {
@@ -143,6 +147,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
   const [ready, setReady] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifCount, setNotifCount] = useState(2);
+  const [isAdminUser, setIsAdminUser] = useState(false);
 
   useEffect(() => {
     loadSession();
@@ -159,6 +164,22 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
     logout();
     router.push('/');
   });
+
+  // Check if user has admin access
+  useEffect(() => {
+    if (!user?.email) return;
+    fetch(`/api/admin/check-access?email=${encodeURIComponent(user.email)}`)
+      .then(r => r.json())
+      .then(data => setIsAdminUser(data.isAdmin === true))
+      .catch(() => setIsAdminUser(false));
+  }, [user?.email]);
+
+  // Block non-admin users from admin pages
+  useEffect(() => {
+    if (ready && pathname.startsWith('/account/admin') && !isAdminUser) {
+      router.replace('/account');
+    }
+  }, [ready, pathname, isAdminUser, router]);
 
   // Close mobile sidebar on route change
   useEffect(() => { setSidebarOpen(false); }, [pathname]);
@@ -229,6 +250,35 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
                 );
               })}
             </div>
+
+              {/* Admin section — only visible to admin/super_admin users */}
+              {isAdminUser && ADMIN_NAV.length > 0 && (
+                <div className="mt-6 pt-4 border-t border-white/[0.06]">
+                  <p className="px-3 mb-2 text-[10px] font-bold text-slate-500 uppercase tracking-widest">Admin</p>
+                  <div className="space-y-0.5">
+                    {ADMIN_NAV.map(item => {
+                      const Icon = item.icon;
+                      const active = isActive(pathname, item.href);
+                      return (
+                        <Link
+                          key={item.href}
+                          href={item.href}
+                          className={`
+                            flex items-center gap-2.5 px-3 py-2.5 rounded-xl text-[13px] font-medium transition-all duration-200
+                            ${active
+                              ? 'text-[#1ABC9C] border border-transparent'
+                              : 'text-slate-400 hover:text-white hover:bg-white/[0.04] border border-transparent'
+                            }
+                          `}
+                        >
+                          <Icon size={16} className={active ? 'text-[#1ABC9C]' : ''} />
+                          <span className="flex-1">{item.label}</span>
+                        </Link>
+                      );
+                    })}
+                  </div>
+                </div>
+              )}
 
             {/* Referral card */}
             <div className="mt-12">

@@ -228,7 +228,7 @@ function LoginPageContent() {
         {/* Logo + title */}
         <div className="text-center mb-8">
 
-          <h1 className="text-2xl font-black text-white">FareMind</h1>
+          <h1 className="text-2xl font-black"><span className="text-white">FARE</span><span className="text-[#009CA6]">MIND</span></h1>
           <p className="text-slate-400 text-sm mt-1">Sign in to your account</p>
         </div>
 
@@ -303,7 +303,7 @@ function LoginPageContent() {
                   </div>
                   <h2 className="text-white font-bold text-lg">Create your account</h2>
                   <p className="text-slate-400 text-sm mt-1">
-                    New to FareMind? Fill in your details to get started
+                    New to FAREMIND? Fill in your details to get started
                   </p>
                 </div>
 
@@ -447,7 +447,7 @@ function LoginPageContent() {
           </AnimatePresence>
         </div>
 
-        <p className="text-center text-slate-600 text-xs mt-6">FareMind · Secure Sign In</p>
+        <p className="text-center text-slate-600 text-xs mt-6">FAREMIND · Secure Sign In</p>
       </div>
 
       <style>{`

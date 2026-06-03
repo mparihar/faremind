@@ -487,7 +487,7 @@ function ExtrasStep({ base, currency, extraBags, protection, protectionFee, onSe
                 <Sparkles className={cn('w-3.5 h-3.5', protection ? 'text-[#1ABC9C]' : 'text-slate-400')} />
               </div>
               <p className="text-xs text-slate-500 leading-relaxed">
-                FareMind monitors this flight&apos;s price after booking. If it drops, you receive credit toward a future booking.
+                FAREMIND monitors this flight&apos;s price after booking. If it drops, you receive credit toward a future booking.
               </p>
               <p className={cn('text-xs font-semibold mt-2', protection ? 'text-[#1ABC9C]' : 'text-slate-500')}>
                 +{formatPrice(protectionFee > 0 ? protectionFee : Math.min(Math.max(Math.round(base * 0.06), 49), 399), currency)} · One-time fee
@@ -777,7 +777,7 @@ function ConfirmStep({ result, protection, routeLabel, total, currency }: {
             <Sparkles className="w-5 h-5 text-[#1ABC9C] shrink-0" />
             <p className="text-xs text-slate-500 text-left">
               <span className="text-[#1ABC9C] font-medium">Price Drop Protection is active. </span>
-              FareMind will monitor this flight and credit you if the price drops.
+              FAREMIND will monitor this flight and credit you if the price drops.
             </p>
           </div>
         )}

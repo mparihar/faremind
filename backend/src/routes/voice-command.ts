@@ -37,7 +37,7 @@ const PAGE_ACTIONS: Record<string, string[]> = {
 
 function buildSearchSystemPrompt(): string {
   const today = new Date().toISOString().split('T')[0];
-  return `You are FareMind Travel Assistant.
+  return `You are FAREMIND Travel Assistant.
 
 Convert travel voice commands into structured JSON actions.
 
@@ -95,7 +95,7 @@ function buildPassengerSystemPrompt(travelers: TravelerInfo[]): string {
     `  - Traveler ${t.travelerIndex}: ${t.passengerType}`
   ).join('\n');
 
-  return `You are FareMind Travel Assistant.
+  return `You are FAREMIND Travel Assistant.
 
 Convert passenger detail voice commands into structured JSON.
 

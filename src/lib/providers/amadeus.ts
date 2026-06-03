@@ -174,7 +174,7 @@ export async function createBooking(params: AmadeusBookingParams) {
       flightOffers: [params.flightOffer],
       travelers: params.travelers,
       remarks: {
-        general: [{ subType: 'GENERAL_MISCELLANEOUS', text: 'Booked via FareMind' }],
+        general: [{ subType: 'GENERAL_MISCELLANEOUS', text: 'Booked via FAREMIND' }],
       },
     },
   });

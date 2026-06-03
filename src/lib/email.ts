@@ -1,6 +1,6 @@
 const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 const SENDER_EMAIL  = process.env.BREVO_SENDER_EMAIL ?? 'noreply@faremind.com';
-const SENDER_NAME   = 'FareMind Admin';
+const SENDER_NAME   = 'FAREMIND Admin';
 
 export async function sendAdminOtp(toEmail: string, toName: string, otp: string): Promise<void> {
   const apiKey = process.env.BREVO_API_KEY;
@@ -13,9 +13,9 @@ export async function sendAdminOtp(toEmail: string, toName: string, otp: string)
   const payload = {
     sender:      { name: SENDER_NAME, email: SENDER_EMAIL },
     to:          [{ email: toEmail, name: toName }],
-    subject:     `${otp} — Your FareMind Admin OTP`,
+    subject:     `${otp} — Your FAREMIND Admin OTP`,
     htmlContent: buildOtpHtml(toName, otp),
-    textContent: `Your FareMind Admin OTP is: ${otp}\n\nValid for 5 minutes. Do not share it.`,
+    textContent: `Your FAREMIND Admin OTP is: ${otp}\n\nValid for 5 minutes. Do not share it.`,
   };
 
   const res = await fetch(BREVO_API_URL, {
@@ -50,7 +50,7 @@ function buildOtpHtml(name: string, otp: string): string {
               <span style="color:#1abc9c;font-size:18px;font-weight:900;">F</span>
             </td>
             <td style="padding-left:12px;">
-              <span style="color:#fff;font-size:15px;font-weight:800;">FareMind</span>
+              <span style="color:#fff;font-size:15px;font-weight:800;"><span style="color:#FFFFFF;">FARE</span><span style="color:#009CA6;">MIND</span></span>
               <span style="display:block;color:#64748b;font-size:10px;font-weight:700;letter-spacing:.1em;text-transform:uppercase;">Admin Console</span>
             </td>
           </tr></table>
@@ -58,14 +58,14 @@ function buildOtpHtml(name: string, otp: string): string {
         <tr><td style="padding:32px;">
           <p style="margin:0 0 8px;color:#94a3b8;font-size:13px;">Hi ${name},</p>
           <p style="margin:0 0 28px;color:#e2e8f0;font-size:15px;line-height:1.6;">
-            Use the code below to complete your sign-in to the FareMind Admin Console.
+            Use the code below to complete your sign-in to the FAREMIND Admin Console.
             This code expires in <strong style="color:#fff;">5 minutes</strong>.
           </p>
           <div style="background:#0f172a;border:1px solid #334155;border-radius:12px;padding:28px;text-align:center;margin-bottom:28px;">
             <span style="font-family:'Courier New',monospace;font-size:40px;font-weight:900;letter-spacing:.3em;color:#1abc9c;">${otp}</span>
           </div>
           <p style="margin:0 0 6px;color:#64748b;font-size:12px;text-align:center;">
-            Never share this code. FareMind will never ask for it by phone or chat.
+            Never share this code. FAREMIND will never ask for it by phone or chat.
           </p>
           <p style="margin:0;color:#475569;font-size:12px;text-align:center;">
             If you did not attempt to sign in, please ignore this email.
@@ -73,7 +73,7 @@ function buildOtpHtml(name: string, otp: string): string {
         </td></tr>
         <tr><td style="padding:16px 32px;border-top:1px solid #334155;background:#0f172a;">
           <p style="margin:0;color:#334155;font-size:11px;text-align:center;">
-            &copy; ${year} FareMind &middot; Restricted Access
+            &copy; ${year} FAREMIND &middot; Restricted Access
           </p>
         </td></tr>
       </table>

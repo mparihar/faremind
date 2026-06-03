@@ -44,6 +44,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const stops            = q.stops || '0';
       const duration_minutes = q.duration_minutes || '0';
       const layover_minutes  = q.layover_minutes || '';
+      const trip             = q.trip || 'one_way';
 
       if (!base_price) return reply.code(400).send({ error: 'base_price is required' });
 
@@ -111,7 +112,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return true;
       });
 
-      const journeySummary = `${origin} → ${destination} · ${stopsNum === 0 ? 'Non-stop' : `${stopsNum} stop${stopsNum > 1 ? 's' : ''}`}`;
+      const stopsLabel = stopsNum === 0 ? 'Non-stop' : `${stopsNum} stop${stopsNum > 1 ? 's' : ''}`;
+      const journeySummary = trip === 'round_trip'
+        ? `${origin} → ${destination} · ${stopsLabel}  |  ${destination} → ${origin}`
+        : `${origin} → ${destination} · ${stopsLabel}`;
 
       const response = {
         offerId: offer_id, destinationCity: destination, journeySummary, fareGroups,

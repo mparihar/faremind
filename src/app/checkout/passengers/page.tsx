@@ -299,7 +299,11 @@ function validatePassenger(pax: PassengerInfo, departureDate?: string): Passenge
   if (!pax.passportCountry) errors.passportCountry = 'Passport country is required';
   if (pax.nationality && pax.passportCountry && pax.nationality !== pax.passportCountry)
     errors.passportCountry = 'Passport country must match nationality';
-  if (!pax.passportNumber.trim()) errors.passportNumber = 'Passport number is required';
+  if (!pax.passportNumber.trim()) {
+    errors.passportNumber = 'Passport number is required';
+  } else if (!/^[A-Za-z0-9]+$/.test(pax.passportNumber.trim())) {
+    errors.passportNumber = 'Passport number can only contain letters and numbers';
+  }
   if (!pax.passportExpiry) {
     errors.passportExpiry = 'Passport expiry is required';
   } else {
@@ -696,8 +700,14 @@ function PassengerCard({ pax, index, errors, touched, onChange, departureDate }:
           <Input
             type="text"
             placeholder="A12345678"
+            pattern="[A-Za-z0-9]*"
             value={pax.passportNumber}
-            onChange={e => onChange('passportNumber', e.target.value.toUpperCase())}
+            onChange={e => onChange('passportNumber', e.target.value.replace(/[^A-Za-z0-9]/g, '').toUpperCase())}
+            onPaste={e => {
+              e.preventDefault();
+              const pasted = e.clipboardData.getData('text').replace(/[^A-Za-z0-9]/g, '').toUpperCase();
+              onChange('passportNumber', pasted);
+            }}
             hasError={touched && !!errors.passportNumber}
           />
           {touched && <FieldError message={errors.passportNumber} />}
@@ -804,21 +814,16 @@ export default function PassengersPage() {
           </p>
         </div>
 
-        {/* Voice Assistant Hint */}
-        <div className="mb-4 flex items-center gap-2 px-3 py-2.5 rounded-lg bg-[#ECFDF5] border border-[#5EEAD4] text-[#0F766E] text-xs">
-          <Mic className="w-3.5 h-3.5 text-[#14B8A6] shrink-0" />
-          <span className="font-medium">
-            Use FareMind Travel Assistant to fill traveler details by voice.
-          </span>
-        </div>
+
+
 
         {/* Age categorization info */}
         {departureDate && (
-          <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-[#ECFDF5] border border-[#5EEAD4] text-[#134E4A] text-sm">
-            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-[#14B8A6]" />
+          <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-white border border-slate-200 shadow-sm text-sm">
+            <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-[#0F766E]" />
             <div>
               <p className="font-semibold text-[#0F766E]">Age is verified based on travel date: {new Date(departureDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
-              <p className="text-xs text-[#134E4A] mt-1">
+              <p className="text-xs text-emerald-700 mt-1">
                 Adult: 12+ years &bull; Child: 2–11 years &bull; Infant: under 2 years (age at departure)
               </p>
             </div>

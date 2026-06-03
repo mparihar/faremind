@@ -390,7 +390,7 @@ export default function ConfirmPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `FareMind-Itinerary-${confirmation.masterBookingReference || confirmation.pnr}.html`;
+      a.download = `FAREMIND-Itinerary-${confirmation.masterBookingReference || confirmation.pnr}.html`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);
@@ -402,8 +402,8 @@ export default function ConfirmPage() {
   };
 
   const handleShare = () => {
-    const text = `FareMind Booking · PNR: ${confirmation.pnr} · ${routeLabel}`;
-    if (navigator.share) navigator.share({ title: 'My FareMind Booking', text }).catch(() => {});
+    const text = `FAREMIND Booking · PNR: ${confirmation.pnr} · ${routeLabel}`;
+    if (navigator.share) navigator.share({ title: 'My FAREMIND Booking', text }).catch(() => {});
     else navigator.clipboard.writeText(text);
   };
 
@@ -455,14 +455,14 @@ export default function ConfirmPage() {
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 <span className="text-xs font-bold text-emerald-400 tracking-wide">Confirmed</span>
               </div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.25em] mb-1">FareMind Booking Reference</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.25em] mb-1"><span className="text-white">FARE</span><span className="text-[#009CA6]">MIND</span> Booking Reference</p>
               <p className="text-3xl sm:text-4xl font-black text-white tracking-[0.2em] font-mono mb-1">{confirmation.masterBookingReference}</p>
               {/* Airline confirmation codes */}
               {confirmation.pnrs && confirmation.pnrs.length > 0 && (
                 <div className="mt-3 mb-3 space-y-1.5">
                   {confirmation.pnrs.map((p, i) => (
                     <div key={i} className="flex items-center justify-center gap-3">
-                      <span className="text-sm text-white font-medium">{p.displayLabel.replace('Full Trip PNR', 'AIRLINE PNR')}</span>
+                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.25em]">{p.displayLabel.replace('Full Trip PNR', 'AIRLINE PNR')}</span>
                       <span className="font-mono font-black text-[#1ABC9C] tracking-widest text-lg">{p.pnrCode}</span>
                     </div>
                   ))}
@@ -658,7 +658,7 @@ export default function ConfirmPage() {
                     <p className="text-sm font-bold text-slate-900 mb-1">Price monitoring is now active</p>
                     <p className="text-xs text-slate-600 leading-relaxed">
                       Refund <strong>80%</strong> of any eligible fare decrease after booking,
-                      credited as FareMind credit. Check your dashboard to view price history.
+                      credited as FAREMIND credit. Check your dashboard to view price history.
                     </p>
                   </div>
                 </div>

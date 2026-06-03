@@ -215,6 +215,7 @@ export function flattenSeatMap(seatMap: SegmentSeatMap): ClassifiedSeat[] {
     seats.push({
       seatId: `${seatMap.segmentId}_${el.designator}`,
       seatServiceId: el.serviceId,
+      seatServiceIds: el.serviceIds ?? (el.serviceId ? [el.serviceId] : []),
       seatNumber: el.designator!,
       rowNumber,
       column,

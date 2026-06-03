@@ -290,7 +290,7 @@ export default function AdminBookingsPage() {
   useEffect(() => { load(); }, [load]);
 
   async function handleDelete(id: string, ref: string | null) {
-    const msg = `You are about to delete booking ${ref ?? id} and all associated passengers, AIRLINE PNRs, seats, meals, add-ons, payment records, and logs from FareMind.\n\nThis does not cancel the provider/airline booking unless cancellation flow is executed.\n\nContinue?`;
+    const msg = `You are about to delete booking ${ref ?? id} and all associated passengers, AIRLINE PNRs, seats, meals, add-ons, payment records, and logs from FAREMIND.\n\nThis does not cancel the provider/airline booking unless cancellation flow is executed.\n\nContinue?`;
     if (!window.confirm(msg)) return;
     setDeleting(id);
     const res = await adminFetch(`/api/admin/bookings/${id}`, { method: 'DELETE' });

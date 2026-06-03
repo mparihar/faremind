@@ -228,8 +228,10 @@ export default function Navbar() {
 
           {/* Right side */}
           <div className="hidden md:flex items-center gap-3">
-            {/* FareMind Travel Assistant */}
-            <FareMindTravelAssistantButton />
+            {/* FareMind Travel Assistant — only on Hero and Passenger Form pages */}
+            {(pathname === '/' || pathname === '/checkout/passengers') && (
+              <FareMindTravelAssistantButton />
+            )}
             {user ? (
               <div ref={userRef} className="relative">
                 <button
@@ -368,12 +370,14 @@ export default function Navbar() {
                 );
               })}
 
-              {/* Mobile Travel Assistant */}
+              {/* Mobile Travel Assistant — only on Hero and Passenger Form pages */}
+              {(pathname === '/' || pathname === '/checkout/passengers') && (
               <div className="pt-2 border-t border-white/[0.06]">
                 <div className="px-4 py-2">
                   <FareMindTravelAssistantButton />
                 </div>
               </div>
+              )}
 
               {/* Mobile Help & Support */}
               <div className="pt-2 border-t border-white/[0.06]">

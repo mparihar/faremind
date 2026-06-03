@@ -29,6 +29,12 @@ export interface FinancialBreakdown {
   /** Provider seat service costs (Duffel seat add-ons) */
   seatServiceTotal: number;
 
+  /** Meal service costs */
+  mealServiceTotal: number;
+
+  /** Extra baggage costs */
+  baggageServiceTotal: number;
+
   /** Price drop protection fee charged to customer */
   priceProtectionAmount: number;
 
@@ -89,6 +95,8 @@ export function computeFinancialBreakdown(params: {
   markupAmount: number;
   serviceFeeAmount: number;
   seatServiceTotal: number;
+  mealServiceTotal: number;
+  baggageServiceTotal: number;
   priceProtectionAmount: number;
   travelInsuranceAmount: number;
 }): FinancialBreakdown {
@@ -97,6 +105,8 @@ export function computeFinancialBreakdown(params: {
     markupAmount,
     serviceFeeAmount,
     seatServiceTotal,
+    mealServiceTotal,
+    baggageServiceTotal,
     priceProtectionAmount,
     travelInsuranceAmount,
   } = params;
@@ -106,6 +116,7 @@ export function computeFinancialBreakdown(params: {
   const providerPayableTotal = round2(providerTotalFare + seatServiceTotal);
   const customerGrandTotal = round2(
     providerPayableTotal + fareMindRevenueTotal + thirdPartyPayableTotal
+    + mealServiceTotal + baggageServiceTotal
   );
 
   return {
@@ -113,6 +124,8 @@ export function computeFinancialBreakdown(params: {
     markupAmount,
     serviceFeeAmount,
     seatServiceTotal,
+    mealServiceTotal,
+    baggageServiceTotal,
     priceProtectionAmount,
     travelInsuranceAmount,
     fareMindRevenueTotal,

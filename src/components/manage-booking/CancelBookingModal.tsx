@@ -178,7 +178,7 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                   )}
                   {cancelQuote.fareMindFee > 0 && (
                     <div className="flex justify-between">
-                      <span className="text-slate-400">FareMind Processing Fee</span>
+                      <span className="text-slate-400">FAREMIND Processing Fee</span>
                       <span className="text-red-400 font-medium">−{fmt(cancelQuote.fareMindFee, cancelQuote.currency)}</span>
                     </div>
                   )}

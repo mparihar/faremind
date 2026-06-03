@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/store/useAdminStore';
 import { useAdminStore } from '@/store/useAdminStore';
-import { Plus, RefreshCw, X, Shield, Eye, EyeOff } from 'lucide-react';
+import { Plus, RefreshCw, X, Shield, Eye, EyeOff, Clock, Save, Check } from 'lucide-react';
 
 const ROLES = ['SUPER_ADMIN', 'OPS_ADMIN', 'SUPPORT', 'FINANCE', 'READ_ONLY'];
 const ROLE_COLORS: Record<string, string> = {
@@ -14,6 +14,185 @@ const ROLE_COLORS: Record<string, string> = {
   FINANCE:     'bg-[#1ABC9C]/15 text-[#1ABC9C]',
   READ_ONLY:   'bg-slate-400/15 text-slate-400',
 };
+
+// ─── Booking Timer Config Card ────────────────────────────────────────────────
+
+function BookingTimerConfig() {
+  const [minutes, setMinutes] = useState(20);
+  const [originalMinutes, setOriginalMinutes] = useState(20);
+  const [updatedBy, setUpdatedBy] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  async function loadConfig() {
+    setLoading(true);
+    try {
+      const res = await adminFetch('/api/admin/system-config');
+      if (!res.ok) { setLoading(false); return; }
+      const data = await res.json();
+      const config = data.configs?.find((c: any) => c.key === 'offer_expiry_minutes');
+      if (config) {
+        const val = parseInt(config.value, 10);
+        setMinutes(isNaN(val) ? 20 : val);
+        setOriginalMinutes(isNaN(val) ? 20 : val);
+        setUpdatedBy(config.updatedBy ?? null);
+        setUpdatedAt(config.updatedAt ?? null);
+      }
+    } catch {
+      // ignore
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { loadConfig(); }, []);
+
+  async function saveConfig() {
+    setError('');
+    setSaving(true);
+    setSaved(false);
+    try {
+      const res = await adminFetch('/api/admin/system-config', {
+        method: 'PUT',
+        body: JSON.stringify({
+          key: 'offer_expiry_minutes',
+          value: String(minutes),
+          description: 'Booking checkout timer duration in minutes',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Failed to save');
+        setSaving(false);
+        return;
+      }
+      setOriginalMinutes(minutes);
+      setUpdatedBy(data.config?.updatedBy ?? null);
+      setUpdatedAt(data.config?.updatedAt ?? null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to save');
+    }
+    setSaving(false);
+  }
+
+  const hasChanged = minutes !== originalMinutes;
+
+  if (loading) {
+    return (
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-6">
+        <div className="flex items-center justify-center py-6">
+          <RefreshCw size={20} className="text-[#1ABC9C] animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-700/50 flex items-center gap-3">
+        <Clock size={16} className="text-amber-400" />
+        <h2 className="text-white font-bold text-sm">Booking Timer Configuration</h2>
+      </div>
+
+      <div className="px-5 py-5 space-y-5">
+        {/* Description */}
+        <p className="text-xs text-slate-400 leading-relaxed">
+          Configure how long customers have to complete checkout after selecting a fare.
+          This timer appears on all checkout pages and the booking expires when it reaches zero.
+        </p>
+
+        {/* Timer input */}
+        <div className="flex items-end gap-4">
+          <div className="flex-1 max-w-xs">
+            <label className="block text-xs font-bold text-slate-300 mb-2">
+              Offer Expiry Duration
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={5}
+                max={60}
+                value={minutes}
+                onChange={e => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v)) setMinutes(Math.min(60, Math.max(5, v)));
+                }}
+                className="w-24 px-3 py-2.5 bg-slate-700 border border-slate-600 rounded-xl text-white text-sm font-bold text-center focus:outline-none focus:border-[#1ABC9C] transition-all tabular-nums"
+              />
+              <span className="text-slate-400 text-sm font-medium">minutes</span>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1.5">
+              Min: 5 min · Max: 60 min · Default: 20 min
+            </p>
+          </div>
+
+          {/* Save button */}
+          <button
+            onClick={saveConfig}
+            disabled={saving || !hasChanged}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              saved
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                : hasChanged
+                  ? 'bg-[#1ABC9C] hover:bg-[#1ABC9C]/90 text-white'
+                  : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            {saved ? (
+              <><Check size={14} /> Saved</>
+            ) : saving ? (
+              <><RefreshCw size={14} className="animate-spin" /> Saving…</>
+            ) : (
+              <><Save size={14} /> Save</>
+            )}
+          </button>
+        </div>
+
+        {/* Range slider visual */}
+        <div className="pt-1">
+          <input
+            type="range"
+            min={5}
+            max={60}
+            step={1}
+            value={minutes}
+            onChange={e => setMinutes(parseInt(e.target.value, 10))}
+            className="w-full max-w-xs h-1.5 bg-slate-600 rounded-full appearance-none cursor-pointer accent-[#1ABC9C]"
+          />
+          <div className="flex justify-between max-w-xs text-[10px] text-slate-500 mt-1">
+            <span>5 min</span>
+            <span>20 min</span>
+            <span>40 min</span>
+            <span>60 min</span>
+          </div>
+        </div>
+
+        {/* Error */}
+        {error && (
+          <p className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        {/* Last updated info */}
+        {updatedBy && (
+          <div className="flex items-center gap-2 text-[11px] text-slate-500 pt-1">
+            <span>Last updated by <span className="text-slate-400 font-medium">{updatedBy}</span></span>
+            {updatedAt && (
+              <span>· {new Date(updatedAt).toLocaleString()}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
   const router = useRouter();
@@ -60,7 +239,7 @@ export default function SettingsPage() {
       <div className="flex items-center justify-between mb-6">
         <div>
           <h1 className="text-2xl font-black text-white">Settings</h1>
-          <p className="text-slate-400 text-sm mt-0.5">Admin users & system configuration</p>
+          <p className="text-slate-400 text-sm mt-0.5">Admin users &amp; system configuration</p>
         </div>
         {isSuperAdmin && (
           <button onClick={() => setShowNew(true)} className="flex items-center gap-2 px-4 py-2 bg-[#1ABC9C] hover:bg-[#1ABC9C]/90 text-white text-sm font-bold rounded-xl transition-all">
@@ -68,6 +247,11 @@ export default function SettingsPage() {
             Add Admin User
           </button>
         )}
+      </div>
+
+      {/* Booking Timer Configuration */}
+      <div className="mb-6">
+        <BookingTimerConfig />
       </div>
 
       {/* New user modal */}

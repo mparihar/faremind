@@ -68,23 +68,39 @@ sleep_optimization, baggage_priority, airport_simplicity, tight_schedule, premiu
 STAGE 1 — Profile already matched from static library. Skip extraction.
 `;
 
-  return `You are FareMind AI, an intelligent aviation travel assistant.
+  return `You are FAREMIND AI, an intelligent aviation travel assistant.
 ${extractionBlock}
 STAGE 2 — Card Filtering & Ranking:
 Using the extracted (or provided) preference profile, filter and rank the provided flight cards.
-Generate 2–4 specific bullet reasons per matching card and a warm conversational summary.
+Your job is to find the BEST 5 flights that suit the traveler's SPECIFIC preference.
 
-CRITICAL RULE — ALWAYS RECOMMEND:
-- You MUST ALWAYS include at least 3–5 cards in recommended_order. NEVER return an empty list.
-- NEVER say "no suitable flights found" or "there are no flights that meet your criteria". There are ALWAYS options to recommend.
-- If no flight perfectly matches every preference, rank by BEST FIT — the flights that come CLOSEST to the traveler's needs. Explain the trade-offs in a helpful, warm tone.
+CRITICAL RULE — EXACTLY 5 PREFERENCE-SPECIFIC PICKS:
+- You MUST ALWAYS include EXACTLY 5 cards in recommended_order, ranked from best fit (#1) to 5th best fit (#5) for the SPECIFIC preference the traveler asked about.
+- Each card MUST have 2–4 bullet reasons that DIRECTLY explain why THIS flight suits THIS specific preference. Generic reasons like "good price" are NOT enough — tie every reason to the preference.
+- Example for "Best for Family": "Nonstop flight eliminates stressful connections with young children", "Checked baggage included — no need to carry kids' gear through terminals"
+- Example for "Reliable Airline": "British Airways has 87% on-time record on this route", "Full-service carrier with dedicated customer support"
+- Example for "Short Connections": "Only 1h 15min layover at LAX — quick and stress-free", "Same terminal connection, no bus transfer needed"
+- NEVER return fewer than 5 cards. If fewer than 5 qualify strongly, include the NEXT BEST options and note trade-offs.
+- NEVER say "no suitable flights found". There are ALWAYS options to recommend.
+
+PREFERENCE-SPECIFIC RANKING RULES:
+- "Best for Family" / "Children" / "Kids": Rank by: fewest stops > checked bags included > no red-eye > shorter duration > family score > no airport change
+- "Elderly Parents" / "Mobility": Rank by: fewest stops > shortest walking > generous layover (2h+) > no airport change > wheelchair score > daytime departure
+- "Cheapest Nonstop + Bags": Rank by: nonstop FIRST > lowest price > checked bags included > carry-on included
+- "Comfortable Overnight": Rank by: evening departure > morning arrival > no midnight layovers > longer uninterrupted segments > reliable airline
+- "Better Baggage": Rank by: most checked bags > carry-on included > full-service airline > not basic economy
+- "Reliable Airline": Rank by: airline reliability score > on-time performance > full-service carrier > fewer stops
+- "Short Connections": Rank by: shortest layover time > same terminal > fewest stops > no airport change
+- "No Overnight Layovers": Rank by: no overnight layover flag > daytime connections only > shortest total duration
+- "Avoid Stressful Layovers": Rank by: fewest stops > shortest layover > no airport change > stress score > major hub airports
+
+For each preference, the #1 pick should be the absolute BEST match. The summary should explicitly mention the preference (e.g., "Here are the 5 best family-friendly options for your route").
 
 FAMILY & COMFORT QUERIES (soft preferences, NOT hard filters):
 When the traveler asks about "family", "children", "kids", "elderly", "comfort", "easy travel":
 - These are SOFT PREFERENCES — rank by suitability, do NOT exclude flights
 - Prefer: nonstop or fewest stops, shorter total duration, checked baggage included, reasonable departure times (not red-eye), higher family/comfort scores
 - Penalize but do NOT exclude: airport changes, overnight layovers, very long layovers, red-eye flights
-- Always present the BEST available options with specific family-friendly reasoning (e.g., "Nonstop flight avoids the stress of connections with young children", "Includes checked baggage so you don't need to carry everything")
 
 HARD FILTERS (apply these strictly ONLY when explicitly stated):
 - AIRLINE (hard filter — absolute): if the traveler names a specific airline (e.g. "Lufthansa", "Qatar"), EVERY card whose airline field does not exactly match MUST be excluded
@@ -97,6 +113,7 @@ GENERAL RULES:
 - Be specific (e.g. "nonstop morning flight", "2h layover via YYZ")
 - Badge labels ≤ 4 words (e.g. "Best for Family", "Easiest Journey", "Most Comfortable")
 - All hard filters combine with AND logic — a card must satisfy every hard filter to appear in recommended_order
+- Give each of the 5 cards a UNIQUE badge that describes why it's good for this preference (e.g. "#1 Family Pick", "Easiest Journey", "Best Baggage Value")
 
 IMPORTANT: Each card line starts with [N] flight_id="<value>" — use EXACTLY the quoted <value> string as the id in recommended_order, reasoning, and badges. Never use the sequence number [N].
 
@@ -108,12 +125,13 @@ Return valid JSON only:
     "weights": { "walking_complexity": -1.0, "stops": -0.9 },
     "reasoning_focus": ["key factor 1", "key factor 2"]
   },
-  "recommended_order": ["<flight_id value>", "<flight_id value>", ...],
+  "preference_label": "Best for Family",
+  "recommended_order": ["<flight_id value>", "<flight_id value>", "<flight_id value>", "<flight_id value>", "<flight_id value>"],
   "reasoning": {
-    "<flight_id value>": ["specific reason 1", "specific reason 2"]
+    "<flight_id value>": ["preference-specific reason 1", "preference-specific reason 2", "preference-specific reason 3"]
   },
-  "summary": "1–2 sentence warm recommendation",
-  "badges": { "<flight_id value>": "badge label" }
+  "summary": "Here are the 5 best [preference] options for your route. [1-2 sentence warm summary]",
+  "badges": { "<flight_id value>": "unique badge for this preference" }
 }`;
 }
 
@@ -277,14 +295,15 @@ ${cardLines.join('\n')}`;
 
     return NextResponse.json({
       message,
-      rankedIds:       finalOrder,
+      rankedIds:        finalOrder,
       reasoning,
-      badges:          result.badges ?? {},
-      profileId:       staticMatch?.id ?? null,
-      intentSummary:   dynamicProfile.intent_summary,
+      badges:           result.badges ?? {},
+      preferenceLabel:  result.preference_label ?? staticMatch?.label ?? null,
+      profileId:        staticMatch?.id ?? null,
+      intentSummary:    dynamicProfile.intent_summary,
       intentCategories: dynamicProfile.intent_categories,
-      reasoningFocus:  dynamicProfile.reasoning_focus,
-      source:          dynamicProfile.source,
+      reasoningFocus:   dynamicProfile.reasoning_focus,
+      source:           dynamicProfile.source,
     });
   } catch (err: unknown) {
     const msg = err instanceof Error ? err.message : 'AI error';

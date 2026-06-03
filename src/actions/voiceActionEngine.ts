@@ -182,6 +182,22 @@ export interface PassengerFillResult {
   conflicts: FieldConflict[];
   missingFields: string[];
   validationErrors: string[];
+  pendingUpdates?: Partial<PassengerInfo>;
+  passengerId?: string;
+}
+
+/**
+ * Commit pending voice-parsed data to the checkout store.
+ * Call this ONLY when the user confirms the voice fill.
+ */
+export function commitVoiceData(
+  result: PassengerFillResult,
+  updatePassenger: (id: string, updates: Partial<PassengerInfo>) => void,
+) {
+  if (result.passengerId && result.pendingUpdates && Object.keys(result.pendingUpdates).length > 0) {
+    updatePassenger(result.passengerId, result.pendingUpdates);
+    console.log('[Voice] ✅ Committed pending voice data for', result.targetLabel);
+  }
 }
 
 // ─── Helpers ────────────────────────────────────────────────────────────────
@@ -260,6 +276,7 @@ export function applyPassengerVoiceData(
   updatePassenger: (id: string, updates: Partial<PassengerInfo>) => void,
   departureDate?: string,
   forceOverwrite: boolean = false,
+  dryRun: boolean = false,
 ): PassengerFillResult {
   const isPrimaryContact = parsed.action === 'FILL_PRIMARY_CONTACT';
 
@@ -327,7 +344,7 @@ export function applyPassengerVoiceData(
     { paramKey: 'dateOfBirth', passengerKey: 'dateOfBirth', displayTransform: formatDateDisplay },
     { paramKey: 'nationality', passengerKey: 'nationality' },
     { paramKey: 'passportCountry', passengerKey: 'passportCountry' },
-    { paramKey: 'passportNumber', passengerKey: 'passportNumber', displayTransform: maskPassportDisplay },
+    { paramKey: 'passportNumber', passengerKey: 'passportNumber', transform: (v) => v.replace(/[^A-Za-z0-9]/g, '').toUpperCase(), displayTransform: maskPassportDisplay },
     { paramKey: 'passportExpiry', passengerKey: 'passportExpiry', displayTransform: formatDateDisplay },
     { paramKey: 'email', passengerKey: 'email' },
   ];
@@ -426,9 +443,9 @@ export function applyPassengerVoiceData(
     checkField('passportExpiry', 'Passport Expiry');
   }
 
-  // ── Apply updates to store ────────────────────────────────────────────
+  // ── Apply updates to store (skip if dryRun) ───────────────────────────
 
-  if (Object.keys(updates).length > 0) {
+  if (!dryRun && Object.keys(updates).length > 0) {
     updatePassenger(passenger.id, updates);
   }
 
@@ -440,6 +457,8 @@ export function applyPassengerVoiceData(
     conflicts,
     missingFields,
     validationErrors,
+    pendingUpdates: updates,
+    passengerId: passenger.id,
   };
 }
 

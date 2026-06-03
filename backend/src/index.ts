@@ -31,6 +31,7 @@ import bookingSessionPlugin from './routes/booking-session';
 import checkoutPlugin      from './routes/checkout';
 import manageBookingPlugin from './routes/manage-booking';
 import voiceCommandPlugin   from './routes/voice-command';
+import adminNotificationsPlugin from './routes/admin-notifications';
 
 const PORT = parseInt(process.env.PORT || process.env.BACKEND_PORT || '3001');
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -111,6 +112,7 @@ async function main() {
   fastify.register(checkoutPlugin,        { prefix: '/api/checkout' });
   fastify.register(manageBookingPlugin,   { prefix: '/api/manage-booking' });
   fastify.register(voiceCommandPlugin,     { prefix: '/api/voice' });
+  fastify.register(adminNotificationsPlugin, { prefix: '/api/admin/notification-recipients' });
 
   // ─── 404 / error handlers ────────────────────────────────────────────────
 

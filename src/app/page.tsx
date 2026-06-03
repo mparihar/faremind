@@ -19,6 +19,7 @@ import SearchForm from '@/components/search/SearchForm';
 import type { SearchFormHandle } from '@/components/search/SearchForm';
 import SmartPreferencesBar from '@/components/search/SmartPreferencesBar';
 import { usePreferencesStore } from '@/store/usePreferencesStore';
+import { useSearchStore } from '@/store/useSearchStore';
 import { useVoiceStore } from '@/store/useVoiceStore';
 import { cn } from '@/lib/utils';
 
@@ -104,17 +105,24 @@ const STATS = [
 
 export default function HomePage() {
   const { resetAll } = usePreferencesStore();
+  const { clearResults } = useSearchStore();
   const [routes, setRoutes] = useState<LiveRoute[]>(FALLBACK_ROUTES);
   const [routesLoading] = useState(false);
   const [dateMode, setDateMode] = useState<'specific' | 'flexible'>('specific');
   const setSearchFormRef = useVoiceStore((s) => s.setSearchFormRef);
+  // Force fresh form on every homepage visit
+  const [formKey, setFormKey] = useState(() => Date.now());
 
   // Use callback ref so the voice store gets set immediately when SearchForm mounts
   const searchFormCallbackRef = useCallback((handle: SearchFormHandle | null) => {
     setSearchFormRef(handle);
   }, [setSearchFormRef]);
 
-  useEffect(() => { resetAll(); }, []);  // eslint-disable-line react-hooks/exhaustive-deps
+  useEffect(() => {
+    resetAll();
+    clearResults();
+    setFormKey(Date.now()); // Force remount with fresh defaults
+  }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Check for pending voice search from sessionStorage (cross-page navigation)
   useEffect(() => {
@@ -198,7 +206,7 @@ export default function HomePage() {
               transition={{ delay: 0.3, duration: 0.3 }}
               className="text-[15px] text-[#475569] font-medium max-w-3xl mx-auto leading-[1.6] mb-4 tracking-tight"
             >
-              FareMind searches across multiple airlines while AI recommends the best personalized flight for your journey.
+              <span className="font-black text-white">FARE</span><span className="font-black text-[#009CA6]">MIND</span> searches across multiple airlines while AI recommends the best personalized flight for your journey.
             </motion.p>
 
 
@@ -206,7 +214,7 @@ export default function HomePage() {
 
           {/* Search Form */}
           <motion.div initial={{ opacity: 0, y: 30 }} animate={{ opacity: 1, y: 0 }} transition={{ delay: 0.2, duration: 0.2 }} className="mt-6 relative z-40">
-            <SearchForm ref={searchFormCallbackRef} onDateModeChange={setDateMode} />
+            <SearchForm key={formKey} ref={searchFormCallbackRef} onDateModeChange={setDateMode} />
           </motion.div>
 
 
@@ -338,7 +346,7 @@ export default function HomePage() {
               viewport={{ once: true }}
               className="text-lg text-gray-500 max-w-xl mx-auto"
             >
-              FareMind goes beyond searching — it <span className="text-black font-semibold">thinks, monitors, and acts</span> on your behalf.
+              <span className="font-black text-white">FARE</span><span className="font-black text-[#009CA6]">MIND</span> goes beyond searching — it <span className="text-black font-semibold">thinks, monitors, and acts</span> on your behalf.
             </motion.p>
           </div>
 
@@ -375,7 +383,7 @@ export default function HomePage() {
             viewport={{ once: true }}
             className="text-4xl sm:text-5xl font-black text-[#1a1a2e] mb-2 tracking-tighter"
           >
-            How <span className="text-white">Fare</span><span className="text-[#009CA6]">Mind</span> works
+            How <span className="text-white text-[0.75em]">FARE</span><span className="text-[#009CA6] text-[0.75em]">MIND</span> works
           </motion.h2>
           <motion.p
             initial={{ opacity: 0, y: 20 }}
@@ -395,7 +403,7 @@ export default function HomePage() {
             {[
               { step: '01', title: 'Search & Compare',    description: "Our AI searches across NDC and GDS sources simultaneously, finding fares you won't see anywhere else.", icon: Globe },
               { step: '02', title: 'Book & Track',        description: 'Book the best fare and enable price tracking. Our agents monitor fares 24/7 for potential savings.',      icon: Shield },
-              { step: '03', title: 'Save Automatically',  description: 'When prices drop below what you paid, FareMind alerts you or automatically rebooks at the lower price.',  icon: TrendingDown },
+              { step: '03', title: 'Save Automatically',  description: 'When prices drop below what you paid, FAREMIND alerts you or automatically rebooks at the lower price.',  icon: TrendingDown },
             ].map((item, i) => {
               const Icon = item.icon;
               return (
@@ -437,11 +445,11 @@ export default function HomePage() {
             viewport={{ once: true }}
             className="glass-card-scenic p-12 sm:p-16 border-sun-gold/20"
           >
-            <h2 className="text-4xl sm:text-5xl font-black text-[#1a1a2e] mb-8 tracking-tighter leading-tight">
+            <h2 className="text-[2rem] sm:text-[2.75rem] font-black text-[#1a1a2e] mb-8 tracking-tighter leading-tight">
               Your next adventure awaits
             </h2>
             <p className="text-xl text-gray-500 mb-10 max-w-2xl mx-auto font-medium">
-              Join thousands of travelers who save an average of 23% on their flights with FareMind&apos;s AI-powered booking agents.
+              Join thousands of travelers who save an average of 23% on their flights with <span className="font-black text-white">FARE</span><span className="font-black text-[#009CA6]">MIND</span>&apos;s AI-powered booking agents.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link

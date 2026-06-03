@@ -3,7 +3,29 @@ import { getPrisma } from '../lib/db';
 
 const sessions = new Map<string, object>();
 
-const FALLBACK_EXPIRY_MINUTES = 20;
+const DEFAULT_EXPIRY_MINUTES = 20;
+
+/**
+ * Reads the configured offer expiry minutes from the SystemConfig table.
+ * Falls back to DEFAULT_EXPIRY_MINUTES if the config doesn't exist or DB fails.
+ */
+async function getOfferExpiryMinutes(): Promise<number> {
+  try {
+    const prisma = getPrisma();
+    const config = await prisma.systemConfig.findUnique({
+      where: { key: 'offer_expiry_minutes' },
+    });
+    if (config) {
+      const minutes = parseInt(config.value, 10);
+      if (!isNaN(minutes) && minutes >= 5 && minutes <= 60) {
+        return minutes;
+      }
+    }
+  } catch (err: any) {
+    console.warn('[OfferSession] Failed to read offer_expiry_minutes from DB, using default:', err.message);
+  }
+  return DEFAULT_EXPIRY_MINUTES;
+}
 
 function calcProtectionFee(totalPrice: number): number {
   return Math.min(Math.max(Math.round(totalPrice * 0.06), 49), 399);
@@ -95,10 +117,22 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'provider and providerOfferId are required' });
       }
 
-      // Use provider expiry or fallback to 20 minutes from now
-      const expiresAt = offerExpiryTimestamp
-        ? new Date(offerExpiryTimestamp)
-        : new Date(Date.now() + FALLBACK_EXPIRY_MINUTES * 60 * 1000);
+      // Always cap at admin-configured minutes.
+      // If the provider gives a longer window, we still limit to our config.
+      // If the provider gives a shorter window, we respect that.
+      const expiryMinutes = await getOfferExpiryMinutes();
+      const configuredExpiry = new Date(Date.now() + expiryMinutes * 60 * 1000);
+      let expiresAt: Date;
+
+      if (offerExpiryTimestamp) {
+        const providerExpiry = new Date(offerExpiryTimestamp);
+        // Use whichever is sooner: provider expiry or our configured limit
+        expiresAt = providerExpiry.getTime() < configuredExpiry.getTime()
+          ? providerExpiry
+          : configuredExpiry;
+      } else {
+        expiresAt = configuredExpiry;
+      }
 
       // Validate the expiry date
       if (isNaN(expiresAt.getTime())) {
@@ -111,7 +145,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           provider,
           providerOfferId,
           offerExpiryTimestamp: expiresAt,
-          fallbackExpiryMinutes: offerExpiryTimestamp ? 0 : FALLBACK_EXPIRY_MINUTES,
+          fallbackExpiryMinutes: offerExpiryTimestamp ? 0 : expiryMinutes,
           searchCriteria: searchCriteria ?? undefined,
           status: computeStatus(expiresAt),
           bookingStartedAt: new Date(),

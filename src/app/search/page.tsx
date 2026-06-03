@@ -49,6 +49,19 @@ function TrackVisibility({ id, onVisible, onHidden, children }: { id: string, on
   return <div ref={ref} className="h-full">{children}</div>;
 }
 
+// ── Hoisted constants (avoid re-creation per render / per-call) ───────────────
+
+const WINDOW_RANGES: Record<string, [number, number]> = { morning:[6,12], afternoon:[12,17], evening:[17,21], night:[21,30] };
+
+const CLASS_LABELS: Record<string, string> = {
+  economy: 'Economy', premium_economy: 'Premium Economy', business: 'Business', first: 'First Class',
+};
+
+function fmtMonth(dateStr: string): string {
+  if (!dateStr) return '';
+  try { return format(new Date(dateStr + 'T12:00:00'), 'EEE, MMM dd yyyy'); } catch { return dateStr; }
+}
+
 function scoreFlightWithPreferences(
   flight: UnifiedFlight,
   prefs: {
@@ -79,8 +92,7 @@ function scoreFlightWithPreferences(
   else if (prefs.stops === '1stop') { if (flight.stops <= 1) score += 10; else score -= 10; }
   if (prefs.departureWindow && flight.segments.length > 0) {
     const depHour = new Date(flight.segments[0].departure.time).getHours();
-    const windowRanges: Record<string, [number, number]> = { morning:[6,12], afternoon:[12,17], evening:[17,21], night:[21,30] };
-    const [minH, maxH] = windowRanges[prefs.departureWindow] || [0, 24];
+    const [minH, maxH] = WINDOW_RANGES[prefs.departureWindow] || [0, 24];
     const adj = depHour < 6 ? depHour + 24 : depHour;
     if (adj >= minH && adj < maxH) score += 12; else score -= 5;
   }
@@ -155,13 +167,8 @@ function SearchContent() {
   const returnDateParam = searchParams.get('return') || '';
   const tripParam = searchParams.get('trip') || 'one_way';
 
-  function fmtMonth(dateStr: string): string {
-    if (!dateStr) return '';
-    try { return format(new Date(dateStr + 'T12:00:00'), 'EEE, MMM dd yyyy'); } catch { return dateStr; }
-  }
-
-  const originAirport = AIRPORTS.find((a) => a.code === origin);
-  const destAirport = AIRPORTS.find((a) => a.code === destination);
+  const originAirport = useMemo(() => AIRPORTS.find((a) => a.code === origin), [origin]);
+  const destAirport = useMemo(() => AIRPORTS.find((a) => a.code === destination), [destination]);
 
   useEffect(() => {
     const budgetMin = searchParams.get('budget_min');
@@ -195,6 +202,8 @@ function SearchContent() {
 
     const params = new URLSearchParams({
       origin, destination, date, adults, cabin,
+      children: childrenParam,
+      infants: infantsParam,
       trip: tripParam,
       ...(returnDateParam ? { returnDate: returnDateParam } : {}),
     });
@@ -407,9 +416,6 @@ function SearchContent() {
   }, [effectiveRT, prefs.budgetActive, prefs.budgetMin, prefs.budgetMax, prefs.maxDuration, prefs.stops, prefs.departureWindow]);
 
   // ── Filter panel options (computed from prefs-filtered results) ──
-  const CLASS_LABELS: Record<string, string> = {
-    economy: 'Economy', premium_economy: 'Premium Economy', business: 'Business', first: 'First Class',
-  };
 
   const airlineFilterOptions = useMemo<FilterOption[]>(() => {
     const map = new Map<string, { count: number; min: number }>();
@@ -467,11 +473,11 @@ function SearchContent() {
     }).filter((x): x is FilterOption => x !== null);
   }, [effectiveOneWay, prefsFilteredRT, tripParam]);
 
-  const handleSelectFlight = (flight: UnifiedFlight) => {
+  const handleSelectFlight = useCallback((flight: UnifiedFlight) => {
     fareStore.reset();
     fareStore.setSourceFlight(flight);
-    const origin = searchParams.get('origin') || flight.segments[0]?.departure.airport || '';
-    const destination = searchParams.get('destination') || flight.segments[flight.segments.length - 1]?.arrival.airport || '';
+    const flightOrigin = searchParams.get('origin') || flight.segments[0]?.departure.airport || '';
+    const flightDest = searchParams.get('destination') || flight.segments[flight.segments.length - 1]?.arrival.airport || '';
     // Compute layover durations between consecutive segments
     const layoverMinutes: number[] = [];
     for (let i = 1; i < flight.segments.length; i++) {
@@ -488,8 +494,8 @@ function SearchContent() {
       children: parseInt(childrenParam, 10),
       infants: parseInt(infantsParam, 10),
       currency: flight.currency || 'USD',
-      origin,
-      destination,
+      origin: flightOrigin,
+      destination: flightDest,
       stops: flight.stops,
       durationMinutes: flight.totalDuration,
       layoverMinutes,
@@ -499,7 +505,7 @@ function SearchContent() {
       returnDate: returnDateParam,
     }));
     setShowFareModal(true);
-  };
+  }, [fareStore, searchParams, adults, childrenParam, infantsParam, date, cabin, tripParam, returnDateParam]);
 
   const panelFilteredRT = useMemo(() => {
     let f = prefsFilteredRT;
@@ -1298,6 +1304,9 @@ function SearchContent() {
             destination,
             tripType: tripParam,
             passengers: parseInt(adults, 10) + parseInt(childrenParam, 10) + parseInt(infantsParam, 10),
+            adults: parseInt(adults, 10),
+            children: parseInt(childrenParam, 10),
+            infants: parseInt(infantsParam, 10),
             departureDate: date,
           }}
           onResult={setAiAssistResult}

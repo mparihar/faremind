@@ -188,7 +188,7 @@ export async function sendAdminCancellationEmail(data: {
   pnrs: string;
   cancellationId: string;
 }) {
-  const adminEmail = process.env.ADMIN_EMAIL ?? 'admin@faremind.com';
+  const adminEmail = process.env.ADMIN_EMAIL ?? 'mparihar@gmail.com';
   const html = wrap('[Admin] Booking Cancelled', `
     <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking Cancelled</h2>
     <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">

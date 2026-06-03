@@ -31,6 +31,9 @@ export interface SeatSelection {
   seatNumber: string | null;
   priceUsd: number;
   serviceId: string | null; // Duffel service ID for seat add-on
+  /** All per-passenger Duffel service IDs for this seat.
+   *  Indexed by offer passenger order. Used for multi-pax booking. */
+  serviceIds: string[];
 }
 
 export interface MealSelection {
@@ -271,7 +274,7 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
       )};
     }
     return { seatSelections: [...s.seatSelections, {
-      passengerId, segmentKey, preference: 'no_preference', seatNumber: null, priceUsd: 0, serviceId: null, ...updates
+      passengerId, segmentKey, preference: 'no_preference', seatNumber: null, priceUsd: 0, serviceId: null, serviceIds: [], ...updates
     }]};
   }),
 

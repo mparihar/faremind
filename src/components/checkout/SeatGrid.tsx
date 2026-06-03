@@ -39,6 +39,7 @@ interface SeatGridProps {
   onSeatClick: (
     designator: string,
     serviceId: string | null,
+    serviceIds: string[],
     price: number,
     currency: string,
   ) => void;
@@ -403,7 +404,7 @@ export default function SeatGrid({
                         onHover={handleHover}
                         onClick={() => {
                           if (!el.designator) return;
-                          onSeatClick(el.designator, el.serviceId, el.price, el.currency);
+                          onSeatClick(el.designator, el.serviceId, el.serviceIds ?? [], el.price, el.currency);
                         }}
                       />
                     );

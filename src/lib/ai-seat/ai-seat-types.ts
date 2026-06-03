@@ -25,6 +25,7 @@ export interface SeatPreferenceInput {
 export interface ClassifiedSeat {
   seatId: string;
   seatServiceId: string | null;     // Duffel service ID or Mystifly SeatSelectionKey
+  seatServiceIds: string[];          // All per-passenger service IDs for multi-pax booking
   seatNumber: string;               // e.g. "24A"
   rowNumber: number;
   column: string;                   // e.g. "A"
@@ -76,6 +77,7 @@ export interface SeatRecommendationResponse {
 export interface SelectedSeatData {
   seatNumber: string;
   seatServiceId: string | null;
+  seatServiceIds: string[];          // All per-passenger service IDs
   segmentId: string;
   rowNumber: number;
   column: string;

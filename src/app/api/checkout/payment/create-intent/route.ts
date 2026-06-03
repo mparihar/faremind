@@ -18,7 +18,7 @@ export async function POST(req: NextRequest) {
     const {
       amount,
       currency = 'USD',
-      description = 'FareMind flight booking',
+      description = 'FAREMIND flight booking',
       customerEmail,
       sessionId,
     } = body;

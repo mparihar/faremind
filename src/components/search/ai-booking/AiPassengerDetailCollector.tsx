@@ -7,13 +7,18 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Check, AlertCircle, User, ChevronRight, ChevronLeft } from 'lucide-react';
+import { Check, AlertCircle, User, ChevronRight, ChevronLeft, Mic } from 'lucide-react';
 import type { AiPassengerData } from '@/lib/ai-booking-types';
 import { PASSENGER_FIELD_ORDER, PASSENGER_FIELD_LABELS, SECONDARY_PASSENGER_FIELDS, COUNTRIES } from '@/lib/ai-booking-types';
+import {
+  isSpeechRecognitionSupported,
+  startListening,
+  stopListening,
+} from '@/services/speechRecognitionService';
 
 // ─── Validation ───────────────────────────────────────────────────────────────
 
-function validateField(field: keyof AiPassengerData, value: string): string | null {
+function validateField(field: keyof AiPassengerData, value: string, passengerType?: 'adult' | 'child' | 'infant'): string | null {
   switch (field) {
     case 'firstName':
     case 'lastName':
@@ -22,8 +27,19 @@ function validateField(field: keyof AiPassengerData, value: string): string | nu
     case 'email':
       return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? null : 'Please enter a valid email address';
 
-    case 'phone':
-      return value.trim().length >= 5 ? null : 'Please enter a valid phone number';
+    case 'phone': {
+      // Strip all non-digit characters (except leading +)
+      const cleaned = value.trim().replace(/[^\d+]/g, '');
+      const digits = cleaned.replace(/\D/g, '');
+      
+      if (digits.length < 10) {
+        return 'Enter a valid phone number (10+ digits, e.g. 9725671234)';
+      }
+      if (digits.length > 15) {
+        return 'Phone number is too long (max 15 digits)';
+      }
+      return null;
+    }
 
     case 'gender':
       return ['male', 'female', 'other'].includes(value.toLowerCase())
@@ -35,6 +51,36 @@ function validateField(field: keyof AiPassengerData, value: string): string | nu
       if (isNaN(d.getTime())) return 'Enter date as MM/DD/YYYY';
       if (d > new Date()) return 'Date cannot be in the future';
       if (d.getFullYear() < 1900) return 'Please enter a valid year';
+
+      // Age-based validation for child and infant passengers
+      if (passengerType === 'infant' || passengerType === 'child') {
+        const today = new Date();
+        let age = today.getFullYear() - d.getFullYear();
+        const monthDiff = today.getMonth() - d.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < d.getDate())) {
+          age--;
+        }
+
+        if (passengerType === 'infant' && age >= 2) {
+          return 'Infant must be under 2 years old at the time of travel';
+        }
+        if (passengerType === 'child' && (age < 2 || age > 11)) {
+          return 'Child must be between 2 and 11 years old';
+        }
+      }
+
+      if (passengerType === 'adult') {
+        const today = new Date();
+        let age = today.getFullYear() - d.getFullYear();
+        const monthDiff = today.getMonth() - d.getMonth();
+        if (monthDiff < 0 || (monthDiff === 0 && today.getDate() < d.getDate())) {
+          age--;
+        }
+        if (age < 12) {
+          return 'Adult passenger must be at least 12 years old';
+        }
+      }
+
       return null;
     }
 
@@ -62,12 +108,29 @@ function validateField(field: keyof AiPassengerData, value: string): string | nu
   }
 }
 
+/**
+ * Normalize phone number to E.164 format for Duffel/provider compatibility.
+ * 10 digits → US (+1XXXXXXXXXX)
+ * 11 digits starting with 1 → US (+1XXXXXXXXXX)
+ * Otherwise → +{digits}
+ */
+function normalizePhone(raw: string): string {
+  const digits = raw.replace(/\D/g, '');
+  if (digits.length === 10) return `+1${digits}`;
+  if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+  if (raw.trim().startsWith('+') && digits.length >= 10) return `+${digits}`;
+  if (digits.length >= 10) return `+${digits}`;
+  return raw.trim(); // fallback — validation should catch invalid
+}
+
 function normalizeField(field: keyof AiPassengerData, value: string): string {
   switch (field) {
     case 'gender':
       return value.toLowerCase().trim() as string;
     case 'passportNumber':
       return value.toUpperCase().trim();
+    case 'phone':
+      return normalizePhone(value);
     case 'nationality':
     case 'passportCountry': {
       // Capitalize first letter of each word
@@ -85,6 +148,7 @@ interface Props {
   passengerIndex?: number;      // 0-based
   passengerLabel?: string;      // e.g. "Traveler 1"
   passengerCount?: number;      // total count
+  passengerType?: 'adult' | 'child' | 'infant';  // for age validation
   fieldOrder?: (keyof AiPassengerData)[];
   onFieldUpdate: (field: keyof AiPassengerData, value: string) => void;
   onComplete: () => void;
@@ -97,6 +161,7 @@ export default function AiPassengerDetailCollector({
   passengerIndex = 0,
   passengerLabel,
   passengerCount = 1,
+  passengerType = 'adult',
   fieldOrder,
   onFieldUpdate,
   onComplete,
@@ -107,6 +172,8 @@ export default function AiPassengerDetailCollector({
   const [error, setError] = useState<string | null>(null);
   const [completedFields, setCompletedFields] = useState<Map<keyof AiPassengerData, string>>(new Map());
   const inputRef = useRef<HTMLInputElement>(null);
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceSupported] = useState(() => typeof window !== 'undefined' && isSpeechRecognitionSupported());
 
   const currentField = fields[currentFieldIdx] as keyof AiPassengerData | undefined;
   const isAllDone = currentFieldIdx >= fields.length;
@@ -121,7 +188,7 @@ export default function AiPassengerDetailCollector({
     if (!currentField) return;
 
     const normalized = normalizeField(currentField, inputValue);
-    const err = validateField(currentField, normalized);
+    const err = validateField(currentField, normalized, passengerType);
 
     if (err) {
       setError(err);
@@ -245,6 +312,9 @@ export default function AiPassengerDetailCollector({
         <p className="text-[15px] text-white/90 leading-relaxed">
           Please enter your <span className="font-bold text-white">{PASSENGER_FIELD_LABELS[currentField]}</span>:
         </p>
+        {currentField === 'phone' && (
+          <p className="text-[13px] text-white/50 mt-0.5">Enter +country code followed by number (e.g. +1 9725671234)</p>
+        )}
         {currentField === 'gender' && (
           <p className="text-[13px] text-white/50 mt-0.5">Type: male, female, or other</p>
         )}
@@ -290,6 +360,68 @@ export default function AiPassengerDetailCollector({
         >
           <ChevronRight className="w-4 h-4" />
         </button>
+        {/* Animated voice button */}
+        {voiceSupported && (
+          <button
+            onClick={async () => {
+              if (isRecording) {
+                stopListening();
+                setIsRecording(false);
+                return;
+              }
+              // Clear previous input before starting voice
+              setInputValue('');
+              setError(null);
+              setIsRecording(true);
+              try {
+                const result = await startListening((interim) => {
+                  setInputValue(interim);
+                  setError(null);
+                }, { singleShot: true });
+                setIsRecording(false);
+                if (result.transcript.trim()) {
+                  setInputValue(result.transcript.trim());
+                  setError(null);
+                }
+              } catch {
+                setIsRecording(false);
+              }
+            }}
+            title={isRecording ? 'Stop recording' : 'Voice input'}
+            className={`flex-none w-8 h-8 rounded-full flex items-center justify-center transition-all relative ${
+              isRecording
+                ? 'text-red-500 ring-2 ring-red-400/40 bg-red-50'
+                : 'text-slate-400 hover:text-[#1ABC9C] cursor-pointer'
+            }`}
+          >
+            {isRecording ? (
+              <Mic className="w-4 h-4 animate-pulse" />
+            ) : (
+              <svg width="18" height="18" viewBox="0 0 24 24" fill="none" className="relative z-10">
+                <rect x="3" y="9" width="2" height="6" rx="1" fill="currentColor">
+                  <animate attributeName="height" values="6;10;6" dur="1.2s" repeatCount="indefinite" />
+                  <animate attributeName="y" values="9;7;9" dur="1.2s" repeatCount="indefinite" />
+                </rect>
+                <rect x="7.5" y="7" width="2" height="10" rx="1" fill="currentColor">
+                  <animate attributeName="height" values="10;4;10" dur="0.9s" repeatCount="indefinite" />
+                  <animate attributeName="y" values="7;10;7" dur="0.9s" repeatCount="indefinite" />
+                </rect>
+                <rect x="12" y="5" width="2" height="14" rx="1" fill="currentColor">
+                  <animate attributeName="height" values="14;6;14" dur="1.1s" repeatCount="indefinite" />
+                  <animate attributeName="y" values="5;9;5" dur="1.1s" repeatCount="indefinite" />
+                </rect>
+                <rect x="16.5" y="8" width="2" height="8" rx="1" fill="currentColor">
+                  <animate attributeName="height" values="8;14;8" dur="1.4s" repeatCount="indefinite" />
+                  <animate attributeName="y" values="8;5;8" dur="1.4s" repeatCount="indefinite" />
+                </rect>
+                <rect x="21" y="10" width="2" height="4" rx="1" fill="currentColor">
+                  <animate attributeName="height" values="4;10;4" dur="0.8s" repeatCount="indefinite" />
+                  <animate attributeName="y" values="10;7;10" dur="0.8s" repeatCount="indefinite" />
+                </rect>
+              </svg>
+            )}
+          </button>
+        )}
       </div>
 
       {/* Error */}

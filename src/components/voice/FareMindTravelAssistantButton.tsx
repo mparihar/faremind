@@ -35,6 +35,7 @@ import {
   validateVoiceFormData,
   validateActionForContext,
   applyPassengerVoiceData,
+  commitVoiceData,
   forceApplyConflicts,
   type VoiceFormData,
   type PassengerFillResult,
@@ -246,12 +247,37 @@ export default function FareMindTravelAssistantButton() {
     setMissingFields(validation.missingFields);
     console.log('[Voice] Command Parsed:', data);
 
-    // Always read the latest ref from the store (avoids stale closure after page reload)
-    const currentRef = useVoiceStore.getState().searchFormRef;
+    // Helper: attempt to fill the form, retrying briefly if ref isn't registered yet
+    const tryFillForm = async (): Promise<boolean> => {
+      // Try immediately
+      const ref = useVoiceStore.getState().searchFormRef;
+      if (ref) {
+        ref.fillFromVoice(data);
+        console.log('[Voice] Hero form populated — user will verify & click Search');
+        return true;
+      }
+      // Ref not ready — retry a few times (SearchForm registers on mount after refresh)
+      for (let attempt = 0; attempt < 5; attempt++) {
+        await new Promise(r => setTimeout(r, 150));
+        const retryRef = useVoiceStore.getState().searchFormRef;
+        if (retryRef) {
+          retryRef.fillFromVoice(data);
+          console.log(`[Voice] Hero form populated on retry ${attempt + 1}`);
+          return true;
+        }
+      }
+      return false;
+    };
 
-    if (currentRef && pageContext === 'HOME_SEARCH') {
-      currentRef.fillFromVoice(data);
-      console.log('[Voice] Hero form populated — user will verify & click Search');
+    if (pageContext === 'HOME_SEARCH') {
+      const filled = await tryFillForm();
+      if (!filled) {
+        // Last resort: stash in sessionStorage and force a reload so the recovery effect picks it up
+        sessionStorage.setItem('faremind_voice_search', JSON.stringify(data));
+        window.location.reload();
+        console.log('[Voice] SearchForm ref unavailable — reloading to apply voice data');
+        return;
+      }
     } else {
       sessionStorage.setItem('faremind_voice_search', JSON.stringify(data));
       router.push('/');
@@ -298,13 +324,14 @@ export default function FareMindTravelAssistantButton() {
       return undefined;
     })();
 
-    // Apply the parsed data
+    // Preview the parsed data (dryRun: don't apply to form yet)
     const fillResult = applyPassengerVoiceData(
       parsed,
       passengers,
       useCheckoutStore.getState().updatePassenger,
       departureDate,
       false, // don't force overwrite
+      true,  // dryRun — wait for user confirmation before applying
     );
 
     setPassengerFillResult(fillResult);
@@ -351,6 +378,14 @@ export default function FareMindTravelAssistantButton() {
     console.log('[Voice] Conflicts resolved — kept existing');
   }, []);
 
+  // Commit voice data only when user confirms ("Looks Good")
+  const handleConfirmPassenger = useCallback(() => {
+    if (passengerFillResult) {
+      commitVoiceData(passengerFillResult, useCheckoutStore.getState().updatePassenger);
+    }
+    handleClose();
+  }, [passengerFillResult, handleClose]);
+
   // ── Flight search execute ───────────────────────────────────────────────
 
   const handleSearch = useCallback(() => {
@@ -359,8 +394,9 @@ export default function FareMindTravelAssistantButton() {
     setState('executing');
     console.log('[Voice] Executing search...');
 
-    if (pageContext === 'HOME_SEARCH' && searchFormRef) {
-      searchFormRef.triggerSearch();
+    const currentRef = useVoiceStore.getState().searchFormRef;
+    if (pageContext === 'HOME_SEARCH' && currentRef) {
+      currentRef.triggerSearch();
       handleClose();
       console.log('[Voice] Flight Search Executed');
     } else if (pageContext !== 'HOME_SEARCH') {
@@ -453,15 +489,45 @@ export default function FareMindTravelAssistantButton() {
           }
         }}
         className={cn(
-          'flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200',
+          'relative flex items-center gap-2 px-3 py-2 rounded-xl text-sm font-semibold transition-all duration-200',
           expanded
             ? 'text-white bg-white/[0.08] border border-white/[0.1]'
             : 'text-white/60 hover:text-white hover:bg-white/[0.05] border border-transparent',
           state === 'listening' && 'ring-2 ring-red-400/50 bg-red-500/[0.08] text-red-300 border-red-500/20',
           state === 'error' && 'text-red-400',
+          state === 'idle' && !expanded && 'animate-[assistant-glow_3s_ease-in-out_infinite]',
         )}
       >
-        {headerIcon}
+        {/* Pulsing ring behind button when idle */}
+        {state === 'idle' && !expanded && (
+          <span className="absolute inset-0 rounded-xl border border-[#1ABC9C]/40 animate-ping opacity-30 pointer-events-none" />
+        )}
+        {state === 'idle' ? (
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" className="relative z-10">
+            <rect x="3" y="9" width="2" height="6" rx="1" fill="currentColor">
+              <animate attributeName="height" values="6;10;6" dur="1.2s" repeatCount="indefinite" />
+              <animate attributeName="y" values="9;7;9" dur="1.2s" repeatCount="indefinite" />
+            </rect>
+            <rect x="7.5" y="7" width="2" height="10" rx="1" fill="currentColor">
+              <animate attributeName="height" values="10;4;10" dur="0.9s" repeatCount="indefinite" />
+              <animate attributeName="y" values="7;10;7" dur="0.9s" repeatCount="indefinite" />
+            </rect>
+            <rect x="12" y="5" width="2" height="14" rx="1" fill="currentColor">
+              <animate attributeName="height" values="14;6;14" dur="1.1s" repeatCount="indefinite" />
+              <animate attributeName="y" values="5;9;5" dur="1.1s" repeatCount="indefinite" />
+            </rect>
+            <rect x="16.5" y="8" width="2" height="8" rx="1" fill="currentColor">
+              <animate attributeName="height" values="8;14;8" dur="1.4s" repeatCount="indefinite" />
+              <animate attributeName="y" values="8;5;8" dur="1.4s" repeatCount="indefinite" />
+            </rect>
+            <rect x="21" y="10" width="2" height="4" rx="1" fill="currentColor">
+              <animate attributeName="height" values="4;10;4" dur="0.8s" repeatCount="indefinite" />
+              <animate attributeName="y" values="10;7;10" dur="0.8s" repeatCount="indefinite" />
+            </rect>
+          </svg>
+        ) : (
+          headerIcon
+        )}
         <span className="hidden lg:inline">{headerLabel}</span>
       </button>
 
@@ -775,7 +841,7 @@ export default function FareMindTravelAssistantButton() {
                   {/* Action buttons */}
                   <div className="flex items-center gap-2">
                     <button
-                      onClick={handleClose}
+                      onClick={handleConfirmPassenger}
                       className="flex-1 flex items-center justify-center gap-2 px-3 py-2.5 rounded-lg text-xs font-bold text-white bg-[#1ABC9C] hover:brightness-110 transition-all shadow-lg shadow-[#1ABC9C]/20"
                     >
                       <Check className="w-3.5 h-3.5" />

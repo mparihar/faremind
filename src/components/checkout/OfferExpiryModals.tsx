@@ -79,13 +79,13 @@ export function OfferExpiryModals() {
     }
   }, [status, remainingSeconds, warningShown, setWarningShown]);
 
-  // ─── 1-minute critical warning ───
-  useEffect(() => {
-    if (status === 'WARNING' && !criticalWarningShown && remainingSeconds <= 60 && remainingSeconds > 0) {
-      setShowCriticalToast(true);
-      setCriticalWarningShown();
-    }
-  }, [status, remainingSeconds, criticalWarningShown, setCriticalWarningShown]);
+  // ─── 1-minute critical warning (disabled — timer bar is sufficient) ───
+  // useEffect(() => {
+  //   if (status === 'WARNING' && !criticalWarningShown && remainingSeconds <= 60 && remainingSeconds > 0) {
+  //     setShowCriticalToast(true);
+  //     setCriticalWarningShown();
+  //   }
+  // }, [status, remainingSeconds, criticalWarningShown, setCriticalWarningShown]);
 
   // ─── Expired ───
   useEffect(() => {
@@ -122,7 +122,7 @@ export function OfferExpiryModals() {
     setShowWarningModal(false);
 
     // Navigate to search results
-    router.push('/flights');
+    router.push('/');
   }, [searchCriteria, clearSession, router]);
 
   return (

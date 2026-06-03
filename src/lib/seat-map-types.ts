@@ -14,7 +14,12 @@ export interface SeatElement {
   available: boolean;
   price: number;               // 0 = free, >0 = paid
   currency: string;
-  serviceId: string | null;    // Duffel service ID, needed when placing order
+  serviceId: string | null;    // Duffel service ID (first passenger), needed when placing order
+  /** All per-passenger Duffel service IDs for this seat.
+   *  Index matches the offer's passenger order. For 2-pax offers:
+   *  serviceIds[0] = passenger 0's service, serviceIds[1] = passenger 1's service.
+   *  Falls back to [serviceId] when only one service is available. */
+  serviceIds: string[];
   disclosures: string[];       // e.g. ["window", "extra_legroom", "exit_row"]
 }
 

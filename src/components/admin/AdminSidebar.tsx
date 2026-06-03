@@ -63,7 +63,7 @@ export default function AdminSidebar() {
             <Shield size={16} className="text-[#1ABC9C]" />
           </div>
           <div>
-            <p className="text-white font-black text-sm leading-tight">FareMind</p>
+            <p className="text-white font-black text-sm leading-tight">FAREMIND</p>
             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Admin Console</p>
           </div>
         </div>

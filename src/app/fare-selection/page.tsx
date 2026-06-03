@@ -99,12 +99,13 @@ export default function FareSelectionPage() {
     const raw = sessionStorage.getItem('fm_fare_context');
     if (!raw) { router.replace('/search'); return; }
 
-    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number };
+    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; trip?: string };
     try { ctx = JSON.parse(raw); } catch { router.replace('/search'); return; }
 
     store.setLoading(true);
+    const tripParam = ctx.trip ? `&trip=${encodeURIComponent(ctx.trip)}` : '';
     apiFetch<FareSelectionPayload>(
-      `/api/fares/options?offer_id=${ctx.offerId}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${ctx.origin}&destination=${ctx.destination}&stops=${ctx.stops}`
+      `/api/fares/options?offer_id=${ctx.offerId}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${ctx.origin}&destination=${ctx.destination}&stops=${ctx.stops}${tripParam}`
     )
       .then(data => {
         store.setPayload(data);

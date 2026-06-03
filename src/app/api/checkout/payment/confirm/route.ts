@@ -27,15 +27,6 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    // If this is a demo/fallback payment intent, skip Stripe
-    if (paymentIntentId.startsWith('pi_demo_')) {
-      console.log(`[Stripe] Skipping confirmation for demo intent: ${paymentIntentId}`);
-      return NextResponse.json({
-        success: true,
-        status: 'demo',
-        last4: card?.number?.replace(/\s/g, '').slice(-4) || '0000',
-      });
-    }
 
     if (!card?.number || !card?.expiry || !card?.cvc) {
       return NextResponse.json(

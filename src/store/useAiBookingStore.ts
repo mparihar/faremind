@@ -29,6 +29,20 @@ import { useCheckoutStore, makePassenger } from '@/store/useCheckoutStore';
 import type { SelectedFare, FareOption } from '@/lib/fare-types';
 import { fetchComputedFeesForContext, type ComputedFees } from '@/hooks/useFeeLoader';
 
+// ── SSR meal code → display label mapping ─────────────────────────────────────
+const SSR_MEAL_LABELS: Record<string, string> = {
+  STANDARD: 'Standard',
+  VGML: 'Vegetarian',
+  AVML: 'Asian Vegetarian',
+  NLML: 'Vegan',
+  MOML: 'Halal',
+  KSML: 'Kosher',
+  HNML: 'Hindu',
+  DBML: 'Diabetic',
+  GFML: 'Gluten-Free',
+  NONE: 'No meal',
+};
+
 // ─── Empty passenger ──────────────────────────────────────────────────────────
 
 const EMPTY_PASSENGER: AiPassengerData = {
@@ -222,6 +236,7 @@ interface AiBookingStore extends AiBookingSession {
   // Passenger count
   setPassengerCount: (n: number) => void;
   setCurrentPassengerIndex: (i: number) => void;
+  setPassengerTypes: (types: ('adult' | 'child' | 'infant')[]) => void;
 
   // Protection
   toggleProtection: () => void;
@@ -270,7 +285,7 @@ const INITIAL_PRICE: AiPriceSummary = {
 
 const INITIAL: Omit<AiBookingStore,
   'setStatus' | 'selectFlight' | 'selectFare' | 'selectFareFromOption' |
-  'setPassengerCount' | 'setCurrentPassengerIndex' |
+  'setPassengerCount' | 'setCurrentPassengerIndex' | 'setPassengerTypes' |
   'toggleProtection' | 'setPassengerProtection' | 'setAllProtections' |
   'setPassengerField' | 'setPassenger' | 'setPassengerAt' | 'setPassengerComplete' |
   'setSeatPreference' | 'setSelectedSeat' | 'setSelectedReturnSeat' | 'setPassengerSeat' |
@@ -292,6 +307,7 @@ const INITIAL: Omit<AiBookingStore,
   passengerProtections: [{ passengerIndex: 0, selected: false }],
 
   passengers: [{ ...EMPTY_PASSENGER }],
+  passengerTypes: ['adult'],
 
   seatPreference: { ...DEFAULT_SEAT },
   passengerSeats: [],
@@ -315,7 +331,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
 
   selectFlight: (flight, roundTrip) => {
     // Start with hardcoded fallback, then fetch DB values
-    const protectionFee = Math.min(Math.max(Math.round(flight.totalPrice * 0.06), 49), 399);
+    const protectionFee = Math.round(flight.totalPrice * 0.06);
     set({
       selectedFlight: flight,
       selectedRoundTrip: roundTrip ?? null,
@@ -324,9 +340,10 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     });
 
     // Async: fetch DB-driven fees
+    const paxCount = get().passengerCount;
     fetchComputedFeesForContext({
-      fareTotal: flight.totalPrice,
-      passengerCount: get().passengerCount,
+      fareTotal: flight.totalPrice * paxCount,
+      passengerCount: paxCount,
       cabin: flight.cabinClass || 'economy',
       currency: flight.currency || 'USD',
     }).then(fees => {
@@ -390,6 +407,25 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
       priceSummary,
       status: 'passenger_count',
     });
+
+    // Re-fetch DB fees for the new fare total
+    const totalFare = fare.totalPrice * passengerCount;
+    fetchComputedFeesForContext({
+      fareTotal: totalFare,
+      passengerCount,
+      cabin: fare.cabin ?? 'economy',
+      fareClass: fare.name,
+      currency: fare.currency || 'USD',
+    }).then(fees => {
+      if (fees) {
+        const s = get();
+        set({
+          computedFees: fees,
+          protectionFee: fees.protectionFee,
+          priceSummary: computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, fees.protectionFee, s.addOns, s.passengerSeats, fees),
+        });
+      }
+    });
   },
 
   // ── Passenger count ─────────────────────────────────────────────────────────
@@ -413,12 +449,35 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     set({
       passengerCount: count,
       passengers,
+      passengerTypes: Array.from({ length: count }, () => 'adult' as const),
       passengerProtections: protections,
       priceSummary,
     });
+
+    // Re-fetch DB fees with updated passenger count & total fare
+    if (fareDetails) {
+      const totalFare = fareDetails.totalPrice * count;
+      fetchComputedFeesForContext({
+        fareTotal: totalFare,
+        passengerCount: count,
+        cabin: fareDetails.fareClass || 'economy',
+        currency: fareDetails.currency || 'USD',
+      }).then(fees => {
+        if (fees) {
+          const s = get();
+          set({
+            computedFees: fees,
+            protectionFee: fees.protectionFee,
+            priceSummary: computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, fees.protectionFee, s.addOns, s.passengerSeats, fees),
+          });
+        }
+      });
+    }
   },
 
   setCurrentPassengerIndex: (i) => set({ currentPassengerIndex: i }),
+
+  setPassengerTypes: (types) => set({ passengerTypes: types }),
 
   // ── Protection ──────────────────────────────────────────────────────────────
 
@@ -597,7 +656,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     const s = get();
     if (!s.fareDetails) return;
     const fees = await fetchComputedFeesForContext({
-      fareTotal: s.fareDetails.totalPrice,
+      fareTotal: s.fareDetails.totalPrice * s.passengerCount,
       passengerCount: s.passengerCount,
       cabin: s.fareDetails.fareClass || 'economy',
       currency: s.fareDetails.currency || 'USD',
@@ -736,6 +795,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
             seatNumber: seatSel?.seat?.seatNumber ?? null,
             priceUsd: seatSel?.seat?.price ?? 0,
             serviceId: seatSel?.seat?.seatServiceId ?? null,
+            serviceIds: seatSel?.seat?.seatServiceIds ?? [],
           });
         });
 
@@ -747,14 +807,15 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
             seatNumber: seatSel?.seat?.seatNumber ?? null,
             priceUsd: seatSel?.seat?.price ?? 0,
             serviceId: seatSel?.seat?.seatServiceId ?? null,
+            serviceIds: seatSel?.seat?.seatServiceIds ?? [],
           });
         });
 
-        // Meals
+        // Meals — keys must match review page's mealSegs: 'out' / 'ret'
         const outMeal = passengerMeals.find(m => m.passengerIndex === paxIdx && m.journeyType === 'outbound')?.mealCode ?? 'STANDARD';
         const retMeal = passengerMeals.find(m => m.passengerIndex === paxIdx && m.journeyType === 'return')?.mealCode ?? 'STANDARD';
-        checkout.updateMealSelection(pax.id, 'outbound', outMeal, outMeal);
-        checkout.updateMealSelection(pax.id, 'return', retMeal, retMeal);
+        checkout.updateMealSelection(pax.id, 'out', outMeal, SSR_MEAL_LABELS[outMeal] ?? outMeal);
+        checkout.updateMealSelection(pax.id, 'ret', retMeal, SSR_MEAL_LABELS[retMeal] ?? retMeal);
       } else if (selectedFlight.segments.length > 0) {
         selectedFlight.segments.forEach((_, i) => {
           const seatSel = passengerSeats.find(ss => ss.passengerIndex === paxIdx && ss.journeyType === 'outbound');
@@ -763,10 +824,11 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
             seatNumber: seatSel?.seat?.seatNumber ?? null,
             priceUsd: seatSel?.seat?.price ?? 0,
             serviceId: seatSel?.seat?.seatServiceId ?? null,
+            serviceIds: seatSel?.seat?.seatServiceIds ?? [],
           });
         });
         const outMeal = passengerMeals.find(m => m.passengerIndex === paxIdx && m.journeyType === 'outbound')?.mealCode ?? 'STANDARD';
-        checkout.updateMealSelection(pax.id, `seg_0`, outMeal, outMeal);
+        checkout.updateMealSelection(pax.id, `seg_0`, outMeal, SSR_MEAL_LABELS[outMeal] ?? outMeal);
       }
     });
 

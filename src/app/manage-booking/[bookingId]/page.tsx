@@ -354,7 +354,7 @@ function ETicketModal({ bookingId, onClose }: { bookingId: string; onClose: () =
                   </div>
                 </div>
               )}
-              <p className="text-slate-600 text-xs text-center">Issued {eticket.issuedAt ? new Date(eticket.issuedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''} · FareMind Travel</p>
+              <p className="text-slate-600 text-xs text-center">Issued {eticket.issuedAt ? new Date(eticket.issuedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''} · FAREMIND Travel</p>
             </div>
           )}
         </div>
@@ -456,7 +456,7 @@ export default function BookingDetailPage() {
       const url = URL.createObjectURL(blob);
       const a = document.createElement('a');
       a.href = url;
-      a.download = `FareMind-Itinerary-${booking.masterBookingReference || booking.masterPnr || 'booking'}.html`;
+      a.download = `FAREMIND-Itinerary-${booking.masterBookingReference || booking.masterPnr || 'booking'}.html`;
       document.body.appendChild(a);
       a.click();
       document.body.removeChild(a);

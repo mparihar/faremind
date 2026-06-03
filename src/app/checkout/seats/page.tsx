@@ -458,7 +458,7 @@ export default function SeatsPage() {
 
   if (!selectedFare || !sessionId) return null;
 
-  const segments = buildSegments(sourceFlight, sourceRoundTrip);
+  const segments = useMemo(() => buildSegments(sourceFlight, sourceRoundTrip), [sourceFlight, sourceRoundTrip]);
   const currency = selectedFare.currency ?? 'USD';
   const activeSeg = segments[activeSegIdx];
 
@@ -519,6 +519,7 @@ export default function SeatsPage() {
   const handleSeatClick = useCallback((
     designator: string,
     serviceId: string | null,
+    serviceIds: string[],
     price: number,
     curr: string,
   ) => {
@@ -531,7 +532,7 @@ export default function SeatsPage() {
       s => s.passengerId === pax.id && s.segmentKey === activeSeg.key,
     );
     if (existing?.seatNumber === designator) {
-      updateSeatSelection(pax.id, activeSeg.key, { seatNumber: null, priceUsd: 0, serviceId: null });
+      updateSeatSelection(pax.id, activeSeg.key, { seatNumber: null, priceUsd: 0, serviceId: null, serviceIds: [] });
       return;
     }
 
@@ -539,6 +540,7 @@ export default function SeatsPage() {
       seatNumber: designator,
       priceUsd: price,
       serviceId,
+      serviceIds,
       preference: 'no_preference',
     });
 
@@ -691,7 +693,7 @@ export default function SeatsPage() {
                     </div>
                   )}
                   {!mapError && (
-                    <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-blue-50 border border-blue-100 text-blue-600 text-xs">
+                    <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-[#FEF2F2] border border-[#FCA5A5] text-[#B91C1C] text-xs">
                       <Info className="w-4 h-4 shrink-0 mt-0.5" />
                       <span>Seat map not available. Choose your seating preference and the airline will assign a matching seat.</span>
                     </div>

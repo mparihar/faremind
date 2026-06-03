@@ -1,12 +1,14 @@
 // ═══════════════════════════════════════════════
 // AiMultiPaxProtectionStep
 // Price protection for multi-passenger: all / per-pax / none
+// Uses DB-configured product rules via fee engine
 // ═══════════════════════════════════════════════
 
 'use client';
 
 import { useState } from 'react';
 import { Shield, Check, X } from 'lucide-react';
+import { useAiBookingStore } from '@/store/useAiBookingStore';
 
 interface Props {
   passengerCount: number;
@@ -24,6 +26,22 @@ export default function AiMultiPaxProtectionStep({
   const [mode, setMode] = useState<'menu' | 'per_pax'>('menu');
   const [perPax, setPerPax] = useState<boolean[]>(Array(passengerCount).fill(false));
 
+  const computedFees = useAiBookingStore(s => s.computedFees);
+
+  // Use DB-driven fee if available, fallback to prop
+  const effectiveFeePerPax = computedFees?.protectionFee ?? protectionFeePerPax;
+
+  // Product metadata from DB (with sensible defaults)
+  const productName = computedFees?.protectionProductName || 'Price Drop Protection';
+  const rawCoverage = computedFees?.protectionCoverage
+    || computedFees?.protectionDescription
+    || 'Refund 80% of any eligible fare decrease after booking.';
+  // Strip min/max bounds text if present
+  const coverageSummary = rawCoverage
+    .replace(/\.?\s*Minimum protection fee\s*\$?\d+,?\s*maximum\s*\$?\d+\.?/gi, '')
+    .replace(/\.?\s*Min\.?\s*\$?\d+[\s,]*max\.?\s*\$?\d+\.?/gi, '')
+    .trim();
+
   const fmt = (n: number) =>
     new Intl.NumberFormat('en-US', { style: 'currency', currency, maximumFractionDigits: 0 }).format(n);
 
@@ -35,7 +53,7 @@ export default function AiMultiPaxProtectionStep({
             <Shield className="w-4 h-4 text-[#1ABC9C]" />
             <span className="text-[14px] font-bold text-[#1ABC9C]">Per-Passenger Protection</span>
           </div>
-          <p className="text-[15px] text-white/90">Choose protection for each traveler ({fmt(protectionFeePerPax)} each):</p>
+          <p className="text-[15px] text-white/90">Choose protection for each traveler ({fmt(effectiveFeePerPax)} each):</p>
         </div>
 
         <div className="space-y-1.5 px-0.5">
@@ -78,15 +96,15 @@ export default function AiMultiPaxProtectionStep({
       <div className="bg-[#0F172A] rounded-xl rounded-bl-sm px-3 py-2.5">
         <div className="flex items-center gap-1.5 mb-1">
           <Shield className="w-4 h-4 text-[#1ABC9C]" />
-          <span className="text-[14px] font-bold text-[#1ABC9C]">Price Drop Protection</span>
+          <span className="text-[14px] font-bold text-[#1ABC9C]">{productName}</span>
         </div>
         <p className="text-[15px] text-white/90 leading-relaxed">
-          Would you like <span className="font-bold text-white">Price Drop Protection</span>?
+          Would you like <span className="font-bold text-white">{productName}</span>?
         </p>
         <p className="text-[12px] text-white/50 mt-1">
-          Refund 80% of any eligible fare decrease after booking.
-          <br />Cost: {fmt(protectionFeePerPax)} per passenger
-          {passengerCount > 1 && ` · ${fmt(protectionFeePerPax * passengerCount)} for all ${passengerCount}`}
+          {coverageSummary}
+          <br />Cost: {fmt(effectiveFeePerPax)} per passenger
+          {passengerCount > 1 && ` · ${fmt(effectiveFeePerPax * passengerCount)} for all ${passengerCount}`}
         </p>
       </div>
 
@@ -98,7 +116,7 @@ export default function AiMultiPaxProtectionStep({
           <Check className="w-4 h-4 text-[#1ABC9C] flex-none" />
           <div>
             <span className="text-[14px] font-bold text-[#1ABC9C]">Add for all passengers</span>
-            <span className="text-[12px] text-slate-500 ml-1">({fmt(protectionFeePerPax * passengerCount)})</span>
+            <span className="text-[12px] text-slate-500 ml-1">({fmt(effectiveFeePerPax * passengerCount)})</span>
           </div>
         </button>
 
@@ -123,3 +141,4 @@ export default function AiMultiPaxProtectionStep({
     </div>
   );
 }
+

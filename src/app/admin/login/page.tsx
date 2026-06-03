@@ -205,7 +205,7 @@ export default function AdminLoginPage() {
           <div className="inline-flex items-center justify-center w-16 h-16 rounded-2xl bg-[#1ABC9C]/20 border border-[#1ABC9C]/30 mb-4">
             <Shield size={32} className="text-[#1ABC9C]" />
           </div>
-          <h1 className="text-2xl font-black text-white">FareMind Admin</h1>
+          <h1 className="text-2xl font-black text-white">FARE<span style={{ color: '#009CA6' }}>MIND</span> Admin</h1>
           <p className="text-slate-400 text-sm mt-1">Operations Console</p>
         </div>
 
@@ -331,7 +331,7 @@ export default function AdminLoginPage() {
           )}
         </div>
 
-        <p className="text-center text-slate-600 text-xs mt-6">FareMind Operations Console · Restricted Access</p>
+        <p className="text-center text-slate-600 text-xs mt-6">FAREMIND Operations Console · Restricted Access</p>
       </div>
 
       <style>{`

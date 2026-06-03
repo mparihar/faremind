@@ -218,7 +218,7 @@ export default function SignupPage() {
       <div className="w-full max-w-md">
 
         <div className="text-center mb-8">
-          <h1 className="text-2xl font-black text-white">FareMind</h1>
+          <h1 className="text-2xl font-black"><span className="text-white">FARE</span><span className="text-[#009CA6]">MIND</span></h1>
           <p className="text-slate-400 text-sm mt-1">Create your account</p>
         </div>
 

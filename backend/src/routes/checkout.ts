@@ -132,55 +132,13 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  fastify.post('/payment/create-intent', async (request, reply) => {
-    try {
-      const { amount, currency } = request.body as any;
-      if (typeof amount !== 'number' || amount <= 0) return reply.code(400).send({ error: 'amount must be a positive number' });
-      if (!currency) return reply.code(400).send({ error: 'currency is required' });
-      const now = Date.now();
-      return { clientSecret: `mock_pi_${now}_secret_mock`, paymentIntentId: `pi_${now}_mock`, amount, currency };
-    } catch (err) {
-      console.error('[checkout] POST /payment/create-intent error:', err);
-      reply.code(500).send({ error: 'Internal server error' });
-    }
-  });
+  // ── Payment and booking routes removed ───────────────────────────────────
+  // Payment processing (Stripe) and booking confirmation (Duffel) are handled
+  // by the Next.js API routes at:
+  //   POST /api/checkout/payment/create-intent  → real Stripe PaymentIntent
+  //   POST /api/checkout/payment/confirm        → real Stripe confirmation
+  //   POST /api/checkout/bookings/confirm       → real Duffel order + Stripe capture
 
-  fastify.post('/payment/confirm', async (request, reply) => {
-    try {
-      const { paymentIntentId, sessionId, amount, currency } = request.body as any;
-      if (!paymentIntentId) return reply.code(400).send({ error: 'paymentIntentId is required' });
-      if (!sessionId) return reply.code(400).send({ error: 'sessionId is required' });
-      return { success: true, status: 'succeeded', chargedAmount: amount ?? 0, currency: currency ?? 'USD' };
-    } catch (err) {
-      console.error('[checkout] POST /payment/confirm error:', err);
-      reply.code(500).send({ error: 'Internal server error' });
-    }
-  });
-
-  fastify.post('/bookings/confirm', async (request, reply) => {
-    try {
-      const { paymentIntentId, sessionId, passengers, pricing } = request.body as any;
-      if (!paymentIntentId || !sessionId) return reply.code(400).send({ error: 'paymentIntentId and sessionId are required' });
-      if (!Array.isArray(passengers) || passengers.length === 0) return reply.code(400).send({ error: 'passengers must be a non-empty array' });
-      if (!pricing) return reply.code(400).send({ error: 'pricing is required' });
-
-      const pnrChars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-      const pnr = `FM${Array.from({ length: 6 }, () => pnrChars[Math.floor(Math.random() * pnrChars.length)]).join('')}`;
-
-      return {
-        success: true, pnr,
-        bookingId: `bk_${Date.now()}`,
-        status: 'confirmed',
-        confirmedAt: new Date().toISOString(),
-        passengerNames: (passengers as PassengerInfo[]).map((p) => `${p.firstName} ${p.lastName}`),
-        totalCharged: pricing.total,
-        currency: pricing.currency,
-      };
-    } catch (err) {
-      console.error('[checkout] POST /bookings/confirm error:', err);
-      reply.code(500).send({ error: 'Internal server error' });
-    }
-  });
 
   fastify.post('/notifications/booking-confirm', async (request, reply) => {
     try {

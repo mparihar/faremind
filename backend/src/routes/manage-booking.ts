@@ -21,7 +21,7 @@ const SUPER_ADMIN_EMAILS = ['mparihar@gmail.com'];
 
 const BREVO_URL    = 'https://api.brevo.com/v3/smtp/email';
 const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL ?? 'noreply@faremind.ai';
-const SENDER_NAME  = 'FareMind';
+const SENDER_NAME  = 'FAREMIND';
 
 async function sendBookingOtpEmail(toEmail: string, toName: string, otp: string): Promise<void> {
   const apiKey = process.env.BREVO_API_KEY;
@@ -31,7 +31,7 @@ async function sendBookingOtpEmail(toEmail: string, toName: string, otp: string)
   }
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">
-      <h2 style="color:#1ABC9C;margin-bottom:8px">Your FareMind booking access code</h2>
+      <h2 style="color:#1ABC9C;margin-bottom:8px">Your FAREMIND booking access code</h2>
       <p style="color:#475569;margin-bottom:24px">Hi ${toName}, use the code below to access your booking. It expires in 5 minutes.</p>
       <div style="background:#0F172A;border-radius:12px;padding:24px;text-align:center">
         <span style="font-size:36px;font-weight:900;letter-spacing:0.15em;color:#fff">${otp}</span>
@@ -45,9 +45,9 @@ async function sendBookingOtpEmail(toEmail: string, toName: string, otp: string)
     body: JSON.stringify({
       sender: { name: SENDER_NAME, email: SENDER_EMAIL },
       to: [{ email: toEmail, name: toName }],
-      subject: `${otp} — Your FareMind booking access code`,
+      subject: `${otp} — Your FAREMIND booking access code`,
       htmlContent: html,
-      textContent: `Your FareMind booking access code is: ${otp}\n\nValid for 5 minutes. Do not share it.`,
+      textContent: `Your FAREMIND booking access code is: ${otp}\n\nValid for 5 minutes. Do not share it.`,
     }),
   });
 
@@ -573,7 +573,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           ? 'Seat confirmed with airline.'
           : providerSupportsSeatChange
             ? 'Seat preference recorded. Pending airline confirmation.'
-            : 'Seat preference recorded in FareMind. Post-booking seat changes are not available online for this provider — please contact the airline directly or manage at check-in.',
+            : 'Seat preference recorded in FAREMIND. Post-booking seat changes are not available online for this provider — please contact the airline directly or manage at check-in.',
       };
     } catch (e) { fastify.log.error(e, '[manage-booking/seats/select]'); reply.code(500).send({ error: 'Server error' }); }
   });

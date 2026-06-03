@@ -10,7 +10,13 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
-import { Sparkles, RotateCcw, ChevronLeft } from 'lucide-react';
+import { Sparkles, RotateCcw, ChevronLeft, Mic, Clock, AlertTriangle, XCircle } from 'lucide-react';
+import {
+  isSpeechRecognitionSupported,
+  startListening,
+  stopListening,
+  abortListening,
+} from '@/services/speechRecognitionService';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
 import type {
@@ -46,6 +52,7 @@ const PREVIOUS_STATUS: Partial<Record<AiBookingStatus, AiBookingStatus>> = {
 import { useAiBookingStore } from '@/store/useAiBookingStore';
 import { apiFetch } from '@/lib/api-client';
 import { useCheckoutStore } from '@/store/useCheckoutStore';
+import { useOfferSessionStore } from '@/store/useOfferSessionStore';
 
 import AiFlightOptionTimeline from './AiFlightOptionTimeline';
 import AiFareClassSelector from './AiFareClassSelector';
@@ -66,7 +73,7 @@ function AiBubble({ children }: { children: React.ReactNode }) {
     <div className="bg-[#0F172A] rounded-xl rounded-bl-sm px-3 py-2.5 mb-2">
       <div className="flex items-center gap-1.5 mb-1">
         <Sparkles className="w-3.5 h-3.5 text-[#1ABC9C]" />
-        <span className="text-[13px] font-bold text-[#1ABC9C]">FareMind AI</span>
+        <span className="text-[13px] font-bold"><span className="text-white">FARE</span><span style={{ color: '#009CA6' }}>MIND</span> <span className="text-[#1ABC9C]">AI</span></span>
       </div>
       <div className="text-[15px] text-white/90 leading-relaxed">{children}</div>
     </div>
@@ -79,17 +86,23 @@ interface Props {
   flights: UnifiedFlight[];
   roundTripOptions?: RoundTripOption[];
   searchPassengers?: number;
+  searchAdults?: number;
+  searchChildren?: number;
+  searchInfants?: number;
   onExit: () => void;
 }
 
 // ─── Component ────────────────────────────────────────────────────────────────
 
-export default function AiBookFlightFlow({ flights, roundTripOptions, searchPassengers, onExit }: Props) {
+export default function AiBookFlightFlow({ flights, roundTripOptions, searchPassengers, searchAdults, searchChildren, searchInfants, onExit }: Props) {
   const router = useRouter();
   const store = useAiBookingStore();
+  const offerSession = useOfferSessionStore();
   const scrollRef = useRef<HTMLDivElement>(null);
   const [isNavigating, setIsNavigating] = useState(false);
   const [inputValue, setInputValue] = useState('');
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceSupported] = useState(() => typeof window !== 'undefined' && isSpeechRecognitionSupported());
   const [fareOptions, setFareOptions] = useState<FareOption[]>([]);
   const [fareLoading, setFareLoading] = useState(false);
   const [fareError, setFareError] = useState<string | null>(null);
@@ -121,11 +134,40 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
     }
   }, [store.status, seatPaxIndex, seatJourney]);
 
+  // ── Listen for AI recommendation auto-select event ──────────────────────
+  useEffect(() => {
+    const handler = (e: Event) => {
+      const detail = (e as CustomEvent).detail;
+      if (detail?.flightIndex !== undefined && store.status === 'flight_selection') {
+        const idx = detail.flightIndex;
+        if (idx >= 0 && idx < flights.length) {
+          handleFlightSelect(idx);
+        }
+      }
+    };
+    window.addEventListener('ai-auto-select-flight', handler);
+    return () => window.removeEventListener('ai-auto-select-flight', handler);
+  }, [flights, store.status]);
+
   // ── Auto-set passenger count from search params (skip the question) ─────
   useEffect(() => {
     if (store.status === 'passenger_count' && searchPassengers && searchPassengers >= 1) {
       const count = Math.min(searchPassengers, 9);
       store.setPassengerCount(count);
+
+      // Build passenger types array from search breakdown
+      const types: ('adult' | 'child' | 'infant')[] = [];
+      const nAdults = searchAdults ?? count;
+      const nChildren = searchChildren ?? 0;
+      const nInfants = searchInfants ?? 0;
+      for (let i = 0; i < nAdults; i++) types.push('adult');
+      for (let i = 0; i < nChildren; i++) types.push('child');
+      for (let i = 0; i < nInfants; i++) types.push('infant');
+      // Pad or trim to match count
+      while (types.length < count) types.push('adult');
+      if (types.length > count) types.length = count;
+      store.setPassengerTypes(types);
+
       store.setStatus('price_protection');
     }
   }, [store.status, searchPassengers]);
@@ -210,6 +252,12 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
     if (!flight) return;
     const roundTrip = resolveRoundTrip(flight.id);
     store.selectFlight(flight, roundTrip);
+
+    // Start offer expiry countdown timer
+    offerSession.startSession({
+      provider: flight.provider || 'faremind',
+      providerOfferId: flight.providerOfferId || flight.id,
+    });
 
     // Fetch real fare options from the API
     setFareLoading(true);
@@ -422,6 +470,7 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
       if (idx < store.passengerCount) {
         store.setPassengerSeat(idx, seatJourney, {
           seatServiceId: seat.seatServiceId,
+          seatServiceIds: seat.seatServiceIds ?? [],
           seatNumber: seat.seatNumber,
           segmentId: seat.segmentId,
           rowNumber: seat.rowNumber,
@@ -496,6 +545,7 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
   const handleSeatSelection = (seat: RecommendedSeat) => {
     const seatData = {
       seatServiceId: seat.seatServiceId,
+      seatServiceIds: seat.seatServiceIds ?? [],
       seatNumber: seat.seatNumber,
       segmentId: seat.segmentId,
       rowNumber: seat.rowNumber,
@@ -627,6 +677,7 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
 
   const handleRestart = () => {
     store.reset();
+    offerSession.clearSession();
   };
 
   // ── Handle text input ──────────────────────────────────────────────────────
@@ -708,6 +759,39 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
           </span>
         </div>
         <div className="flex items-center gap-1">
+          {/* Countdown timer — shows after flight selection */}
+          {offerSession.status !== 'IDLE' && (() => {
+            const fmt = (s: number) => {
+              const m = Math.floor(s / 60);
+              const sec = s % 60;
+              return `${m.toString().padStart(2, '0')}:${sec.toString().padStart(2, '0')}`;
+            };
+
+            if (offerSession.status === 'EXPIRED') {
+              return (
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-500/15 border border-red-400/30 text-red-500 text-[11px] font-bold">
+                  <XCircle className="w-3 h-3" />
+                  <span>Expired</span>
+                </div>
+              );
+            }
+
+            if (offerSession.status === 'WARNING') {
+              return (
+                <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 border border-amber-400/40 text-amber-600 text-[11px] font-bold animate-pulse">
+                  <AlertTriangle className="w-3 h-3" />
+                  <span className="tabular-nums">{fmt(offerSession.remainingSeconds)}</span>
+                </div>
+              );
+            }
+
+            return (
+              <div className="flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/10 border border-amber-400/30 text-amber-600 text-[11px] font-bold">
+                <Clock className="w-3 h-3" />
+                <span className="tabular-nums">{fmt(offerSession.remainingSeconds)}</span>
+              </div>
+            );
+          })()}
           <button
             onClick={handleRestart}
             className="flex items-center gap-1 px-2 py-1 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-500 text-[12px] font-medium transition-all"
@@ -832,9 +916,12 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
         {store.status === 'passenger_details' && (
           <>
             <AiBubble>
-              {store.passengerCount > 1 ? (
+              {store.passengerCount > 1 ? (() => {
+                const paxType = store.passengerTypes?.[store.currentPassengerIndex] ?? 'adult';
+                const typeLabel = paxType === 'child' ? ' (Child)' : paxType === 'infant' ? ' (Infant)' : ' (Adult)';
+                return (
                 <p>
-                  Let&apos;s collect details for <span className="font-bold text-white">Traveler {store.currentPassengerIndex + 1}</span> of {store.passengerCount}.
+                  Let&apos;s collect details for <span className="font-bold text-white">Traveler {store.currentPassengerIndex + 1}{typeLabel}</span> of {store.passengerCount}.
                   {store.currentPassengerIndex === 0 && ' I\'ll start with the primary contact. 📋'}
                   {store.currentPassengerIndex > 0 && (
                     <>
@@ -845,9 +932,50 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
                     </>
                   )}
                 </p>
-              ) : (
+                );
+              })() : (
                 <p>Now I need your passenger details. I&apos;ll ask one field at a time. 📋</p>
               )}
+
+              {/* Traveler type roster */}
+              {store.passengerCount > 1 && (
+                <div className="mt-2.5 space-y-1">
+                  {Array.from({ length: store.passengerCount }, (_, i) => {
+                    const type = store.passengerTypes?.[i] ?? 'adult';
+                    const label = type === 'child' ? 'Child' : type === 'infant' ? 'Infant' : 'Adult';
+                    const emoji = type === 'child' ? '👦' : type === 'infant' ? '👶' : '🧑';
+                    const isCurrent = i === store.currentPassengerIndex;
+                    const isDone = i < store.currentPassengerIndex;
+                    return (
+                      <div
+                        key={i}
+                        className={`flex items-center gap-2 px-2 py-1 rounded-lg text-[12px] transition-all ${
+                          isCurrent
+                            ? 'bg-[#1ABC9C]/15 border border-[#1ABC9C]/30'
+                            : isDone
+                              ? 'bg-white/5 opacity-60'
+                              : 'bg-white/5 opacity-40'
+                        }`}
+                      >
+                        <span className="text-sm">{emoji}</span>
+                        <span className={`font-bold ${isCurrent ? 'text-[#1ABC9C]' : 'text-white/70'}`}>
+                          Traveler {i + 1}
+                        </span>
+                        <span className={`px-1.5 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider ${
+                          type === 'child' ? 'bg-amber-500/20 text-amber-400' :
+                          type === 'infant' ? 'bg-pink-500/20 text-pink-400' :
+                          'bg-blue-500/20 text-blue-400'
+                        }`}>
+                          {label}
+                        </span>
+                        {isDone && <span className="ml-auto text-[#1ABC9C] text-[11px] font-bold">✓ Done</span>}
+                        {isCurrent && <span className="ml-auto text-[#1ABC9C] text-[11px] font-bold animate-pulse">→ Now</span>}
+                      </div>
+                    );
+                  })}
+                </div>
+              )}
+
               {/* Progress indicator */}
               {store.passengerCount > 1 && (
                 <div className="flex gap-1 mt-1.5">
@@ -869,6 +997,7 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
               passengerIndex={store.currentPassengerIndex}
               passengerLabel={store.passengerCount > 1 ? `Traveler ${store.currentPassengerIndex + 1}` : undefined}
               passengerCount={store.passengerCount}
+              passengerType={store.passengerTypes?.[store.currentPassengerIndex] ?? 'adult'}
               fieldOrder={store.currentPassengerIndex > 0 ? SECONDARY_PASSENGER_FIELDS : undefined}
               onFieldUpdate={handlePassengerFieldUpdate}
               onComplete={handlePassengerComplete}
@@ -1090,7 +1219,7 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
               value={inputValue}
               onChange={e => setInputValue(e.target.value)}
               onKeyDown={e => { if (e.key === 'Enter') { e.preventDefault(); handleTextSubmit(); } }}
-              placeholder="Type a number to select…"
+              placeholder={isRecording ? 'Listening…' : 'Type a number to select…'}
               className="flex-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200 text-slate-900 text-[13px] placeholder-slate-400 focus:outline-none focus:border-[#1ABC9C]/50 transition-colors min-w-0"
             />
             <button
@@ -1100,6 +1229,64 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
             >
               Send
             </button>
+            {/* Animated voice button */}
+            {voiceSupported && (
+              <button
+                onClick={async () => {
+                  if (isRecording) {
+                    stopListening();
+                    setIsRecording(false);
+                    return;
+                  }
+                  setInputValue('');
+                  setIsRecording(true);
+                  try {
+                    const result = await startListening((interim) => {
+                      setInputValue(interim);
+                    }, { singleShot: true });
+                    setIsRecording(false);
+                    if (result.transcript.trim()) {
+                      setInputValue(result.transcript.trim());
+                    }
+                  } catch {
+                    setIsRecording(false);
+                  }
+                }}
+                title={isRecording ? 'Stop recording' : 'Voice input'}
+                className={`flex-none w-9 h-9 rounded-full flex items-center justify-center transition-all relative ${
+                  isRecording
+                    ? 'text-red-500 ring-2 ring-red-400/40 bg-red-50'
+                    : 'text-slate-400 hover:text-[#1ABC9C] cursor-pointer'
+                }`}
+              >
+                {isRecording ? (
+                  <Mic className="w-5 h-5 animate-pulse" />
+                ) : (
+                  <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="relative z-10">
+                    <rect x="3" y="9" width="2" height="6" rx="1" fill="currentColor">
+                      <animate attributeName="height" values="6;10;6" dur="1.2s" repeatCount="indefinite" />
+                      <animate attributeName="y" values="9;7;9" dur="1.2s" repeatCount="indefinite" />
+                    </rect>
+                    <rect x="7.5" y="7" width="2" height="10" rx="1" fill="currentColor">
+                      <animate attributeName="height" values="10;4;10" dur="0.9s" repeatCount="indefinite" />
+                      <animate attributeName="y" values="7;10;7" dur="0.9s" repeatCount="indefinite" />
+                    </rect>
+                    <rect x="12" y="5" width="2" height="14" rx="1" fill="currentColor">
+                      <animate attributeName="height" values="14;6;14" dur="1.1s" repeatCount="indefinite" />
+                      <animate attributeName="y" values="5;9;5" dur="1.1s" repeatCount="indefinite" />
+                    </rect>
+                    <rect x="16.5" y="8" width="2" height="8" rx="1" fill="currentColor">
+                      <animate attributeName="height" values="8;14;8" dur="1.4s" repeatCount="indefinite" />
+                      <animate attributeName="y" values="8;5;8" dur="1.4s" repeatCount="indefinite" />
+                    </rect>
+                    <rect x="21" y="10" width="2" height="4" rx="1" fill="currentColor">
+                      <animate attributeName="height" values="4;10;4" dur="0.8s" repeatCount="indefinite" />
+                      <animate attributeName="y" values="10;7;10" dur="0.8s" repeatCount="indefinite" />
+                    </rect>
+                  </svg>
+                )}
+              </button>
+            )}
           </div>
         </div>
       )}

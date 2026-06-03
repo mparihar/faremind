@@ -23,6 +23,8 @@
     "@anthropic-ai/sdk": "^0.97.1",
     "@prisma/adapter-pg": "^7.8.0",
     "@prisma/client": "^7.8.0",
+    "@stripe/react-stripe-js": "^6.6.0",
+    "@stripe/stripe-js": "^9.7.0",
     "@tanstack/react-table": "^8.21.3",
     "@turf/turf": "^7.3.5",
     "@types/mapbox-gl": "^3.4.1",

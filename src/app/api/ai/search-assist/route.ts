@@ -60,7 +60,7 @@ export async function POST(req: NextRequest) {
     return `${i + 1}. ID:${f.id} | ${f.airline.name} | ${depTime}→${arrTime} | ${hrs}h${mins}m | ${f.stops === 0 ? 'Nonstop' : `${f.stops} stop(s)`} | $${f.totalPrice} | ${f.cabinClass} | carry-on:${f.baggage.carryOn > 0 ? 'yes' : 'no'} checked:${f.baggage.checked} | refundable:${f.fareRules.refundable ? 'yes' : 'no'}`;
   });
 
-  const systemPrompt = `You are FareMind AI, a premium aviation travel intelligence assistant. You give expert, conversational flight recommendations like a luxury travel concierge — not a support bot.
+  const systemPrompt = `You are FAREMIND AI, a premium aviation travel intelligence assistant. You give expert, conversational flight recommendations like a luxury travel concierge — not a support bot.
 
 Analyze the provided flights and respond to the traveler's request with:
 1. A warm, intelligent 1–2 sentence recommendation explaining the best choice

@@ -2,15 +2,23 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Send, X, Minus, ChevronRight, Check, Bot, Plane, ArrowRight, ArrowLeft } from 'lucide-react';
+import { Sparkles, Send, X, Minus, ChevronRight, Check, Bot, Plane, ArrowRight, ArrowLeft, Mic, MicOff } from 'lucide-react';
 import { cn, formatDuration, formatPrice, getStopsLabel } from '@/lib/utils';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
 import AiBookFlightFlow from './ai-booking/AiBookFlightFlow';
+import {
+  isSpeechRecognitionSupported,
+  startListening,
+  stopListening,
+  abortListening,
+} from '@/services/speechRecognitionService';
 
 // ── Types ──────────────────────────────────────────────────────────────────
 
 interface TopFlightSummary {
+  flightId: string;
+  flightIndex: number;
   airline: string;
   airlineCode: string;
   departure: string;
@@ -19,6 +27,8 @@ interface TopFlightSummary {
   currency: string;
   stops: number;
   durationMinutes: number;
+  badge?: string;
+  reasons?: string[];
   // return leg (round trip only)
   returnDeparture?: string;
   returnArrival?: string;
@@ -33,6 +43,8 @@ interface ChatMessage {
   bullets?: string[];
   intentCategories?: string[];
   topFlight?: TopFlightSummary;
+  topFlights?: TopFlightSummary[];
+  preferenceLabel?: string;
   ts: number;
 }
 
@@ -41,6 +53,7 @@ export interface AIAssistResult {
   rankedIds: string[];
   reasoning: Record<string, string[]>;
   badges: Record<string, string>;
+  preferenceLabel?: string | null;
   profileId?: string | null;
   intentSummary?: string;
   intentCategories?: string[];
@@ -63,6 +76,9 @@ interface FloatingAIAssistantProps {
     destination: string;
     tripType: string;
     passengers: number;
+    adults?: number;
+    children?: number;
+    infants?: number;
     departureDate: string;
   };
   onResult: (result: AIAssistResult | null) => void;
@@ -103,6 +119,8 @@ export default function FloatingAIAssistant({
   const [loading,   setLoading]   = useState(false);
   const [activeChip, setActiveChip] = useState<string | null>(null);
   const [bookingMode, setBookingMode] = useState(false);
+  const [isRecording, setIsRecording] = useState(false);
+  const [voiceSupported] = useState(() => typeof window !== 'undefined' && isSpeechRecognitionSupported());
   const scrollRef   = useRef<HTMLDivElement>(null);
   const inputRef    = useRef<HTMLInputElement>(null);
 
@@ -154,32 +172,47 @@ export default function FloatingAIAssistant({
       if (!res.ok || data.error) throw new Error(data.error ?? 'AI error');
 
       onResult(data);
-      const topId = data.rankedIds?.[0];
-      const topFlightRaw = topId ? flights.find(f => f.id === topId) : undefined;
-      const rtMeta = topId ? rtMetaMap?.get(topId) : undefined;
-      const topFlight: TopFlightSummary | undefined = topFlightRaw ? {
-        airline:         topFlightRaw.airline.name,
-        airlineCode:     topFlightRaw.airline.code,
-        departure:       topFlightRaw.segments[0]?.departure.airport ?? '',
-        arrival:         topFlightRaw.segments[topFlightRaw.segments.length - 1]?.arrival.airport ?? '',
-        price:           topFlightRaw.totalPrice,
-        currency:        topFlightRaw.currency,
-        stops:           topFlightRaw.stops,
-        durationMinutes: rtMeta?.outboundDurationMinutes ?? topFlightRaw.totalDuration,
-        ...(rtMeta ? {
-          returnDeparture:       rtMeta.returnDeparture,
-          returnArrival:         rtMeta.returnArrival,
-          returnDurationMinutes: rtMeta.returnDurationMinutes,
-          returnStops:           rtMeta.returnStops,
-        } : {}),
-      } : undefined;
+
+      // Build top 5 flight summaries
+      const top5Ids = (data.rankedIds ?? []).slice(0, 5);
+      const topFlights: TopFlightSummary[] = top5Ids
+        .map(fId => {
+          const flightIndex = flights.findIndex(f => f.id === fId);
+          const flight = flightIndex >= 0 ? flights[flightIndex] : null;
+          if (!flight) return null;
+          const rtMeta = rtMetaMap?.get(fId);
+          return {
+            flightId:        fId,
+            flightIndex,
+            airline:         flight.airline.name,
+            airlineCode:     flight.airline.code,
+            departure:       flight.segments[0]?.departure.airport ?? '',
+            arrival:         flight.segments[flight.segments.length - 1]?.arrival.airport ?? '',
+            price:           flight.totalPrice,
+            currency:        flight.currency,
+            stops:           flight.stops,
+            durationMinutes: rtMeta?.outboundDurationMinutes ?? flight.totalDuration,
+            badge:           data.badges?.[fId],
+            reasons:         data.reasoning?.[fId]?.slice(0, 3),
+            ...(rtMeta ? {
+              returnDeparture:       rtMeta.returnDeparture,
+              returnArrival:         rtMeta.returnArrival,
+              returnDurationMinutes: rtMeta.returnDurationMinutes,
+              returnStops:           rtMeta.returnStops,
+            } : {}),
+          } as TopFlightSummary;
+        })
+        .filter(Boolean) as TopFlightSummary[];
+
       const assistantMsg: ChatMessage = {
         id:               uid(),
         role:             'assistant',
         text:             data.message,
-        bullets:          topId ? data.reasoning?.[topId]?.slice(0, 4) : undefined,
+        bullets:          topFlights.length > 0 ? undefined : (top5Ids[0] ? data.reasoning?.[top5Ids[0]]?.slice(0, 4) : undefined),
         intentCategories: data.intentCategories?.slice(0, 3),
-        topFlight,
+        topFlights:       topFlights.length > 0 ? topFlights : undefined,
+        topFlight:        topFlights[0], // backward compat
+        preferenceLabel:  data.preferenceLabel ?? undefined,
         ts:               Date.now(),
       };
       setMessages(prev => [...prev, assistantMsg]);
@@ -187,7 +220,7 @@ export default function FloatingAIAssistant({
       const errMsg: ChatMessage = {
         id:   uid(),
         role: 'assistant',
-        text: 'Unable to reach FareMind AI right now. Please try again.',
+        text: 'Unable to reach FAREMIND AI right now. Please try again.',
         ts:   Date.now(),
       };
       setMessages(prev => [...prev, errMsg]);
@@ -208,6 +241,48 @@ export default function FloatingAIAssistant({
     setInput('');
     onResult(null);
   }
+
+  /** User selects a flight from the top 5 AI recommendations → enter booking mode */
+  function handleBookFromRecommendation(flightIndex: number) {
+    setBookingMode(true);
+    // The AiBookFlightFlow will show flights and the user can tap the one at this index.
+    // We use a tiny delay so the booking flow mounts first, then auto-select.
+    setTimeout(() => {
+      // Dispatch a custom event the booking flow can pick up
+      window.dispatchEvent(new CustomEvent('ai-auto-select-flight', { detail: { flightIndex } }));
+    }, 300);
+  }
+
+  /** Toggle voice recording for the chatbot input */
+  async function handleMicToggle() {
+    if (isRecording) {
+      stopListening();
+      setIsRecording(false);
+      return;
+    }
+
+    setIsRecording(true);
+    try {
+      const result = await startListening((interim) => {
+        setInput(interim);
+      });
+      setIsRecording(false);
+      if (result.transcript.trim()) {
+        setInput(result.transcript.trim());
+        submit(result.transcript.trim());
+      }
+    } catch {
+      setIsRecording(false);
+    }
+  }
+
+  // Clean up recording if panel closes
+  useEffect(() => {
+    if (!isOpen && isRecording) {
+      abortListening();
+      setIsRecording(false);
+    }
+  }, [isOpen, isRecording]);
 
   const isEmpty = messages.length === 0;
 
@@ -242,7 +317,7 @@ export default function FloatingAIAssistant({
               </div>
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-1.5">
-                  <p className="text-slate-800 font-bold text-[13px] leading-none">FareMind</p>
+                  <p className="text-slate-800 font-bold text-[13px] leading-none">FARE<span style={{ color: '#009CA6' }}>MIND</span></p>
                   <span className="px-1.5 py-0.5 rounded-md text-[9px] font-black uppercase tracking-wider text-white"
                     style={{ background: 'linear-gradient(90deg, #007a7c, #009A9C)' }}>AI</span>
                 </div>
@@ -279,6 +354,9 @@ export default function FloatingAIAssistant({
                   flights={flights}
                   roundTripOptions={roundTripOptions}
                   searchPassengers={context.passengers}
+                  searchAdults={context.adults}
+                  searchChildren={context.children}
+                  searchInfants={context.infants}
                   onExit={() => setBookingMode(false)}
                 />
               </div>
@@ -408,7 +486,7 @@ export default function FloatingAIAssistant({
                             ))}
                           </div>
                         )}
-                        {msg.topFlight && (
+                        {msg.topFlight && !msg.topFlights && (
                           <div className="mt-2.5 pt-2.5 border-t border-slate-100">
                             <p className="text-[9px] font-black uppercase tracking-widest text-[#1ABC9C] mb-1.5">Top recommendation</p>
                             <div className="px-3 py-2.5 rounded-xl bg-gradient-to-r from-[#1ABC9C]/8 to-[#1ABC9C]/4 border border-[#1ABC9C]/25 space-y-2">
@@ -455,6 +533,76 @@ export default function FloatingAIAssistant({
                           </div>
                         )}
                       </div>
+
+                      {/* Top 5 Recommendations — selectable cards */}
+                      {msg.topFlights && msg.topFlights.length > 0 && (
+                        <div className="space-y-1.5 mt-1.5">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-[#1ABC9C] px-1">
+                            Top {msg.topFlights.length} for {msg.preferenceLabel || 'Your Preference'} — tap to book
+                          </p>
+                          {msg.topFlights.map((tf, idx) => (
+                            <motion.button
+                              key={tf.flightId}
+                              whileHover={{ scale: 1.01 }}
+                              whileTap={{ scale: 0.98 }}
+                              onClick={() => handleBookFromRecommendation(tf.flightIndex)}
+                              className={cn(
+                                'w-full text-left px-3 py-2.5 rounded-xl border transition-all group cursor-pointer',
+                                idx === 0
+                                  ? 'bg-gradient-to-r from-[#1ABC9C]/10 to-[#1ABC9C]/5 border-[#1ABC9C]/30 shadow-sm'
+                                  : 'bg-white border-slate-200 hover:border-[#1ABC9C]/40 hover:bg-[#1ABC9C]/5'
+                              )}
+                            >
+                              {/* Rank + Airline + Price */}
+                              <div className="flex items-center justify-between gap-2 mb-1">
+                                <div className="flex items-center gap-1.5 min-w-0">
+                                  <span className={cn(
+                                    'w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black shrink-0',
+                                    idx === 0
+                                      ? 'bg-[#1ABC9C] text-white'
+                                      : 'bg-slate-100 text-slate-500'
+                                  )}>{idx + 1}</span>
+                                  <p className="text-[11px] font-bold text-slate-800 truncate">{tf.airline}</p>
+                                  {tf.badge && (
+                                    <span className="px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider bg-[#1ABC9C]/15 text-[#1ABC9C] border border-[#1ABC9C]/20 shrink-0">
+                                      {tf.badge}
+                                    </span>
+                                  )}
+                                </div>
+                                <p className="text-[12px] font-black text-[#F97316] shrink-0">
+                                  {formatPrice(tf.price, tf.currency)}
+                                  {tf.returnDeparture && <span className="text-[8px] font-semibold text-slate-400 ml-0.5">RT</span>}
+                                </p>
+                              </div>
+                              {/* Route + Duration */}
+                              <div className="flex items-center gap-1.5 text-[10px]">
+                                <ArrowRight className="w-2.5 h-2.5 text-slate-400 shrink-0" />
+                                <span className="font-semibold text-slate-600">{tf.departure} → {tf.arrival}</span>
+                                <span className="ml-auto text-slate-400 shrink-0">{getStopsLabel(tf.stops)} · {formatDuration(tf.durationMinutes)}</span>
+                              </div>
+                              {/* Return leg */}
+                              {tf.returnDeparture && (
+                                <div className="flex items-center gap-1.5 text-[10px] mt-0.5">
+                                  <ArrowLeft className="w-2.5 h-2.5 text-[#1ABC9C] shrink-0" />
+                                  <span className="font-semibold text-slate-600">{tf.returnDeparture} → {tf.returnArrival}</span>
+                                  <span className="ml-auto text-slate-400 shrink-0">{getStopsLabel(tf.returnStops ?? 0)} · {formatDuration(tf.returnDurationMinutes ?? 0)}</span>
+                                </div>
+                              )}
+                              {/* AI reasons */}
+                              {tf.reasons && tf.reasons.length > 0 && (
+                                <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1.5 pt-1 border-t border-slate-100">
+                                  {tf.reasons.map((r, ri) => (
+                                    <div key={ri} className="flex items-start gap-1">
+                                      <Check className="w-2.5 h-2.5 text-[#1ABC9C] shrink-0 mt-0.5" />
+                                      <span className="text-[9px] text-slate-500 leading-snug">{r}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </motion.button>
+                          ))}
+                        </div>
+                      )}
                     </div>
                   )}
                 </motion.div>
@@ -507,6 +655,24 @@ export default function FloatingAIAssistant({
 
             {/* Input row */}
             <div className="px-4 pb-4 pt-3 border-t border-slate-100 shrink-0 bg-white">
+              {/* Recording indicator */}
+              <AnimatePresence>
+                {isRecording && (
+                  <motion.div
+                    initial={{ opacity: 0, height: 0 }}
+                    animate={{ opacity: 1, height: 'auto' }}
+                    exit={{ opacity: 0, height: 0 }}
+                    className="flex items-center gap-2 mb-2 px-2 py-1.5 rounded-lg bg-red-50 border border-red-200"
+                  >
+                    <motion.span
+                      animate={{ scale: [1, 1.4, 1], opacity: [0.6, 1, 0.6] }}
+                      transition={{ duration: 1.2, repeat: Infinity }}
+                      className="w-2 h-2 rounded-full bg-red-500 shrink-0"
+                    />
+                    <span className="text-[11px] font-semibold text-red-600">Listening… tap mic to stop</span>
+                  </motion.div>
+                )}
+              </AnimatePresence>
               <div className="flex items-center gap-2 bg-slate-50 rounded-xl border border-slate-200 px-3.5 py-2.5 focus-within:border-[#1ABC9C]/60 focus-within:bg-white focus-within:shadow-sm transition-all">
                 <Sparkles className="w-3.5 h-3.5 text-slate-400 shrink-0" />
                 <input
@@ -514,10 +680,11 @@ export default function FloatingAIAssistant({
                   value={input}
                   onChange={e => setInput(e.target.value)}
                   onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); submit(input); } }}
-                  placeholder="Describe your travel preference…"
+                  placeholder={isRecording ? 'Listening…' : 'Describe your travel preference…'}
                   disabled={loading}
                   className="flex-1 bg-transparent text-slate-700 text-[12px] placeholder-slate-400 outline-none min-w-0 disabled:opacity-50"
                 />
+                {/* Send button */}
                 <motion.button
                   whileHover={!loading && input.trim() ? { scale: 1.1 } : {}}
                   whileTap={!loading && input.trim() ? { scale: 0.92 } : {}}
@@ -535,6 +702,51 @@ export default function FloatingAIAssistant({
                     : <Send className="w-3 h-3" />
                   }
                 </motion.button>
+                {/* Voice mic button — same animated icon as hero Travel Assistant */}
+                {voiceSupported && (
+                  <motion.button
+                    whileHover={{ scale: 1.1 }}
+                    whileTap={{ scale: 0.92 }}
+                    onClick={handleMicToggle}
+                    disabled={loading}
+                    title={isRecording ? 'Stop recording' : 'Voice input'}
+                    className={cn(
+                      'shrink-0 w-9 h-9 rounded-full flex items-center justify-center transition-all relative',
+                      isRecording
+                        ? 'text-red-500 ring-2 ring-red-400/40 bg-red-50'
+                        : loading
+                          ? 'text-slate-300 cursor-not-allowed'
+                          : 'text-slate-400 hover:text-[#1ABC9C] cursor-pointer',
+                    )}
+                  >
+                    {isRecording ? (
+                      <Mic className="w-5 h-5 animate-pulse" />
+                    ) : (
+                      <svg width="22" height="22" viewBox="0 0 24 24" fill="none" className="relative z-10">
+                        <rect x="3" y="9" width="2" height="6" rx="1" fill="currentColor">
+                          <animate attributeName="height" values="6;10;6" dur="1.2s" repeatCount="indefinite" />
+                          <animate attributeName="y" values="9;7;9" dur="1.2s" repeatCount="indefinite" />
+                        </rect>
+                        <rect x="7.5" y="7" width="2" height="10" rx="1" fill="currentColor">
+                          <animate attributeName="height" values="10;4;10" dur="0.9s" repeatCount="indefinite" />
+                          <animate attributeName="y" values="7;10;7" dur="0.9s" repeatCount="indefinite" />
+                        </rect>
+                        <rect x="12" y="5" width="2" height="14" rx="1" fill="currentColor">
+                          <animate attributeName="height" values="14;6;14" dur="1.1s" repeatCount="indefinite" />
+                          <animate attributeName="y" values="5;9;5" dur="1.1s" repeatCount="indefinite" />
+                        </rect>
+                        <rect x="16.5" y="8" width="2" height="8" rx="1" fill="currentColor">
+                          <animate attributeName="height" values="8;14;8" dur="1.4s" repeatCount="indefinite" />
+                          <animate attributeName="y" values="8;5;8" dur="1.4s" repeatCount="indefinite" />
+                        </rect>
+                        <rect x="21" y="10" width="2" height="4" rx="1" fill="currentColor">
+                          <animate attributeName="height" values="4;10;4" dur="0.8s" repeatCount="indefinite" />
+                          <animate attributeName="y" values="10;7;10" dur="0.8s" repeatCount="indefinite" />
+                        </rect>
+                      </svg>
+                    )}
+                  </motion.button>
+                )}
               </div>
             </div>
 
@@ -568,7 +780,7 @@ export default function FloatingAIAssistant({
 
         <motion.button
           onClick={() => setIsOpen(v => !v)}
-          title="FareMind Co-Pilot"
+          title="FAREMIND Co-Pilot"
           whileHover={{ scale: 1.05, y: -2 }}
           whileTap={{ scale: 0.96 }}
           className="relative flex items-center gap-0 h-12 rounded-2xl text-white overflow-hidden cursor-pointer select-none"
@@ -629,7 +841,7 @@ export default function FloatingAIAssistant({
           {/* Label */}
           <span className="px-4">
             <span className="text-[13px] font-black tracking-tight text-white whitespace-nowrap">
-              {isOpen ? 'Close' : 'FareMind AI'}
+              {isOpen ? 'Close' : <><span>FARE</span><span>MIND</span> AI</>}
             </span>
           </span>
 

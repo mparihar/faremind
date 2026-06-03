@@ -25,7 +25,7 @@ export function useOfferGuard() {
   const isExpired = status === 'EXPIRED';
 
   const handleRefresh = useCallback(() => {
-    router.push('/flights');
+    router.push('/');
   }, [router]);
 
   /**
@@ -36,7 +36,7 @@ export function useOfferGuard() {
     return (
       <>
         <OfferExpiryModals />
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 pt-4">
+        <div className="max-w-7xl mx-auto px-4 pt-4">
           <OfferExpiryTimer onRefreshResults={handleRefresh} />
         </div>
       </>

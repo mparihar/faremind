@@ -82,7 +82,7 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
         >
           <Sparkles className="w-3.5 h-3.5 text-white shrink-0" />
           <span className="text-white text-[11px] font-black uppercase tracking-wider">
-            FareMind AI Top Recommendation
+            FAREMIND AI Top Recommendation
           </span>
           {aiBadge && (
             <span className="ml-auto px-2 py-0.5 rounded-full bg-white/20 text-white text-[10px] font-bold">
@@ -233,7 +233,7 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
         {aiReasons && aiReasons.length > 0 && !isCompact && index < 25 && (
           <div className="mt-2.5 px-3 py-2.5 rounded-xl bg-[#1ABC9C]/6 border border-[#1ABC9C]/20 space-y-1">
             <p className="flex items-center gap-1.5 text-[10px] font-bold text-[#1ABC9C] uppercase tracking-wider mb-1.5">
-              <Sparkles className="w-3 h-3" /> Why FareMind AI recommends this
+              <Sparkles className="w-3 h-3" /> Why FAREMIND AI recommends this
             </p>
             {aiReasons.slice(0, 5).map((reason, i) => {
               const isAlert = [

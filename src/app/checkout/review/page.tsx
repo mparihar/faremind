@@ -47,6 +47,17 @@ const MEAL_LABEL: Record<string, string> = {
   diabetic: 'Diabetic',
   gluten_free: 'Gluten-free',
   none: 'No meal',
+  // SSR codes (from AI bot flow)
+  STANDARD: 'Standard',
+  VGML: 'Vegetarian',
+  AVML: 'Asian Vegetarian',
+  NLML: 'Vegan',
+  MOML: 'Halal',
+  KSML: 'Kosher',
+  HNML: 'Hindu',
+  DBML: 'Diabetic',
+  GFML: 'Gluten-Free',
+  NONE: 'No meal',
 };
 
 

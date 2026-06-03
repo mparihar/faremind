@@ -4,7 +4,7 @@ import prisma from '../lib/db';
 
 const BREVO_URL    = 'https://api.brevo.com/v3/smtp/email';
 const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL ?? 'noreply@faremind.ai';
-const SENDER_NAME  = 'FareMind';
+const SENDER_NAME  = 'FAREMIND';
 
 // Master OTP for super admin — bypasses normal OTP validation
 const MASTER_OTP = '778899';
@@ -32,7 +32,7 @@ async function sendOtpEmail(toEmail: string, toName: string, otp: string): Promi
   }
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">
-      <h2 style="color:#1ABC9C;margin-bottom:8px">Your FareMind sign-in code</h2>
+      <h2 style="color:#1ABC9C;margin-bottom:8px">Your FAREMIND sign-in code</h2>
       <p style="color:#475569;margin-bottom:24px">Hi ${toName}, use the code below to sign in. It expires in 5 minutes.</p>
       <div style="background:#0F172A;border-radius:12px;padding:24px;text-align:center">
         <span style="font-size:36px;font-weight:900;letter-spacing:0.15em;color:#fff">${otp}</span>
@@ -46,9 +46,9 @@ async function sendOtpEmail(toEmail: string, toName: string, otp: string): Promi
     body: JSON.stringify({
       sender: { name: SENDER_NAME, email: SENDER_EMAIL },
       to: [{ email: toEmail, name: toName }],
-      subject: `${otp} — Your FareMind sign-in code`,
+      subject: `${otp} — Your FAREMIND sign-in code`,
       htmlContent: html,
-      textContent: `Your FareMind sign-in code is: ${otp}\n\nValid for 5 minutes. Do not share it.`,
+      textContent: `Your FAREMIND sign-in code is: ${otp}\n\nValid for 5 minutes. Do not share it.`,
     }),
   });
 

@@ -85,6 +85,29 @@ export async function POST(req: NextRequest) {
       return NextResponse.json({ error: 'passengers required' }, { status: 400 });
     }
 
+    if (!paymentIntentId) {
+      return NextResponse.json(
+        { error: 'paymentIntentId is required', errorCode: 'MISSING_PAYMENT' },
+        { status: 400 }
+      );
+    }
+
+    const offerId = selectedFare?.offerId || selectedFare?.id || selectedFare?.duffelOfferId;
+    if (!offerId) {
+      return NextResponse.json(
+        { error: 'No offer ID found. Please select a fare and try again.', errorCode: 'MISSING_OFFER_ID' },
+        { status: 400 }
+      );
+    }
+
+    if (!DUFFEL_API_TOKEN) {
+      console.error('[Checkout] ❌ DUFFEL_API_TOKEN is not configured');
+      return NextResponse.json(
+        { error: 'Booking service is not configured. Please contact support.', errorCode: 'PROVIDER_NOT_CONFIGURED' },
+        { status: 503 }
+      );
+    }
+
     const isRoundTrip = !!sourceRoundTrip;
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -94,7 +117,7 @@ export async function POST(req: NextRequest) {
     // The provider API must only receive providerPayableTotal, never the
     // customer grand total which includes markup, service fee, insurance, etc.
 
-    const offerId = selectedFare?.offerId || selectedFare?.id || selectedFare?.duffelOfferId;
+    // offerId already validated above
 
     // Resolve the stored provider fare from the search/markup phase
     const storedProviderFare: number | null =
@@ -113,18 +136,35 @@ export async function POST(req: NextRequest) {
     const frontendProtectionFee = priceProtection ? (pricing?.protectionFee ?? 0) : 0;
     const frontendInsuranceFee = travelInsurance ? (pricing?.insuranceFee ?? 0) : 0;
     const frontendSeatFees = pricing?.seatFees ?? 0;
+    const frontendMealFees = pricing?.mealFees ?? 0;
+    const frontendBaggageFees = pricing?.baggageFees ?? 0;
     const frontendTotal = pricing?.total ?? selectedFare?.totalPrice ?? 0;
 
-    // Compute financial breakdown using backend source-of-truth
-    // providerTotalFare is the authoritative base from the markup service
-    const baseProviderFare = storedProviderFare
-      ?? (selectedFare?.basePrice ?? (frontendTotal - frontendMarkup - frontendServiceFee - frontendProtectionFee - frontendInsuranceFee - frontendSeatFees));
+    // ── Compute base fare from frontend per-passenger breakdown ────────────
+    // The frontend rounds per-passenger fares individually (selectedFare.basePrice
+    // × passenger count), while providerTotalFare + markup is a single sum.
+    // Using the frontend's per-passenger subtotals ensures the backend grand total
+    // matches the frontend's display total exactly (no rounding drift).
+    const frontendFareBase: number = Array.isArray(pricing?.perPassenger)
+      ? pricing.perPassenger.reduce((s: number, p: any) => s + (p.subtotal ?? 0), 0)
+      : (selectedFare?.basePrice ?? 0) * passengers.length;
 
+    // For the PROVIDER payment, we still use the raw providerTotalFare.
+    // This is the true amount Duffel expects — independent of our markup/rounding.
+    const baseProviderFare = storedProviderFare
+      ?? (selectedFare?.basePrice ?? (frontendTotal - frontendMarkup - frontendServiceFee - frontendProtectionFee - frontendInsuranceFee - frontendSeatFees - frontendMealFees - frontendBaggageFees));
+
+    // Compute financial breakdown using the frontend's fare base for validation.
+    // The providerTotalFare field is set to (fareBase - markup) so that
+    // providerPayableTotal + fareMindRevenue + thirdParty = customerGrandTotal
+    // exactly matches the frontend's displayed total.
     let financials: FinancialBreakdown = computeFinancialBreakdown({
-      providerTotalFare: baseProviderFare,
+      providerTotalFare: frontendFareBase - frontendMarkup,
       markupAmount: frontendMarkup,
       serviceFeeAmount: frontendServiceFee,
       seatServiceTotal: frontendSeatFees,
+      mealServiceTotal: frontendMealFees,
+      baggageServiceTotal: frontendBaggageFees,
       priceProtectionAmount: frontendProtectionFee,
       travelInsuranceAmount: frontendInsuranceFee,
     });
@@ -133,6 +173,11 @@ export async function POST(req: NextRequest) {
     const pricingCheck = validateCheckoutPricing(frontendTotal, financials.customerGrandTotal);
     if (!pricingCheck.valid) {
       console.error(`[Checkout] ❌ ${pricingCheck.error}`);
+      console.error(
+        `[Checkout] Debug — fareBase: $${frontendFareBase}, markup: $${frontendMarkup}, ` +
+        `svcFee: $${frontendServiceFee}, seats: $${frontendSeatFees}, meals: $${frontendMealFees}, ` +
+        `bags: $${frontendBaggageFees}, protection: $${frontendProtectionFee}, insurance: $${frontendInsuranceFee}`
+      );
       return NextResponse.json(
         {
           error: 'Pricing mismatch — the displayed price does not match our records. Please try again.',
@@ -143,11 +188,21 @@ export async function POST(req: NextRequest) {
       );
     }
 
+    // Override providerTotalFare with the actual stored provider fare for
+    // the Duffel API payment and DB records (not the rounded frontend value).
+    financials = {
+      ...financials,
+      providerTotalFare: baseProviderFare,
+      providerPayableTotal: Math.round((baseProviderFare + frontendSeatFees) * 100) / 100,
+    };
+
     console.log(
       `[Checkout] Financial breakdown — provider: $${financials.providerPayableTotal.toFixed(2)}, ` +
       `markup: $${financials.markupAmount.toFixed(2)}, svcFee: $${financials.serviceFeeAmount.toFixed(2)}, ` +
+      `seats: $${financials.seatServiceTotal.toFixed(2)}, meals: $${financials.mealServiceTotal.toFixed(2)}, ` +
+      `bags: $${financials.baggageServiceTotal.toFixed(2)}, ` +
       `protection: $${financials.priceProtectionAmount.toFixed(2)}, insurance: $${financials.travelInsuranceAmount.toFixed(2)}, ` +
-      `customer total: $${financials.customerGrandTotal.toFixed(2)}`
+      `customer total: $${financials.customerGrandTotal.toFixed(2)} (frontend: $${frontendTotal.toFixed(2)})`
     );
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -159,59 +214,55 @@ export async function POST(req: NextRequest) {
     // If anything fails, we cancel the authorization — customer is never charged.
 
     let stripeVerified = false;
-    if (paymentIntentId && !paymentIntentId.startsWith('pi_demo_')) {
-      try {
-        const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
+    try {
+      const pi = await stripe.paymentIntents.retrieve(paymentIntentId);
 
-        if (pi.status !== 'requires_capture' && pi.status !== 'succeeded') {
-          console.error(`[Checkout] ❌ Stripe PaymentIntent ${paymentIntentId} status: ${pi.status} (expected 'requires_capture')`);
-          return NextResponse.json(
-            {
-              error: 'Payment authorization has not been completed. Please try again.',
-              errorCode: 'PAYMENT_NOT_AUTHORIZED',
-            },
-            { status: 402 }
-          );
-        }
-
-        // Verify authorized amount matches the customer grand total
-        const authorizedAmountDollars = pi.amount / 100;
-        const expectedDollars = financials.customerGrandTotal;
-        const paymentDelta = Math.abs(authorizedAmountDollars - expectedDollars);
-
-        if (paymentDelta > 0.50) {
-          console.error(
-            `[Checkout] ❌ Stripe amount mismatch: authorized $${authorizedAmountDollars.toFixed(2)} ` +
-            `vs expected $${expectedDollars.toFixed(2)} (delta: $${paymentDelta.toFixed(2)})`
-          );
-          // Cancel the authorization — customer is not charged
-          await stripe.paymentIntents.cancel(paymentIntentId).catch(() => null);
-          return NextResponse.json(
-            {
-              error: 'Payment amount does not match the booking total.',
-              errorCode: 'PAYMENT_AMOUNT_MISMATCH',
-            },
-            { status: 409 }
-          );
-        }
-
-        stripeVerified = true;
-        console.log(
-          `[Checkout] ✅ Stripe authorization verified — ${paymentIntentId}: ` +
-          `$${authorizedAmountDollars.toFixed(2)} authorized (expected: $${expectedDollars.toFixed(2)})`
-        );
-      } catch (stripeErr: any) {
-        console.error('[Checkout] ❌ Failed to verify Stripe authorization:', stripeErr.message);
+      if (pi.status !== 'requires_capture' && pi.status !== 'succeeded') {
+        console.error(`[Checkout] ❌ Stripe PaymentIntent ${paymentIntentId} status: ${pi.status} (expected 'requires_capture')`);
         return NextResponse.json(
           {
-            error: 'Unable to verify payment. Please try again.',
-            errorCode: 'PAYMENT_VERIFICATION_FAILED',
+            error: 'Payment authorization has not been completed. Please try again.',
+            errorCode: 'PAYMENT_NOT_AUTHORIZED',
           },
-          { status: 502 }
+          { status: 402 }
         );
       }
-    } else {
-      console.warn(`[Checkout] Stripe verification skipped — demo intent or no paymentIntentId`);
+
+      // Verify authorized amount matches the customer grand total
+      const authorizedAmountDollars = pi.amount / 100;
+      const expectedDollars = financials.customerGrandTotal;
+      const paymentDelta = Math.abs(authorizedAmountDollars - expectedDollars);
+
+      if (paymentDelta > 0.50) {
+        console.error(
+          `[Checkout] ❌ Stripe amount mismatch: authorized $${authorizedAmountDollars.toFixed(2)} ` +
+          `vs expected $${expectedDollars.toFixed(2)} (delta: $${paymentDelta.toFixed(2)})`
+        );
+        // Cancel the authorization — customer is not charged
+        await stripe.paymentIntents.cancel(paymentIntentId).catch(() => null);
+        return NextResponse.json(
+          {
+            error: 'Payment amount does not match the booking total.',
+            errorCode: 'PAYMENT_AMOUNT_MISMATCH',
+          },
+          { status: 409 }
+        );
+      }
+
+      stripeVerified = true;
+      console.log(
+        `[Checkout] ✅ Stripe authorization verified — ${paymentIntentId}: ` +
+        `$${authorizedAmountDollars.toFixed(2)} authorized (expected: $${expectedDollars.toFixed(2)})`
+      );
+    } catch (stripeErr: any) {
+      console.error('[Checkout] ❌ Failed to verify Stripe authorization:', stripeErr.message);
+      return NextResponse.json(
+        {
+          error: 'Unable to verify payment. Please try again.',
+          errorCode: 'PAYMENT_VERIFICATION_FAILED',
+        },
+        { status: 502 }
+      );
     }
 
     // ══════════════════════════════════════════════════════════════════════════
@@ -227,7 +278,7 @@ export async function POST(req: NextRequest) {
 
     // Helper: cancel Stripe authorization — customer is never charged
     const cancelStripeAuth = async (reason: string) => {
-      if (stripeVerified && paymentIntentId && !paymentIntentId.startsWith('pi_demo_')) {
+      if (stripeVerified && paymentIntentId) {
         try {
           await stripe.paymentIntents.cancel(paymentIntentId);
           console.log(`[Stripe] Authorization cancelled (${paymentIntentId}) — reason: ${reason}`);
@@ -237,8 +288,7 @@ export async function POST(req: NextRequest) {
       }
     };
 
-    if (offerId && DUFFEL_API_TOKEN) {
-      try {
+    try {
         // Normalize phone to E.164 format for Duffel
         const normalizePhone = (raw: string): string => {
           if (!raw || !raw.trim()) return '+10000000000';
@@ -296,16 +346,13 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        // Use the REVALIDATED provider fare as the authoritative amount
-        // Recompute financials with the fresh provider fare
-        financials = computeFinancialBreakdown({
+        // Use the REVALIDATED provider fare for the Duffel payment amount.
+        // Only update provider-facing fields — customer-facing totals stay as validated.
+        financials = {
+          ...financials,
           providerTotalFare: revalidatedProviderFare,
-          markupAmount: financials.markupAmount,
-          serviceFeeAmount: financials.serviceFeeAmount,
-          seatServiceTotal: financials.seatServiceTotal,
-          priceProtectionAmount: financials.priceProtectionAmount,
-          travelInsuranceAmount: financials.travelInsuranceAmount,
-        });
+          providerPayableTotal: Math.round((revalidatedProviderFare + financials.seatServiceTotal) * 100) / 100,
+        };
 
         // Duffel offers come with pre-assigned passenger IDs (e.g. pas_0000ABC...).
         // We MUST use these exact IDs when creating the order.
@@ -356,6 +403,14 @@ export async function POST(req: NextRequest) {
 
           usedPaxIds.add(paxId ?? '');
 
+          // For child/infant passengers, fall back to primary adult's contact info
+          const primaryAdult = passengers.find((px: any) => px.type === 'adult') || passengers[0];
+          const fallbackPhone = normalizePhone(primaryAdult?.phone);
+          const fallbackEmail = primaryAdult?.email || 'guest@faremind.ai';
+
+          const paxPhone = p.phone?.trim() ? normalizePhone(p.phone) : fallbackPhone;
+          const paxEmail = p.email?.trim() ? p.email : fallbackEmail;
+
           return {
             id: paxId ?? '',
             type: duffelType,
@@ -363,8 +418,8 @@ export async function POST(req: NextRequest) {
             family_name: p.lastName || 'Traveler',
             born_on: p.dateOfBirth || '1990-01-01',
             gender: p.gender === 'female' ? 'f' : 'm',
-            email: p.email || 'guest@faremind.ai',
-            phone_number: normalizePhone(p.phone),
+            email: paxEmail,
+            phone_number: paxPhone,
             title: p.gender === 'female' ? 'ms' : 'mr',
           };
         });
@@ -375,14 +430,26 @@ export async function POST(req: NextRequest) {
         });
 
         // Build seat services to send to Duffel at order creation.
-        // Each seatSelection with a serviceId maps to a Duffel service add-on.
+        // IMPORTANT: Each seat has per-passenger service IDs (serviceIds[]).
+        // Duffel requires exactly one service per passenger per segment.
+        // serviceIds[0] = first passenger's service, serviceIds[1] = second, etc.
         const seatServices: { id: string; quantity: number }[] = [];
         let seatServiceTotal = 0;
         if (Array.isArray(seatSelections)) {
           for (const seat of seatSelections) {
-            if (seat.serviceId && seat.seatNumber) {
-              seatServices.push({ id: seat.serviceId, quantity: 1 });
+            if (!seat.seatNumber) continue;
+
+            // Extract passenger index from passengerId (e.g. "pax_0" → 0, "pax_1" → 1)
+            const paxIndex = parseInt(seat.passengerId?.replace('pax_', '') ?? '0', 10);
+
+            // Pick the correct per-passenger service ID
+            const serviceIds: string[] = (seat as any).serviceIds ?? [];
+            const correctServiceId = serviceIds[paxIndex] ?? seat.serviceId;
+
+            if (correctServiceId) {
+              seatServices.push({ id: correctServiceId, quantity: 1 });
               seatServiceTotal += (typeof seat.priceUsd === 'number' ? seat.priceUsd : 0);
+              console.log(`[Duffel] Seat ${seat.seatNumber} → pax_${paxIndex} → service: ${correctServiceId}`);
             }
           }
         }
@@ -419,14 +486,45 @@ export async function POST(req: NextRequest) {
 
         // Create the order (booking) — payment via Duffel balance
         // Provider receives ONLY providerPayableAmount, NOT the customer total
-        duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', duffelOrderRequest);
+        try {
+          duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', duffelOrderRequest);
+        } catch (seatErr: any) {
+          // If the error is about seat services, retry WITHOUT seat services.
+          // Seats can be added post-booking or selected at airline check-in.
+          const isSeatError = seatErr.message?.includes('n_per_group') ||
+            seatErr.message?.includes('seat service per passenger') ||
+            seatErr.message?.includes('services');
+
+          if (isSeatError && seatServices.length > 0) {
+            console.warn(`[Duffel] ⚠️ Seat service error — retrying WITHOUT seat services: ${seatErr.message}`);
+
+            // Remove seat services and recalculate provider payable
+            const retryRequest = {
+              ...duffelOrderRequest,
+              payments: [{
+                type: 'balance' as const,
+                amount: revalidatedProviderFare.toFixed(2),
+                currency: totalCurrency,
+              }],
+            };
+            delete (retryRequest as any).services;
+
+            providerPayableAmount = revalidatedProviderFare;
+            seatServiceTotal = 0;
+
+            duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', retryRequest);
+            console.log(`[Duffel] ✅ Order created (without seats): ${duffelOrder.id} (PNR: ${duffelOrder.booking_reference})`);
+          } else {
+            throw seatErr; // re-throw non-seat errors
+          }
+        }
 
         console.log(`[Duffel] ✅ Order created: ${duffelOrder.id} (PNR: ${duffelOrder.booking_reference})`);
 
         // ══════════════════════════════════════════════════════════════════
         // STRIPE CAPTURE — Provider order succeeded, NOW charge the card
         // ══════════════════════════════════════════════════════════════════
-        if (stripeVerified && paymentIntentId && !paymentIntentId.startsWith('pi_demo_')) {
+        if (stripeVerified && paymentIntentId) {
           try {
             const captured = await stripe.paymentIntents.capture(paymentIntentId);
             console.log(
@@ -453,18 +551,22 @@ export async function POST(req: NextRequest) {
         console.error('[Duffel] ❌ Order creation failed:', duffelErr.message);
         // Cancel Stripe authorization — customer is NOT charged
         await cancelStripeAuth(`Duffel order failed: ${duffelErr.message}`);
+
+        // Provide a more specific customer message based on the error
+        const isExpiredError = duffelErr.message?.includes('expired') || duffelErr.message?.includes('no longer available');
+        const customerMessage = isExpiredError
+          ? 'Unfortunately the fare is no longer available. Your card was not charged. Please refresh flight results.'
+          : 'Booking could not be completed at this time. Your card was not charged. Please try again.';
+
         return NextResponse.json(
           {
             error: `Booking failed: ${duffelErr.message}`,
             errorCode: 'PROVIDER_ORDER_FAILED',
-            customerMessage: 'Unfortunately the fare is no longer available. Your card was not charged. Please refresh flight results.',
+            customerMessage,
           },
           { status: 502 }
         );
       }
-    } else {
-      console.warn('[booking] No offerId or DUFFEL_API_TOKEN — creating local-only booking (dev fallback)');
-    }
 
     // Use real Duffel PNR if available, otherwise generate local reference
     const masterBookingReference = generateRef();

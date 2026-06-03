@@ -42,6 +42,9 @@ function transformElement(el: DuffelSeatMapElement): SeatElement {
   const rawType = el.type === 'exit_row' ? 'empty' : el.type;
   const type: SeatElementType = SEAT_TYPES.has(rawType) ? (rawType as SeatElementType) : 'empty';
 
+  // Collect ALL per-passenger service IDs (one per passenger on the offer)
+  const serviceIds = services.map((s: any) => s.id as string).filter(Boolean);
+
   return {
     type,
     designator: el.designator ?? null,
@@ -49,6 +52,7 @@ function transformElement(el: DuffelSeatMapElement): SeatElement {
     price: available && svc?.total_amount ? parseFloat(svc.total_amount) : 0,
     currency: available && svc?.total_currency ? svc.total_currency : 'USD',
     serviceId: available && svc?.id ? svc.id : null,
+    serviceIds,
     disclosures: [
       ...(el.disclosures ?? []),
       // Propagate exit_row as a disclosure so the grid can style it

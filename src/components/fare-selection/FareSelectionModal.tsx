@@ -10,6 +10,7 @@ import { useBookingStore } from '@/store/useBookingStore';
 import { useCheckoutStore } from '@/store/useCheckoutStore';
 import type { FareSelectionPayload, PriceProtectionQuote } from '@/lib/fare-types';
 import { apiFetch } from '@/lib/api-client';
+import { getAirlineLogo } from '@/lib/utils';
 
 const CABIN_LABELS: Record<string, string> = {
   economy: 'Economy',
@@ -48,6 +49,7 @@ export default function FareSelectionModal({ onClose }: Props) {
 
   const [activeCabin, setActiveCabin] = useState<string>('economy');
   const [confirming, setConfirming] = useState(false);
+  const [fareContext, setFareContext] = useState<{ origin: string; destination: string; trip: string } | null>(null);
 
   const { travelerCount, passengerBreakdown } = useMemo(() => {
     if (typeof window === 'undefined') return { travelerCount: 1, passengerBreakdown: undefined as { adults: number; children: number; infants: number } | undefined };
@@ -68,16 +70,18 @@ export default function FareSelectionModal({ onClose }: Props) {
     const raw = sessionStorage.getItem('fm_fare_context');
     if (!raw) { onClose(); return; }
 
-    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; durationMinutes?: number; layoverMinutes?: number[] };
+    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; durationMinutes?: number; layoverMinutes?: number[]; trip?: string };
     try { ctx = JSON.parse(raw); } catch { onClose(); return; }
+    setFareContext({ origin: ctx.origin, destination: ctx.destination, trip: ctx.trip || 'one_way' });
 
     const s = useFareStore.getState;
     s().setLoading(true);
     s().setError(null);
 
     const layoverParam = ctx.layoverMinutes?.length ? `&layover_minutes=${ctx.layoverMinutes.join(',')}` : '';
+    const tripParam = ctx.trip ? `&trip=${encodeURIComponent(ctx.trip)}` : '';
     apiFetch<FareSelectionPayload>(
-      `/api/fares/options?offer_id=${encodeURIComponent(ctx.offerId)}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${encodeURIComponent(ctx.origin)}&destination=${encodeURIComponent(ctx.destination)}&stops=${ctx.stops}&duration_minutes=${ctx.durationMinutes ?? 0}${layoverParam}`
+      `/api/fares/options?offer_id=${encodeURIComponent(ctx.offerId)}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${encodeURIComponent(ctx.origin)}&destination=${encodeURIComponent(ctx.destination)}&stops=${ctx.stops}&duration_minutes=${ctx.durationMinutes ?? 0}${layoverParam}${tripParam}`
     )
       .then(data => {
         s().setPayload(data);
@@ -229,16 +233,43 @@ export default function FareSelectionModal({ onClose }: Props) {
           onClick={(e) => e.stopPropagation()}
         >
           {/* ── Modal header ── */}
-          <div className="px-4 sm:px-6 py-3 sm:py-4 bg-white border-b border-slate-100 shrink-0 flex items-center justify-between gap-3 sm:gap-4">
-            <div className="flex items-center gap-2 min-w-0">
-              <Plane size={14} className="text-[#1ABC9C] shrink-0" />
-              <div className="min-w-0">
-                <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Select your fare</p>
-                {payload && (
-                  <p className="text-[13px] font-bold text-slate-800 truncate">{payload.journeySummary}</p>
+          <div className="px-4 sm:px-7 py-3 sm:py-4 bg-white border-b border-slate-100 shrink-0 flex items-center justify-between gap-3 sm:gap-4">
+            {fareContext?.trip === 'round_trip' && fareContext.origin && fareContext.destination ? (
+              <div className="flex items-center gap-4 min-w-0">
+                {store.sourceRoundTrip && (
+                  <div className="w-11 h-11 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                    <img
+                      src={getAirlineLogo(store.sourceRoundTrip.airlineCodes[0])}
+                      alt=""
+                      className="w-8 h-8 object-contain"
+                      onError={(e) => { (e.target as HTMLImageElement).style.display = 'none'; }}
+                    />
+                  </div>
                 )}
+                <div className="min-w-0">
+                  <h2 className="text-lg sm:text-2xl font-bold text-slate-900 tracking-tight uppercase leading-none truncate">
+                    {store.sourceRoundTrip?.airlines[0] ?? 'Airline'}
+                  </h2>
+                  <div className="flex items-center gap-1.5 mt-1.5">
+                    <span className="text-[10px] font-semibold text-slate-500 uppercase tracking-widest">
+                      {fareContext.origin} ↔ {fareContext.destination} Round-Trip Details
+                    </span>
+                    <Plane className="w-3 h-3 text-slate-300" />
+                    <Plane className="w-3 h-3 text-slate-300 -scale-x-100" />
+                  </div>
+                </div>
               </div>
-            </div>
+            ) : (
+              <div className="flex items-center gap-2 min-w-0">
+                <Plane size={14} className="text-[#1ABC9C] shrink-0" />
+                <div className="min-w-0">
+                  <p className="text-[11px] font-semibold text-slate-400 uppercase tracking-wider">Select your fare</p>
+                  {payload && (
+                    <p className="text-[13px] font-bold text-slate-800 truncate">{payload.journeySummary}</p>
+                  )}
+                </div>
+              </div>
+            )}
             <div className="flex items-center gap-3 shrink-0">
               {selectedFare && payload && (
                 <div className="text-right">
@@ -283,20 +314,7 @@ export default function FareSelectionModal({ onClose }: Props) {
             <div ref={scrollRef} className="flex-1 overflow-y-auto scrollbar-hide">
               <div className="px-5 py-5 space-y-5">
 
-                {/* Journey header */}
-                <div className="bg-white rounded-2xl border border-slate-100 shadow-sm px-5 py-3.5 flex items-center justify-between gap-4">
-                  <div>
-                    <h2 className="text-[17px] font-extrabold text-slate-900">{payload.destinationCity}</h2>
-                    <p className="text-[11px] text-slate-500 mt-0.5">{payload.journeySummary}</p>
-                  </div>
-                  <div className="text-right shrink-0">
-                    <p className="text-[9px] text-slate-400 uppercase tracking-wider">from</p>
-                    <p className="text-[20px] font-black text-[#F97316] leading-none">
-                      {new Intl.NumberFormat('en-US', { style: 'currency', currency: payload.currency, maximumFractionDigits: 0 })
-                        .format(Math.min(...allFares.map(f => f.totalPrice)))}
-                    </p>
-                  </div>
-                </div>
+
 
                 {/* AI Recommendations */}
                 <div className="bg-gradient-to-br from-[#1ABC9C]/8 to-emerald-50 rounded-2xl border border-[#1ABC9C]/20 p-4">

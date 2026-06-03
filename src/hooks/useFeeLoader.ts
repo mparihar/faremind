@@ -13,6 +13,14 @@ export interface ComputedFees {
   protectionFeeTotal: number;
   insuranceFee: number;
   insuranceFeeTotal: number;
+  // Product metadata from DB rules
+  protectionProductName?: string;
+  protectionDescription?: string;
+  protectionCoverage?: string;
+  protectionPercentage?: number;
+  insuranceProductName?: string;
+  insuranceDescription?: string;
+  insuranceCoverage?: string;
 }
 
 /**
@@ -85,7 +93,27 @@ export function useFeeLoader() {
       });
 
       if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-      const result: ComputedFees = await resp.json();
+      const raw = await resp.json();
+
+      // Extract product metadata from charges ruleSnapshot
+      const protCharge = raw.charges?.find((c: any) => c.chargeType === 'PRICE_DROP_PROTECTION');
+      const insCharge = raw.charges?.find((c: any) => c.chargeType === 'TRAVEL_INSURANCE');
+
+      const result: ComputedFees = {
+        serviceFee: raw.serviceFee ?? 0,
+        markupFee: raw.markupFee ?? 0,
+        protectionFee: raw.protectionFee ?? 0,
+        protectionFeeTotal: raw.protectionFeeTotal ?? 0,
+        insuranceFee: raw.insuranceFee ?? 0,
+        insuranceFeeTotal: raw.insuranceFeeTotal ?? 0,
+        protectionProductName: protCharge?.ruleSnapshot?.productName ?? undefined,
+        protectionDescription: protCharge?.ruleSnapshot?.productDescription ?? undefined,
+        protectionCoverage: protCharge?.ruleSnapshot?.coverageSummary ?? undefined,
+        protectionPercentage: protCharge?.percentageValue ?? undefined,
+        insuranceProductName: insCharge?.ruleSnapshot?.productName ?? insCharge?.ruleSnapshot?.insuranceName ?? undefined,
+        insuranceDescription: insCharge?.ruleSnapshot?.productDescription ?? insCharge?.ruleSnapshot?.insuranceDescription ?? undefined,
+        insuranceCoverage: insCharge?.ruleSnapshot?.coverageSummary ?? undefined,
+      };
 
       // Store the result — buildLocalPricing() will use it instead of hardcoded fallback
       useCheckoutStore.getState().setComputedFees(result);
@@ -147,9 +175,30 @@ export async function fetchComputedFeesForContext(ctx: {
     });
 
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
-    const result: ComputedFees = await resp.json();
+    const result = await resp.json();
 
-    return result;
+    // Extract product metadata from charges ruleSnapshot
+    const protCharge = result.charges?.find((c: any) => c.chargeType === 'PRICE_DROP_PROTECTION');
+    const insCharge = result.charges?.find((c: any) => c.chargeType === 'TRAVEL_INSURANCE');
+
+    const fees: ComputedFees = {
+      serviceFee: result.serviceFee ?? 0,
+      markupFee: result.markupFee ?? 0,
+      protectionFee: result.protectionFee ?? 0,
+      protectionFeeTotal: result.protectionFeeTotal ?? 0,
+      insuranceFee: result.insuranceFee ?? 0,
+      insuranceFeeTotal: result.insuranceFeeTotal ?? 0,
+      // Product metadata from DB
+      protectionProductName: protCharge?.ruleSnapshot?.productName ?? undefined,
+      protectionDescription: protCharge?.ruleSnapshot?.productDescription ?? undefined,
+      protectionCoverage: protCharge?.ruleSnapshot?.coverageSummary ?? undefined,
+      protectionPercentage: protCharge?.percentageValue ?? undefined,
+      insuranceProductName: insCharge?.ruleSnapshot?.productName ?? insCharge?.ruleSnapshot?.insuranceName ?? undefined,
+      insuranceDescription: insCharge?.ruleSnapshot?.productDescription ?? insCharge?.ruleSnapshot?.insuranceDescription ?? undefined,
+      insuranceCoverage: insCharge?.ruleSnapshot?.coverageSummary ?? undefined,
+    };
+
+    return fees;
   } catch (err: any) {
     console.warn('[fetchComputedFees] Failed:', err?.message);
     return null;

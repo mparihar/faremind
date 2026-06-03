@@ -72,7 +72,7 @@ export default function Footer() {
 
           {/* Features */}
           <div>
-            <h3 className="text-sm font-black text-slate-800 mb-4 uppercase tracking-wider">Why FareMind</h3>
+            <h3 className="text-sm font-black text-slate-800 mb-4 uppercase tracking-wider">Why FAREMIND</h3>
             <ul className="space-y-4">
               {[
                 { icon: Sparkles, text: 'AI price intelligence' },
@@ -95,10 +95,10 @@ export default function Footer() {
         <div className="mt-12 pt-8 border-t border-white/[0.06] flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
             <p className="text-xs text-slate-500">
-              © {new Date().getFullYear()} FareMind. All rights reserved.
+              © {new Date().getFullYear()} FAREMIND. All rights reserved.
             </p>
             <p className="text-xs text-slate-500/80 leading-relaxed">
-              FareMind is a travel technology brand operated by Chatore LLC, a Texas limited liability company.
+              FAREMIND is a travel technology brand operated by Chatore LLC, a Texas limited liability company.
             </p>
           </div>
           <div className="flex items-center gap-6">

@@ -164,6 +164,7 @@ export interface AiBookingSession {
 
   // Passengers
   passengers: AiPassengerData[];
+  passengerTypes: ('adult' | 'child' | 'infant')[];
 
   // Seat (per-passenger per-journey)
   seatPreference: AiSeatPreference;

@@ -1308,7 +1308,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 </tr>
                 <tr>
                   <td className="px-5 py-3 text-white font-bold">Service Fee</td>
-                  <td className="px-5 py-3 text-slate-400 font-semibold">FareMind platform fee</td>
+                  <td className="px-5 py-3 text-slate-400 font-semibold">FAREMIND platform fee</td>
                   <td className="px-5 py-3 text-white font-bold text-right">{fmtMoney(serviceFee, booking.currency)}</td>
                 </tr>
               </tbody>

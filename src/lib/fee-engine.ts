@@ -277,7 +277,7 @@ export async function calculateCommercialFees(ctx: BookingContext): Promise<FeeC
       protectionFeeTotal = Math.round(fixedAmt);
     } else if (protectionRule.pricingModel === 'PERCENTAGE_OF_FARE') {
       const perPerson = Math.round(ctx.supplierFareTotal / ctx.passengers.length * (pctVal / 100));
-      protectionFee = Math.min(Math.max(perPerson, 49), 399); // bounds
+      protectionFee = perPerson;
       protectionFeeTotal = protectionFee * eligible.length;
     }
 

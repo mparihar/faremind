@@ -36,13 +36,17 @@ let stopRequested = false;
 
 /**
  * Start listening via the browser microphone.
- * Runs in continuous mode — keeps listening until stopListening() is called.
+ *
+ * Options:
+ *  - singleShot: If true, captures a single phrase and stops automatically.
+ *    Use this for short form-field inputs (names, numbers). Default: false (continuous).
  *
  * Returns a promise that resolves with the final transcript when stopped.
  * The onInterim callback fires with partial text as user speaks.
  */
 export function startListening(
   onInterim?: (text: string) => void,
+  options?: { singleShot?: boolean },
 ): Promise<SpeechRecognitionResult> {
   return new Promise((resolve, reject) => {
     const SpeechRecognitionCtor = getSpeechRecognition();
@@ -60,24 +64,25 @@ export function startListening(
 
     accumulatedTranscript = '';
     stopRequested = false;
+    const singleShot = options?.singleShot ?? false;
     const recognition = new SpeechRecognitionCtor();
     activeRecognition = recognition;
 
     recognition.lang = 'en-US';
     recognition.interimResults = true;    // Show text as user speaks
     recognition.maxAlternatives = 1;
-    recognition.continuous = true;        // Keep listening until manually stopped
+    recognition.continuous = !singleShot; // Single-shot: stop after first phrase
 
     let settled = false;
     let lastConfidence = 0;
 
-    // Safety timeout — 90 seconds max recording
+    // Safety timeout — 30s for single-shot, 90s for continuous
     const timeout = setTimeout(() => {
       if (!settled) {
         stopRequested = true;
         try { recognition.stop(); } catch { /* ignore */ }
       }
-    }, 90_000);
+    }, singleShot ? 30_000 : 90_000);
 
     recognition.onresult = (event: SpeechRecognitionEvent) => {
       if (settled) return;
@@ -104,6 +109,16 @@ export function startListening(
       const displayText = accumulatedTranscript + (interimTranscript ? ' ' + interimTranscript : '');
       if (displayText.trim() && onInterim) {
         onInterim(displayText.trim());
+      }
+
+      // In singleShot mode, resolve as soon as we get a final result
+      if (singleShot && finalTranscript) {
+        settled = true;
+        clearTimeout(timeout);
+        activeRecognition = null;
+        try { recognition.stop(); } catch { /* ignore */ }
+        resolve({ transcript: accumulatedTranscript.trim(), confidence: lastConfidence || 0.9 });
+        return;
       }
     };
 

@@ -268,7 +268,7 @@ export default function ProtectionProductsPage() {
 
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-1">Provider Name</label>
-                <input type="text" value={form.providerName} onChange={e => setForm(f => ({ ...f, providerName: e.target.value }))} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white outline-none" placeholder="e.g. FareMind" />
+                <input type="text" value={form.providerName} onChange={e => setForm(f => ({ ...f, providerName: e.target.value }))} className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-sm text-white outline-none" placeholder="e.g. FAREMIND" />
               </div>
               <div>
                 <label className="block text-xs font-bold text-slate-400 mb-1">Currency</label>

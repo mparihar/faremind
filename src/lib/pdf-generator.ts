@@ -263,11 +263,11 @@ export function generatePdf(booking: any, action: 'download' | 'base64' = 'base6
   doc.line(0, pageH - 16, pw, pageH - 16);
   doc.setTextColor(...MUTED);
   doc.setFontSize(7);
-  doc.text('FareMind · faremind.ai · support@faremind.ai', pw / 2, pageH - 8, { align: 'center' });
-  doc.text(`© ${new Date().getFullYear()} FareMind. All rights reserved.`, pw / 2, pageH - 4, { align: 'center' });
+  doc.text('FAREMIND · faremind.ai · support@faremind.ai', pw / 2, pageH - 8, { align: 'center' });
+  doc.text(`© ${new Date().getFullYear()} FAREMIND. All rights reserved.`, pw / 2, pageH - 4, { align: 'center' });
 
   if (action === 'download') {
-    doc.save(`FareMind-Itinerary-${booking.masterBookingReference}.pdf`);
+    doc.save(`FAREMIND-Itinerary-${booking.masterBookingReference}.pdf`);
   } else {
     const dataUri = doc.output('datauristring');
     return dataUri.split(',')[1];

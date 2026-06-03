@@ -162,7 +162,7 @@ function PriceDropProtectionSection({
             </div>
           </div>
           <p className="text-sm text-slate-500 leading-relaxed mb-3">
-            Refund 80% of any eligible fare decrease after booking, credited as FareMind credit.
+            Refund 80% of any eligible fare decrease after booking, credited as FAREMIND credit.
             Peace of mind for your next adventure.
           </p>
           <div className="flex items-center gap-2">
@@ -439,7 +439,7 @@ export default function AddonsPage() {
       <CheckoutHeader stepIndex={STEP_INDEX} />
       {OfferGuardUI()}
 
-      <div className="max-w-5xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: add-on cards */}
           <div className="lg:col-span-2 space-y-5">
@@ -463,7 +463,7 @@ export default function AddonsPage() {
               onToggle={store.toggleInsurance}
             />
 
-            <div className="flex items-center gap-2 text-xs text-slate-400 px-1">
+            <div className="flex items-center gap-2 text-xs text-[#0F766E] px-1">
               <Info className="w-3.5 h-3.5 shrink-0" />
               <span>Add-on fees are non-refundable once the booking is confirmed.</span>
             </div>
@@ -493,7 +493,7 @@ export default function AddonsPage() {
                   <ShieldCheck className="w-4 h-4 text-[#1ABC9C] mt-0.5 shrink-0" />
                   <p className="text-xs text-slate-600 leading-relaxed">
                     <span className="font-semibold text-[#1ABC9C]">Price protection active. </span>
-                    We&apos;ll monitor this route and refund 80% of any eligible fare decrease as FareMind credit.
+                    We&apos;ll monitor this route and refund 80% of any eligible fare decrease as FAREMIND credit.
                   </p>
                 </div>
               )}

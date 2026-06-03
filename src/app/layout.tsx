@@ -11,12 +11,12 @@ const inter = Inter({
 });
 
 export const metadata: Metadata = {
-  title: 'FareMind – AI-Powered Flight Booking & Price Intelligence',
+  title: 'FAREMIND – AI-Powered Flight Booking & Price Intelligence',
   description:
-    'Search, book, and save on flights with AI-powered price tracking. FareMind aggregates multiple flight sources and monitors prices to get you the best deals automatically.',
+    'Search, book, and save on flights with AI-powered price tracking. FAREMIND aggregates multiple flight sources and monitors prices to get you the best deals automatically.',
   keywords: 'flight booking, cheap flights, price tracking, AI travel, flight search, NDC, airline booking',
   openGraph: {
-    title: 'FareMind – AI-Powered Flight Booking',
+    title: 'FAREMIND – AI-Powered Flight Booking',
     description: 'Smart flight search with real-time price intelligence.',
     type: 'website',
   },
