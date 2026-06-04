@@ -21,6 +21,9 @@ function daysUntil(dateStr: string): number {
 function formatDate(dateStr: string): string {
   return new Date(dateStr).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
 }
+function formatTime(dateStr: string): string {
+  return new Date(dateStr).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+}
 function durationStr(mins: number) {
   const h = Math.floor(mins / 60); const m = mins % 60;
   return `${h}h ${m}m`;
@@ -215,16 +218,15 @@ export default function AccountDashboard() {
                 {/* Booking cards grid — 2 columns */}
                 <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
                   {upcomingTrips.map((trip: any) => {
-                    const tj = trip.journeys?.[0];
-                    const tOrigin = tj?.originAirport || trip.originAirport;
-                    const tDest = tj?.destinationAirport || trip.destinationAirport;
-                    const tOriginCity = tj?.originCity || trip.originCity;
-                    const tDestCity = tj?.destinationCity || trip.destinationCity;
+                    const outbound = trip.journeys?.find((jj: any) => jj.direction === 'OUTBOUND') || trip.journeys?.[0];
+                    const ret = trip.journeys?.find((jj: any) => jj.direction === 'RETURN');
                     const tPnr = trip.pnrs?.[0]?.pnrCode || trip.masterPnr || '—';
                     const isRT = trip.tripType === 'ROUND_TRIP';
-                    const depDate = tj?.departureDateTime || trip.departureDate;
-                    const retJourney = trip.journeys?.find((jj: any) => jj.direction === 'RETURN');
-                    const retDate = retJourney?.departureDateTime || trip.returnDate;
+
+                    // Build legs array — always outbound, plus return if round trip
+                    const legs: Array<{ journey: any; label: string; isReturn: boolean }> = [];
+                    if (outbound) legs.push({ journey: outbound, label: 'Outbound', isReturn: false });
+                    if (isRT && ret) legs.push({ journey: ret, label: 'Return', isReturn: true });
 
                     return (
                       <Link key={trip.id} href={`/account/bookings/${trip.id}`}
@@ -235,7 +237,7 @@ export default function AccountDashboard() {
                           <div className="absolute inset-0 bg-gradient-to-t from-slate-900 via-slate-900/95 to-slate-900/70" />
                         </div>
                         <div className="relative p-5">
-                          {/* Top row: PNR + Trip type */}
+                          {/* Top row: PNR + Trip type + Status */}
                           <div className="flex items-center justify-between mb-4">
                             <div className="flex items-center gap-2">
                               <span className="text-xs text-slate-400 font-mono">PNR: <span className="text-white font-black">{tPnr}</span></span>
@@ -246,42 +248,78 @@ export default function AccountDashboard() {
                             </span>
                           </div>
 
-                          {/* Route */}
-                          <div className="flex items-center justify-between gap-3 mb-4">
-                            <div className="text-center min-w-0">
-                              <p className="text-white text-2xl font-black leading-none">{tOrigin}</p>
-                              <p className="text-slate-400 text-[11px] mt-1 truncate">{tOriginCity}</p>
-                            </div>
-                            <div className="flex-1 flex flex-col items-center gap-1 px-2">
-                              <div className="w-full flex items-center gap-1">
-                                <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/20" />
-                                <div className="w-6 h-6 rounded-full border bg-[#1ABC9C]/20 border-[#1ABC9C]/30 flex items-center justify-center">
-                                  {isRT
-                                    ? <ArrowLeftRight size={10} className="text-[#1ABC9C]" />
-                                    : <Plane size={10} className="text-[#1ABC9C] rotate-90" />
-                                  }
-                                </div>
-                                <div className="h-px flex-1 bg-gradient-to-l from-transparent to-white/20" />
-                              </div>
-                            </div>
-                            <div className="text-center min-w-0">
-                              <p className="text-white text-2xl font-black leading-none">{tDest}</p>
-                              <p className="text-slate-400 text-[11px] mt-1 truncate">{tDestCity}</p>
-                            </div>
-                          </div>
+                          {/* Journey Legs */}
+                          <div className={`space-y-3 ${legs.length > 1 ? 'mb-4' : 'mb-4'}`}>
+                            {legs.map((leg, legIdx) => {
+                              const j = leg.journey;
+                              const lOrigin = j?.originAirport || trip.originAirport;
+                              const lDest = j?.destinationAirport || trip.destinationAirport;
+                              const lOriginCity = j?.originCity || trip.originCity;
+                              const lDestCity = j?.destinationCity || trip.destinationCity;
+                              const lDepDate = j?.departureDateTime || trip.departureDate;
+                              const lAirline = j?.segments?.[0]?.airlineName || j?.segments?.[0]?.airlineCode || '';
+                              const lStops = j?.totalStops ?? 0;
+                              const lDur = j?.totalDurationMinutes ?? 0;
 
-                          {/* Dates row */}
-                          <div className="flex items-center gap-3 mb-4 text-xs">
-                            <div className="flex items-center gap-1.5 text-slate-300">
-                              <Calendar size={11} className="text-[#1ABC9C]" />
-                              <span>{formatDate(depDate)}</span>
-                            </div>
-                            {isRT && retDate && (
-                              <>
-                                <span className="text-slate-600">—</span>
-                                <span className="text-slate-300">{formatDate(retDate)}</span>
-                              </>
-                            )}
+                              return (
+                                <div key={legIdx}>
+                                  {/* Leg label for round trips */}
+                                  {legs.length > 1 && (
+                                    <div className="flex items-center gap-2 mb-2">
+                                      <div className={`w-1.5 h-1.5 rounded-full ${leg.isReturn ? 'bg-purple-400' : 'bg-[#1ABC9C]'}`} />
+                                      <span className={`text-[10px] font-bold uppercase tracking-wider ${leg.isReturn ? 'text-purple-400' : 'text-[#1ABC9C]'}`}>
+                                        {leg.label}
+                                      </span>
+                                      {lAirline && (
+                                        <span className="text-slate-500 text-[10px]">· {lAirline}</span>
+                                      )}
+                                    </div>
+                                  )}
+
+                                  {/* Route */}
+                                  <div className="flex items-center justify-between gap-3">
+                                    <div className="text-center min-w-0">
+                                      <p className={`text-white font-black leading-none ${legs.length > 1 ? 'text-xl' : 'text-2xl'}`}>{lOrigin}</p>
+                                      <p className="text-slate-400 text-[11px] mt-1 truncate">{lOriginCity}</p>
+                                    </div>
+                                    <div className="flex-1 flex flex-col items-center gap-1 px-2">
+                                      <div className="w-full flex items-center gap-1">
+                                        <div className="h-px flex-1 bg-gradient-to-r from-transparent to-white/20" />
+                                        <div className={`w-6 h-6 rounded-full border flex items-center justify-center ${leg.isReturn ? 'bg-purple-400/20 border-purple-400/30' : 'bg-[#1ABC9C]/20 border-[#1ABC9C]/30'}`}>
+                                          <Plane size={10} className={`${leg.isReturn ? 'text-purple-400 -rotate-90' : 'text-[#1ABC9C] rotate-90'}`} />
+                                        </div>
+                                        <div className="h-px flex-1 bg-gradient-to-l from-transparent to-white/20" />
+                                      </div>
+                                      {(lStops > 0 || lDur > 0) && (
+                                        <p className="text-slate-600 text-[9px]">
+                                          {lDur > 0 && durationStr(lDur)}
+                                          {lDur > 0 && lStops > 0 && ' · '}
+                                          {lStops === 0 ? 'Nonstop' : lStops === 1 ? '1 stop' : `${lStops} stops`}
+                                        </p>
+                                      )}
+                                    </div>
+                                    <div className="text-center min-w-0">
+                                      <p className={`text-white font-black leading-none ${legs.length > 1 ? 'text-xl' : 'text-2xl'}`}>{lDest}</p>
+                                      <p className="text-slate-400 text-[11px] mt-1 truncate">{lDestCity}</p>
+                                    </div>
+                                  </div>
+
+                                  {/* Date & Time */}
+                                  <div className="flex items-center gap-1.5 mt-2 text-xs text-slate-300">
+                                    <Calendar size={11} className={leg.isReturn ? 'text-purple-400' : 'text-[#1ABC9C]'} />
+                                    <span>{formatDate(lDepDate)}</span>
+                                    <span className="text-slate-500">·</span>
+                                    <Clock size={11} className={leg.isReturn ? 'text-purple-400' : 'text-[#1ABC9C]'} />
+                                    <span className="font-semibold text-white">{formatTime(lDepDate)}</span>
+                                  </div>
+
+                                  {/* Divider between legs */}
+                                  {legIdx < legs.length - 1 && (
+                                    <div className="border-t border-dashed border-white/[0.06] mt-3" />
+                                  )}
+                                </div>
+                              );
+                            })}
                           </div>
 
                           {/* Footer: Ref + Fare */}

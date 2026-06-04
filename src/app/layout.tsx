@@ -1,8 +1,7 @@
 import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
-import Navbar from '@/components/layout/Navbar';
-import Footer from '@/components/layout/Footer';
+import ClientShell from '@/components/layout/ClientShell';
 
 const inter = Inter({
   variable: '--font-inter',
@@ -30,10 +29,9 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col font-[var(--font-inter)]" suppressHydrationWarning>
-        <Navbar />
-        <main className="flex-1 pt-16">{children}</main>
-        <Footer />
+        <ClientShell>{children}</ClientShell>
       </body>
     </html>
   );
 }
+

@@ -6,6 +6,9 @@ import { applyMarkupToOffers, applyMarkupToRoundTripOptions } from '@/lib/servic
 import type { AiUserPreferences, WeightPresetName, AiSortMode } from '@/lib/ai-scoring/types';
 import type { RoundTripUserPrefs } from '@/lib/round-trip-types';
 import { flexCacheKey, flexCacheGet } from '@/lib/flex-search-cache';
+import { prisma } from '@/lib/db';
+import { getTravelDnaForRecommendation } from '@/lib/services/travel-dna-service';
+import type { TravelDnaRecommendationContext } from '@/lib/services/travel-dna-service';
 
 export const maxDuration = 120; // Allow up to 2 minutes for search
 
@@ -33,6 +36,26 @@ export async function GET(request: NextRequest) {
   }
 
   try {
+    // ── Travel DNA context (non-blocking) ─────────────────────────────────
+    let travelDnaContext: TravelDnaRecommendationContext | null = null;
+    try {
+      const authHeader = request.headers.get('authorization');
+      const token = authHeader?.replace('Bearer ', '') || request.cookies.get('faremind_session')?.value;
+      if (token) {
+        const session = await prisma.session.findUnique({
+          where: { token },
+          select: { userId: true, expiresAt: true },
+        });
+        if (session && new Date(session.expiresAt) > new Date()) {
+          // Determine trip category from origin/destination (simplified heuristic)
+          const tripCategory = (origin !== destination) ? 'INTERNATIONAL' : 'DOMESTIC';
+          travelDnaContext = await getTravelDnaForRecommendation(session.userId, tripCategory as any);
+        }
+      }
+    } catch {
+      // Travel DNA is non-critical — never block search
+    }
+
     // ── Round-trip path ──────────────────────────────────────────────────────
     if (trip === 'round_trip' && returnDate) {
       // Check if flex-price strip already fetched results for this exact tile.
@@ -56,7 +79,7 @@ export async function GET(request: NextRequest) {
         departureWindow: (searchParams.get('departure_window') as AiUserPreferences['departureWindow']) || undefined,
       };
 
-      const rtRankResult = rankFlightOffers(rtResult.options, 'ROUND_TRIP', rtAiPrefs, true);
+      const rtRankResult = rankFlightOffers(rtResult.options, 'ROUND_TRIP', rtAiPrefs, true, undefined, travelDnaContext);
 
       // Map ranked results to the format the frontend expects
       const ranked = rtRankResult.ranked.map((r) => ({
@@ -190,7 +213,7 @@ export async function GET(request: NextRequest) {
       departureWindow: (searchParams.get('departure_window') as AiUserPreferences['departureWindow']) || undefined,
     };
 
-    const rankResult = rankFlightOffers(backendFlights, 'ONE_WAY', aiPrefs, true);
+    const rankResult = rankFlightOffers(backendFlights, 'ONE_WAY', aiPrefs, true, undefined, travelDnaContext);
 
     // Map ranked results to the format the frontend expects (AI-scored)
     const scoredFlights = rankResult.ranked.map((r) => ({

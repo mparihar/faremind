@@ -20,6 +20,7 @@ import {
   Wallet,
   Headphones,
   ChevronDown,
+  Dna,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -28,8 +29,8 @@ import FareMindTravelAssistantButton from '@/components/voice/FareMindTravelAssi
 
 const NAV_ITEMS = [
   { href: '/', label: 'Search', icon: Plane },
-  { href: '/account', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/manage-booking', label: 'Manage Booking', icon: Shield },
+  { href: '/account/travel-dna', label: 'Travel DNA', icon: Dna },
 ];
 
 const HELP_ITEMS = [
@@ -68,7 +69,7 @@ function UserAvatar({ user, size = 28 }: { user: { name?: string; avatar?: strin
   );
 }
 
-export default function Navbar() {
+export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
   const pathname = usePathname();
   const router = useRouter();
   const [mobileOpen, setMobileOpen] = useState(false);
@@ -99,6 +100,7 @@ export default function Navbar() {
   async function adminLogout() {
     await fetch('/api/admin/auth/logout', { method: 'POST', credentials: 'include' });
     clearAdminAuth();
+    router.push('/admin/login');
   }
 
   // Load session on mount
@@ -119,7 +121,7 @@ export default function Navbar() {
   return (
     <nav className="fixed top-0 left-0 right-0 z-50 bg-black border-b border-white/10 shadow-2xl">
       <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="flex items-center justify-between h-16">
+        <div className="flex items-center h-16 gap-4">
           {/* Logo */}
           <Link href="/" className="flex items-center group h-16 overflow-hidden">
             <img 
@@ -129,12 +131,30 @@ export default function Navbar() {
             />
           </Link>
 
+          {/* Admin Sign Out — only on admin pages */}
+          {hideNav && (
+            <div className="ml-auto">
+              <button
+                onClick={adminLogout}
+                className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white bg-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 transition-all"
+              >
+                <LogOut className="w-4 h-4" />
+                Sign Out
+              </button>
+            </div>
+          )}
+
           {/* Desktop Nav */}
+          {!hideNav && (
           <div className="hidden md:flex items-center gap-1">
             {NAV_ITEMS.map((item) => {
               const Icon = item.icon;
               // Route logged-in users to dashboard inner page, guests to public portal
               const href = (item.href === '/manage-booking' && user) ? '/account/manage-booking' : item.href;
+              // Dynamic label: "Travel DNA" → "My FareMind DNA™" when logged in
+              const label = (item.label === 'Travel DNA' && user)
+                ? <>My <span><span className="text-white">FARE</span><span style={{ color: '#009CA6' }}>MIND</span></span> DNA™</>
+                : item.label;
 
               // Dashboard (/account/bookings) should be active for ALL /account/* pages
               const isActive = item.href === '/account'
@@ -155,7 +175,7 @@ export default function Navbar() {
                     )}
                   >
                     <Icon className="w-4 h-4" />
-                    {item.label}
+                    {label}
                   </button>
                 );
               }
@@ -172,12 +192,12 @@ export default function Navbar() {
                   )}
                 >
                   <Icon className="w-4 h-4" />
-                  {item.label}
+                  {label}
                 </Link>
               );
             })}
 
-            {/* Help & Support Dropdown */}
+            {/* Support Dropdown */}
             <div ref={helpRef} className="relative">
               <button
                 onClick={() => { setHelpDropdown(!helpDropdown); setUserDropdown(false); }}
@@ -189,7 +209,7 @@ export default function Navbar() {
                 )}
               >
                 <Headphones className="w-4 h-4 relative z-10" />
-                <span className="relative z-10">Help & Support</span>
+                <span className="relative z-10">Support</span>
                 <ChevronDown className={cn('w-3.5 h-3.5 relative z-10 transition-transform duration-200', helpDropdown && 'rotate-180')} />
                 {(helpDropdown || ['/account/support', '/account/refunds'].some(p => pathname.startsWith(p))) && (
                   <div className="absolute inset-0 bg-white/[0.08] border border-white/[0.08] rounded-xl transition-all duration-300" />
@@ -225,10 +245,12 @@ export default function Navbar() {
               </AnimatePresence>
             </div>
           </div>
+          )}
 
           {/* Right side */}
-          <div className="hidden md:flex items-center gap-3">
-            {/* FareMind Travel Assistant — only on Hero and Passenger Form pages */}
+          {!hideNav && (
+          <div className="hidden md:flex items-center gap-3 ml-auto">
+            {/* FareMind Voice Assistant — only on Hero and Passenger Form pages */}
             {(pathname === '/' || pathname === '/checkout/passengers') && (
               <FareMindTravelAssistantButton />
             )}
@@ -307,18 +329,22 @@ export default function Navbar() {
               </Link>
             )}
           </div>
+          )}
 
           {/* Mobile menu button */}
+          {!hideNav && (
           <button
             onClick={() => setMobileOpen(!mobileOpen)}
             className="md:hidden p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/[0.06] transition-all"
           >
             {mobileOpen ? <X className="w-5 h-5" /> : <Menu className="w-5 h-5" />}
           </button>
+          )}
         </div>
       </div>
 
       {/* Mobile menu */}
+      {!hideNav && (
       <AnimatePresence>
         {mobileOpen && (
           <motion.div
@@ -331,6 +357,9 @@ export default function Navbar() {
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
                 const href = (item.href === '/manage-booking' && user) ? '/account/manage-booking' : item.href;
+                const label = (item.label === 'Travel DNA' && user)
+                  ? <>My <span><span className="text-white">FARE</span><span style={{ color: '#009CA6' }}>MIND</span></span> DNA™</>
+                  : item.label;
                 const isActive = pathname === href;
 
                 // "Search" (/) — force full page reload so hero form is clean
@@ -347,7 +376,7 @@ export default function Navbar() {
                       )}
                     >
                       <Icon className="w-5 h-5" />
-                      {item.label}
+                      {label}
                     </button>
                   );
                 }
@@ -365,12 +394,12 @@ export default function Navbar() {
                     )}
                   >
                     <Icon className="w-5 h-5" />
-                    {item.label}
+                    {label}
                   </Link>
                 );
               })}
 
-              {/* Mobile Travel Assistant — only on Hero and Passenger Form pages */}
+              {/* Mobile Voice Assistant — only on Hero and Passenger Form pages */}
               {(pathname === '/' || pathname === '/checkout/passengers') && (
               <div className="pt-2 border-t border-white/[0.06]">
                 <div className="px-4 py-2">
@@ -379,9 +408,9 @@ export default function Navbar() {
               </div>
               )}
 
-              {/* Mobile Help & Support */}
+              {/* Mobile Support */}
               <div className="pt-2 border-t border-white/[0.06]">
-                <p className="px-4 py-2 text-xs text-slate-600 uppercase font-bold tracking-wider">Help & Support</p>
+                <p className="px-4 py-2 text-xs text-slate-600 uppercase font-bold tracking-wider">Support</p>
                 {HELP_ITEMS.map((item) => {
                   const Icon = item.icon;
                   const href = (item.href === '/manage-booking' && user) ? '/account/manage-booking' : item.href;
@@ -450,6 +479,7 @@ export default function Navbar() {
           </motion.div>
         )}
       </AnimatePresence>
+      )}
     </nav>
   );
 }

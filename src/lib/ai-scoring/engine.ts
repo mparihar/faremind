@@ -49,6 +49,7 @@ import { assignBadges as assignBadgesNew, type BadgeCandidate } from './FlightBa
 import { generateReasons as generateReasonsNew } from './FlightReasonGenerator';
 import { DEFAULT_AI_RECOMMENDATION_LIMIT } from './FlightScoringConfig';
 import { validateComparableOffers, type ComparableCandidate } from './FlightComparableValidator';
+import type { TravelDnaRecommendationContext } from '@/lib/services/travel-dna-service';
 
 // ── Internal intermediate type ────────────────────────────────────────────────
 
@@ -360,6 +361,7 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
   prefs?: AiUserPreferences | null,
   debug = false,
   selectedCabinClasses?: Set<string>,
+  travelDnaContext?: TravelDnaRecommendationContext | null,
 ): AiRankResult<T> {
   if (!offers.length) return { ranked: [], filteredOut: [] };
 
@@ -489,6 +491,62 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     // Within 0.5 points: use price as tiebreaker
     return a.features.effectiveTotalPrice - b.features.effectiveTotalPrice;
   });
+
+  // 8.7. Travel DNA soft bonus (additive only, never subtracts)
+  //      Applies small score bonuses when a flight matches the user's
+  //      confirmed booking history preferences.
+  if (travelDnaContext?.active && travelDnaContext.preferences) {
+    const dnaPrefs = travelDnaContext.preferences;
+    let dnaAdjustments = 0;
+
+    for (const c of tieBreakCandidates) {
+      let dnaBonus = 0;
+
+      // Airline match: +2–5 points based on DNA score
+      if (dnaPrefs.airline) {
+        const airlineCode = c.normalized.airlineCode || c.normalized.operatingAirlineCode || '';
+        const match = dnaPrefs.airline.find(p => p.label === airlineCode || p.label.toLowerCase().includes(airlineCode.toLowerCase()));
+        if (match) {
+          dnaBonus += Math.round((match.score / 100) * 5); // max +5
+        }
+      }
+
+      // Cabin match: +1–3 points
+      if (dnaPrefs.cabin && c.normalized.cabinClass) {
+        const cabinKey = c.normalized.cabinClass.toLowerCase();
+        const match = dnaPrefs.cabin.find(p => p.label.toLowerCase() === cabinKey);
+        if (match) {
+          dnaBonus += Math.round((match.score / 100) * 3); // max +3
+        }
+      }
+
+      // Stops match: +1–2 points
+      if (dnaPrefs.stops) {
+        const stopsKey = c.features.totalStops === 0 ? 'Nonstop' : c.features.totalStops === 1 ? '1 Stop' : '2+ Stops';
+        const match = dnaPrefs.stops.find(p => p.label === stopsKey);
+        if (match) {
+          dnaBonus += Math.round((match.score / 100) * 2); // max +2
+        }
+      }
+
+      if (dnaBonus > 0) {
+        c.score.finalScore += dnaBonus;
+        c.score.aiScoreRaw += dnaBonus;
+        c.score.aiScoreDisplay = Math.round(c.score.finalScore);
+        dnaAdjustments++;
+      }
+    }
+
+    if (dnaAdjustments > 0) {
+      console.log(`[AI Scoring] Travel DNA applied ${dnaAdjustments} bonuses`);
+      // Re-sort after DNA bonuses
+      tieBreakCandidates.sort((a, b) => {
+        const scoreDiff = b.score.finalScore - a.score.finalScore;
+        if (Math.abs(scoreDiff) > 0.5) return scoreDiff;
+        return a.features.effectiveTotalPrice - b.features.effectiveTotalPrice;
+      });
+    }
+  }
 
   // 9. Assign badges
   const badgeCandidates: BadgeCandidate[] = tieBreakCandidates.map((c, i) => ({

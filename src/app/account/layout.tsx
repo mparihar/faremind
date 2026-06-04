@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Ticket, ClipboardList, Bell, TrendingDown,
   CreditCard, User, Headphones, LogOut, ChevronRight, Menu, X,
-  Search, HelpCircle, ChevronDown, Gift, Shield,
+  Search, HelpCircle, ChevronDown, Gift, Shield, Dna, Wallet,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
@@ -16,7 +16,9 @@ const SIDEBAR_NAV = [
   { href: '/account', label: 'Dashboard', icon: LayoutDashboard, exact: true },
   { href: '/account/bookings', label: 'My Trips', icon: Ticket },
   { href: '/account/manage-booking', label: 'Manage Booking', icon: ClipboardList },
+  { href: '/account/travel-dna', label: 'My FareMind DNA\u2122', icon: Dna },
   { href: '/account/alerts', label: 'Price Alerts', icon: TrendingDown },
+  { href: '/account/payment-methods', label: 'Payment Methods', icon: Wallet },
   { href: '/account/refunds', label: 'Refunds & Credits', icon: CreditCard },
   { href: '/account/notifications', label: 'Notifications', icon: Bell },
   { href: '/account/profile', label: 'Profile', icon: User },
@@ -240,7 +242,7 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
                     `}
                   >
                     <Icon size={16} className={active ? 'text-[#1ABC9C]' : ''} />
-                    <span className="flex-1">{item.label}</span>
+                    <span className="flex-1">{item.label === 'My FareMind DNA\u2122' ? <>My <span className="text-white">FARE</span><span style={{ color: '#009CA6' }}>MIND</span> DNA™</> : item.label}</span>
                     {isNotif && notifCount > 0 && (
                       <span className="w-5 h-5 rounded-full bg-[#1ABC9C] text-[10px] font-bold text-white flex items-center justify-center">
                         {notifCount}

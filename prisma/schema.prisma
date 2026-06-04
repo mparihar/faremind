@@ -2045,3 +2045,81 @@ model NotificationRecipient {
   @@index([isActive])
   @@map("notification_recipients")
 }
+
+// ═══════════════════════════════════════════════
+// TRAVEL DNA — Personalized Travel Intelligence
+// ═══════════════════════════════════════════════
+
+enum TravelDnaProfileType {
+  DOMESTIC
+  INTERNATIONAL
+}
+
+enum TravelDnaStatus {
+  LEARNING
+  ACTIVE
+}
+
+model TravelDnaProfile {
+  id                    String               @id @default(cuid())
+  userId                String               @map("user_id")
+  profileType           TravelDnaProfileType @map("profile_type")
+  confirmedBookingCount Int                  @default(0) @map("confirmed_booking_count")
+  minBookingsRequired   Int                  @default(5) @map("min_bookings_required")
+  confidenceScore       Int                  @default(0) @map("confidence_score")
+  status                TravelDnaStatus      @default(LEARNING)
+  generatedAt           DateTime?            @map("generated_at")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+
+  preferences TravelDnaPreference[]
+
+  @@unique([userId, profileType])
+  @@index([userId])
+  @@index([status])
+  @@map("travel_dna_profiles")
+}
+
+model TravelDnaPreference {
+  id              String               @id @default(cuid())
+  profileId       String               @map("profile_id")
+  userId          String               @map("user_id")
+  profileType     TravelDnaProfileType @map("profile_type")
+  category        String
+  preferenceKey   String               @map("preference_key")
+  preferenceLabel String               @map("preference_label")
+  occurrenceCount Int                  @default(0) @map("occurrence_count")
+  totalCount      Int                  @default(0) @map("total_count")
+  score           Int                  @default(0)
+  confidenceLabel String?              @map("confidence_label")
+  userValidated   Boolean              @default(false) @map("user_validated")
+  rejectedByUser  Boolean              @default(false) @map("rejected_by_user")
+  lastSeenAt      DateTime?            @map("last_seen_at")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
+
+  profile TravelDnaProfile @relation(fields: [profileId], references: [id], onDelete: Cascade)
+
+  @@unique([profileId, category, preferenceKey])
+  @@index([userId])
+  @@index([profileId])
+  @@index([category])
+  @@map("travel_dna_preferences")
+}
+
+model TravelDnaConfig {
+  id                              String   @id @default(cuid())
+  travelDnaEnabled                Boolean  @default(true) @map("travel_dna_enabled")
+  minConfirmedBookingsRequired    Int      @default(5) @map("min_confirmed_bookings_required")
+  domesticRequiredBookings        Int      @default(5) @map("domestic_required_bookings")
+  internationalRequiredBookings   Int      @default(5) @map("international_required_bookings")
+  domesticProfileEnabled          Boolean  @default(true) @map("domestic_profile_enabled")
+  internationalProfileEnabled     Boolean  @default(true) @map("international_profile_enabled")
+  showLearningState               Boolean  @default(true) @map("show_learning_state")
+  showConfidenceScore             Boolean  @default(true) @map("show_confidence_score")
+  updatedByAdminId                String?  @map("updated_by_admin_id")
+  updatedByAdminEmail             String?  @map("updated_by_admin_email")
+  updatedAt                       DateTime @updatedAt @map("updated_at")
+
+  @@map("travel_dna_config")
+}

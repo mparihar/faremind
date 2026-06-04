@@ -45,6 +45,8 @@ import {
 import { getPageContext, type PageContext } from '@/contexts/pageContextRegistry';
 import { useVoiceStore } from '@/store/useVoiceStore';
 import { useCheckoutStore } from '@/store/useCheckoutStore';
+import { useAuthStore } from '@/store/useAuthStore';
+import { useTravelDnaStore } from '@/store/useTravelDnaStore';
 
 // ─── Types ──────────────────────────────────────────────────────────────────
 
@@ -63,7 +65,7 @@ type AssistantState =
 
 const SEARCH_EXAMPLE_PHRASES = [
   'Find me a flight from DFW to Delhi for 2 adults.',
-  'Search flights from Dallas to Bangkok next Friday.',
+  'Search flights from New York to Rome next Friday.',
   'Find me a round-trip flight to London for 2 adults and 1 child.',
   'One way flight from New York to Paris in business class.',
   'Find flights from Miami to Cancun for tomorrow.',
@@ -100,6 +102,8 @@ export default function FareMindTravelAssistantButton() {
   const pathname = usePathname();
   const router = useRouter();
   const searchFormRef = useVoiceStore((s) => s.searchFormRef);
+  const { user, sessionToken } = useAuthStore();
+  const { profile: dnaProfile, fetchProfile: fetchDna, fetched: dnaFetched } = useTravelDnaStore();
 
   // Core states
   const [expanded, setExpanded] = useState(false);
@@ -168,8 +172,12 @@ export default function FareMindTravelAssistantButton() {
   const handleOpen = useCallback(() => {
     setExpanded(true);
     setState('idle');
+    // Fetch Travel DNA status if user is logged in
+    if (user && sessionToken && !dnaFetched) {
+      fetchDna(sessionToken);
+    }
     console.log('[Voice] Assistant Opened');
-  }, []);
+  }, [user, sessionToken, dnaFetched, fetchDna]);
 
   // Toggle mic — ChatGPT style
   const handleToggleMic = useCallback(async () => {
@@ -459,7 +467,7 @@ export default function FareMindTravelAssistantButton() {
       case 'passenger_conflicts': return 'Confirm';
       case 'passenger_clarify': return 'Clarify';
       case 'error': return 'Error';
-      default: return 'Travel Assistant';
+      default: return 'Voice Assistant';
     }
   })();
 
@@ -617,6 +625,26 @@ export default function FareMindTravelAssistantButton() {
                       Voice search requires Chrome, Edge, or Safari.
                     </p>
                   )}
+
+                  {/* Travel DNA Status */}
+                  <div className="pt-1.5 border-t border-white/[0.04]">
+                    {user && dnaProfile?.status === 'ACTIVE' ? (
+                      <a href="/travel-dna" className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-all group">
+                        <span className="text-[10px]">🧬</span>
+                        <span className="text-[10px] text-[#1ABC9C] font-semibold">Your FAREMIND DNA™ is ready — I can personalize recommendations.</span>
+                      </a>
+                    ) : user && dnaProfile?.status === 'LEARNING' ? (
+                      <div className="flex items-center gap-2 px-2 py-1.5">
+                        <span className="text-[10px]">🧬</span>
+                        <span className="text-[10px] text-amber-400/70 font-medium">Learning your travel preferences. Complete more bookings.</span>
+                      </div>
+                    ) : !user ? (
+                      <a href="/auth/login" className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-all">
+                        <span className="text-[10px]">🧬</span>
+                        <span className="text-[10px] text-slate-500 font-medium">Sign in to enable FAREMIND DNA™.</span>
+                      </a>
+                    ) : null}
+                  </div>
                 </motion.div>
               )}
 

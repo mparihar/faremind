@@ -14,6 +14,7 @@ import {
   RefreshCcw,
   Bell,
   ChevronRight,
+  Dna,
 } from 'lucide-react';
 import SearchForm from '@/components/search/SearchForm';
 import type { SearchFormHandle } from '@/components/search/SearchForm';
@@ -22,6 +23,7 @@ import { usePreferencesStore } from '@/store/usePreferencesStore';
 import { useSearchStore } from '@/store/useSearchStore';
 import { useVoiceStore } from '@/store/useVoiceStore';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/store/useAuthStore';
 
 import Link from 'next/link';
 
@@ -106,6 +108,7 @@ const STATS = [
 export default function HomePage() {
   const { resetAll } = usePreferencesStore();
   const { clearResults } = useSearchStore();
+  const { user } = useAuthStore();
   const [routes, setRoutes] = useState<LiveRoute[]>(FALLBACK_ROUTES);
   const [routesLoading] = useState(false);
   const [dateMode, setDateMode] = useState<'specific' | 'flexible'>('specific');
@@ -292,6 +295,73 @@ export default function HomePage() {
                       )}
                     </Link>
                   ))}
+            </div>
+          </motion.div>
+        </div>
+      </section>
+
+      {/* ═══ TRAVEL DNA SHOWCASE ═══ */}
+      <section className="relative py-16 overflow-hidden">
+        <div className="absolute inset-0 overflow-hidden pointer-events-none">
+          <div className="absolute top-1/4 right-1/4 w-72 h-72 bg-[#1ABC9C]/8 rounded-full blur-[120px]" />
+          <div className="absolute bottom-1/4 left-1/3 w-64 h-64 bg-purple-500/5 rounded-full blur-[100px]" />
+        </div>
+        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
+          <motion.div
+            initial={{ opacity: 0, y: 30 }}
+            whileInView={{ opacity: 1, y: 0 }}
+            viewport={{ once: true }}
+            transition={{ duration: 0.6 }}
+            className="relative bg-gradient-to-br from-[#0f1525]/90 to-[#0a0e1a]/90 backdrop-blur-xl rounded-3xl border border-[#1ABC9C]/15 p-8 sm:p-12 overflow-hidden shadow-2xl shadow-black/20"
+          >
+            {/* Animated border glow */}
+            <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-[#1ABC9C]/10 via-transparent to-purple-500/10 opacity-50" />
+            
+            <div className="relative flex flex-col md:flex-row items-center gap-8">
+              {/* DNA Icon & Helix Visual */}
+              <div className="relative shrink-0">
+                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#1ABC9C] to-[#16A085] flex items-center justify-center shadow-xl shadow-[#1ABC9C]/25">
+                  <Dna className="w-10 h-10 text-white" />
+                </div>
+                <div className="absolute -inset-4 rounded-3xl bg-[#1ABC9C]/10 blur-xl -z-10 animate-pulse" />
+              </div>
+
+              {/* Content */}
+              <div className="flex-1 text-center md:text-left">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 mb-4">
+                  <Sparkles className="w-3 h-3 text-[#1ABC9C]" />
+                  <span className="text-[10px] font-black text-[#1ABC9C] uppercase tracking-wider">Travel DNA</span>
+                </div>
+                <h2 className="text-2xl sm:text-3xl font-black text-white mb-3 tracking-tight">
+                  Flights personalized around how <span className="text-[#1ABC9C]">you</span> travel.
+                </h2>
+                <p className="text-sm text-slate-400 leading-relaxed mb-6 max-w-lg">
+                  FareMind learns from your confirmed bookings to understand your airline, cabin, seat, baggage, and flexibility preferences — then uses that intelligence to personalize future flight recommendations.
+                </p>
+                <div className="flex flex-col sm:flex-row gap-3 items-center md:items-start">
+                  {user ? (
+                    <a
+                      href="/travel-dna"
+                      className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-black text-white bg-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 hover:brightness-110 transition-all"
+                    >
+                      <Dna className="w-4 h-4" />
+                      View My Travel DNA
+                      <ArrowRight className="w-4 h-4" />
+                    </a>
+                  ) : (
+                    <a
+                      href="/auth/login?redirect=/travel-dna"
+                      className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-black text-white bg-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 hover:brightness-110 transition-all"
+                    >
+                      Sign In to Start Learning
+                      <ArrowRight className="w-4 h-4" />
+                    </a>
+                  )}
+                  <p className="text-[11px] text-slate-600 max-w-xs">
+                    Travel DNA starts learning after your first confirmed booking.
+                  </p>
+                </div>
+              </div>
             </div>
           </motion.div>
         </div>

@@ -6,6 +6,7 @@ import { useAdminStore } from '@/store/useAdminStore';
 import {
   LayoutDashboard, BookOpen, GitMerge, Users2, DollarSign,
   ScrollText, Bell, Settings, LogOut, Shield, ChevronRight,
+  Brain, UserRoundSearch,
 } from 'lucide-react';
 import type { AdminRole } from '@/store/useAdminStore';
 
@@ -20,10 +21,12 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: '/admin/dashboard',            label: 'Dashboard',            icon: LayoutDashboard },
   { href: '/admin/bookings',             label: 'Bookings',             icon: BookOpen },
+  { href: '/admin/customers',            label: 'Customer Users',       icon: UserRoundSearch, minRole: 'OPS_ADMIN' },
   { href: '/admin/work-queues',          label: 'Work Queues',          icon: GitMerge },
   { href: '/admin/partners',             label: 'Partners',             icon: Users2, minRole: 'OPS_ADMIN' },
   { href: '/admin/finance',              label: 'Finance',              icon: DollarSign, minRole: 'FINANCE' },
   { href: '/admin/commercial-settings',  label: 'Commercial Settings',  icon: DollarSign, minRole: 'OPS_ADMIN' },
+  { href: '/admin/ai-settings',          label: 'AI Settings',          icon: Brain,      minRole: 'OPS_ADMIN' },
   { href: '/admin/audit-logs',           label: 'Audit Logs',           icon: ScrollText, minRole: 'OPS_ADMIN' },
   { href: '/admin/admin-users',          label: 'Admin Users',          icon: Shield, minRole: 'SUPER_ADMIN' },
   { href: '/admin/settings',             label: 'Settings',             icon: Settings, minRole: 'SUPER_ADMIN' },
@@ -63,7 +66,7 @@ export default function AdminSidebar() {
             <Shield size={16} className="text-[#1ABC9C]" />
           </div>
           <div>
-            <p className="text-white font-black text-sm leading-tight">FAREMIND</p>
+            <p className="text-white font-black text-sm leading-tight"><span>FARE</span><span style={{ color: '#009CA6' }}>MIND</span></p>
             <p className="text-slate-400 text-[10px] font-bold uppercase tracking-widest">Admin Console</p>
           </div>
         </div>

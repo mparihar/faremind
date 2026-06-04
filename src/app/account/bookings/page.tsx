@@ -162,16 +162,20 @@ export default function MyTripsPage() {
         <div className="space-y-3">
           {filtered.map((b, idx) => {
             const journey = b.journeys?.[0];
-            const origin = journey?.originAirport || b.originAirport;
-            const dest = journey?.destinationAirport || b.destinationAirport;
-            const originCity = journey?.originCity || b.originCity;
-            const destCity = journey?.destinationCity || b.destinationCity;
+            const outbound = b.journeys?.find((jj: any) => jj.direction === 'OUTBOUND') || journey;
+            const ret = b.journeys?.find((jj: any) => jj.direction === 'RETURN');
             const isRT = (b.tripType || '').toLowerCase().includes('round');
             const paxCount = b.passengers?.length || 1;
             const isPast = new Date(b.departureDate) < new Date();
             const isCancelled = b.bookingStatus === 'CANCELLED';
             const days = daysUntil(b.departureDate);
             const borderColor = STATUS_BORDER[b.bookingStatus] || 'border-l-slate-600';
+
+            // Build legs
+            const legs: Array<{ j: any; label: string; isReturn: boolean }> = [];
+            if (outbound) legs.push({ j: outbound, label: 'Outbound', isReturn: false });
+            if (isRT && ret) legs.push({ j: ret, label: 'Return', isReturn: true });
+
 
             return (
               <motion.div key={b.id}
@@ -189,6 +193,11 @@ export default function MyTripsPage() {
                           <span className="text-sm text-slate-300 font-mono font-bold tracking-wider">
                             {b.masterPnr || b.masterBookingReference}
                           </span>
+                          {b.masterBookingReference && b.masterPnr && (
+                            <span className="text-[11px] text-slate-500 font-mono">
+                              REF: <span className="text-slate-300 font-bold">{b.masterBookingReference}</span>
+                            </span>
+                          )}
                           {isRT && (
                             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-white/[0.04] px-2.5 py-0.5 rounded-full border border-white/[0.06]">
                               Round Trip
@@ -201,33 +210,75 @@ export default function MyTripsPage() {
                           )}
                         </div>
 
-                        {/* Route */}
-                        <div className="flex items-center gap-4 mb-4">
-                          <div>
-                            <p className="text-white font-black text-3xl leading-none">{origin}</p>
-                            <p className="text-slate-400 text-sm mt-1">{originCity}</p>
-                          </div>
-                          <div className="flex items-center gap-1.5 flex-1 max-w-[80px]">
-                            <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-white/5" />
-                            {isRT
-                              ? <ArrowLeftRight size={14} className="text-[#1ABC9C] shrink-0" />
-                              : <Plane size={13} className="text-[#1ABC9C] rotate-90 shrink-0" />
-                            }
-                            <div className="h-px flex-1 bg-gradient-to-l from-white/10 to-white/5" />
-                          </div>
-                          <div>
-                            <p className="text-white font-black text-3xl leading-none">{dest}</p>
-                            <p className="text-slate-400 text-sm mt-1">{destCity}</p>
-                          </div>
+                        {/* Journey Legs */}
+                        <div className="space-y-3 mb-4">
+                          {legs.map((leg, legIdx) => {
+                            const lj = leg.j;
+                            const lOrigin = lj?.originAirport || b.originAirport;
+                            const lDest = lj?.destinationAirport || b.destinationAirport;
+                            const lOriginCity = lj?.originCity || b.originCity;
+                            const lDestCity = lj?.destinationCity || b.destinationCity;
+                            const lDepDate = lj?.departureDateTime || b.departureDate;
+                            const lDepTime = new Date(lDepDate).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                            const lAirline = lj?.segments?.[0]?.airlineName || lj?.segments?.[0]?.airlineCode || '';
+                            const lStops = lj?.totalStops ?? 0;
+
+                            return (
+                              <div key={legIdx}>
+                                {/* Leg label for round trips */}
+                                {legs.length > 1 && (
+                                  <div className="flex items-center gap-2 mb-2">
+                                    <div className={`w-1.5 h-1.5 rounded-full ${leg.isReturn ? 'bg-purple-400' : 'bg-[#1ABC9C]'}`} />
+                                    <span className={`text-[10px] font-bold uppercase tracking-wider ${leg.isReturn ? 'text-purple-400' : 'text-[#1ABC9C]'}`}>
+                                      {leg.label}
+                                    </span>
+                                    {lAirline && <span className="text-slate-500 text-[10px]">· {lAirline}</span>}
+                                  </div>
+                                )}
+
+                                {/* Route row */}
+                                <div className="flex items-center gap-4">
+                                  <div>
+                                    <p className={`text-white font-black leading-none ${legs.length > 1 ? 'text-2xl' : 'text-3xl'}`}>{lOrigin}</p>
+                                    <p className="text-slate-400 text-sm mt-1">{lOriginCity}</p>
+                                  </div>
+                                  <div className="flex items-center gap-1.5 flex-1 max-w-[80px]">
+                                    <div className="h-px flex-1 bg-gradient-to-r from-white/10 to-white/5" />
+                                    <Plane size={13} className={`shrink-0 ${leg.isReturn ? 'text-purple-400 -rotate-90' : 'text-[#1ABC9C] rotate-90'}`} />
+                                    <div className="h-px flex-1 bg-gradient-to-l from-white/10 to-white/5" />
+                                  </div>
+                                  <div>
+                                    <p className={`text-white font-black leading-none ${legs.length > 1 ? 'text-2xl' : 'text-3xl'}`}>{lDest}</p>
+                                    <p className="text-slate-400 text-sm mt-1">{lDestCity}</p>
+                                  </div>
+                                </div>
+
+                                {/* Date + Time + Stops */}
+                                <div className="flex items-center gap-3 mt-2 text-sm text-slate-400">
+                                  <span className="flex items-center gap-1.5">
+                                    <Calendar size={13} className={leg.isReturn ? 'text-purple-400' : 'text-[#1ABC9C]'} />
+                                    {formatDate(lDepDate)}
+                                  </span>
+                                  <span className="text-slate-600">·</span>
+                                  <span className="flex items-center gap-1.5">
+                                    <Clock size={13} className={leg.isReturn ? 'text-purple-400' : 'text-[#1ABC9C]'} />
+                                    <span className="text-white font-semibold">{lDepTime}</span>
+                                  </span>
+                                  <span className="text-slate-600">·</span>
+                                  <span>{lStops === 0 ? 'Nonstop' : lStops === 1 ? '1 stop' : `${lStops} stops`}</span>
+                                </div>
+
+                                {/* Divider between legs */}
+                                {legIdx < legs.length - 1 && (
+                                  <div className="border-t border-dashed border-white/[0.08] mt-3" />
+                                )}
+                              </div>
+                            );
+                          })}
                         </div>
 
-                        {/* Meta */}
-                        <div className="flex items-center gap-3 text-sm text-slate-400 flex-wrap">
-                          <span className="flex items-center gap-1.5">
-                            <Calendar size={13} />
-                            {formatDate(b.departureDate)}
-                          </span>
-                          <span className="text-slate-500">·</span>
+                        {/* Meta: Pax + Provider */}
+                        <div className="flex items-center gap-3 text-sm text-slate-400">
                           <span className="flex items-center gap-1.5">
                             <User size={13} />
                             {paxCount} pax
