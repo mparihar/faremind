@@ -7,6 +7,8 @@ import { cn, formatDuration, formatPrice, getStopsLabel } from '@/lib/utils';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
 import AiBookFlightFlow from './ai-booking/AiBookFlightFlow';
+import { useAiBookingStore } from '@/store/useAiBookingStore';
+import { useOfferSessionStore } from '@/store/useOfferSessionStore';
 import {
   isSpeechRecognitionSupported,
   startListening,
@@ -123,6 +125,14 @@ export default function FloatingAIAssistant({
   const [voiceSupported] = useState(() => typeof window !== 'undefined' && isSpeechRecognitionSupported());
   const scrollRef   = useRef<HTMLDivElement>(null);
   const inputRef    = useRef<HTMLInputElement>(null);
+  const aiBookingReset = useAiBookingStore((s) => s.reset);
+  const offerSessionClear = useOfferSessionStore((s) => s.clearSession);
+
+  /** Reset the AI booking flow — clears stale flight/fare/timer state */
+  const resetBookingFlow = useCallback(() => {
+    aiBookingReset();
+    offerSessionClear();
+  }, [aiBookingReset, offerSessionClear]);
 
   // ── Auto-reset when search results change (new search performed) ──────────
   const searchFingerprint = flights.slice(0, 5).map(f => f.id).join('|');
@@ -240,10 +250,16 @@ export default function FloatingAIAssistant({
     setActiveChip(null);
     setInput('');
     onResult(null);
+    // Also reset booking flow if it was active
+    if (bookingMode) {
+      setBookingMode(false);
+      resetBookingFlow();
+    }
   }
 
   /** User selects a flight from the top 5 AI recommendations → enter booking mode */
   function handleBookFromRecommendation(flightIndex: number) {
+    resetBookingFlow(); // Ensure fresh start
     setBookingMode(true);
     // The AiBookFlightFlow will show flights and the user can tap the one at this index.
     // We use a tiny delay so the booking flow mounts first, then auto-select.
@@ -337,7 +353,13 @@ export default function FloatingAIAssistant({
                   </button>
                 )}
                 <button
-                  onClick={() => setIsOpen(false)}
+                  onClick={() => {
+                    if (bookingMode) {
+                      setBookingMode(false);
+                      resetBookingFlow();
+                    }
+                    setIsOpen(false);
+                  }}
                   title="Close"
                   className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-all"
                 >
@@ -357,7 +379,10 @@ export default function FloatingAIAssistant({
                   searchAdults={context.adults}
                   searchChildren={context.children}
                   searchInfants={context.infants}
-                  onExit={() => setBookingMode(false)}
+                  onExit={() => {
+                    setBookingMode(false);
+                    resetBookingFlow();
+                  }}
                 />
               </div>
             ) : (
@@ -430,7 +455,10 @@ export default function FloatingAIAssistant({
                   <motion.button
                     whileHover={{ scale: 1.03 }}
                     whileTap={{ scale: 0.97 }}
-                    onClick={() => setBookingMode(true)}
+                    onClick={() => {
+                      resetBookingFlow(); // Ensure fresh start every time
+                      setBookingMode(true);
+                    }}
                     className="px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all bg-gradient-to-r from-[#1ABC9C] to-emerald-500 border-[#1ABC9C]/40 text-white shadow-md shadow-[#1ABC9C]/20 hover:shadow-lg hover:shadow-[#1ABC9C]/30"
                   >
                     ✈ Book a Flight
@@ -779,7 +807,14 @@ export default function FloatingAIAssistant({
         )}
 
         <motion.button
-          onClick={() => setIsOpen(v => !v)}
+          onClick={() => {
+            const willClose = isOpen;
+            if (willClose && bookingMode) {
+              setBookingMode(false);
+              resetBookingFlow();
+            }
+            setIsOpen(v => !v);
+          }}
           title="FAREMIND Co-Pilot"
           whileHover={{ scale: 1.05, y: -2 }}
           whileTap={{ scale: 0.96 }}
