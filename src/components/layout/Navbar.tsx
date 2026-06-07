@@ -150,7 +150,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
             </div>
           </Link>
 
-          {/* Admin Sign Out — only on admin pages (hidden on login page) */}
+          {/* Admin navbar right — Sign Out when authenticated, Sign In on login page */}
           {hideNav && adminUser && !isAdminLogin && (
             <div className="ml-auto">
               <button
@@ -160,6 +160,14 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                 <LogOut className="w-4 h-4" />
                 Sign Out
               </button>
+            </div>
+          )}
+          {hideNav && !adminUser && isAdminLogin && (
+            <div className="ml-auto">
+              <span className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white bg-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25">
+                <LogIn className="w-4 h-4" />
+                Sign In
+              </span>
             </div>
           )}
 
