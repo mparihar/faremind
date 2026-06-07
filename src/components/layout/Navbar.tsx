@@ -79,9 +79,15 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
   const { user: adminUser, clearAuth: clearAdminAuth } = useAdminStore();
   const userRef = useRef<HTMLDivElement>(null);
   const helpRef = useRef<HTMLDivElement>(null);
+  const isAdminLogin = pathname === '/admin/login';
 
   // Refresh auth state on mount and route changes (e.g., after login redirect)
   useEffect(() => { loadSession(); }, [loadSession, pathname]);
+
+  // Clear stale persisted admin auth when on the login page
+  useEffect(() => {
+    if (isAdminLogin && adminUser) clearAdminAuth();
+  }, [isAdminLogin]);
 
   function handleLogout() {
     logout();
@@ -144,8 +150,8 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
             </div>
           </Link>
 
-          {/* Admin Sign Out — only on admin pages */}
-          {hideNav && adminUser && (
+          {/* Admin Sign Out — only on admin pages (hidden on login page) */}
+          {hideNav && adminUser && !isAdminLogin && (
             <div className="ml-auto">
               <button
                 onClick={adminLogout}
