@@ -467,7 +467,7 @@ export default function FareMindTravelAssistantButton() {
       case 'passenger_conflicts': return 'Confirm';
       case 'passenger_clarify': return 'Clarify';
       case 'error': return 'Error';
-      default: return 'Voice Assistant';
+      default: return 'Voice';
     }
   })();
 

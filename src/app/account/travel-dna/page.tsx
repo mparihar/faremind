@@ -187,7 +187,7 @@ export default function TravelDnaPage() {
               Sign in to unlock your <span className="text-[#1ABC9C]">Travel DNA</span>
             </h1>
             <p className="text-slate-400 text-base max-w-md mx-auto mb-10 leading-relaxed">
-              Travel DNA learns from your past bookings to personalize future flight recommendations.
+              <span className="font-black text-white">FARE</span><span className="font-black text-[#009CA6]">MIND</span> learns from your past bookings to personalize future flight recommendations.
             </p>
 
             <Link

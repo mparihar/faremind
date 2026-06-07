@@ -1,23 +1,53 @@
+'use client';
+
+import { useState } from 'react';
 import Link from 'next/link';
-import { Plane, ExternalLink, MessageCircle, Mail, Sparkles, Shield, Zap, Globe } from 'lucide-react';
+import { Plane, ExternalLink, MessageCircle, Mail, Sparkles, Shield, Zap, Globe, Brain, Dna, ListOrdered, LineChart } from 'lucide-react';
+import FeatureExplanationModal from './FeatureExplanationModal';
 
 export default function Footer() {
+  const [modalState, setModalState] = useState<'none' | 'ranking' | 'intelligence'>('none');
+
+  const openModal = (type: 'ranking' | 'intelligence') => {
+    console.log(`Analytics: Footer Feature Modal Opened: ${type === 'ranking' ? 'AI Flight Ranking' : 'Price Intelligence'}`);
+    setModalState(type);
+  };
+
+  const closeModal = () => {
+    console.log('Analytics: Footer Feature Modal Closed');
+    setModalState('none');
+  };
+
   return (
     <footer className="relative mt-auto bg-[#1a1a2e] text-white/70">
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
           {/* Brand */}
-          <div className="lg:col-span-1">
-            <Link href="/" className="flex items-center group mb-4">
-              <img 
-                src="/logo.png" 
-                alt="FareMind" 
-                className="h-[80px] w-auto object-contain mix-blend-screen"
-              />
-            </Link>
+          <div className="lg:col-span-1 -mt-6">
+            <div className="mb-6 flex flex-col w-fit">
+              <Link href="/" className="flex items-center group">
+                <img
+                  src="/logo.png"
+                  alt="FareMind"
+                  className="h-[88px] w-auto object-contain mix-blend-screen"
+                />
+              </Link>
+              <div className="flex flex-col items-center w-full px-2 -mt-8">
+                <div className="relative w-full h-[1px] mb-[1px]">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent"></div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent blur-[1px]"></div>
+                </div>
+                <span className="text-[8px] sm:text-[9px] font-medium uppercase tracking-[0.7em] text-white/90 pl-[0.7em] translate-x-4">
+                  FREE YOUR <span className="text-[#009CA6] font-bold">MIND</span>
+                </span>
+                <div className="relative w-full h-[1px] mt-[1px]">
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent"></div>
+                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent blur-[1px]"></div>
+                </div>
+              </div>
+            </div>
             <p className="text-sm text-slate-600 leading-relaxed mb-6 font-medium">
-              AI-powered flight booking that monitors prices and automatically
-              finds you the best deals. Search smarter, save more.
+              AI-powered flight search, ranking, and personalization built around how <span className="text-[#009CA6]">you</span> travel.
             </p>
             <div className="flex items-center gap-3">
               {[
@@ -38,19 +68,39 @@ export default function Footer() {
 
           {/* Product */}
           <div>
-            <h3 className="text-sm font-black text-slate-800 mb-4 uppercase tracking-wider">Product</h3>
+            <h3 className="text-sm font-black text-white mb-4 uppercase tracking-wider">Product</h3>
             <ul className="space-y-3">
               {[
-                'Flight Search',
-                'Price Tracking',
-                'Smart Rebooking',
-                'Booking Dashboard',
-                'API Access',
+                { name: 'Flight Search', type: 'link', href: '/search' },
+                { name: 'AI Flight Ranking', type: 'modal', modalType: 'ranking' },
+                { name: 'Price Intelligence', type: 'modal', modalType: 'intelligence' },
+                { name: 'My FareMind DNA™', type: 'link', href: '/travel-dna' },
+                { name: 'Voice Assistant', type: 'action' },
               ].map((item) => (
-                <li key={item}>
-                  <a href="#" className="text-sm text-slate-400 hover:text-white transition-colors">
-                    {item}
-                  </a>
+                <li key={item.name}>
+                  {item.type === 'link' ? (
+                    <Link href={item.href!} className="text-sm text-slate-400 hover:text-white transition-colors">
+                      {item.name === 'My FareMind DNA™' ? (
+                        <>My <span className="text-white">FARE</span><span className="text-[#009CA6]">MIND</span> DNA™</>
+                      ) : (
+                        item.name
+                      )}
+                    </Link>
+                  ) : item.type === 'modal' ? (
+                    <button
+                      onClick={() => openModal(item.modalType as 'ranking' | 'intelligence')}
+                      className="text-sm text-slate-400 hover:text-white transition-colors text-left"
+                    >
+                      {item.name}
+                    </button>
+                  ) : (
+                    <button
+                      onClick={() => console.log('Analytics: Voice Assistant Opened from Footer')}
+                      className="text-sm text-slate-400 hover:text-white transition-colors text-left"
+                    >
+                      {item.name}
+                    </button>
+                  )}
                 </li>
               ))}
             </ul>
@@ -58,7 +108,7 @@ export default function Footer() {
 
           {/* Company */}
           <div>
-            <h3 className="text-sm font-black text-slate-800 mb-4 uppercase tracking-wider">Company</h3>
+            <h3 className="text-sm font-black text-white mb-4 uppercase tracking-wider">Company</h3>
             <ul className="space-y-3">
               {['About', 'Careers', 'Blog', 'Press', 'Contact'].map((item) => (
                 <li key={item}>
@@ -72,13 +122,15 @@ export default function Footer() {
 
           {/* Features */}
           <div>
-            <h3 className="text-sm font-black text-slate-800 mb-4 uppercase tracking-wider">Why FAREMIND</h3>
+            <h3 className="text-sm font-black text-white mb-4 uppercase tracking-wider">
+              Why FARE<span className="text-[#009CA6]">MIND</span>
+            </h3>
             <ul className="space-y-4">
               {[
-                { icon: Sparkles, text: 'AI price intelligence' },
-                { icon: Shield, text: 'Secure & private' },
-                { icon: Zap, text: 'Real-time updates' },
-                { icon: Globe, text: 'Multi-source aggregation' },
+                { icon: Brain, text: 'AI-Powered Recommendations' },
+                { icon: Dna, text: 'Personalized Travel DNA' },
+                { icon: Shield, text: 'Secure & Private' },
+                { icon: Globe, text: 'More Flight Choices' },
               ].map((item, i) => (
                 <li key={i} className="flex items-center gap-3">
                   <div className="w-8 h-8 rounded-lg bg-sun-gold/10 flex items-center justify-center">
@@ -110,6 +162,36 @@ export default function Footer() {
           </div>
         </div>
       </div>
+
+      <FeatureExplanationModal
+        isOpen={modalState === 'ranking'}
+        title="AI Flight Ranking"
+        icon={ListOrdered}
+        description="FareMind automatically evaluates flight options after every search and ranks them based on overall travel value."
+        bulletPoints={[
+          "Compares price, duration, stops, comfort, and flexibility",
+          "Highlights options with the best overall balance",
+          "Works automatically after every flight search",
+          "Can use My FareMind DNA™ when the user is logged in and personalization is active"
+        ]}
+        footerNote="AI Flight Ranking is applied after search results are returned. It is not a separate booking page."
+        onClose={closeModal}
+      />
+
+      <FeatureExplanationModal
+        isOpen={modalState === 'intelligence'}
+        title="Price Intelligence"
+        icon={LineChart}
+        description="FareMind helps users understand fare movement and eligible price opportunities without requiring them to manually monitor routes."
+        bulletPoints={[
+          "Tracks eligible bookings and watched routes",
+          "Detects meaningful price changes when available",
+          "Supports price protection workflows where applicable",
+          "Helps travelers make smarter booking decisions"
+        ]}
+        footerNote="FareMind does not scan every flight globally. Price Intelligence applies to eligible bookings, watched routes, or supported protection products."
+        onClose={closeModal}
+      />
     </footer>
   );
 }

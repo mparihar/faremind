@@ -90,17 +90,17 @@ const FALLBACK_ROUTES: LiveRoute[] = [
 // ─── Page data constants ──────────────────────────
 
 const FEATURES = [
-  { icon: Globe,    title: 'Multi-Source Search',  description: 'Aggregates NDC and GDS providers to find the absolute lowest fares across all airlines.',     color: 'from-brand-500 to-brand-600' },
-  { icon: BarChart3, title: 'Price Intelligence',  description: 'AI monitors your booked flights and alerts you instantly when prices drop.',                    color: 'from-accent-500 to-accent-600' },
-  { icon: RefreshCcw, title: 'Smart Rebooking',    description: 'Automatically rebooks at lower prices, saving you money without any effort.',                  color: 'from-success-500 to-success-600' },
-  { icon: Bell,     title: 'Price Alerts',         description: 'Get notified the moment fares drop on your watched routes and bookings.',                       color: 'from-purple-500 to-purple-600' },
+  { icon: Globe,    title: 'Smarter Flight Search',  description: 'We search across multiple travel sources to help you find the best balance of price, comfort, and flexibility.',     color: 'from-brand-500 to-brand-600' },
+  { icon: BarChart3, title: 'Price Intelligence',  description: 'FareMind tracks your eligible trips and alerts you when prices move in your favor.',                    color: 'from-accent-500 to-accent-600' },
+  { icon: RefreshCcw, title: 'AI Flight Ranking',    description: 'FareMind intelligently ranks flight options using price, comfort, flexibility, convenience, and travel value.',                  color: 'from-success-500 to-success-600' },
+  { icon: Dna,     title: 'My FareMind DNA™',         description: 'Learns your travel preferences from confirmed bookings and personalizes recommendations to match your travel style.',                       color: 'from-purple-500 to-purple-600' },
 ];
 
 const STATS = [
-  { value: '$2.4M+', label: 'Saved for travelers' },
-  { value: '150K+',  label: 'Flights searched daily' },
-  { value: '500+',   label: 'Airlines covered' },
-  { value: '23%',    label: 'Average savings' },
+  { value: '100+', label: 'Airlines Connected' },
+  { value: '1000+',  label: 'Routes Available' },
+  { value: '24/7',   label: 'AI Assistance' },
+  { value: '100%',    label: 'Personalized Search' },
 ];
 
 // ─── Component ───────────────────────────────────
@@ -297,75 +297,85 @@ export default function HomePage() {
                   ))}
             </div>
           </motion.div>
-        </div>
-      </section>
-
-      {/* ═══ TRAVEL DNA SHOWCASE ═══ */}
-      <section className="relative py-16 overflow-hidden">
-        <div className="absolute inset-0 overflow-hidden pointer-events-none">
-          <div className="absolute top-1/4 right-1/4 w-72 h-72 bg-[#1ABC9C]/8 rounded-full blur-[120px]" />
-          <div className="absolute bottom-1/4 left-1/3 w-64 h-64 bg-purple-500/5 rounded-full blur-[100px]" />
-        </div>
-        <div className="relative max-w-5xl mx-auto px-4 sm:px-6 lg:px-8">
           <motion.div
             initial={{ opacity: 0, y: 30 }}
             whileInView={{ opacity: 1, y: 0 }}
             viewport={{ once: true }}
             transition={{ duration: 0.6 }}
-            className="relative bg-gradient-to-br from-[#0f1525]/90 to-[#0a0e1a]/90 backdrop-blur-xl rounded-3xl border border-[#1ABC9C]/15 p-8 sm:p-12 overflow-hidden shadow-2xl shadow-black/20"
+            className="relative mt-16 bg-gradient-to-br from-[#0f1525]/90 to-[#0a0e1a]/90 backdrop-blur-xl rounded-3xl border border-[#1ABC9C]/15 p-5 sm:p-6 overflow-hidden shadow-2xl shadow-black/20"
           >
             {/* Animated border glow */}
             <div className="absolute inset-0 rounded-3xl bg-gradient-to-r from-[#1ABC9C]/10 via-transparent to-purple-500/10 opacity-50" />
             
-            <div className="relative flex flex-col md:flex-row items-center gap-8">
-              {/* DNA Icon & Helix Visual */}
-              <div className="relative shrink-0">
-                <div className="w-20 h-20 rounded-2xl bg-gradient-to-br from-[#1ABC9C] to-[#16A085] flex items-center justify-center shadow-xl shadow-[#1ABC9C]/25">
-                  <Dna className="w-10 h-10 text-white" />
+            <div className="relative flex flex-col md:flex-row items-center gap-6">
+              {/* Animated Interactive DNA Icon */}
+              <motion.div
+                whileHover={{ scale: 1.05, rotate: 2 }}
+                whileTap={{ scale: 0.95 }}
+                className="relative w-20 h-20 shrink-0 group cursor-pointer"
+              >
+                {/* Glowing Aura */}
+                <div className="absolute -inset-2 bg-[#1ABC9C] rounded-[2rem] opacity-40 blur-xl group-hover:opacity-70 transition-opacity duration-500 animate-pulse" />
+                
+                {/* Main Card */}
+                <div className="relative w-full h-full bg-[#1ABC9C] rounded-2xl flex items-center justify-center overflow-hidden shadow-xl shadow-[#1ABC9C]/25">
+                  
+                  {/* High Quality Generated DNA Icon */}
+                  <img src="/teal_dna_icon.png" alt="Travel DNA" className="w-full h-full object-cover transform group-hover:scale-110 transition-transform duration-500" />
+
+                  {/* Floating Particles */}
+                  <div className="absolute inset-0 opacity-0 group-hover:opacity-100 transition-opacity duration-300 pointer-events-none">
+                    <div className="absolute top-2 left-2 w-1.5 h-1.5 rounded-full bg-white/60 animate-ping" />
+                    <div className="absolute bottom-3 right-2 w-1 h-1 rounded-full bg-white/80 animate-ping" style={{ animationDelay: '0.3s' }} />
+                  </div>
                 </div>
-                <div className="absolute -inset-4 rounded-3xl bg-[#1ABC9C]/10 blur-xl -z-10 animate-pulse" />
-              </div>
+              </motion.div>
 
               {/* Content */}
               <div className="flex-1 text-center md:text-left">
-                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 mb-4">
+                <div className="inline-flex items-center gap-2 px-3 py-1 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 mb-2">
                   <Sparkles className="w-3 h-3 text-[#1ABC9C]" />
-                  <span className="text-[10px] font-black text-[#1ABC9C] uppercase tracking-wider">Travel DNA</span>
+                  <span className="text-[10px] font-black uppercase tracking-wider text-[#1ABC9C]">
+                    <span className="text-white">FARE</span><span className="text-[#009CA6]">MIND</span> DNA™
+                  </span>
                 </div>
-                <h2 className="text-2xl sm:text-3xl font-black text-white mb-3 tracking-tight">
-                  Flights personalized around how <span className="text-[#1ABC9C]">you</span> travel.
+                <h2 className="text-2xl sm:text-3xl font-black text-white mb-1 tracking-tight">
+                  <span className="text-[#1ABC9C]">Your</span> genes decide your travel style.
                 </h2>
-                <p className="text-sm text-slate-400 leading-relaxed mb-6 max-w-lg">
-                  FareMind learns from your confirmed bookings to understand your airline, cabin, seat, baggage, and flexibility preferences — then uses that intelligence to personalize future flight recommendations.
-                </p>
-                <div className="flex flex-col sm:flex-row gap-3 items-center md:items-start">
-                  {user ? (
-                    <a
-                      href="/travel-dna"
-                      className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-black text-white bg-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 hover:brightness-110 transition-all"
-                    >
-                      <Dna className="w-4 h-4" />
-                      View My Travel DNA
-                      <ArrowRight className="w-4 h-4" />
-                    </a>
-                  ) : (
-                    <a
-                      href="/auth/login?redirect=/travel-dna"
-                      className="inline-flex items-center gap-2 px-6 py-3 rounded-xl text-sm font-black text-white bg-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 hover:brightness-110 transition-all"
-                    >
-                      Sign In to Start Learning
-                      <ArrowRight className="w-4 h-4" />
-                    </a>
-                  )}
-                  <p className="text-[11px] text-slate-600 max-w-xs">
-                    Travel DNA starts learning after your first confirmed booking.
+                <div className="flex flex-col w-full">
+                  <p className="text-sm text-slate-400 leading-relaxed text-justify mb-3">
+                    <span className="font-black text-white">FARE</span><span className="font-black text-[#009CA6]">MIND</span> Travel DNA intelligently analyzes your booking behavior, preferences, and trip choices to build a comprehensive profile of your unique travel personality.
                   </p>
+                  <div className="flex items-center justify-end gap-6 w-full">
+                    {user ? (
+                      <a
+                        href="/travel-dna"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-black text-white bg-[#1ABC9C] shadow-md hover:brightness-110 transition-all"
+                      >
+                        <Dna className="w-3 h-3" />
+                        <span>View My <span>FARE</span><span className="text-[#009CA6]">MIND</span> DNA™</span>
+                        <ArrowRight className="w-3 h-3" />
+                      </a>
+                    ) : (
+                      <a
+                        href="/auth/login?redirect=/travel-dna"
+                        className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-sm font-black text-white bg-[#1ABC9C] shadow-md hover:brightness-110 transition-all"
+                      >
+                        Sign In to Start Learning
+                        <ArrowRight className="w-3 h-3" />
+                      </a>
+                    )}
+                    <span className="text-[11px] text-slate-400">
+                      <span className="font-black text-white">FARE</span><span className="font-black text-[#009CA6]">MIND</span> DNA starts learning after your first confirmed booking.
+                    </span>
+                  </div>
                 </div>
               </div>
             </div>
           </motion.div>
         </div>
       </section>
+
 
       {/* ═══ STATS BAR ═══ */}
       <section className="relative border-y border-white/[0.05] bg-sun-deep/40 backdrop-blur-md">
@@ -471,9 +481,9 @@ export default function HomePage() {
 
           <div className="grid grid-cols-1 md:grid-cols-3 gap-8">
             {[
-              { step: '01', title: 'Search & Compare',    description: "Our AI searches across NDC and GDS sources simultaneously, finding fares you won't see anywhere else.", icon: Globe },
-              { step: '02', title: 'Book & Track',        description: 'Book the best fare and enable price tracking. Our agents monitor fares 24/7 for potential savings.',      icon: Shield },
-              { step: '03', title: 'Save Automatically',  description: 'When prices drop below what you paid, FAREMIND alerts you or automatically rebooks at the lower price.',  icon: TrendingDown },
+              { step: '01', title: 'Search Smarter',    description: "Access flight options from multiple travel sources through a single intelligent search.", icon: Globe },
+              { step: '02', title: 'Travel with Intelligence',        description: <><span><span className="font-black text-white">FARE</span><span className="font-black text-[#009CA6]">MIND</span></span> AI analyzes price, comfort, flexibility, and convenience to rank the best flights for your journey.</>,      icon: Shield },
+              { step: '03', title: 'Travel Your Way',  description: 'My FareMind DNA™ learns your travel style and tailors recommendations to match your preferences.',  icon: Dna },
             ].map((item, i) => {
               const Icon = item.icon;
               return (
@@ -515,11 +525,14 @@ export default function HomePage() {
             viewport={{ once: true }}
             className="glass-card-scenic p-12 sm:p-16 border-sun-gold/20"
           >
-            <h2 className="text-[2rem] sm:text-[2.75rem] font-black text-[#1a1a2e] mb-8 tracking-tighter leading-tight">
+            <h2 className="text-[2rem] sm:text-[2.75rem] font-black text-[#1a1a2e] mb-1 tracking-tighter leading-tight">
               Your next adventure awaits
             </h2>
+            <h3 className="text-2xl sm:text-3xl font-bold text-gray-500 mb-8 tracking-tight">
+              Free Your <span className="text-[#009CA6]">Mind</span>.
+            </h3>
             <p className="text-xl text-gray-500 mb-10 max-w-2xl mx-auto font-medium">
-              Join thousands of travelers who save an average of 23% on their flights with <span className="font-black text-white">FARE</span><span className="font-black text-[#009CA6]">MIND</span>&apos;s AI-powered booking agents.
+              Let <span className="font-black text-white">FARE</span><span className="font-black text-[#009CA6]">MIND</span> search, rank, and personalize the best flight options for your journey.
             </p>
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Link
