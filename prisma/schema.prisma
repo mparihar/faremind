@@ -39,6 +39,7 @@ model User {
   sessions        Session[]
   notifications   Notification[]
   savedRoutes     SavedRoute[]
+  paymentMethods  PaymentMethod[]
 
   @@map("users")
 }
@@ -2122,4 +2123,33 @@ model TravelDnaConfig {
   updatedAt                       DateTime @updatedAt @map("updated_at")
 
   @@map("travel_dna_config")
+}
+
+// ═══════════════════════════════════════════════
+// PAYMENT METHODS (TOKENIZATION)
+// ═══════════════════════════════════════════════
+
+model PaymentMethod {
+  id                        String   @id @default(cuid())
+  userId                    String   @map("user_id")
+  provider                  String   @default("STRIPE")
+  providerCustomerId        String?  @map("provider_customer_id")
+  providerPaymentMethodId   String   @map("provider_payment_method_id")
+  cardBrand                 String   @map("card_brand")
+  cardLast4                 String   @map("card_last4")
+  expMonth                  Int      @map("exp_month")
+  expYear                   Int      @map("exp_year")
+  cardholderName            String?  @map("cardholder_name")
+  billingCountry            String?  @map("billing_country")
+  billingZip                String?  @map("billing_zip")
+  isDefault                 Boolean  @default(false) @map("is_default")
+  status                    String   @default("ACTIVE") // ACTIVE | EXPIRED | DELETED
+  createdAt                 DateTime @default(now()) @map("created_at")
+  updatedAt                 DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@index([providerPaymentMethodId])
+  @@map("payment_methods")
 }

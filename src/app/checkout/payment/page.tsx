@@ -183,6 +183,26 @@ function PaymentFormInner() {
   const [cardExpiryComplete, setCardExpiryComplete] = useState(false);
   const [cardCvcComplete, setCardCvcComplete] = useState(false);
 
+  // Saved Payment Methods
+  const [savedMethods, setSavedMethods] = useState<any[]>([]);
+  const [selectedMethodId, setSelectedMethodId] = useState<string>('new');
+  const [saveForFuture, setSaveForFuture] = useState(false);
+
+  useEffect(() => {
+    if (user?.id) {
+      fetch(`/api/payment-methods?userId=${user.id}`)
+        .then((r) => r.json())
+        .then((d) => {
+          if (d.success && d.paymentMethods?.length > 0) {
+            setSavedMethods(d.paymentMethods);
+            const def = d.paymentMethods.find((m: any) => m.isDefault);
+            setSelectedMethodId(def ? def.providerPaymentMethodId : d.paymentMethods[0].providerPaymentMethodId);
+          }
+        })
+        .catch(console.error);
+    }
+  }, [user]);
+
   const {
     selectedFare,
     sessionId,
@@ -224,7 +244,7 @@ function PaymentFormInner() {
   })();
 
   // ── Validation ─────────────────────────────────────────────────────────────
-  const isFormValid =
+  const isFormValid = selectedMethodId !== 'new' || (
     cardholderName.trim().length > 0 &&
     cardNumberComplete &&
     cardExpiryComplete &&
@@ -232,7 +252,8 @@ function PaymentFormInner() {
     billingCountry.trim().length > 0 &&
     billingAddress.trim().length > 0 &&
     billingCity.trim().length > 0 &&
-    billingZip.trim().length > 0;
+    billingZip.trim().length > 0
+  );
 
   // ── Booking flow ───────────────────────────────────────────────────────────
   const handleCompleteBooking = async () => {
@@ -261,6 +282,7 @@ function PaymentFormInner() {
           description: `FAREMIND booking — ${routeLabel}`,
           customerEmail: primaryPax?.email || '',
           sessionId,
+          userId: user?.id,
         }),
       });
       const intentRes = await intentRaw.json() as { paymentIntentId: string; clientSecret?: string; error?: string };
@@ -273,39 +295,50 @@ function PaymentFormInner() {
       store.setPaymentIntent(paymentIntentId);
 
       // 2. Confirm payment via Stripe.js (PCI-compliant — card data never touches our server)
-      const cardNumberElement = elements.getElement(CardNumberElement);
-      if (!cardNumberElement) {
-        throw new Error('Card input not ready. Please refresh and try again.');
-      }
+      let confirmResult;
+      
+      if (selectedMethodId !== 'new') {
+        confirmResult = await stripe.confirmCardPayment(clientSecret, {
+          payment_method: selectedMethodId,
+        });
+      } else {
+        const cardNumberElement = elements.getElement(CardNumberElement);
+        if (!cardNumberElement) {
+          throw new Error('Card input not ready. Please refresh and try again.');
+        }
 
-      const { error: stripeError, paymentIntent } = await stripe.confirmCardPayment(
-        clientSecret,
-        {
-          payment_method: {
-            card: cardNumberElement,
-            billing_details: {
-              name: cardholderName,
-              address: {
-                line1: billingAddress,
-                city: billingCity,
-                postal_code: billingZip,
-                country: billingCountry === 'United States' ? 'US'
-                       : billingCountry === 'United Kingdom' ? 'GB'
-                       : billingCountry === 'Canada' ? 'CA'
-                       : billingCountry === 'Australia' ? 'AU'
-                       : billingCountry === 'Germany' ? 'DE'
-                       : billingCountry === 'France' ? 'FR'
-                       : billingCountry === 'India' ? 'IN'
-                       : billingCountry === 'Japan' ? 'JP'
-                       : billingCountry === 'Singapore' ? 'SG'
-                       : billingCountry === 'UAE' ? 'AE'
-                       : 'US',
+        confirmResult = await stripe.confirmCardPayment(
+          clientSecret,
+          {
+            payment_method: {
+              card: cardNumberElement,
+              billing_details: {
+                name: cardholderName,
+                address: {
+                  line1: billingAddress,
+                  city: billingCity,
+                  postal_code: billingZip,
+                  country: billingCountry === 'United States' ? 'US'
+                         : billingCountry === 'United Kingdom' ? 'GB'
+                         : billingCountry === 'Canada' ? 'CA'
+                         : billingCountry === 'Australia' ? 'AU'
+                         : billingCountry === 'Germany' ? 'DE'
+                         : billingCountry === 'France' ? 'FR'
+                         : billingCountry === 'India' ? 'IN'
+                         : billingCountry === 'Japan' ? 'JP'
+                         : billingCountry === 'Singapore' ? 'SG'
+                         : billingCountry === 'UAE' ? 'AE'
+                         : 'US',
+                },
+                email: primaryPax?.email || undefined,
               },
-              email: primaryPax?.email || undefined,
             },
           },
-        }
-      );
+          saveForFuture ? { setup_future_usage: 'off_session' } : undefined
+        );
+      }
+
+      const { error: stripeError, paymentIntent } = confirmResult;
 
       if (stripeError) {
         throw new Error(stripeError.message || 'Payment was declined. Please check your card details.');
@@ -473,8 +506,45 @@ function PaymentFormInner() {
           {/* ── LEFT: Payment form (2/3) ── */}
           <div className="lg:col-span-2 space-y-5">
 
+            {/* Saved Cards Selector */}
+            {user?.id && savedMethods.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                <h2 className="text-base font-bold text-slate-900 mb-4">Saved Payment Methods</h2>
+                <div className="space-y-3">
+                  {savedMethods.map((method) => (
+                    <label key={method.providerPaymentMethodId} className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedMethodId === method.providerPaymentMethodId ? 'border-[#1ABC9C] bg-[#1ABC9C]/5' : 'border-slate-200 hover:border-slate-300'}`}>
+                      <input 
+                        type="radio" 
+                        name="payment_method" 
+                        value={method.providerPaymentMethodId} 
+                        checked={selectedMethodId === method.providerPaymentMethodId}
+                        onChange={(e) => setSelectedMethodId(e.target.value)}
+                        className="text-[#1ABC9C] focus:ring-[#1ABC9C]"
+                      />
+                      <div className="w-10 h-6 bg-slate-100 rounded flex items-center justify-center text-[10px] font-bold text-slate-500 uppercase">{method.cardBrand === 'Unknown' ? 'CARD' : method.cardBrand}</div>
+                      <div>
+                        <p className="text-sm font-bold text-slate-800">•••• {method.cardLast4}</p>
+                        <p className="text-xs text-slate-500">Expires {method.expMonth.toString().padStart(2, '0')}/{method.expYear}</p>
+                      </div>
+                    </label>
+                  ))}
+                  <label className={`flex items-center gap-3 p-3 rounded-xl border cursor-pointer transition-all ${selectedMethodId === 'new' ? 'border-[#1ABC9C] bg-[#1ABC9C]/5' : 'border-slate-200 hover:border-slate-300'}`}>
+                    <input 
+                      type="radio" 
+                      name="payment_method" 
+                      value="new" 
+                      checked={selectedMethodId === 'new'}
+                      onChange={(e) => setSelectedMethodId(e.target.value)}
+                      className="text-[#1ABC9C] focus:ring-[#1ABC9C]"
+                    />
+                    <div className="text-sm font-bold text-slate-800">Use a new card</div>
+                  </label>
+                </div>
+              </div>
+            )}
+
             {/* Card Details */}
-            <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+            <div className={`bg-white rounded-2xl border border-slate-200 shadow-sm p-6 ${selectedMethodId !== 'new' ? 'hidden' : ''}`}>
               <div className="flex items-start justify-between mb-1">
                 <div className="flex items-center gap-2">
                   <CreditCard className="w-5 h-5 text-slate-500" />
@@ -625,6 +695,20 @@ function PaymentFormInner() {
                     </div>
                   </div>
                 </div>
+
+                {user?.id && selectedMethodId === 'new' && (
+                  <div className="pt-4 mt-4 border-t border-slate-100">
+                    <label className="flex items-center gap-2 cursor-pointer">
+                      <input 
+                        type="checkbox" 
+                        checked={saveForFuture} 
+                        onChange={(e) => setSaveForFuture(e.target.checked)} 
+                        className="rounded text-[#1ABC9C] focus:ring-[#1ABC9C]"
+                      />
+                      <span className="text-sm font-medium text-slate-700">Save this card for future bookings</span>
+                    </label>
+                  </div>
+                )}
               </div>
             </div>
 

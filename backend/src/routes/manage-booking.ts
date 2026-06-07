@@ -144,15 +144,18 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const existingCancel = await mbq.getCancellationByBookingId(bookingId);
       const actions = [];
       if (!isCancelled && !isPast && !existingCancel) actions.push({ key: 'cancel', label: 'Cancel Booking', available: true });
-      if (!isCancelled && !isPast) actions.push({ key: 'date_change', label: 'Change Flight', available: true });
-      if (!isCancelled && !isPast) actions.push({ key: 'seat_change', label: 'Change Seat', available: true });
+      const primaryPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
+      const isFlightChangeable = primaryPnr ? primaryPnr.changeable : false;
+      const isSeatChangeable = primaryPnr ? (primaryPnr.seatSelection !== null && primaryPnr.seatSelection !== 'false' && primaryPnr.seatSelection !== 'none' && primaryPnr.seatSelection !== 'unavailable') : false;
+
+      if (!isCancelled && !isPast) actions.push({ key: 'date_change', label: 'Change Flight', available: true, disabled: !isFlightChangeable });
+      if (!isCancelled && !isPast) actions.push({ key: 'seat_change', label: 'Change Seat', available: true, disabled: !isSeatChangeable });
       if (!isCancelled) actions.push({ key: 'passenger_update', label: 'Update Passenger Details', available: true });
       actions.push({ key: 'download_eticket', label: 'Download E-Ticket', available: booking.ticketingStatus === 'ISSUED' });
       actions.push({ key: 'contact_support', label: 'Contact Support', available: true });
       if (existingCancel) actions.push({ key: 'refund_status', label: 'View Refund Status', available: true, data: existingCancel });
 
       // Expose stored fare rules from primary PNR
-      const primaryPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
       const fareRules = primaryPnr ? {
         refundable: primaryPnr.refundable,
         changeable: primaryPnr.changeable,

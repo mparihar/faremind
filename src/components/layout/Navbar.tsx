@@ -127,7 +127,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
             <img
               src="/logo.png"
               alt="FareMind"
-              className="h-[96px] w-auto object-contain flex-shrink-0"
+              className="h-[90px] w-auto object-contain flex-shrink-0"
             />
             <div className="absolute bottom-[2px] flex flex-col items-center w-full px-1">
               <div className="relative w-full h-[1px] mb-[1px]">

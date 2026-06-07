@@ -34,6 +34,12 @@ export const GET = withAdmin(async (_req: NextRequest, { params }) => {
         orderBy: { createdAt: 'desc' },
         take: 10,
       },
+      paymentMethods: {
+        select: {
+          id: true, cardBrand: true, cardLast4: true, expMonth: true, expYear: true, status: true
+        },
+        orderBy: { createdAt: 'desc' }
+      },
       _count: {
         select: { masterBookings: true, sessions: true, searchHistory: true },
       },

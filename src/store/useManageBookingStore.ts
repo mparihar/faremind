@@ -35,6 +35,7 @@ export interface BookingAction {
   key: string;
   label: string;
   available: boolean;
+  disabled?: boolean;
   data?: any;
 }
 

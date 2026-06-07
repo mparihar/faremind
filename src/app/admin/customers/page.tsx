@@ -65,6 +65,14 @@ interface CustomerDetail {
     createdAt: string;
     expiresAt: string;
   }>;
+  paymentMethods: Array<{
+    id: string;
+    cardBrand: string;
+    cardLast4: string;
+    expMonth: number;
+    expYear: number;
+    status: string;
+  }>;
   _count: {
     masterBookings: number;
     sessions: number;
@@ -230,6 +238,35 @@ function CustomerDetailModal({
                       <span className="text-slate-500">{format(new Date(s.createdAt), 'dd MMM hh:mm a')}</span>
                       <span className={`text-xs font-bold ${new Date(s.expiresAt) > new Date() ? 'text-emerald-400' : 'text-slate-600'}`}>
                         {new Date(s.expiresAt) > new Date() ? 'Active' : 'Expired'}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
+
+            {/* Payment Methods */}
+            {detail.paymentMethods?.length > 0 && (
+              <div>
+                <h3 className="text-sm font-black text-slate-300 uppercase tracking-wider mb-3">Payment Methods</h3>
+                <div className="space-y-1.5">
+                  {detail.paymentMethods.map(pm => (
+                    <div key={pm.id} className="bg-slate-800/60 rounded-xl p-3 border border-slate-700/30 flex items-center justify-between">
+                      <div className="flex items-center gap-3">
+                        <div className="w-10 h-6 bg-slate-700 rounded flex items-center justify-center text-[10px] font-bold text-slate-300 uppercase">
+                          {pm.cardBrand === 'Unknown' ? 'CARD' : pm.cardBrand}
+                        </div>
+                        <div>
+                          <p className="text-white text-sm font-semibold">•••• {pm.cardLast4}</p>
+                          <p className="text-slate-500 text-xs">Exp {pm.expMonth}/{pm.expYear}</p>
+                        </div>
+                      </div>
+                      <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                        pm.status === 'ACTIVE' ? 'bg-emerald-400/15 text-emerald-400' :
+                        pm.status === 'EXPIRED' ? 'bg-amber-400/15 text-amber-400' :
+                        'bg-red-400/15 text-red-400'
+                      }`}>
+                        {pm.status}
                       </span>
                     </div>
                   ))}

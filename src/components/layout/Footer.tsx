@@ -153,7 +153,7 @@ export default function Footer() {
               FAREMIND is a travel technology brand operated by Chatore LLC, a Texas limited liability company.
             </p>
           </div>
-          <div className="flex items-center gap-6">
+          <div className="flex items-center gap-6 mt-6">
             {['Privacy Policy', 'Terms of Service', 'Cookie Policy'].map((item) => (
               <a key={item} href="#" className="text-xs text-slate-500 hover:text-slate-300 transition-colors">
                 {item}

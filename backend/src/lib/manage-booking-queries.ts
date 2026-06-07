@@ -61,6 +61,7 @@ export async function getMasterBookingFull(bookingId: string) {
       baggage: true,
       addons: true,
       payments: { orderBy: { createdAt: 'desc' } },
+      commercialCharges: { where: { displayToCustomer: true }, orderBy: { appliedAt: 'asc' } },
       events: { orderBy: { createdAt: 'desc' }, take: 50 },
       notes: { orderBy: { createdAt: 'desc' } },
       providerPayloads: { orderBy: { createdAt: 'desc' }, take: 20 },

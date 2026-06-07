@@ -21,6 +21,7 @@ export async function POST(req: NextRequest) {
       description = 'FAREMIND flight booking',
       customerEmail,
       sessionId,
+      userId,
     } = body;
 
     if (!amount || typeof amount !== 'number' || amount <= 0) {
@@ -37,10 +38,30 @@ export async function POST(req: NextRequest) {
       `[Stripe] Creating PaymentIntent — $${amount.toFixed(2)} ${currency.toUpperCase()} (${amountInCents} cents)`
     );
 
+    let customer = undefined;
+    if (userId) {
+      // Find a customer id for this user if it exists
+      const prisma = (await import('@/lib/db')).default;
+      const pm = await prisma.paymentMethod.findFirst({
+        where: { userId, providerCustomerId: { not: null } }
+      });
+      if (pm?.providerCustomerId) {
+        customer = pm.providerCustomerId;
+      } else {
+        // Create new customer for inline saving
+        const newCust = await stripe.customers.create({
+          email: customerEmail || undefined,
+          metadata: { userId }
+        });
+        customer = newCust.id;
+      }
+    }
+
     const paymentIntent = await stripe.paymentIntents.create({
       amount: amountInCents,
       currency: currency.toLowerCase(),
       description,
+      customer,
       // MANUAL CAPTURE — authorize only, do NOT charge yet.
       // The funds are held on the customer's card but not captured.
       // We capture ONLY after the provider order (Duffel) succeeds.
@@ -63,6 +84,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({
       paymentIntentId: paymentIntent.id,
       clientSecret: paymentIntent.client_secret,
+      customerId: customer,
     });
   } catch (err: any) {
     console.error('[Stripe] ❌ Failed to create PaymentIntent:', err.message);

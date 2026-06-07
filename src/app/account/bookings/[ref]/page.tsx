@@ -60,7 +60,8 @@ export default function BookingDetailPage() {
   const b = booking;
   const isCancelled = b.bookingStatus === 'CANCELLED';
   const isPast = new Date(b.departureDate) < new Date();
-  const depDate = new Date(b.departureDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const exactDepTime = b.journeys?.[0]?.departureDateTime || b.departureDate;
+  const depDate = new Date(exactDepTime).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   const fmt = (n: number) => fmtC(n, b.currency || 'USD');
 
   const actionConfig: Record<string, { icon: any; cls: string }> = {
@@ -79,8 +80,8 @@ export default function BookingDetailPage() {
     ? [{ key: 'refund_status', label: 'View Refund Status', available: true }, { key: 'contact_support', label: 'Contact Support', available: true }]
     : [
         { key: 'cancel', label: 'Cancel Booking', available: !isPast },
-        { key: 'date_change', label: 'Change Flight', available: !isPast },
-        { key: 'seat_change', label: 'Change Seat', available: !isPast },
+        { key: 'date_change', label: 'Change Flight', available: !isPast, disabled: !(b.pnrs?.some((p: any) => p.changeable)) },
+        { key: 'seat_change', label: 'Change Seat', available: !isPast, disabled: !(b.pnrs?.some((p: any) => p.seatSelection !== null && p.seatSelection !== 'false' && p.seatSelection !== 'none' && p.seatSelection !== 'unavailable')) },
         { key: 'passenger_update', label: 'Update Passenger', available: true },
         { key: 'download_eticket', label: 'Download E-Ticket', available: b.ticketingStatus === 'ISSUED' },
         { key: 'resend_itinerary', label: 'Re-send Itinerary', available: true },
@@ -182,48 +183,298 @@ export default function BookingDetailPage() {
           )}
 
           {/* ─ Itinerary Tab ─ */}
-          {tab === 'itinerary' && (
-            <div className="space-y-4">
-              {(b.journeys || []).map((j: any, i: number) => (
-                <div key={j.id || i} className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
-                  <div className="flex items-center gap-2 mb-4">
-                    <span className="text-[10px] font-bold text-[#1ABC9C] uppercase tracking-wider bg-[#1ABC9C]/10 px-2.5 py-0.5 rounded-full">{j.direction === 'RETURN' ? 'Return' : 'Outbound'}</span>
-                    <span className="text-xs text-slate-500">{new Date(j.departureDate || b.departureDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
-                  </div>
-                  <div className="flex items-center gap-4 mb-4">
-                    <div className="text-center"><p className="text-white font-black text-2xl">{j.originAirport || b.originAirport}</p><p className="text-slate-500 text-xs">{j.originCity || b.originCity}</p></div>
-                    <div className="flex-1 flex items-center gap-1.5"><div className="h-px flex-1 bg-white/10" /><Plane size={13} className="text-[#1ABC9C] rotate-90" /><div className="h-px flex-1 bg-white/10" /></div>
-                    <div className="text-center"><p className="text-white font-black text-2xl">{j.destinationAirport || b.destinationAirport}</p><p className="text-slate-500 text-xs">{j.destinationCity || b.destinationCity}</p></div>
-                  </div>
-                  {(j.segments || []).map((seg: any, si: number) => (
-                    <div key={seg.id || si} className={`py-3 ${si > 0 ? 'border-t border-white/[0.06]' : ''}`}>
-                      <div className="flex items-center justify-between mb-1">
-                        <div className="flex items-center gap-2">
-                          <span className="text-white font-bold text-sm">{seg.flightNumber || seg.marketingFlightNumber}</span>
-                          <span className="text-slate-400 text-xs">{seg.airlineName}</span>
-                        </div>
-                        {seg.cabinClass && <span className="px-2 py-0.5 rounded-lg bg-white/[0.04] text-slate-400 text-[10px] font-bold uppercase">{seg.cabinClass}</span>}
-                      </div>
-                      <div className="flex items-center gap-2 text-xs text-slate-500">
-                        {seg.departureTime && <span>{seg.departureTime}</span>}
-                        {seg.arrivalTime && <><span>→</span><span>{seg.arrivalTime}</span></>}
-                        {seg.aircraft && <span className="ml-2 text-slate-600">· {seg.aircraft}</span>}
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              ))}
-              {(!b.journeys || b.journeys.length === 0) && (
+          {tab === 'itinerary' && (() => {
+            const fmtTime = (dt: string) => new Date(dt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+            const fmtDate = (dt: string) => new Date(dt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+            const fmtDur = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`;
+            const allSegs = (b.journeys || []).flatMap((j: any) => (j.segments || []).map((s: any) => ({ ...s, direction: j.direction })));
+
+            return (
+              <div className="space-y-5">
+                {/* ── Itinerary Summary ── */}
                 <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
-                  <div className="flex items-center gap-4">
-                    <div className="text-center"><p className="text-white font-black text-2xl">{b.originAirport}</p><p className="text-slate-500 text-xs">{b.originCity}</p></div>
-                    <div className="flex-1 flex items-center gap-1.5"><div className="h-px flex-1 bg-white/10" /><Plane size={13} className="text-[#1ABC9C] rotate-90" /><div className="h-px flex-1 bg-white/10" /></div>
-                    <div className="text-center"><p className="text-white font-black text-2xl">{b.destinationAirport}</p><p className="text-slate-500 text-xs">{b.destinationCity}</p></div>
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Itinerary Summary</p>
+                  <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                    {[
+                      ['Route', `${b.originAirport} → ${b.destinationAirport}`],
+                      ['Trip type', (b.tripType || '').replace(/_/g, ' ')],
+                      ['Departure', fmtDate(b.departureDate)],
+                      ['Return', b.returnDate ? fmtDate(b.returnDate) : '—'],
+                      ['Airline', allSegs[0]?.airlineName || b.primaryProvider],
+                      ['Class', allSegs[0]?.cabin ? allSegs[0].cabin.charAt(0).toUpperCase() + allSegs[0].cabin.slice(1).toLowerCase() : '—'],
+                      ['Status', (b.bookingStatus || '').replace(/_/g, ' ')],
+                      ['PNR', b.masterPnr || '—'],
+                    ].map(([label, val]) => (
+                      <div key={label as string} className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                        <span className="text-slate-500">{label}</span>
+                        <span className="text-white font-medium capitalize text-right">{(val as string).toLowerCase()}</span>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              )}
-            </div>
-          )}
+
+                {/* ── Flight Details ── */}
+                <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-4">Flight Details</p>
+                  <div className="space-y-5">
+                    {(b.journeys || []).map((j: any, ji: number) => (
+                      <div key={j.id || ji}>
+                        {/* Journey header */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <span className={`text-[10px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full ${j.direction === 'RETURN' ? 'bg-amber-500/10 text-amber-400' : 'bg-[#1ABC9C]/10 text-[#1ABC9C]'}`}>
+                            {j.direction === 'RETURN' ? 'Return' : 'Outbound'}
+                          </span>
+                          <span className="text-xs text-slate-500">{fmtDate(j.departureDateTime || j.departureDate || b.departureDate)}</span>
+                        </div>
+
+                        {/* Segments */}
+                        {(j.segments || []).map((seg: any, si: number) => (
+                          <div key={seg.id || si} className={`bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 ${si > 0 ? 'mt-3' : ''}`}>
+                            {/* Airline & flight */}
+                            <div className="flex items-center gap-2 mb-3">
+                              <Plane size={14} className="text-[#1ABC9C]" />
+                              <span className="text-white text-sm font-bold">{seg.airlineName}</span>
+                              <span className="text-slate-500 text-xs font-mono">{seg.flightNumber}</span>
+                              {seg.cabin && <span className="ml-auto px-2 py-0.5 rounded-lg bg-white/[0.04] text-slate-400 text-[10px] font-bold uppercase">{seg.cabin}</span>}
+                            </div>
+
+                            {/* Times row */}
+                            <div className="flex items-center gap-3">
+                              {/* Departure */}
+                              <div className="flex-1">
+                                <p className="text-white text-xl font-black">{seg.departureDateTime ? fmtTime(seg.departureDateTime) : '—'}</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">{seg.originAirport} · {seg.originCity}</p>
+                                {seg.originTerminal && <p className="text-[10px] text-slate-600">Terminal {seg.originTerminal}</p>}
+                              </div>
+
+                              {/* Duration line */}
+                              <div className="flex flex-col items-center px-2">
+                                <span className="text-[10px] text-slate-500 font-bold">{seg.durationMinutes ? fmtDur(seg.durationMinutes) : ''}</span>
+                                <div className="flex items-center gap-1 my-1 w-24">
+                                  <div className="h-px flex-1 bg-white/10" />
+                                  <Plane size={10} className="text-[#1ABC9C] rotate-90" />
+                                  <div className="h-px flex-1 bg-white/10" />
+                                </div>
+                                {seg.totalStops > 0 && <span className="text-[9px] text-amber-400">{seg.totalStops} stop</span>}
+                              </div>
+
+                              {/* Arrival */}
+                              <div className="flex-1 text-right">
+                                <p className="text-white text-xl font-black">{seg.arrivalDateTime ? fmtTime(seg.arrivalDateTime) : '—'}</p>
+                                <p className="text-[10px] text-slate-500 mt-0.5">{seg.destinationAirport} · {seg.destinationCity}</p>
+                                {seg.destinationTerminal && <p className="text-[10px] text-slate-600">Terminal {seg.destinationTerminal}</p>}
+                              </div>
+                            </div>
+
+                            {/* Aircraft */}
+                            {seg.aircraftType && (
+                              <p className="text-[10px] text-slate-600 mt-2 pt-2 border-t border-white/[0.04]">Aircraft: {seg.aircraftType}</p>
+                            )}
+                          </div>
+                        ))}
+
+                        {/* Layover between journeys */}
+                        {ji < (b.journeys || []).length - 1 && (
+                          <div className="my-4 border-t border-dashed border-white/[0.06]" />
+                        )}
+                      </div>
+                    ))}
+                    {(!b.journeys || b.journeys.length === 0) && (
+                      <div className="flex items-center gap-4 py-4">
+                        <div className="text-center"><p className="text-white font-black text-2xl">{b.originAirport}</p><p className="text-slate-500 text-xs">{b.originCity}</p></div>
+                        <div className="flex-1 flex items-center gap-1.5"><div className="h-px flex-1 bg-white/10" /><Plane size={13} className="text-[#1ABC9C] rotate-90" /><div className="h-px flex-1 bg-white/10" /></div>
+                        <div className="text-center"><p className="text-white font-black text-2xl">{b.destinationAirport}</p><p className="text-slate-500 text-xs">{b.destinationCity}</p></div>
+                      </div>
+                    )}
+                  </div>
+                </div>
+
+                {/* ── Passenger Details ── */}
+                {(b.passengers || []).length > 0 && (
+                  <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-4">Passenger Details</p>
+                    <div className="space-y-5">
+                      {(b.passengers || []).map((pax: any, pi: number) => (
+                        <div key={pax.id || pi}>
+                          <p className="text-white font-bold text-sm mb-3">{pax.firstName} {pax.lastName}</p>
+                          {/* Per-journey info */}
+                          {(b.journeys || []).map((j: any, ji: number) => {
+                            const paxSeats = (b.seats || []).filter((s: any) => s.passengerId === pax.id && (j.segments || []).some((seg: any) => seg.id === s.segmentId));
+                            const paxMeals = (b.meals || []).filter((m: any) => m.passengerId === pax.id && m.journeyId === j.id);
+                            const paxBaggage = (b.baggage || []).filter((bg: any) => bg.passengerId === pax.id && bg.journeyId === j.id);
+                            const seatLabel = paxSeats.length > 0 ? paxSeats.map((s: any) => s.seatNumber).join(', ') : 'Pending airline assignment';
+                            const mealLabel = paxMeals.length > 0 ? paxMeals.map((m: any) => m.mealLabel).join(', ') : 'Pending airline assignment';
+                            const baggageLabel = paxBaggage.length > 0 ? paxBaggage.map((bg: any) => `${bg.quantity} ${bg.baggageType} bag${bg.quantity > 1 ? 's' : ''}`).join(', ') : 'Not selected';
+                            return (
+                              <div key={j.id || ji} className="mb-3">
+                                <div className={`flex items-center gap-2 py-1.5 px-3 rounded-t-lg ${j.direction === 'RETURN' ? 'bg-amber-500/10' : 'bg-[#1ABC9C]/10'}`}>
+                                  <span className={`text-[10px] font-bold uppercase ${j.direction === 'RETURN' ? 'text-amber-400' : 'text-[#1ABC9C]'}`}>
+                                    {j.direction === 'RETURN' ? 'Return Flight' : 'Outbound Flight'}
+                                  </span>
+                                  <span className="ml-auto text-[10px] text-slate-400 font-mono">{j.originAirport} → {j.destinationAirport}</span>
+                                </div>
+                                <div className="bg-white/[0.02] border border-white/[0.05] border-t-0 rounded-b-lg p-3 space-y-2">
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-slate-500">Seat</span>
+                                    <span className={`font-medium ${paxSeats.length > 0 ? 'text-white' : 'text-amber-400'}`}>{seatLabel}</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-slate-500">Meal</span>
+                                    <span className={`font-medium ${paxMeals.length > 0 ? 'text-white' : 'text-amber-400'}`}>{mealLabel}</span>
+                                  </div>
+                                  <div className="flex justify-between text-xs">
+                                    <span className="text-slate-500">Baggage</span>
+                                    <span className={`font-medium ${paxBaggage.length > 0 ? 'text-white' : 'text-slate-400'}`}>{baggageLabel}</span>
+                                  </div>
+                                </div>
+                              </div>
+                            );
+                          })}
+                          {pi < (b.passengers || []).length - 1 && <div className="border-t border-white/[0.06] mt-4 mb-2" />}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+
+                {/* ── Fare Breakdown ── */}
+                <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
+                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Fare Breakdown</p>
+                  <div className="space-y-2 text-sm">
+                    {(() => {
+                      const charges = b.commercialCharges || [];
+                      const baseFares = charges.filter((c: any) => c.chargeType === 'BASE_FARE');
+                      const taxes = charges.filter((c: any) => c.chargeType === 'TAX');
+                      const fees = charges.filter((c: any) => ['SERVICE_FEE', 'MARKUP', 'PLATFORM_FEE'].includes(c.chargeType));
+                      const addons = b.addons || [];
+                      const paxTypes: Record<string, { count: number; total: number }> = {};
+                      for (const pax of (b.passengers || [])) {
+                        const t = (pax.passengerType || 'adult').toLowerCase();
+                        if (!paxTypes[t]) paxTypes[t] = { count: 0, total: 0 };
+                        paxTypes[t].count++;
+                      }
+                      // If we have commercial charges, use them; otherwise derive from totals
+                      if (charges.length > 0) {
+                        return (
+                          <>
+                            {baseFares.map((c: any, i: number) => (
+                              <div key={c.id || i} className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                                <span className="text-slate-400">{c.passengerType ? `${c.passengerType.charAt(0).toUpperCase() + c.passengerType.slice(1)} fare × ${c.quantity}` : 'Base fare'}</span>
+                                <span className="text-white font-medium">{fmt(Number(c.totalAmount))}</span>
+                              </div>
+                            ))}
+                            {taxes.length > 0 && (
+                              <div className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                                <span className="text-slate-400">Taxes & government fees</span>
+                                <span className="text-white font-medium">{fmt(taxes.reduce((sum: number, t: any) => sum + Number(t.totalAmount), 0))}</span>
+                              </div>
+                            )}
+                            {fees.map((c: any, i: number) => (
+                              <div key={c.id || i} className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                                <span className="text-slate-400">{c.chargeType === 'SERVICE_FEE' ? 'Service fee' : c.chargeType === 'MARKUP' ? 'Fare adjustment' : 'Platform fee'}</span>
+                                <span className="text-white font-medium">{fmt(Number(c.totalAmount))}</span>
+                              </div>
+                            ))}
+                            {addons.map((a: any, i: number) => (
+                              <div key={a.id || i} className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                                <span className="text-slate-400">{a.addonName}</span>
+                                <span className="text-white font-medium">{fmt(Number(a.amount))}</span>
+                              </div>
+                            ))}
+                          </>
+                        );
+                      } else {
+                        // Fallback: show available totals from the master booking
+                        const providerTotal = b.providerPayableTotal ? Number(b.providerPayableTotal) : null;
+                        const markup = b.markupAmount ? Number(b.markupAmount) : null;
+                        const serviceFee = b.serviceFeeAmount ? Number(b.serviceFeeAmount) : null;
+                        const priceProt = b.priceProtectionAmount ? Number(b.priceProtectionAmount) : null;
+                        const insurance = b.travelInsuranceAmount ? Number(b.travelInsuranceAmount) : null;
+                        return (
+                          <>
+                            {providerTotal !== null && (
+                              <div className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                                <span className="text-slate-400">Base fare (all passengers)</span>
+                                <span className="text-white font-medium">{fmt(providerTotal)}</span>
+                              </div>
+                            )}
+                            {markup !== null && markup > 0 && (
+                              <div className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                                <span className="text-slate-400">Fare adjustment</span>
+                                <span className="text-white font-medium">{fmt(markup)}</span>
+                              </div>
+                            )}
+                            {serviceFee !== null && serviceFee > 0 && (
+                              <div className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                                <span className="text-slate-400">Service fee</span>
+                                <span className="text-white font-medium">{fmt(serviceFee)}</span>
+                              </div>
+                            )}
+                            {priceProt !== null && priceProt > 0 && (
+                              <div className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                                <span className="text-slate-400">Price drop protection</span>
+                                <span className="text-white font-medium">{fmt(priceProt)}</span>
+                              </div>
+                            )}
+                            {insurance !== null && insurance > 0 && (
+                              <div className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                                <span className="text-slate-400">Travel insurance</span>
+                                <span className="text-white font-medium">{fmt(insurance)}</span>
+                              </div>
+                            )}
+                            {addons.map((a: any, i: number) => (
+                              <div key={a.id || i} className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                                <span className="text-slate-400">{a.addonName}</span>
+                                <span className="text-white font-medium">{fmt(Number(a.amount))}</span>
+                              </div>
+                            ))}
+                          </>
+                        );
+                      }
+                    })()}
+                    {/* Grand total */}
+                    <div className="flex justify-between pt-3 mt-2 border-t border-white/[0.08]">
+                      <span className="text-white font-bold">Total Charged</span>
+                      <span className="text-[#F97316] font-black text-lg">{fmt(Number(b.totalAmount))}</span>
+                    </div>
+                  </div>
+                </div>
+
+                {/* ── Payment ── */}
+                {(b.payments || []).length > 0 && (
+                  <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
+                    <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Payment</p>
+                    <div className="space-y-2 text-sm">
+                      {(b.payments || []).map((pay: any, i: number) => (
+                        <div key={pay.id || i} className="space-y-2">
+                          <div className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                            <span className="text-slate-500">Payment method</span>
+                            <span className="text-white font-medium">{pay.paymentMethodType || 'Card'}{pay.cardLast4 ? ` ····${pay.cardLast4}` : ''}</span>
+                          </div>
+                          <div className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                            <span className="text-slate-500">Amount</span>
+                            <span className="text-white font-medium">{fmt(Number(pay.amount))}</span>
+                          </div>
+                          <div className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                            <span className="text-slate-500">Status</span>
+                            <span className={`font-medium ${pay.status === 'COMPLETED' || pay.status === 'PAID' ? 'text-emerald-400' : pay.status === 'FAILED' ? 'text-red-400' : 'text-amber-400'}`}>
+                              {(pay.status || '').replace(/_/g, ' ')}
+                            </span>
+                          </div>
+                          {pay.paidAt && (
+                            <div className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                              <span className="text-slate-500">Confirmed at</span>
+                              <span className="text-white font-medium text-xs">{new Date(pay.paidAt).toLocaleString()}</span>
+                            </div>
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
+            );
+          })()}
 
           {/* ─ Passengers Tab ─ */}
           {tab === 'passengers' && (
@@ -240,10 +491,15 @@ export default function BookingDetailPage() {
                     </div>
                     {p.ticketNumber && <span className="text-[10px] text-slate-500 font-mono bg-white/[0.04] px-2 py-1 rounded shrink-0">{p.ticketNumber}</span>}
                   </div>
-                  <div className="grid grid-cols-2 sm:grid-cols-3 gap-2 text-xs">
+                  <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2 text-xs">
                     {p.email && <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-2"><p className="text-slate-600 text-[9px] uppercase font-bold">Email</p><p className="text-slate-300 truncate">{p.email}</p></div>}
                     {p.phone && <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-2"><p className="text-slate-600 text-[9px] uppercase font-bold">Phone</p><p className="text-slate-300">{p.phone}</p></div>}
+                    {p.gender && <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-2"><p className="text-slate-600 text-[9px] uppercase font-bold">Gender</p><p className="text-slate-300 capitalize">{p.gender}</p></div>}
+                    {p.dateOfBirth && <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-2"><p className="text-slate-600 text-[9px] uppercase font-bold">Date of Birth</p><p className="text-slate-300">{new Date(p.dateOfBirth).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</p></div>}
                     {p.nationality && <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-2"><p className="text-slate-600 text-[9px] uppercase font-bold">Nationality</p><p className="text-slate-300">{p.nationality}</p></div>}
+                    {p.passportCountry && <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-2"><p className="text-slate-600 text-[9px] uppercase font-bold">Issuing Country</p><p className="text-slate-300">{p.passportCountry}</p></div>}
+                    {p.passportNumber && <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-2"><p className="text-slate-600 text-[9px] uppercase font-bold">Passport #</p><p className="text-slate-300">{p.passportNumber}</p></div>}
+                    {p.passportExpiry && <div className="bg-white/[0.02] border border-white/[0.04] rounded-lg p-2"><p className="text-slate-600 text-[9px] uppercase font-bold">Expiry Date</p><p className="text-slate-300">{new Date(p.passportExpiry).toLocaleDateString('en-US', { year: 'numeric', month: 'short', day: 'numeric' })}</p></div>}
                   </div>
                 </div>
               ))}
@@ -287,8 +543,8 @@ export default function BookingDetailPage() {
                 const cfg = actionConfig[a.key] || actionConfig.contact_support;
                 const Icon = cfg.icon;
                 return (
-                  <button key={a.key} onClick={() => setActiveModal(a.key)}
-                    className={`w-full flex items-center gap-3 p-3 rounded-xl border transition-all text-left ${cfg.cls}`}>
+                  <button key={a.key} onClick={() => !a.disabled && setActiveModal(a.key)}
+                    className={`w-full flex items-center gap-3 py-4 px-4 rounded-xl border transition-all text-left ${cfg.cls} ${a.disabled ? 'opacity-40 cursor-not-allowed grayscale' : ''}`}>
                     <Icon size={15} />
                     <span className="text-sm font-semibold flex-1">{a.label}</span>
                     <ChevronRight size={12} className="opacity-40" />
