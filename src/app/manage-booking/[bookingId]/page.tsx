@@ -553,11 +553,34 @@ export default function BookingDetailPage() {
               </div>
             </div>
 
-            {/* Right: Total */}
-            <div className="text-right shrink-0 flex flex-col items-end">
-              <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Total Paid</p>
-              <p className="text-3xl font-black text-[#1ABC9C] leading-tight">{fmt(Number(b.totalAmount))}</p>
-              <p className="text-[10px] text-slate-500 mt-0.5 capitalize">{(b.paymentStatus || '').replace('_', ' ').toLowerCase()}</p>
+            {/* Right: Total and Statuses */}
+            <div className="text-right shrink-0 flex flex-col items-end gap-3">
+              <div className="flex flex-col items-end">
+                <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Total Paid</p>
+                <p className="text-3xl font-black text-[#1ABC9C] leading-tight">{fmt(Number(b.totalAmount))}</p>
+              </div>
+              <div className="flex items-center gap-4">
+                <div className="text-center">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">Booking</p>
+                  <p className={`text-[13px] font-bold capitalize ${b.bookingStatus === 'CONFIRMED' ? 'text-emerald-400' : 'text-slate-300'}`}>
+                    {(b.bookingStatus || '').toLowerCase()}
+                  </p>
+                </div>
+                <div className="w-px h-6 bg-white/[0.15]" />
+                <div className="text-center">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">Payment</p>
+                  <p className={`text-[13px] font-bold capitalize ${b.paymentStatus === 'SUCCEEDED' ? 'text-amber-500' : 'text-slate-300'}`}>
+                    {(b.paymentStatus || '').toLowerCase()}
+                  </p>
+                </div>
+                <div className="w-px h-6 bg-white/[0.15]" />
+                <div className="text-center">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold tracking-wider mb-0.5">Ticketing</p>
+                  <p className={`text-[13px] font-bold capitalize ${b.ticketingStatus === 'ISSUED' ? 'text-emerald-400' : 'text-slate-300'}`}>
+                    {(b.ticketingStatus || '').toLowerCase()}
+                  </p>
+                </div>
+              </div>
             </div>
           </div>
         </Card>
