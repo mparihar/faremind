@@ -89,6 +89,12 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
     if (isAdminLogin && adminUser) clearAdminAuth();
   }, [isAdminLogin]);
 
+  // Clear stale user session when redirected to login page (session expired)
+  const isUserLogin = pathname === '/auth/login';
+  useEffect(() => {
+    if (isUserLogin && user) logout();
+  }, [isUserLogin]);
+
   function handleLogout() {
     logout();
     router.push('/');

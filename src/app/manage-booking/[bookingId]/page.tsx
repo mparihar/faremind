@@ -296,7 +296,7 @@ function ETicketModal({ bookingId, onClose }: { bookingId: string; onClose: () =
                   <div>
                     <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Booking Reference</p>
                     <p className="text-white font-black text-xl">{eticket.bookingReference}</p>
-                    {eticket.masterPnr && <p className="text-slate-400 text-xs font-mono mt-0.5">PNR: {eticket.masterPnr}</p>}
+                    {eticket.masterPnr && <p className="text-slate-400 text-xs font-mono mt-0.5">Airline PNR: {eticket.masterPnr}</p>}
                   </div>
                   <div className="text-right">
                     <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Passenger</p>
@@ -501,7 +501,11 @@ export default function BookingDetailPage() {
           <ArrowLeft size={16} /> Back to bookings
         </button>
 
-        {/* ── Hero Header ── */}
+        {/* ── Main Grid ── */}
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+          {/* Left Column (Hero + Flight Details) */}
+          <div className="lg:col-span-2 space-y-4">
+            {/* ── Hero Header ── */}
         <Card className="mb-5">
           <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
             <div className="flex-1">
@@ -520,26 +524,77 @@ export default function BookingDetailPage() {
                 )}
               </div>
 
-              {/* Row 2: Route */}
-              <div className="flex items-center gap-3 mb-2">
-                <span className="text-white font-bold text-lg">{b.originAirport}</span>
-                <div className="flex items-center gap-1.5 flex-shrink-0">
-                  <div className="h-px w-6 bg-white/15" />
-                  <Plane size={14} className="text-[#1ABC9C] rotate-90" />
-                  <div className="h-px w-6 bg-white/15" />
+              {/* Row 2: Journey Legs */}
+              {(b.journeys || []).length > 0 ? (
+                <div className="space-y-3 mb-2">
+                  {(b.journeys || []).map((j: any, ji: number) => {
+                    const isReturn = j.direction === 'RETURN';
+                    const depDt = j.departureDateTime || j.departureDate || b.departureDate;
+                    const arrDt = j.arrivalDateTime || j.arrivalDate;
+                    const fmtTime = (dt: string) => new Date(dt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                    const fmtDateShort = (dt: string) => new Date(dt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                    const fmtDur = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`;
+                    const stops = j.totalStops ?? 0;
+                    const dur = j.totalDurationMinutes ?? 0;
+                    const airline = j.segments?.[0]?.airlineName || j.segments?.[0]?.airlineCode || '';
+                    const flightNo = j.segments?.[0]?.flightNumber || '';
+                    const cabin = j.segments?.[0]?.cabin || '';
+
+                    return (
+                      <div key={j.id || ji} className={`rounded-xl border p-4 ${isReturn ? 'border-purple-500/20 bg-purple-500/[0.03]' : 'border-[#1ABC9C]/20 bg-[#1ABC9C]/[0.03]'} ${ji > 0 ? '' : ''}`}>
+                        {/* Leg label */}
+                        <div className="flex items-center gap-2 mb-3">
+                          <div className={`w-2 h-2 rounded-full ${isReturn ? 'bg-purple-400' : 'bg-[#1ABC9C]'}`} />
+                          <span className={`text-[10px] font-bold uppercase tracking-wider ${isReturn ? 'text-purple-400' : 'text-[#1ABC9C]'}`}>
+                            {isReturn ? 'Return' : 'Outbound'}
+                          </span>
+                          <span className="text-[10px] text-slate-500">{fmtDateShort(depDt)}</span>
+                          {airline && <span className="text-[10px] text-slate-600">· {airline}</span>}
+                          {flightNo && <span className="text-[10px] text-slate-600 font-mono">{flightNo}</span>}
+                          {cabin && <span className="ml-auto text-[9px] font-bold uppercase tracking-wider text-slate-500 bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 rounded-full">{cabin}</span>}
+                        </div>
+
+                        {/* Route row */}
+                        <div className="flex items-center gap-3">
+                          <div className="text-center min-w-0">
+                            <p className="text-white font-black text-xl leading-none">{j.originAirport || b.originAirport}</p>
+                            <p className="text-slate-500 text-[11px] mt-0.5">{j.originCity || b.originCity}</p>
+                            {depDt && <p className="text-white font-semibold text-xs mt-1">{fmtTime(depDt)}</p>}
+                          </div>
+
+                          <div className="flex-1 flex flex-col items-center gap-0.5 px-2">
+                            {dur > 0 && <span className="text-[10px] text-slate-500 font-semibold">{fmtDur(dur)}</span>}
+                            <div className="flex items-center gap-1 w-full">
+                              <div className={`h-px flex-1 ${isReturn ? 'bg-purple-400/20' : 'bg-[#1ABC9C]/20'}`} />
+                              <div className={`w-6 h-6 rounded-full border flex items-center justify-center ${isReturn ? 'bg-purple-400/15 border-purple-400/30' : 'bg-[#1ABC9C]/15 border-[#1ABC9C]/30'}`}>
+                                <Plane size={10} className={isReturn ? 'text-purple-400 -rotate-90' : 'text-[#1ABC9C] rotate-90'} />
+                              </div>
+                              <div className={`h-px flex-1 ${isReturn ? 'bg-purple-400/20' : 'bg-[#1ABC9C]/20'}`} />
+                            </div>
+                            <span className="text-[9px] text-slate-600">{stops === 0 ? 'Nonstop' : stops === 1 ? '1 stop' : `${stops} stops`}</span>
+                          </div>
+
+                          <div className="text-center min-w-0">
+                            <p className="text-white font-black text-xl leading-none">{j.destinationAirport || b.destinationAirport}</p>
+                            <p className="text-slate-500 text-[11px] mt-0.5">{j.destinationCity || b.destinationCity}</p>
+                            {arrDt && <p className="text-white font-semibold text-xs mt-1">{fmtTime(arrDt)}</p>}
+                          </div>
+                        </div>
+                      </div>
+                    );
+                  })}
                 </div>
-                <span className="text-white font-bold text-lg">{b.destinationAirport}</span>
-                {(b.tripType || '').includes('round') && (
-                  <>
-                    <div className="flex items-center gap-1.5 flex-shrink-0">
-                      <div className="h-px w-6 bg-white/15" />
-                      <Plane size={14} className="text-[#1ABC9C] -rotate-90" />
-                      <div className="h-px w-6 bg-white/15" />
-                    </div>
-                    <span className="text-white font-bold text-lg">{b.originAirport}</span>
-                  </>
-                )}
-              </div>
+              ) : (
+                <div className="flex items-center gap-3 mb-2">
+                  <span className="text-white font-bold text-lg">{b.originAirport}</span>
+                  <div className="flex items-center gap-1.5 flex-shrink-0">
+                    <div className="h-px w-6 bg-white/15" />
+                    <Plane size={14} className="text-[#1ABC9C] rotate-90" />
+                    <div className="h-px w-6 bg-white/15" />
+                  </div>
+                  <span className="text-white font-bold text-lg">{b.destinationAirport}</span>
+                </div>
+              )}
 
               {/* Row 3: Meta info */}
               <div className="flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-slate-500">
@@ -585,10 +640,7 @@ export default function BookingDetailPage() {
           </div>
         </Card>
 
-        {/* ── Main Grid ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
-          {/* Left Column: Flight Details */}
-          <div className="lg:col-span-2 space-y-4">
+            {/* Flight Itinerary */}
             {/* Flight Itinerary */}
             <Card>
               <SectionTitle>Flight Itinerary</SectionTitle>

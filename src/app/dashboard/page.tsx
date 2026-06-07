@@ -324,7 +324,7 @@ export default function DashboardPage() {
                   </div>
                   <div>
                     <p className="text-sm font-black text-slate-800">{booking.airlineName}</p>
-                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">PNR: <span className="text-sun-orange">{booking.pnr}</span></p>
+                    <p className="text-[10px] text-slate-500 font-bold uppercase tracking-widest">Airline PNR: <span className="text-sun-orange">{booking.pnr}</span></p>
                   </div>
                 </div>
                 <div className="flex items-center gap-2">

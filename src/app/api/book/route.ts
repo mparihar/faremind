@@ -253,7 +253,7 @@ export async function POST(request: NextRequest) {
         type: 'BOOKING_CONFIRMATION',
         channel: 'IN_APP',
         title: `Booking Confirmed - ${firstSeg?.departure?.airport || ''} → ${lastSeg?.arrival?.airport || ''}`,
-        body: `Your ${flight.airline?.name || ''} flight has been confirmed. PNR: ${pnr}${enablePriceTracking ? '. Price tracking is enabled.' : ''}`,
+        body: `Your ${flight.airline?.name || ''} flight has been confirmed. Airline PNR: ${pnr}${enablePriceTracking ? '. Price tracking is enabled.' : ''}`,
       }).catch((err) => console.warn('[Booking] Notification failed:', err.message));
 
       // ─── Step 7: Email notifications ───
@@ -323,7 +323,7 @@ export async function POST(request: NextRequest) {
         bookedAt: new Date().toISOString(),
       },
       success: true,
-      message: `Booking confirmed! PNR: ${pnr}`,
+      message: `Booking confirmed! Airline PNR: ${pnr}`,
     });
   } catch (error) {
     console.error('[Booking] Critical error:', error);

@@ -108,6 +108,36 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     try {
       const { userId } = request.params as { userId: string };
       const { filter } = request.query as { filter?: 'upcoming' | 'past' | 'cancelled' | 'all' };
+
+      let userEmail: string | undefined;
+
+      if (userId.startsWith('guest_')) {
+        // Guest OTP sessions store the bookingId after 'guest_'
+        const bookingId = userId.replace('guest_', '');
+        const guestBooking = await prisma.masterBooking.findUnique({
+          where: { id: bookingId },
+          select: { customerEmail: true, userId: true },
+        });
+        userEmail = guestBooking?.customerEmail ?? undefined;
+        // Use the real userId from the booking if available, to also catch other bookings
+        const realUserId = guestBooking?.userId;
+        const bookings = await mbq.getUserMasterBookings(
+          realUserId || userId,
+          filter || 'all',
+          userEmail,
+        );
+      const now = new Date();
+      return {
+        bookings,
+        counts: {
+          upcoming: bookings.filter(b => new Date(b.departureDate) >= now && !['CANCELLED','FAILED'].includes(b.bookingStatus)).length,
+          past: bookings.filter(b => new Date(b.departureDate) < now && !['CANCELLED','FAILED'].includes(b.bookingStatus)).length,
+          cancelled: bookings.filter(b => b.bookingStatus === 'CANCELLED').length,
+          total: bookings.length,
+        },
+      };
+      }
+
       const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
       const bookings = await mbq.getUserMasterBookings(userId, filter || 'all', dbUser?.email ?? undefined);
       const now = new Date();

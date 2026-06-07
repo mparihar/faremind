@@ -986,7 +986,7 @@ export async function POST(req: NextRequest) {
           bookingId: mb.id,
           eventType: 'BOOKING_CONFIRMED',
           eventTitle: 'Booking Confirmed',
-          eventDescription: `Reference ${masterBookingReference} · PNR ${masterPnr} · ${passengers.length} passenger(s)`,
+          eventDescription: `Reference ${masterBookingReference} · Airline PNR ${masterPnr} · ${passengers.length} passenger(s)`,
           actorType: 'system',
           actorName: 'FareMind',
         },

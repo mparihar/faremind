@@ -94,7 +94,7 @@ export async function POST(request: NextRequest) {
         type: 'BOOKING_CANCELLATION',
         channel: 'IN_APP',
         title: 'Booking Cancelled',
-        body: `Your ${booking.airlineName} flight ${booking.originAirport} → ${booking.destinationAirport} (PNR: ${booking.pnr}) has been cancelled.${refundAmount > 0 ? ` Refund: $${refundAmount.toFixed(2)}` : ''}`,
+        body: `Your ${booking.airlineName} flight ${booking.originAirport} → ${booking.destinationAirport} (Airline PNR: ${booking.pnr}) has been cancelled.${refundAmount > 0 ? ` Refund: $${refundAmount.toFixed(2)}` : ''}`,
       }).catch(() => {});
     }
 

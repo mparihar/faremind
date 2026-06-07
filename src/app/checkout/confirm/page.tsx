@@ -38,7 +38,7 @@ function CopyButton({ text, className }: { text: string; className?: string }) {
       onClick={() => navigator.clipboard.writeText(text).then(() => { setCopied(true); setTimeout(() => setCopied(false), 2000); })}
       className={cn('flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-semibold transition-all', className)}
     >
-      {copied ? <><Check className="w-3.5 h-3.5" />Copied!</> : <><Copy className="w-3.5 h-3.5" />Copy PNR</>}
+      {copied ? <><Check className="w-3.5 h-3.5" />Copied!</> : <><Copy className="w-3.5 h-3.5" />Copy Airline PNR</>}
     </button>
   );
 }
@@ -402,7 +402,7 @@ export default function ConfirmPage() {
   };
 
   const handleShare = () => {
-    const text = `FAREMIND Booking · PNR: ${confirmation.pnr} · ${routeLabel}`;
+    const text = `FAREMIND Booking · Airline PNR: ${confirmation.pnr} · ${routeLabel}`;
     if (navigator.share) navigator.share({ title: 'My FAREMIND Booking', text }).catch(() => {});
     else navigator.clipboard.writeText(text);
   };

@@ -217,6 +217,35 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       return reply.code(500).send({ error: 'Server error' });
     }
   });
+
+  // GET /api/auth/validate-session
+  fastify.get('/validate-session', async (request, reply) => {
+    try {
+      const authHeader = request.headers.authorization;
+      const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+      if (!token) return reply.send({ valid: false });
+
+      const session = await prisma.session.findFirst({
+        where: { token, expiresAt: { gt: new Date() } },
+        include: { user: true },
+      });
+
+      if (!session) return reply.send({ valid: false });
+
+      return reply.send({
+        valid: true,
+        user: {
+          id: session.user.id,
+          email: session.user.email,
+          name: `${session.user.firstName} ${session.user.lastName}`,
+          avatar: session.user.avatar || null,
+        },
+      });
+    } catch (e) {
+      fastify.log.error(e, '[auth/validate-session]');
+      return reply.send({ valid: false });
+    }
+  });
 };
 
 export default plugin;

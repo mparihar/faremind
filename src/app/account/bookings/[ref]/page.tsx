@@ -11,6 +11,7 @@ import { useManageBookingStore } from '@/store/useManageBookingStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import CancelBookingModal from '@/components/manage-booking/CancelBookingModal';
 import { SeatMapModal, PassengerModal, DateChangeModal, ETicketModal, RefundModal, SupportModal } from '@/components/manage-booking/BookingModals';
+import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
 
 function StatusBadge({ status }: { status: string }) {
   const m: Record<string, [string, string]> = {
@@ -51,9 +52,29 @@ export default function BookingDetailPage() {
   const { booking, bookingLoading, loadBookingDetail, actions, loadActions, timeline, loadTimeline, activeModal, setActiveModal } = useManageBookingStore();
   const { loadSession } = useAuthStore();
   const [tab, setTab] = useState<Tab>('overview');
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailDone, setEmailDone] = useState(false);
+  const [emailError, setEmailError] = useState('');
 
   useEffect(() => { loadSession(); }, []);
   useEffect(() => { if (ref) { loadBookingDetail(ref); loadActions(ref); loadTimeline(ref); } }, [ref]);
+
+  // Download Full Itinerary handler
+  useEffect(() => {
+    if (activeModal === 'download_full_itinerary' && booking) {
+      const html = generateItineraryHtmlFromBooking(booking);
+      const blob = new Blob([html], { type: 'text/html;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `FAREMIND-Itinerary-${booking.masterBookingReference || booking.masterPnr || 'booking'}.html`;
+      document.body.appendChild(a);
+      a.click();
+      document.body.removeChild(a);
+      URL.revokeObjectURL(url);
+      setActiveModal(null);
+    }
+  }, [activeModal, booking, setActiveModal]);
 
   if (bookingLoading || !booking) return <div className="flex items-center justify-center py-24"><Loader2 className="w-7 h-7 text-[#1ABC9C] animate-spin" /></div>;
 
@@ -70,6 +91,8 @@ export default function BookingDetailPage() {
     passenger_update: { icon: User, cls: 'text-amber-400 border-amber-400/20 bg-amber-400/5 hover:bg-amber-400/10' },
     date_change: { icon: Calendar, cls: 'text-purple-400 border-purple-400/20 bg-purple-400/5 hover:bg-purple-400/10' },
     download_eticket: { icon: Download, cls: 'text-[#1ABC9C] border-[#1ABC9C]/20 bg-[#1ABC9C]/5 hover:bg-[#1ABC9C]/10' },
+    download_full_itinerary: { icon: Download, cls: 'text-indigo-400 border-indigo-400/20 bg-indigo-400/5 hover:bg-indigo-400/10' },
+    email_itinerary: { icon: Mail, cls: 'text-pink-400 border-pink-400/20 bg-pink-400/5 hover:bg-pink-400/10' },
     refund_status: { icon: CreditCard, cls: 'text-blue-400 border-blue-400/20 bg-blue-400/5 hover:bg-blue-400/10' },
     contact_support: { icon: Mail, cls: 'text-slate-400 border-slate-400/20 bg-slate-400/5 hover:bg-slate-400/10' },
     add_baggage: { icon: Luggage, cls: 'text-orange-400 border-orange-400/20 bg-orange-400/5 hover:bg-orange-400/10' },
@@ -84,10 +107,20 @@ export default function BookingDetailPage() {
         { key: 'seat_change', label: 'Change Seat', available: !isPast, disabled: !(b.pnrs?.some((p: any) => p.seatSelection !== null && p.seatSelection !== 'false' && p.seatSelection !== 'none' && p.seatSelection !== 'unavailable')) },
         { key: 'passenger_update', label: 'Update Passenger', available: true },
         { key: 'download_eticket', label: 'Download E-Ticket', available: b.ticketingStatus === 'ISSUED' },
-        { key: 'resend_itinerary', label: 'Re-send Itinerary', available: true },
+        { key: 'download_full_itinerary', label: 'Download Full Itinerary', available: true },
+        { key: 'email_itinerary', label: 'Email Itinerary', available: true },
         { key: 'contact_support', label: 'Contact Support', available: true },
       ];
-  const resolvedActions = (actions.length > 0 ? actions : fallbackActions).filter(a => a.available);
+  const baseActions = (actions.length > 0 ? actions : fallbackActions).filter(a => a.available);
+  // Always append document actions (these are client-side, not from backend)
+  const documentActions = [
+    { key: 'download_full_itinerary', label: 'Download Full Itinerary', available: true },
+    { key: 'email_itinerary', label: 'Email Itinerary', available: true },
+  ];
+  const resolvedActions = [
+    ...baseActions.filter(a => a.key !== 'download_full_itinerary' && a.key !== 'email_itinerary'),
+    ...documentActions,
+  ];
 
   return (
     <div>
@@ -96,7 +129,11 @@ export default function BookingDetailPage() {
         <ArrowLeft size={15} /> Back to My Trips
       </button>
 
-      {/* ── Header Card ── */}
+      {/* ── Content Grid ── */}
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
+        {/* Left Column (Header + Tabs) */}
+        <div className="lg:col-span-2 flex flex-col gap-5">
+          {/* ── Header Card ── */}
       <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl overflow-hidden mb-5">
         {/* Status ribbon */}
         <div className={`h-1 ${isCancelled ? 'bg-red-500' : isPast ? 'bg-blue-500' : 'bg-[#1ABC9C]'}`} />
@@ -123,19 +160,76 @@ export default function BookingDetailPage() {
               </div>
             </div>
           </div>
-          {/* Route display */}
-          <div className="flex items-center gap-4 mt-4 pt-4 border-t border-white/[0.06]">
-            <div className="text-center"><p className="text-white font-black text-2xl">{b.originAirport}</p><p className="text-slate-500 text-xs">{b.originCity}</p></div>
-            <div className="flex-1 flex items-center gap-1.5"><div className="h-px flex-1 bg-gradient-to-r from-white/10 to-white/5" /><Plane size={13} className="text-[#1ABC9C] rotate-90" /><div className="h-px flex-1 bg-gradient-to-l from-white/10 to-white/5" /></div>
-            <div className="text-center"><p className="text-white font-black text-2xl">{b.destinationAirport}</p><p className="text-slate-500 text-xs">{b.destinationCity}</p></div>
-          </div>
+          {/* Journey legs */}
+          {(b.journeys || []).length > 0 ? (
+            <div className="space-y-3 mt-4 pt-4 border-t border-white/[0.06]">
+              {(b.journeys || []).map((j: any, ji: number) => {
+                const isReturn = j.direction === 'RETURN';
+                const depDt = j.departureDateTime || j.departureDate || b.departureDate;
+                const arrDt = j.arrivalDateTime || j.arrivalDate;
+                const fmtTimeLeg = (dt: string) => new Date(dt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true });
+                const fmtDateLeg = (dt: string) => new Date(dt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' });
+                const fmtDurLeg = (m: number) => `${Math.floor(m / 60)}h ${m % 60}m`;
+                const stops = j.totalStops ?? 0;
+                const dur = j.totalDurationMinutes ?? 0;
+                const airline = j.segments?.[0]?.airlineName || j.segments?.[0]?.airlineCode || '';
+                const flightNo = j.segments?.[0]?.flightNumber || '';
+                const cabin = j.segments?.[0]?.cabin || '';
+
+                return (
+                  <div key={j.id || ji} className={`rounded-xl border p-4 ${isReturn ? 'border-purple-500/20 bg-purple-500/[0.03]' : 'border-[#1ABC9C]/20 bg-[#1ABC9C]/[0.03]'}`}>
+                    {/* Leg label */}
+                    <div className="flex items-center gap-2 mb-3">
+                      <div className={`w-2 h-2 rounded-full ${isReturn ? 'bg-purple-400' : 'bg-[#1ABC9C]'}`} />
+                      <span className={`text-[10px] font-bold uppercase tracking-wider ${isReturn ? 'text-purple-400' : 'text-[#1ABC9C]'}`}>
+                        {isReturn ? 'Return' : 'Outbound'}
+                      </span>
+                      <span className="text-[10px] text-slate-500">{fmtDateLeg(depDt)}</span>
+                      {airline && <span className="text-[10px] text-slate-600">· {airline}</span>}
+                      {flightNo && <span className="text-[10px] text-slate-600 font-mono">{flightNo}</span>}
+                      {cabin && <span className="ml-auto text-[9px] font-bold uppercase tracking-wider text-slate-500 bg-white/[0.04] border border-white/[0.06] px-2 py-0.5 rounded-full">{cabin}</span>}
+                    </div>
+
+                    {/* Route row */}
+                    <div className="flex items-center gap-3">
+                      <div className="text-center min-w-0">
+                        <p className="text-white font-black text-2xl leading-none">{j.originAirport || b.originAirport}</p>
+                        <p className="text-slate-500 text-xs mt-0.5">{j.originCity || b.originCity}</p>
+                        {depDt && <p className="text-white font-semibold text-xs mt-1">{fmtTimeLeg(depDt)}</p>}
+                      </div>
+
+                      <div className="flex-1 flex flex-col items-center gap-0.5 px-2">
+                        {dur > 0 && <span className="text-[10px] text-slate-500 font-semibold">{fmtDurLeg(dur)}</span>}
+                        <div className="flex items-center gap-1 w-full">
+                          <div className={`h-px flex-1 ${isReturn ? 'bg-purple-400/20' : 'bg-[#1ABC9C]/20'}`} />
+                          <div className={`w-6 h-6 rounded-full border flex items-center justify-center ${isReturn ? 'bg-purple-400/15 border-purple-400/30' : 'bg-[#1ABC9C]/15 border-[#1ABC9C]/30'}`}>
+                            <Plane size={10} className={isReturn ? 'text-purple-400 -rotate-90' : 'text-[#1ABC9C] rotate-90'} />
+                          </div>
+                          <div className={`h-px flex-1 ${isReturn ? 'bg-purple-400/20' : 'bg-[#1ABC9C]/20'}`} />
+                        </div>
+                        <span className="text-[9px] text-slate-600">{stops === 0 ? 'Nonstop' : stops === 1 ? '1 stop' : `${stops} stops`}</span>
+                      </div>
+
+                      <div className="text-center min-w-0">
+                        <p className="text-white font-black text-2xl leading-none">{j.destinationAirport || b.destinationAirport}</p>
+                        <p className="text-slate-500 text-xs mt-0.5">{j.destinationCity || b.destinationCity}</p>
+                        {arrDt && <p className="text-white font-semibold text-xs mt-1">{fmtTimeLeg(arrDt)}</p>}
+                      </div>
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="flex items-center gap-4 mt-4 pt-4 border-t border-white/[0.06]">
+              <div className="text-center"><p className="text-white font-black text-2xl">{b.originAirport}</p><p className="text-slate-500 text-xs">{b.originCity}</p></div>
+              <div className="flex-1 flex items-center gap-1.5"><div className="h-px flex-1 bg-gradient-to-r from-white/10 to-white/5" /><Plane size={13} className="text-[#1ABC9C] rotate-90" /><div className="h-px flex-1 bg-gradient-to-l from-white/10 to-white/5" /></div>
+              <div className="text-center"><p className="text-white font-black text-2xl">{b.destinationAirport}</p><p className="text-slate-500 text-xs">{b.destinationCity}</p></div>
+            </div>
+          )}
         </div>
       </div>
 
-      {/* ── Content Grid ── */}
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-5">
-        {/* Left: Tabs */}
-        <div className="lg:col-span-2">
           {/* Tab bar */}
           <div className="flex gap-1 mb-4 bg-white/[0.03] border border-white/[0.06] rounded-xl p-1">
             {TABS.map(t => {
@@ -155,7 +249,7 @@ export default function BookingDetailPage() {
               <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
                 <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Booking Details</p>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  {[['Reference', b.masterBookingReference], ['PNR', b.masterPnr || '—'], ['Departure', depDate], ['Trip Type', (b.tripType || '').replace(/_/g, ' ')],
+                  {[['Reference', b.masterBookingReference], ['Airline PNR', b.masterPnr || '—'], ['Departure', depDate], ['Trip Type', (b.tripType || '').replace(/_/g, ' ')],
                     ['Provider', b.primaryProvider], ['Passengers', `${b.passengers?.length || 1}`], ['Payment', (b.paymentStatus || '').replace(/_/g, ' ')], ['Ticketing', (b.ticketingStatus || '').replace(/_/g, ' ')]
                   ].map(([label, val]) => (
                     <div key={label as string} className="flex justify-between py-1.5 border-b border-white/[0.03]">
@@ -165,20 +259,7 @@ export default function BookingDetailPage() {
                   ))}
                 </div>
               </div>
-              {/* PNRs */}
-              {b.pnrs?.length > 0 && (
-                <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
-                  <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Airline PNRs</p>
-                  <div className="flex flex-wrap gap-2">
-                    {b.pnrs.map((p: any) => (
-                      <div key={p.id} className="px-3 py-2 rounded-xl bg-white/[0.03] border border-white/[0.06]">
-                        <p className="text-white font-mono font-bold text-sm">{p.pnrCode}</p>
-                        <p className="text-slate-500 text-[10px] capitalize">{p.provider} · {p.status?.toLowerCase()}</p>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
+
             </div>
           )}
 
@@ -203,7 +284,7 @@ export default function BookingDetailPage() {
                       ['Airline', allSegs[0]?.airlineName || b.primaryProvider],
                       ['Class', allSegs[0]?.cabin ? allSegs[0].cabin.charAt(0).toUpperCase() + allSegs[0].cabin.slice(1).toLowerCase() : '—'],
                       ['Status', (b.bookingStatus || '').replace(/_/g, ' ')],
-                      ['PNR', b.masterPnr || '—'],
+                      ['Airline PNR', b.masterPnr || '—'],
                     ].map(([label, val]) => (
                       <div key={label as string} className="flex justify-between py-1.5 border-b border-white/[0.03]">
                         <span className="text-slate-500">{label}</span>
@@ -534,7 +615,7 @@ export default function BookingDetailPage() {
           )}
         </div>
 
-        {/* ── Right: Actions ── */}
+        {/* ── Right Column: Actions ── */}
         <div className="space-y-4">
           <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5 lg:sticky lg:top-24">
             <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Actions</p>
@@ -565,6 +646,65 @@ export default function BookingDetailPage() {
         {activeModal === 'download_eticket' && <ETicketModal bookingId={ref} onClose={() => setActiveModal(null)} />}
         {activeModal === 'refund_status' && <RefundModal booking={b} onClose={() => setActiveModal(null)} />}
         {activeModal === 'contact_support' && <SupportModal booking={b} onClose={() => setActiveModal(null)} />}
+        {activeModal === 'email_itinerary' && (() => {
+          const email = b.customerEmail || 'your email';
+
+          async function handleSendEmail() {
+            try {
+              setEmailSending(true);
+              setEmailError('');
+              const htmlContent = generateItineraryHtmlFromBooking(b);
+              const pdfBase64 = btoa(unescape(encodeURIComponent(htmlContent)));
+              let apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
+              apiUrl = apiUrl.replace(/\/$/, '');
+              const res = await fetch(`${apiUrl}/api/manage-booking/${ref}/email-itinerary`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, pdfBase64, isHtml: true }),
+              });
+              if (!res.ok) throw new Error('Failed to send email');
+              setEmailDone(true);
+            } catch {
+              setEmailError('Failed to send email. Please try again.');
+            } finally {
+              setEmailSending(false);
+            }
+          }
+
+          function closeEmailModal() {
+            setActiveModal(null);
+            setEmailDone(false);
+            setEmailError('');
+            setEmailSending(false);
+          }
+
+          return (
+            <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={closeEmailModal}>
+              <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
+                className="w-full max-w-sm bg-[#0f1525] border border-white/10 rounded-2xl p-6 text-center" onClick={e => e.stopPropagation()}>
+                {emailDone ? (
+                  <>
+                    <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-3"><Check size={28} className="text-emerald-400" /></div>
+                    <p className="text-white font-bold mb-1">Itinerary Sent!</p>
+                    <p className="text-slate-400 text-sm mb-4">A copy has been sent to {email}.</p>
+                    <button onClick={closeEmailModal} className="px-6 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-semibold text-sm">Done</button>
+                  </>
+                ) : (
+                  <>
+                    <div className="w-14 h-14 rounded-full bg-pink-500/10 border border-pink-500/20 flex items-center justify-center mx-auto mb-3"><Mail size={28} className="text-pink-400" /></div>
+                    <p className="text-white font-bold mb-1">Email Itinerary</p>
+                    <p className="text-slate-400 text-sm mb-4">Send the full itinerary to <span className="text-white font-semibold">{email}</span></p>
+                    {emailError && <p className="text-red-400 text-xs mb-3">{emailError}</p>}
+                    <div className="flex gap-3 justify-center">
+                      <button onClick={closeEmailModal} className="px-5 py-2.5 rounded-xl border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/[0.04] transition-all">Cancel</button>
+                      <button onClick={handleSendEmail} disabled={emailSending} className="px-5 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-semibold text-sm disabled:opacity-50">{emailSending ? 'Sending…' : 'Send Email'}</button>
+                    </div>
+                  </>
+                )}
+              </motion.div>
+            </div>
+          );
+        })()}
         {activeModal === 'resend_itinerary' && (
           <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={() => setActiveModal(null)}>
             <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}

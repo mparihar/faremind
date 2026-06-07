@@ -222,7 +222,7 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                   </div>
                 </div>
                 <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-3">
-                  <p className="text-slate-500 mb-0.5">PNR(s)</p>
+                  <p className="text-slate-500 mb-0.5">Airline PNR(s)</p>
                   <div className="flex flex-wrap gap-1">
                     {cancelQuote.pnrs.slice(0, 3).map(p => (
                       <span key={p.pnrCode} className="font-mono font-bold text-white">{p.pnrCode}</span>

@@ -118,7 +118,7 @@ function ReservationCard({ booking }: { booking: any }) {
                 {status.label}
               </span>
               <span className="text-xs text-slate-500 font-mono tracking-wider">
-                PNR: <span className="text-white font-black">{pnr}</span>
+                Airline PNR: <span className="text-white font-black">{pnr}</span>
               </span>
               <span className="text-xs text-slate-500 font-mono tracking-wider">
                 Ref: <span className="text-white font-black">{booking.masterBookingReference}</span>

@@ -340,7 +340,7 @@ export function ETicketModal({ bookingId, onClose }: { bookingId: string; onClos
               <div className="bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 rounded-xl p-4">
                 <div className="flex justify-between items-start">
                   <div><p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Booking Reference</p><p className="text-white font-black text-xl">{eticket.bookingReference}</p>
-                    {eticket.masterPnr && <p className="text-slate-400 text-xs font-mono mt-0.5">PNR: {eticket.masterPnr}</p>}</div>
+                    {eticket.masterPnr && <p className="text-slate-400 text-xs font-mono mt-0.5">Airline PNR: {eticket.masterPnr}</p>}</div>
                   <div className="text-right"><p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Passenger</p><p className="text-white font-semibold text-sm">{eticket.customerName}</p></div>
                 </div>
               </div>

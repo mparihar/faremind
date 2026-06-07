@@ -89,7 +89,26 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       const stored = localStorage.getItem('faremind_session');
       if (stored) {
         const { user, token } = JSON.parse(stored);
+        // Immediately set user from cache for fast UI render
         set({ user, sessionToken: token });
+
+        // Validate against backend in background — if expired, auto-logout
+        if (token) {
+          fetch(apiUrl('/api/auth/validate-session'), {
+            headers: { Authorization: `Bearer ${token}` },
+          })
+            .then(res => res.json())
+            .then(data => {
+              if (!data.valid) {
+                // Session expired on server — clear everything
+                localStorage.removeItem('faremind_session');
+                set({ user: null, sessionToken: null });
+              }
+            })
+            .catch(() => {
+              // Network error — keep cached session (offline tolerance)
+            });
+        }
       }
     } catch {
       // Invalid session data

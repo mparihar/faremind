@@ -216,7 +216,7 @@ export default function AccountDashboard() {
                 </div>
 
                 {/* Booking cards grid — 2 columns */}
-                <div className="grid gap-4 grid-cols-1 md:grid-cols-2">
+                <div className={`grid gap-4 grid-cols-1 ${upcomingTrips.length === 1 ? 'md:grid-cols-1' : 'md:grid-cols-2'}`}>
                   {upcomingTrips.map((trip: any) => {
                     const outbound = trip.journeys?.find((jj: any) => jj.direction === 'OUTBOUND') || trip.journeys?.[0];
                     const ret = trip.journeys?.find((jj: any) => jj.direction === 'RETURN');
@@ -238,9 +238,15 @@ export default function AccountDashboard() {
                         </div>
                         <div className="relative p-5">
                           {/* Top row: PNR + Trip type + Status */}
-                          <div className="flex items-center justify-between mb-4">
-                            <div className="flex items-center gap-2">
-                              <span className="text-xs text-slate-400 font-mono">PNR: <span className="text-white font-black">{tPnr}</span></span>
+                          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
+                            <div className="flex items-center gap-2 flex-wrap">
+                              {trip.masterBookingReference && (
+                                <>
+                                  <span className="text-xs text-slate-400 font-mono">REF: <span className="text-white font-black">{trip.masterBookingReference}</span></span>
+                                  <span className="text-slate-600 font-bold">·</span>
+                                </>
+                              )}
+                              <span className="text-xs text-slate-400 font-mono">Airline PNR: <span className="text-white font-black">{tPnr}</span></span>
                               {isRT && <span className="text-[9px] font-bold text-[#1ABC9C] bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 px-2 py-0.5 rounded-full uppercase tracking-wider">Round Trip</span>}
                             </div>
                             <span className="text-emerald-400 font-bold text-[10px] flex items-center gap-1">
@@ -322,12 +328,8 @@ export default function AccountDashboard() {
                             })}
                           </div>
 
-                          {/* Footer: Ref + Fare */}
-                          <div className="flex items-center justify-between pt-3 border-t border-white/[0.06]">
-                            <div className="flex items-center gap-2">
-                              <span className="text-slate-500 text-[10px] uppercase font-bold tracking-wide">Ref </span>
-                              <span className="text-white font-black font-mono text-[11px]">{trip.masterBookingReference}</span>
-                            </div>
+                          {/* Footer: Fare */}
+                          <div className="flex justify-end pt-3 border-t border-white/[0.06]">
                             <span className="text-[#F97316] font-black text-lg">{fmt(trip.totalAmount, trip.currency)}</span>
                           </div>
                         </div>
@@ -487,7 +489,7 @@ export default function AccountDashboard() {
         </div>
 
         {/* ── RIGHT SIDEBAR COLUMN ── */}
-        <div className="space-y-4">
+        <div className="space-y-4 sticky top-8 self-start">
           {nextTrip && (
             <motion.div variants={anim}>
               <TripCountdown departureDate={nextTrip.departureDate} destCity={destCity} />

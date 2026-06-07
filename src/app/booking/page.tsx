@@ -763,7 +763,7 @@ function ConfirmStep({ result, protection, routeLabel, total, currency }: {
 
         <div className="bg-slate-50 rounded-xl border border-slate-200 p-5 mb-6 text-left">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-slate-400 uppercase tracking-wider">Booking Reference (PNR)</span>
+            <span className="text-xs text-slate-400 uppercase tracking-wider">Booking Reference (Airline PNR)</span>
             <span className="text-sm font-mono font-bold text-[#1ABC9C]">{result?.pnr ?? 'N/A'}</span>
           </div>
           <div className="flex items-center justify-between">
