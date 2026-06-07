@@ -79,7 +79,7 @@ export async function getUserMasterBookings(
 
   // Match by userId OR customerEmail to catch bookings created before userId was linked
   const identityClause = userEmail
-    ? { OR: [{ userId }, { customerEmail: userEmail }] }
+    ? { OR: [{ userId }, { customerEmail: { equals: userEmail, mode: 'insensitive' } }] }
     : { userId };
 
   const where: any = { ...identityClause };
