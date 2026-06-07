@@ -145,7 +145,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
           </Link>
 
           {/* Admin Sign Out — only on admin pages */}
-          {hideNav && (
+          {hideNav && adminUser && (
             <div className="ml-auto">
               <button
                 onClick={adminLogout}
