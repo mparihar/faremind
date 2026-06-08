@@ -32,6 +32,9 @@ export interface OrderDetails {
     penaltyCurrency?: string;
   };
   createdAt: string;
+  capabilities: {
+    addBaggageAllowed: boolean;
+  };
   raw: unknown;
 }
 
@@ -262,6 +265,11 @@ function normalizeDuffelOrder(order: DuffelOrder): OrderDetails {
         : undefined,
       penaltyCurrency: order.conditions?.refund_before_departure?.penalty_currency || undefined,
     },
+    capabilities: {
+      // For Duffel, we check available_services to see if baggage is an option.
+      // Often return_available_services=false during fetch, so we default to false unless explicitly seen
+      addBaggageAllowed: order.available_services?.some(s => s.type === 'baggage') ?? false,
+    },
     createdAt: order.created_at,
     raw: order,
   };
@@ -486,6 +494,9 @@ export class MystiflyAdapter implements IBookingProvider {
       conditions: {
         refundable: data?.IsRefundable ?? false,
         changeable: true,
+      },
+      capabilities: {
+        addBaggageAllowed: false, // Mystifly Post-booking baggage addition not currently supported in adapter
       },
       createdAt: data?.BookingDate || data?.bookingDate || new Date().toISOString(),
       raw: tripDetails,

@@ -1112,6 +1112,31 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { reply.code(500).send({ error: 'Server error' }); }
   });
 
+  // ── Add Baggage Endpoint ────────────────────────────────────────────────────
+  fastify.post('/:bookingId/baggage/add', async (request, reply) => {
+    try {
+      const { bookingId } = request.params as { bookingId: string };
+      const booking = await mbq.getMasterBookingFull(bookingId);
+      if (!booking) return reply.code(404).send({ error: 'Booking not found' });
+      
+      const caps = booking.providerCapabilities as any;
+      if (!caps || caps.addBaggageAllowed !== true) {
+        return reply.code(400).send({
+          allowed: false,
+          reason: 'ADD_BAGGAGE_PROVIDER_NOT_SUPPORTED',
+          message: 'Baggage changes for this booking are not available through FareMind. Please contact the airline directly using your airline PNR.'
+        });
+      }
+
+      // Add actual logic here if needed
+      return { success: true, message: 'Baggage addition simulated.' };
+    } catch (e) { 
+      fastify.log.error(e, '[manage-booking/baggage/add]'); 
+      reply.code(500).send({ error: 'Server error' }); 
+    }
+  });
+
+
   // ── Admin: Provider Payloads ────────────────────────────────────────────────
   fastify.get('/admin/:bookingId/payloads', async (request, reply) => {
     try {

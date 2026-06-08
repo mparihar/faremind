@@ -6,6 +6,8 @@ import { Sparkles, Send, X, Minus, ChevronRight, Check, Bot, Plane, ArrowRight, 
 import { cn, formatDuration, formatPrice, getStopsLabel } from '@/lib/utils';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
+import type { DnaSearchResult, DnaRankedCard } from '@/lib/services/dna-search-service';
+import { trackDnaEvent } from '@/lib/analytics/dna-search-analytics';
 import AiBookFlightFlow from './ai-booking/AiBookFlightFlow';
 import { useAiBookingStore } from '@/store/useAiBookingStore';
 import { useOfferSessionStore } from '@/store/useOfferSessionStore';
@@ -48,6 +50,9 @@ interface ChatMessage {
   topFlights?: TopFlightSummary[];
   preferenceLabel?: string;
   ts: number;
+  // 🧬 DNA Search
+  dnaResults?: DnaRankedCard[];
+  isDnaSearch?: boolean;
 }
 
 export interface AIAssistResult {
@@ -88,6 +93,8 @@ interface FloatingAIAssistantProps {
   focusedFlightId?: string | null;
   rtMetaMap?: Map<string, RtLegMeta>;
   roundTripOptions?: RoundTripOption[];
+  onDnaSearch?: () => Promise<void>;
+  dnaSearchResults?: DnaSearchResult | null;
 }
 
 // ── Suggestion chips ────────────────────────────────────────────────────────
@@ -113,7 +120,7 @@ function uid() {
 // ── Component ──────────────────────────────────────────────────────────────
 
 export default function FloatingAIAssistant({
-  flights, context, onResult, result, focusedFlightId, rtMetaMap, roundTripOptions,
+  flights, context, onResult, result, focusedFlightId, rtMetaMap, roundTripOptions, onDnaSearch, dnaSearchResults,
 }: FloatingAIAssistantProps) {
   const [isOpen,    setIsOpen]    = useState(false);
   const [messages,  setMessages]  = useState<ChatMessage[]>([]);
@@ -167,6 +174,45 @@ export default function FloatingAIAssistant({
 
   const submit = useCallback(async (q: string) => {
     if (!q.trim() || !flights.length || loading) return;
+
+    // 🧬 DNA Search command detection
+    const dnaCommands = ['dna search', 'dna matches', 'my dna', 'matching my dna', 'run dna', 'search using my dna', '__DNA_SEARCH__'];
+    const isDnaCommand = dnaCommands.some(cmd => q.toLowerCase().includes(cmd)) || q === '__DNA_SEARCH__';
+
+    if (isDnaCommand && onDnaSearch) {
+      const userMsg: ChatMessage = {
+        id: uid(), role: 'user', text: q === '__DNA_SEARCH__' ? '🧬 Run DNA Search' : q.trim(), ts: Date.now(),
+      };
+      setMessages(prev => [...prev.slice(-6), userMsg]);
+      setInput('');
+      setLoading(true);
+      trackDnaEvent('dna_search_started', { source: 'chatbot' });
+
+      try {
+        await onDnaSearch();
+        // After DNA search completes, show top 5 DNA matches
+        // We'll get them from dnaSearchResults prop on next render
+        const assistantMsg: ChatMessage = {
+          id: uid(),
+          role: 'assistant',
+          text: '🧬 Analyzing your Travel DNA profile against these flights...',
+          isDnaSearch: true,
+          ts: Date.now(),
+        };
+        setMessages(prev => [...prev, assistantMsg]);
+      } catch {
+        const errMsg: ChatMessage = {
+          id: uid(), role: 'assistant',
+          text: 'Unable to run DNA Search right now. Make sure your FareMind DNA profile is active.',
+          ts: Date.now(),
+        };
+        setMessages(prev => [...prev, errMsg]);
+      } finally {
+        setLoading(false);
+      }
+      return;
+    }
+
     const userMsg: ChatMessage = { id: uid(), role: 'user', text: q.trim(), ts: Date.now() };
     setMessages(prev => [...prev.slice(-6), userMsg]); // keep max 8 msgs
     setInput('');
@@ -464,6 +510,18 @@ export default function FloatingAIAssistant({
                     ✈ Book a Flight
                   </motion.button>
 
+                  {/* 🧬 DNA Search — special action chip */}
+                  {onDnaSearch && (
+                    <motion.button
+                      whileHover={{ scale: 1.03 }}
+                      whileTap={{ scale: 0.97 }}
+                      onClick={() => handleChip({ label: '🧬 DNA Search', query: '__DNA_SEARCH__' })}
+                      className="px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all bg-gradient-to-r from-emerald-500 to-teal-600 border-emerald-400/40 text-white shadow-md shadow-emerald-500/20 hover:shadow-lg hover:shadow-emerald-500/30"
+                    >
+                      🧬 DNA Search
+                    </motion.button>
+                  )}
+
                   {CHIPS.map(chip => (
                     <motion.button
                       key={chip.label}
@@ -629,6 +687,68 @@ export default function FloatingAIAssistant({
                               )}
                             </motion.button>
                           ))}
+                        </div>
+                      )}
+
+                      {/* 🧬 DNA Search Results — show top 5 DNA matches */}
+                      {msg.isDnaSearch && dnaSearchResults?.results && dnaSearchResults.results.length > 0 && (
+                        <div className="space-y-1.5 mt-1.5">
+                          <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 px-1">
+                            🧬 Top {Math.min(5, dnaSearchResults.results.length)} DNA Matches
+                          </p>
+                          {dnaSearchResults.results.slice(0, 5).map((dr, idx) => {
+                            const flight = flights.find(f => f.id === dr.cardId);
+                            if (!flight) return null;
+                            return (
+                              <motion.div
+                                key={dr.cardId}
+                                initial={{ opacity: 0, y: 4 }}
+                                animate={{ opacity: 1, y: 0 }}
+                                transition={{ delay: idx * 0.08 }}
+                                className={cn(
+                                  'w-full text-left px-3 py-2.5 rounded-xl border transition-all',
+                                  idx === 0
+                                    ? 'bg-gradient-to-r from-emerald-500/10 to-emerald-500/5 border-emerald-400/30 shadow-sm'
+                                    : 'bg-white border-slate-200'
+                                )}
+                              >
+                                {/* Rank + Airline + DNA Score */}
+                                <div className="flex items-center justify-between gap-2 mb-1">
+                                  <div className="flex items-center gap-1.5 min-w-0">
+                                    <span className={cn(
+                                      'w-5 h-5 rounded-md flex items-center justify-center text-[10px] font-black shrink-0',
+                                      idx === 0 ? 'bg-emerald-500 text-white' : 'bg-slate-100 text-slate-500'
+                                    )}>{idx + 1}</span>
+                                    <p className="text-[11px] font-bold text-slate-800 truncate">{flight.airline.name}</p>
+                                    <span className={cn(
+                                      'px-1.5 py-0.5 rounded-md text-[8px] font-bold uppercase tracking-wider shrink-0',
+                                      dr.dnaScore >= 90
+                                        ? 'bg-emerald-500/15 text-emerald-600 border border-emerald-400/20'
+                                        : dr.dnaScore >= 80
+                                          ? 'bg-teal-500/15 text-teal-600 border border-teal-400/20'
+                                          : 'bg-slate-100 text-slate-500 border border-slate-200'
+                                    )}>
+                                      🧬 {dr.dnaScore}%
+                                    </span>
+                                  </div>
+                                  <p className="text-[12px] font-black text-[#F97316] shrink-0">
+                                    {formatPrice(flight.totalPrice, flight.currency)}
+                                  </p>
+                                </div>
+                                {/* DNA Match Reasons */}
+                                {dr.matchReasons.length > 0 && (
+                                  <div className="flex flex-wrap gap-x-2 gap-y-0.5 mt-1 pt-1 border-t border-slate-100">
+                                    {dr.matchReasons.slice(0, 3).map((r, ri) => (
+                                      <div key={ri} className="flex items-start gap-1">
+                                        <Check className="w-2.5 h-2.5 text-emerald-500 shrink-0 mt-0.5" />
+                                        <span className="text-[9px] text-slate-500 leading-snug">{r}</span>
+                                      </div>
+                                    ))}
+                                  </div>
+                                )}
+                              </motion.div>
+                            );
+                          })}
                         </div>
                       )}
                     </div>

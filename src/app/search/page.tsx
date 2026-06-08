@@ -6,6 +6,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import { Loader2, Plane, Wifi, WifiOff, Sparkles, Star, TrendingDown, Zap, ChevronDown, X, SlidersHorizontal } from 'lucide-react';
 import { useSearchStore } from '@/store/useSearchStore';
 import { usePreferencesStore, type SortPreference } from '@/store/usePreferencesStore';
+import { useAuthStore } from '@/store/useAuthStore';
 import { useFareStore } from '@/store/useFareStore';
 import FareSelectionModal from '@/components/fare-selection/FareSelectionModal';
 import { AIRPORTS } from '@/lib/mock-data';
@@ -20,6 +21,9 @@ import FlexibleDateStrip from '@/components/search/FlexibleDateStrip';
 import FilterPanel, { type FilterOption } from '@/components/search/FilterPanel';
 import FloatingAIAssistant, { type AIAssistResult } from '@/components/search/FloatingAIAssistant';
 import type { UnifiedFlight } from '@/lib/types';
+import type { DnaSearchResult, DnaRankedCard } from '@/lib/services/dna-search-service';
+import { trackDnaEvent } from '@/lib/analytics/dna-search-analytics';
+import DnaSearchProgressBanner, { type DnaSearchStatus } from '@/components/search/DnaSearchProgressBanner';
 
 import type { RoundTripOption, RoundTripSortMode } from '@/lib/round-trip-types';
 import { rankFlightOffers } from '@/lib/ai-scoring';
@@ -104,6 +108,7 @@ function SearchContent() {
   const router = useRouter();
   const { results, setResults, loading, setLoading, getFilteredResults } = useSearchStore();
   const prefs = usePreferencesStore();
+  const { user: authUser } = useAuthStore();
   const fareStore = useFareStore();
 
   const [showSearch, setShowSearch] = useState(false);
@@ -141,6 +146,18 @@ function SearchContent() {
 
   // ── AI Assistant bar result ───────────────────────────────────────────────
   const [aiAssistResult, setAiAssistResult] = useState<AIAssistResult | null>(null);
+
+  // ── 🧬 DNA Search state ─────────────────────────────────────────────────
+  const [dnaSearchLoading, setDnaSearchLoading] = useState(false);
+  const [dnaSearchResults, setDnaSearchResults] = useState<DnaSearchResult | null>(null);
+  const [dnaSearchEligible, setDnaSearchEligible] = useState<boolean | null>(null);
+  const dnaSearchActive = prefs.dnaSearchActive;
+
+  // DNA results map for quick lookup by card ID
+  const dnaResultsMap = useMemo(() => {
+    if (!dnaSearchResults?.results) return null;
+    return new Map<string, DnaRankedCard>(dnaSearchResults.results.map(r => [r.cardId, r]));
+  }, [dnaSearchResults]);
 
   // ── Filter transition spinner ─────────────────────────────────────────────
   const [isFiltering, setIsFiltering] = useState(false);
@@ -199,6 +216,10 @@ function SearchContent() {
     setSelectedClasses(new Set());
     setSelectedFeatures(new Set());
     setAiAssistResult(null);
+    // Reset DNA Search state on new search
+    prefs.setDnaSearchActive(false);
+    setDnaSearchResults(null);
+    setDnaSearchEligible(null);
 
     const params = new URLSearchParams({
       origin, destination, date, adults, cabin,
@@ -577,6 +598,19 @@ function SearchContent() {
     return filtered.length > 0 ? filtered : panelFilteredOneWay;
   }, [panelFilteredOneWay, aiAssistResult]);
 
+  // 🧬 DNA-aware one-way display: DNA-scored cards first (by DNA score desc), then remaining AI-ranked
+  const dnaDisplayOneWay = useMemo(() => {
+    if (!dnaSearchActive || !dnaResultsMap) return displayPanelOneWay;
+    const dnaScored = displayPanelOneWay.filter(f => dnaResultsMap.has(f.id));
+    const nonDna = displayPanelOneWay.filter(f => !dnaResultsMap.has(f.id));
+    dnaScored.sort((a, b) => {
+      const dnaA = dnaResultsMap.get(a.id)?.finalDnaScore ?? 0;
+      const dnaB = dnaResultsMap.get(b.id)?.finalDnaScore ?? 0;
+      return dnaB - dnaA;
+    });
+    return [...dnaScored, ...nonDna];
+  }, [displayPanelOneWay, dnaSearchActive, dnaResultsMap]);
+
   const displayPanelRT = useMemo(() => {
     if (!aiAssistResult?.rankedIds?.length) return panelFilteredRT;
     const filtered = aiAssistResult.rankedIds
@@ -584,6 +618,153 @@ function SearchContent() {
       .filter((rt): rt is RoundTripOption => rt !== undefined);
     return filtered.length > 0 ? filtered : panelFilteredRT;
   }, [panelFilteredRT, aiAssistResult]);
+
+  // 🧬 DNA-aware RT display: DNA-scored cards first (by DNA score desc), then remaining AI-ranked
+  const dnaDisplayRT = useMemo(() => {
+    if (!dnaSearchActive || !dnaResultsMap) return displayPanelRT;
+    const dnaScored = displayPanelRT.filter(rt => dnaResultsMap.has(rt.id));
+    const nonDna = displayPanelRT.filter(rt => !dnaResultsMap.has(rt.id));
+    dnaScored.sort((a, b) => {
+      const dnaA = dnaResultsMap.get(a.id)?.finalDnaScore ?? 0;
+      const dnaB = dnaResultsMap.get(b.id)?.finalDnaScore ?? 0;
+      return dnaB - dnaA;
+    });
+    return [...dnaScored, ...nonDna];
+  }, [displayPanelRT, dnaSearchActive, dnaResultsMap]);
+
+  // 🧬 DNA Search handler — placed here so all dependencies (tripParam, panelFilteredRT, panelFilteredOneWay, origin, destination, date) are initialized
+  const [dnaIneligibleReason, setDnaIneligibleReason] = useState<string | null>(null);
+  const [dnaSearchStatus, setDnaSearchStatus] = useState<DnaSearchStatus | null>(null);
+  const [dnaSearchBannerVisible, setDnaSearchBannerVisible] = useState(false);
+  const [dnaFlightCount, setDnaFlightCount] = useState(0);
+
+  const handleDnaSearch = useCallback(async () => {
+    // If already active, toggle off instantly
+    if (dnaSearchActive) {
+      prefs.setDnaSearchActive(false);
+      setDnaSearchResults(null);
+      setDnaIneligibleReason(null);
+      return;
+    }
+
+    // Clear previous ineligible state so user can retry
+    setDnaSearchEligible(null);
+    setDnaIneligibleReason(null);
+    setDnaSearchLoading(true);
+    setDnaSearchStatus('initializing');
+    setDnaSearchBannerVisible(true);
+    trackDnaEvent('dna_search_started', { source: 'flight_page' });
+
+    // Minimum loading time so the user sees the banner progress
+    const minLoadingDelay = new Promise(r => setTimeout(r, 1500));
+
+    try {
+      // Determine which cards to send (top 50 AI-ranked)
+      const cardsToSend = tripParam === 'round_trip'
+        ? panelFilteredRT.slice(0, 50).map(rt => ({
+            id: rt.id,
+            provider: rt.provider,
+            providerOfferId: rt.providerOfferId,
+            airline: { code: rt.airlineCodes[0] ?? 'XX', name: rt.airlines[0] ?? 'Unknown' },
+            segments: rt.outboundJourney.segments,
+            totalPrice: rt.totalPrice,
+            currency: rt.currency,
+            cabinClass: rt.cabinClass,
+            fareRules: rt.fareRules,
+            baggage: rt.baggage,
+            totalDuration: rt.totalDurationMinutes,
+            stops: rt.maxStopsOneWay,
+            valueScore: rt.score ?? 50,
+          }))
+        : panelFilteredOneWay.slice(0, 50);
+
+      console.log(`[DNA Search] Sending ${cardsToSend.length} cards, userId=${authUser?.id ?? 'none'}`);
+      setDnaFlightCount(cardsToSend.length);
+
+      // Determine if search is international based on airport codes
+      // Common US major airport codes — if both are US, it's domestic
+      const US_AIRPORTS = new Set([
+        'ATL','LAX','ORD','DFW','DEN','JFK','SFO','SEA','LAS','MCO',
+        'EWR','CLT','PHX','IAH','MIA','BOS','MSP','DTW','FLL','PHL',
+        'LGA','BWI','SLC','SAN','DCA','IAD','TPA','HNL','PDX','STL',
+        'MCI','RDU','SMF','SNA','AUS','CLE','OAK','SJC','IND','CVG',
+        'CMH','BNA','PIT','SAT','MKE','RSW','ABQ','OMA','BUF','RIC',
+        'OGG','ANC','BOI','TUS','ELP','BDL','JAX','BHM','CHS','GRR',
+      ]);
+      const originIsUS = US_AIRPORTS.has(origin.toUpperCase());
+      const destIsUS = US_AIRPORTS.has(destination.toUpperCase());
+      const isInternational = !(originIsUS && destIsUS);
+
+      // Stage 2: matching — fire API call
+      setDnaSearchStatus('matching');
+
+      const [res] = await Promise.all([
+        fetch('/api/ai/dna-search', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            flights: cardsToSend,
+            userId: authUser?.id,
+            searchSessionId: `search_${origin}_${destination}_${date}`,
+            tripCategory: isInternational ? 'INTERNATIONAL' : 'DOMESTIC',
+          }),
+        }),
+        minLoadingDelay,
+      ]);
+
+      // Stage 3: ranking — processing response
+      setDnaSearchStatus('ranking');
+      await new Promise(r => setTimeout(r, 800)); // Brief pause so user sees ranking stage
+
+      const data: DnaSearchResult = await res.json();
+      // Update flight count from the actual topN config in the API response
+      if (data.dnaSearchTopN) setDnaFlightCount(data.dnaSearchTopN);
+      console.log('[DNA Search] Response:', { eligible: data.eligible, reason: data.reason, resultCount: data.results?.length ?? 0, topN: data.dnaSearchTopN });
+
+      if (!res.ok || !data.eligible) {
+        // Don't permanently disable — keep as null so user can retry
+        setDnaSearchEligible(null);
+        setDnaSearchResults(null);
+        const reason = data.reason || 'DNA Search is not available right now. Please try again.';
+        setDnaIneligibleReason(reason);
+        console.warn('[DNA Search] Not eligible:', reason);
+        setDnaSearchStatus('error');
+        // Auto-hide error banner after 4 seconds
+        setTimeout(() => {
+          setDnaSearchBannerVisible(false);
+          setDnaSearchStatus(null);
+          setDnaIneligibleReason(null);
+        }, 4000);
+      } else {
+        setDnaSearchEligible(true);
+        setDnaSearchResults(data);
+        prefs.setDnaSearchActive(true);
+        setDnaSearchStatus('complete');
+        trackDnaEvent('dna_search_completed', {
+          source: 'flight_page',
+          totalResults: data.results.length,
+          cached: data.cached,
+        });
+        // Show success for 3 seconds then hide (enough time for bar to visually reach 100%)
+        setTimeout(() => {
+          setDnaSearchBannerVisible(false);
+          setDnaSearchStatus(null);
+        }, 3000);
+      }
+    } catch (err) {
+      console.error('[DNA Search] Error:', err);
+      await minLoadingDelay;
+      setDnaIneligibleReason('DNA Search encountered an error. Please try again.');
+      setDnaSearchStatus('error');
+      setTimeout(() => {
+        setDnaSearchBannerVisible(false);
+        setDnaSearchStatus(null);
+        setDnaIneligibleReason(null);
+      }, 4000);
+    } finally {
+      setDnaSearchLoading(false);
+    }
+  }, [dnaSearchActive, tripParam, panelFilteredRT, panelFilteredOneWay, origin, destination, date, prefs, authUser]);
 
   // ── Active map flight: show hovered card's polylines, or first card by default ──
   const activeMapRoundTrips = useMemo(() => {
@@ -754,6 +935,11 @@ function SearchContent() {
               returnDate={returnDateParam}
               origin={origin}
               destination={destination}
+              onDnaSearch={handleDnaSearch}
+              dnaSearchActive={dnaSearchActive}
+              dnaSearchLoading={dnaSearchLoading}
+              dnaSearchEligible={dnaSearchEligible}
+              dnaIneligibleReason={dnaIneligibleReason}
             />
           </div>
         </div>
@@ -856,6 +1042,11 @@ function SearchContent() {
                 returnDate={returnDateParam}
                 origin={origin}
                 destination={destination}
+                onDnaSearch={handleDnaSearch}
+                dnaSearchActive={dnaSearchActive}
+                dnaSearchLoading={dnaSearchLoading}
+                dnaSearchEligible={dnaSearchEligible}
+                dnaIneligibleReason={dnaIneligibleReason}
               />
             </div>
 
@@ -877,6 +1068,14 @@ function SearchContent() {
               </AnimatePresence>
             <div className="w-full">
 
+                {/* 🧬 DNA Search Progress Banner — above flexible date strip */}
+                <DnaSearchProgressBanner
+                  status={dnaSearchStatus ?? 'initializing'}
+                  isVisible={dnaSearchBannerVisible}
+                  message={dnaIneligibleReason ?? undefined}
+                  flightCount={dnaFlightCount}
+                />
+
                 {/* Flexible date strip — round-trip only */}
                 {tripParam === 'round_trip' && returnDateParam && (
                   <FlexibleDateStrip
@@ -895,14 +1094,20 @@ function SearchContent() {
                 {tripParam === 'round_trip' && panelFilteredRT.length > 0 && (
                   <>
                     <div className="flex items-center gap-3 mb-5 pt-2">
-                      <Sparkles className="w-5 h-5 text-amber-500" />
-                      <h2 className="text-base font-black text-slate-800 uppercase tracking-wide">Round-trip options</h2>
+                      {dnaSearchActive ? <span className="text-lg">🧬</span> : <Sparkles className="w-5 h-5 text-amber-500" />}
+                      <h2 className="text-base font-black text-slate-800 uppercase tracking-wide">
+                        {dnaSearchActive ? 'DNA-Matched Round-trips' : 'Round-trip options'}
+                      </h2>
                       <span className="text-xs text-slate-400 font-medium ml-auto">
-                        {aiAssistResult ? `AI filtered · ${displayPanelRT.length} matches` : `AI-scored · ${Math.min(panelFilteredRT.length, 51)} of ${panelFilteredRT.length} results`}
+                        {dnaSearchActive
+                          ? `🧬 DNA-ranked · ${dnaDisplayRT.length} results`
+                          : aiAssistResult ? `AI filtered · ${displayPanelRT.length} matches` : `AI-scored · ${Math.min(panelFilteredRT.length, 51)} of ${panelFilteredRT.length} results`}
                       </span>
                     </div>
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      {displayPanelRT.map((option, i) => (
+                      {(dnaSearchActive ? dnaDisplayRT : displayPanelRT).map((option, i) => {
+                        const dnaData = dnaResultsMap?.get(option.id);
+                        return (
                         <RoundTripCard
                           key={option.id}
                           option={option}
@@ -916,8 +1121,13 @@ function SearchContent() {
                           scoreOverride={prefs.aiIntelligence ? aiRTMap?.get(option.id)?.aiScore : undefined}
                           isAiHighlighted={!!aiAssistResult && aiAssistResult.rankedIds[0] === option.id}
                           aiReasons={prefs.aiIntelligence ? aiRTMap?.get(option.id)?.aiReasons : undefined}
+                          dnaScore={dnaSearchActive ? dnaData?.dnaScore : undefined}
+                          dnaMatchLabel={dnaSearchActive ? dnaData?.dnaMatchLabel : undefined}
+                          dnaMatchReasons={dnaSearchActive && i < 10 ? dnaData?.matchReasons : undefined}
+                          dnaMismatchReasons={dnaSearchActive && i < 10 ? dnaData?.mismatchReasons : undefined}
                         />
-                      ))}
+                        );
+                      })}
                     </div>
                   </>
                 )}
@@ -933,14 +1143,20 @@ function SearchContent() {
                 {tripParam !== 'round_trip' && panelFilteredOneWay.length > 0 && (
                   <>
                     <div className="flex items-center gap-3 mb-5 pt-4">
-                      <Sparkles className="w-5 h-5 text-amber-500" />
-                      <h2 className="text-base font-black text-slate-800 uppercase tracking-wide">Top flights for you</h2>
+                      {dnaSearchActive ? <span className="text-lg">🧬</span> : <Sparkles className="w-5 h-5 text-amber-500" />}
+                      <h2 className="text-base font-black text-slate-800 uppercase tracking-wide">
+                        {dnaSearchActive ? 'DNA-Matched Flights' : 'Top flights for you'}
+                      </h2>
                       <span className="text-xs text-slate-400 font-medium ml-auto">
-                        {aiAssistResult ? `AI filtered · ${displayPanelOneWay.length} matches` : `AI-scored · ${Math.min(panelFilteredOneWay.length, 51)} of ${panelFilteredOneWay.length} results`}
+                        {dnaSearchActive
+                          ? `🧬 DNA-ranked · ${dnaDisplayOneWay.length} results`
+                          : aiAssistResult ? `AI filtered · ${displayPanelOneWay.length} matches` : `AI-scored · ${Math.min(panelFilteredOneWay.length, 51)} of ${panelFilteredOneWay.length} results`}
                       </span>
                     </div>
                     <div className="grid grid-cols-1 xl:grid-cols-2 gap-4">
-                      {displayPanelOneWay.map((flight, i) => (
+                      {(dnaSearchActive ? dnaDisplayOneWay : displayPanelOneWay).map((flight, i) => {
+                        const dnaData = dnaResultsMap?.get(flight.id);
+                        return (
                         <motion.div
                           key={flight.id}
                           initial={{ opacity: 0, y: 12 }}
@@ -964,9 +1180,15 @@ function SearchContent() {
                             aiReasons={aiAssistResult?.reasoning?.[flight.id] ?? (flight as any).aiReasons}
                             isAiHighlighted={!!aiAssistResult && aiAssistResult.rankedIds[0] === flight.id}
                             aiBadge={aiAssistResult?.badges?.[flight.id]}
+                            dnaScore={dnaSearchActive ? dnaData?.dnaScore : undefined}
+                            dnaMatchLabel={dnaSearchActive ? dnaData?.dnaMatchLabel : undefined}
+                            dnaMatchReasons={dnaSearchActive && i < 10 ? dnaData?.matchReasons : undefined}
+                            dnaMismatchReasons={dnaSearchActive && i < 10 ? dnaData?.mismatchReasons : undefined}
+                            finalDnaScore={dnaSearchActive ? dnaData?.finalDnaScore : undefined}
                           />
                         </motion.div>
-                      ))}
+                        );
+                      })}
                     </div>
                   </>
                 )}
@@ -1100,7 +1322,9 @@ function SearchContent() {
                       </p>
                     </div>
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-4">
-                      {panelFilteredRT.map((option, i) => (
+                      {(dnaSearchActive ? dnaDisplayRT : panelFilteredRT).map((option, i) => {
+                        const dnaData = dnaResultsMap?.get(option.id);
+                        return (
                         <RoundTripCard
                           key={option.id}
                           option={option}
@@ -1114,8 +1338,13 @@ function SearchContent() {
                           scoreOverride={prefs.aiIntelligence ? aiRTMap?.get(option.id)?.aiScore : undefined}
                           isAiHighlighted={!!aiAssistResult && aiAssistResult.rankedIds[0] === option.id}
                           aiReasons={prefs.aiIntelligence ? aiRTMap?.get(option.id)?.aiReasons : undefined}
+                          dnaScore={dnaSearchActive ? dnaData?.dnaScore : undefined}
+                          dnaMatchLabel={dnaSearchActive ? dnaData?.dnaMatchLabel : undefined}
+                          dnaMatchReasons={dnaSearchActive && i < 10 ? dnaData?.matchReasons : undefined}
+                          dnaMismatchReasons={dnaSearchActive && i < 10 ? dnaData?.mismatchReasons : undefined}
                         />
-                      ))}
+                        );
+                      })}
                     </div>
                   </div>
                 ) : (
@@ -1179,7 +1408,9 @@ function SearchContent() {
                     </div>
                   </div>
                   <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-3 gap-4">
-                    {displayResults.map((flight, i) => (
+                    {(dnaSearchActive ? dnaDisplayOneWay : displayResults).map((flight, i) => {
+                      const dnaData = dnaResultsMap?.get(flight.id);
+                      return (
                       <FlightCard
                         key={flight.id}
                         flight={flight}
@@ -1189,8 +1420,14 @@ function SearchContent() {
                         aiReasons={aiAssistResult?.reasoning?.[flight.id] ?? (flight as any).aiReasons}
                         isAiHighlighted={!!aiAssistResult && aiAssistResult.rankedIds[0] === flight.id}
                         aiBadge={aiAssistResult?.badges?.[flight.id]}
+                        dnaScore={dnaSearchActive ? dnaData?.dnaScore : undefined}
+                        dnaMatchLabel={dnaSearchActive ? dnaData?.dnaMatchLabel : undefined}
+                        dnaMatchReasons={dnaSearchActive && i < 10 ? dnaData?.matchReasons : undefined}
+                        dnaMismatchReasons={dnaSearchActive && i < 10 ? dnaData?.mismatchReasons : undefined}
+                        finalDnaScore={dnaSearchActive ? dnaData?.finalDnaScore : undefined}
                       />
-                    ))}
+                      );
+                    })}
                   </div>
                 </div>
               ) : (
@@ -1314,6 +1551,8 @@ function SearchContent() {
           focusedFlightId={hoveredFlightId}
           rtMetaMap={rtMetaMap}
           roundTripOptions={roundTripOptions}
+          onDnaSearch={handleDnaSearch}
+          dnaSearchResults={dnaSearchResults}
         />
       )}
     </div>

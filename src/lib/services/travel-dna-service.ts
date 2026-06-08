@@ -89,6 +89,7 @@ export async function getTravelDnaConfig() {
         internationalRequiredBookings: 5,
         domesticProfileEnabled: true,
         internationalProfileEnabled: true,
+        dnaSearchTopN: 30,
         showLearningState: true,
         showConfidenceScore: true,
       },
@@ -104,6 +105,13 @@ export async function getTravelDnaConfig() {
       },
     });
   }
+  // Backfill: dnaSearchTopN
+  if (config.dnaSearchTopN === undefined || config.dnaSearchTopN === null) {
+    config = await (prisma as any).travelDnaConfig.update({
+      where: { id: config.id },
+      data: { dnaSearchTopN: 30 },
+    });
+  }
   return config;
 }
 
@@ -115,6 +123,7 @@ export async function updateTravelDnaConfig(
     internationalRequiredBookings?: number;
     domesticProfileEnabled?: boolean;
     internationalProfileEnabled?: boolean;
+    dnaSearchTopN?: number;
     showLearningState?: boolean;
     showConfidenceScore?: boolean;
   },

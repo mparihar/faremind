@@ -22,6 +22,7 @@ import {
   ArrowRight,
   BarChart3,
   CalendarDays,
+  Dna,
 } from 'lucide-react';
 import { cn, formatPrice } from '@/lib/utils';
 import {
@@ -168,6 +169,11 @@ export default function SmartPreferencesBar({
   returnDate,
   origin,
   destination,
+  onDnaSearch,
+  dnaSearchActive = false,
+  dnaSearchLoading = false,
+  dnaSearchEligible = null,
+  dnaIneligibleReason = null,
 }: {
   tripType?: 'one_way' | 'round_trip';
   rtSortMode?: RoundTripSortMode | null;
@@ -178,6 +184,11 @@ export default function SmartPreferencesBar({
   returnDate?: string;
   origin?: string;
   destination?: string;
+  onDnaSearch?: () => void;
+  dnaSearchActive?: boolean;
+  dnaSearchLoading?: boolean;
+  dnaSearchEligible?: boolean | null;
+  dnaIneligibleReason?: string | null;
 } = {}) {
   const prefs = usePreferencesStore();
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
@@ -198,41 +209,41 @@ export default function SmartPreferencesBar({
   const isRT = tripType === 'round_trip';
   const durationOptions = isRT
     ? [
-        { value: 1200, label: '≤ 20h' },
-        { value: 1440, label: '≤ 24h' },
-        { value: 1800, label: '≤ 30h' },
-        { value: 2160, label: '≤ 36h' },
-        { value: null, label: 'Any' },
-      ]
+      { value: 1200, label: '≤ 20h' },
+      { value: 1440, label: '≤ 24h' },
+      { value: 1800, label: '≤ 30h' },
+      { value: 2160, label: '≤ 36h' },
+      { value: null, label: 'Any' },
+    ]
     : [
-        { value: 180,  label: '≤ 3h'  },
-        { value: 360,  label: '≤ 6h'  },
-        { value: 600,  label: '≤ 10h' },
-        { value: null, label: 'Any'   },
-      ];
+      { value: 180, label: '≤ 3h' },
+      { value: 360, label: '≤ 6h' },
+      { value: 600, label: '≤ 10h' },
+      { value: null, label: 'Any' },
+    ];
   const durationLabel = prefs.maxDuration
     ? `≤ ${Math.floor(prefs.maxDuration / 60)}h`
     : 'Any duration';
 
   // ─── Stops display ───
   const stopsOptions: { value: StopsPreference; label: string; icon: React.ReactNode }[] = [
-    { value: 'nonstop', label: 'Nonstop only',   icon: <Plane className="w-3.5 h-3.5" /> },
-    { value: '1stop',   label: '1 stop or fewer', icon: <span className="text-xs font-bold">1×</span> },
-    { value: '2stop',   label: '2 stops or fewer',icon: <span className="text-xs font-bold">2×</span> },
-    { value: 'any',     label: 'Any stops',        icon: <span className="text-xs font-bold">∞</span> },
+    { value: 'nonstop', label: 'Nonstop only', icon: <Plane className="w-3.5 h-3.5" /> },
+    { value: '1stop', label: '1 stop or fewer', icon: <span className="text-xs font-bold">1×</span> },
+    { value: '2stop', label: '2 stops or fewer', icon: <span className="text-xs font-bold">2×</span> },
+    { value: 'any', label: 'Any stops', icon: <span className="text-xs font-bold">∞</span> },
   ];
   const stopsLabel =
     prefs.stops === 'nonstop' ? 'Nonstop'
-    : prefs.stops === '1stop'  ? '1 stop'
-    : prefs.stops === '2stop'  ? '2 stops'
-    : 'Any stops';
+      : prefs.stops === '1stop' ? '1 stop'
+        : prefs.stops === '2stop' ? '2 stops'
+          : 'Any stops';
 
   // ─── Departure window ───
   const windowOptions: { value: DepartureWindow; label: string; sub: string; icon: React.ReactNode }[] = [
-    { value: 'morning',   label: 'Morning',          sub: '5 AM – 12 PM', icon: <Sunrise className="w-3.5 h-3.5" /> },
-    { value: 'afternoon', label: 'Afternoon',         sub: '12 PM – 5 PM', icon: <Sun     className="w-3.5 h-3.5" /> },
-    { value: 'evening',   label: 'Evening',           sub: '5 PM – 9 PM',  icon: <Sunset  className="w-3.5 h-3.5" /> },
-    { value: 'night',     label: 'Night / Red-eye',   sub: '9 PM – 5 AM',  icon: <Moon    className="w-3.5 h-3.5" /> },
+    { value: 'morning', label: 'Morning', sub: '5 AM – 12 PM', icon: <Sunrise className="w-3.5 h-3.5" /> },
+    { value: 'afternoon', label: 'Afternoon', sub: '12 PM – 5 PM', icon: <Sun className="w-3.5 h-3.5" /> },
+    { value: 'evening', label: 'Evening', sub: '5 PM – 9 PM', icon: <Sunset className="w-3.5 h-3.5" /> },
+    { value: 'night', label: 'Night / Red-eye', sub: '9 PM – 5 AM', icon: <Moon className="w-3.5 h-3.5" /> },
   ];
   const windowLabel = prefs.departureWindow
     ? windowOptions.find((w) => w.value === prefs.departureWindow)?.label || 'Any time'
@@ -243,19 +254,19 @@ export default function SmartPreferencesBar({
 
   // ─── Sort display ───
   const sortOptions: { value: SortPreference; label: string; description: string; icon: React.ReactNode }[] = [
-    { value: 'any',      label: 'Default',  description: 'Standard ordering',  icon: <span className="text-xs font-bold">✦</span> },
+    { value: 'any', label: 'Default', description: 'Standard ordering', icon: <span className="text-xs font-bold">✦</span> },
     { value: 'cheapest', label: 'Cheapest', description: 'Lowest price first', icon: <TrendingDown className="w-3.5 h-3.5" /> },
-    { value: 'fastest',  label: 'Fastest',  description: 'Shortest flight time',icon: <Zap         className="w-3.5 h-3.5" /> },
+    { value: 'fastest', label: 'Fastest', description: 'Shortest flight time', icon: <Zap className="w-3.5 h-3.5" /> },
   ];
 
   const rtSortOptions: { key: RoundTripSortMode; icon: React.ReactNode; label: string; sub: string }[] = [
-    { key: 'cheapest',     icon: <TrendingDown className="w-3.5 h-3.5" />, label: 'Cheapest',           sub: 'Lowest round-trip price' },
-    { key: 'fastest',      icon: <Zap          className="w-3.5 h-3.5" />, label: 'Fastest',            sub: 'Shortest total flying time' },
-    { key: 'fewest_stops', icon: <Minimize2    className="w-3.5 h-3.5" />, label: 'Fewest Stops',       sub: 'Minimum connections' },
-    { key: 'earliest_dep', icon: <ArrowUp      className="w-3.5 h-3.5" />, label: 'Earliest Departure', sub: 'Departs soonest in the day' },
-    { key: 'latest_dep',   icon: <ArrowDown    className="w-3.5 h-3.5" />, label: 'Latest Departure',   sub: 'Departs latest in the day' },
-    { key: 'earliest_arr', icon: <ArrowUp      className="w-3.5 h-3.5" />, label: 'Earliest Arrival',   sub: 'Arrives soonest' },
-    { key: 'latest_arr',   icon: <ArrowDown    className="w-3.5 h-3.5" />, label: 'Latest Arrival',     sub: 'Arrives latest' },
+    { key: 'cheapest', icon: <TrendingDown className="w-3.5 h-3.5" />, label: 'Cheapest', sub: 'Lowest round-trip price' },
+    { key: 'fastest', icon: <Zap className="w-3.5 h-3.5" />, label: 'Fastest', sub: 'Shortest total flying time' },
+    { key: 'fewest_stops', icon: <Minimize2 className="w-3.5 h-3.5" />, label: 'Fewest Stops', sub: 'Minimum connections' },
+    { key: 'earliest_dep', icon: <ArrowUp className="w-3.5 h-3.5" />, label: 'Earliest Departure', sub: 'Departs soonest in the day' },
+    { key: 'latest_dep', icon: <ArrowDown className="w-3.5 h-3.5" />, label: 'Latest Departure', sub: 'Departs latest in the day' },
+    { key: 'earliest_arr', icon: <ArrowUp className="w-3.5 h-3.5" />, label: 'Earliest Arrival', sub: 'Arrives soonest' },
+    { key: 'latest_arr', icon: <ArrowDown className="w-3.5 h-3.5" />, label: 'Latest Arrival', sub: 'Arrives latest' },
   ];
 
   const sortLabel = isRT
@@ -510,35 +521,104 @@ export default function SmartPreferencesBar({
                     <p className="text-xs text-black uppercase tracking-wider font-bold mb-3 px-1">Sort results by</p>
                     {isRT
                       ? rtSortOptions.map((opt) => (
-                          <DropdownOption
-                            key={opt.key}
-                            selected={rtSortMode === opt.key}
-                            onClick={() => { onRtSortChange?.(opt.key); closeDropdown(); }}
-                          >
-                            <span className="w-4 flex justify-center shrink-0">{opt.icon}</span>
-                            <div className="flex flex-col">
-                              <span>{opt.label}</span>
-                              <span className="text-xs text-gray-600">{opt.sub}</span>
-                            </div>
-                          </DropdownOption>
-                        ))
+                        <DropdownOption
+                          key={opt.key}
+                          selected={rtSortMode === opt.key}
+                          onClick={() => { onRtSortChange?.(opt.key); closeDropdown(); }}
+                        >
+                          <span className="w-4 flex justify-center shrink-0">{opt.icon}</span>
+                          <div className="flex flex-col">
+                            <span>{opt.label}</span>
+                            <span className="text-xs text-gray-600">{opt.sub}</span>
+                          </div>
+                        </DropdownOption>
+                      ))
                       : sortOptions.map((opt) => (
-                          <DropdownOption
-                            key={opt.value}
-                            selected={prefs.sort === opt.value}
-                            onClick={() => { prefs.setSort(opt.value); closeDropdown(); }}
-                          >
-                            <span className="w-4 flex justify-center shrink-0">{opt.icon}</span>
-                            <div className="flex flex-col">
-                              <span>{opt.label}</span>
-                              <span className="text-xs text-gray-600">{opt.description}</span>
-                            </div>
-                          </DropdownOption>
-                        ))}
+                        <DropdownOption
+                          key={opt.value}
+                          selected={prefs.sort === opt.value}
+                          onClick={() => { prefs.setSort(opt.value); closeDropdown(); }}
+                        >
+                          <span className="w-4 flex justify-center shrink-0">{opt.icon}</span>
+                          <div className="flex flex-col">
+                            <span>{opt.label}</span>
+                            <span className="text-xs text-gray-600">{opt.description}</span>
+                          </div>
+                        </DropdownOption>
+                      ))}
                   </Dropdown>
                 )}
               </AnimatePresence>
             </div>
+
+            {/* 🧬 DNA Search Toggle (embedded) */}
+            {onDnaSearch && (
+              <div className="relative">
+                <button
+                  onClick={() => {
+                    if (dnaSearchEligible === false || dnaSearchLoading) return;
+                    onDnaSearch();
+                  }}
+                  disabled={dnaSearchEligible === false}
+                  title={
+                    dnaSearchEligible === false
+                      ? 'Complete more bookings to unlock DNA Search'
+                      : dnaSearchActive
+                        ? 'Click to turn off DNA Search'
+                        : 'Personalize results using your Travel DNA'
+                  }
+                  className={cn(
+                    'flex items-center gap-2 px-3 py-1.5 rounded-xl text-[13px] font-semibold transition-all duration-300 border relative z-10',
+                    dnaSearchLoading
+                      ? 'bg-[#24C9A6]/10 border-[#24C9A6]/30 text-[#0F172A] shadow-[0_0_15px_rgba(36,201,166,0.3)]'
+                      : dnaSearchActive
+                        ? 'bg-[#24C9A6]/10 border-[#24C9A6]/30 text-[#0F172A] shadow-[0_0_15px_rgba(36,201,166,0.3)] scale-[1.03]'
+                        : dnaSearchEligible === false
+                          ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-50'
+                          : 'bg-white border-gray-200 text-[#0F172A]/70 hover:text-[#0F172A] hover:border-gray-300'
+                  )}
+                >
+                  {dnaSearchLoading ? (
+                    <div className="w-3.5 h-3.5 border-2 border-[#24C9A6]/30 border-t-[#24C9A6] rounded-full animate-spin shrink-0" />
+                  ) : (
+                    <span className="text-sm leading-none shrink-0">🧬</span>
+                  )}
+                  <span className="tracking-tight whitespace-nowrap text-black">DNA Search</span>
+                  <div className={cn(
+                    'relative w-8 h-[18px] rounded-full transition-all duration-300 shrink-0',
+                    dnaSearchLoading ? 'bg-[#24C9A6]' : dnaSearchActive ? 'bg-[#24C9A6]' : 'bg-gray-200'
+                  )}>
+                    <motion.div
+                      className="absolute top-[2px] left-[2px] w-3.5 h-3.5 rounded-full bg-white shadow-sm"
+                      animate={
+                        dnaSearchLoading
+                          ? { x: [0, 12, 0] }
+                          : { x: dnaSearchActive ? 12 : 0 }
+                      }
+                      transition={
+                        dnaSearchLoading
+                          ? { duration: 1.2, repeat: Infinity, ease: 'easeInOut' }
+                          : { type: 'spring', stiffness: 500, damping: 30 }
+                      }
+                    />
+                  </div>
+                </button>
+              </div>
+            )}
+
+            {/* DNA ineligible toast (embedded) */}
+            <AnimatePresence>
+              {dnaIneligibleReason && (
+                <motion.div
+                  initial={{ opacity: 0, y: -4, scale: 0.95 }}
+                  animate={{ opacity: 1, y: 0, scale: 1 }}
+                  exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                  className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-sm max-w-[280px]"
+                >
+                  🧬 {dnaIneligibleReason}
+                </motion.div>
+              )}
+            </AnimatePresence>
 
             {/* Reset button */}
             <AnimatePresence>
@@ -632,260 +712,260 @@ export default function SmartPreferencesBar({
         {prefs.aiIntelligence && (
           <div className="absolute inset-0 rounded-2xl bg-gradient-to-r from-[#1ABC9C]/[0.03] to-transparent pointer-events-none" />
         )}
-        
+
         {/* Softened Filter Group when AI is active */}
         <div className={cn(
           "flex flex-wrap items-center gap-2 transition-all duration-500",
           (prefs.aiIntelligence && !activeDropdown) ? "opacity-60" : "opacity-100"
         )}>
 
-        {/* ── Budget Pill ── */}
-        <div className="relative">
-          <PillButton
-            icon={<DollarSign className="w-4 h-4" />}
-            label="Budget"
-            value={budgetLabel}
-            active={prefs.budgetActive}
+          {/* ── Budget Pill ── */}
+          <div className="relative">
+            <PillButton
+              icon={<DollarSign className="w-4 h-4" />}
+              label="Budget"
+              value={budgetLabel}
+              active={prefs.budgetActive}
 
-            accent="success"
-            onClick={() => toggleDropdown('budget')}
-          />
-          <AnimatePresence>
-            {activeDropdown === 'budget' && (
-              <Dropdown onClose={closeDropdown} className="w-72 left-0">
-                <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Quick Budget</p>
-                <div className="flex flex-wrap gap-1.5 mb-3 px-1">
-                  <button
-                    onClick={() => { prefs.setBudgetActive(false); setBudgetRange([0, 2000]); closeDropdown(); }}
-                    className={cn('text-xs px-2.5 py-1 rounded-full border font-semibold transition-all',
-                      !prefs.budgetActive ? 'bg-[#1ABC9C] text-white border-[#1ABC9C]' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300')}
-                  >Any</button>
-                  {[750, 1000, 1250, 1500].map((preset) => (
+              accent="success"
+              onClick={() => toggleDropdown('budget')}
+            />
+            <AnimatePresence>
+              {activeDropdown === 'budget' && (
+                <Dropdown onClose={closeDropdown} className="w-72 left-0">
+                  <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Quick Budget</p>
+                  <div className="flex flex-wrap gap-1.5 mb-3 px-1">
                     <button
-                      key={preset}
-                      onClick={() => { prefs.setBudget(0, preset); setBudgetRange([0, preset]); closeDropdown(); }}
+                      onClick={() => { prefs.setBudgetActive(false); setBudgetRange([0, 2000]); closeDropdown(); }}
                       className={cn('text-xs px-2.5 py-1 rounded-full border font-semibold transition-all',
-                        prefs.budgetActive && prefs.budgetMax === preset && prefs.budgetMin === 0
-                          ? 'bg-[#1ABC9C] text-white border-[#1ABC9C]'
-                          : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300')}
-                    >
-                      Under ${preset.toLocaleString()}
-                    </button>
-                  ))}
-                </div>
-                <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Custom Range</p>
-
-                <div className="flex items-center gap-2 mb-3">
-                  <div className="flex-1">
-                    <label className="text-xs text-gray-500 mb-1 block">Min</label>
-                    <input
-                      type="number"
-                      min={0}
-                      max={budgetRange[1]}
-                      step={50}
-                      value={budgetRange[0]}
-                      onChange={(e) => setBudgetRange([Number(e.target.value), budgetRange[1]])}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-gray-900 text-sm font-medium focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-100 transition-all"
-                    />
+                        !prefs.budgetActive ? 'bg-[#1ABC9C] text-white border-[#1ABC9C]' : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300')}
+                    >Any</button>
+                    {[750, 1000, 1250, 1500].map((preset) => (
+                      <button
+                        key={preset}
+                        onClick={() => { prefs.setBudget(0, preset); setBudgetRange([0, preset]); closeDropdown(); }}
+                        className={cn('text-xs px-2.5 py-1 rounded-full border font-semibold transition-all',
+                          prefs.budgetActive && prefs.budgetMax === preset && prefs.budgetMin === 0
+                            ? 'bg-[#1ABC9C] text-white border-[#1ABC9C]'
+                            : 'bg-white border-gray-200 text-gray-600 hover:border-gray-300')}
+                      >
+                        Under ${preset.toLocaleString()}
+                      </button>
+                    ))}
                   </div>
-                  <span className="text-gray-400 text-sm mt-5">–</span>
-                  <div className="flex-1">
-                    <label className="text-xs text-gray-500 mb-1 block">Max</label>
+                  <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Custom Range</p>
+
+                  <div className="flex items-center gap-2 mb-3">
+                    <div className="flex-1">
+                      <label className="text-xs text-gray-500 mb-1 block">Min</label>
+                      <input
+                        type="number"
+                        min={0}
+                        max={budgetRange[1]}
+                        step={50}
+                        value={budgetRange[0]}
+                        onChange={(e) => setBudgetRange([Number(e.target.value), budgetRange[1]])}
+                        className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-gray-900 text-sm font-medium focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-100 transition-all"
+                      />
+                    </div>
+                    <span className="text-gray-400 text-sm mt-5">–</span>
+                    <div className="flex-1">
+                      <label className="text-xs text-gray-500 mb-1 block">Max</label>
+                      <input
+                        type="number"
+                        min={budgetRange[0]}
+                        step={50}
+                        value={budgetRange[1]}
+                        onChange={(e) => setBudgetRange([budgetRange[0], Number(e.target.value)])}
+                        className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-gray-900 text-sm font-medium focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-100 transition-all"
+                      />
+                    </div>
+                  </div>
+
+                  <div className="px-1 mb-4">
                     <input
-                      type="number"
-                      min={budgetRange[0]}
+                      type="range"
+                      min={0}
+                      max={3000}
                       step={50}
                       value={budgetRange[1]}
                       onChange={(e) => setBudgetRange([budgetRange[0], Number(e.target.value)])}
-                      className="w-full px-3 py-2 rounded-lg bg-gray-50 border border-gray-200 text-gray-900 text-sm font-medium focus:outline-none focus:border-green-400 focus:ring-1 focus:ring-green-100 transition-all"
+                      className="w-full accent-green-500 h-1.5 rounded-full appearance-none bg-gray-200 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-green-500 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer"
                     />
+                    <div className="flex justify-between text-xs text-gray-400 mt-1.5">
+                      <span>$0</span>
+                      <span>$3,000</span>
+                    </div>
                   </div>
-                </div>
 
-                <div className="px-1 mb-4">
-                  <input
-                    type="range"
-                    min={0}
-                    max={3000}
-                    step={50}
-                    value={budgetRange[1]}
-                    onChange={(e) => setBudgetRange([budgetRange[0], Number(e.target.value)])}
-                    className="w-full accent-green-500 h-1.5 rounded-full appearance-none bg-gray-200 [&::-webkit-slider-thumb]:appearance-none [&::-webkit-slider-thumb]:w-4 [&::-webkit-slider-thumb]:h-4 [&::-webkit-slider-thumb]:rounded-full [&::-webkit-slider-thumb]:bg-green-500 [&::-webkit-slider-thumb]:shadow-md [&::-webkit-slider-thumb]:cursor-pointer"
-                  />
-                  <div className="flex justify-between text-xs text-gray-400 mt-1.5">
-                    <span>$0</span>
-                    <span>$3,000</span>
-                  </div>
-                </div>
-
-                <div className="flex gap-2">
-                  <button
-                    onClick={() => {
-                      prefs.setBudget(budgetRange[0], budgetRange[1]);
-                      closeDropdown();
-                    }}
-                    className="flex-1 px-3 py-2 rounded-xl text-sm font-semibold text-white bg-green-600 hover:bg-green-500 transition-all"
-                  >
-                    Apply
-                  </button>
-                  {prefs.budgetActive && (
+                  <div className="flex gap-2">
                     <button
                       onClick={() => {
-                        prefs.setBudgetActive(false);
-                        setBudgetRange([0, 2000]);
+                        prefs.setBudget(budgetRange[0], budgetRange[1]);
                         closeDropdown();
                       }}
-                      className="px-3 py-2 rounded-xl text-sm font-medium text-gray-500 bg-gray-100 hover:text-gray-700 hover:bg-gray-200 transition-all"
+                      className="flex-1 px-3 py-2 rounded-xl text-sm font-semibold text-white bg-green-600 hover:bg-green-500 transition-all"
                     >
-                      Clear
+                      Apply
                     </button>
-                  )}
-                </div>
-              </Dropdown>
-            )}
-          </AnimatePresence>
-        </div>
+                    {prefs.budgetActive && (
+                      <button
+                        onClick={() => {
+                          prefs.setBudgetActive(false);
+                          setBudgetRange([0, 2000]);
+                          closeDropdown();
+                        }}
+                        className="px-3 py-2 rounded-xl text-sm font-medium text-gray-500 bg-gray-100 hover:text-gray-700 hover:bg-gray-200 transition-all"
+                      >
+                        Clear
+                      </button>
+                    )}
+                  </div>
+                </Dropdown>
+              )}
+            </AnimatePresence>
+          </div>
 
-        {/* ── Duration Pill ── */}
-        <div className="relative">
-          <PillButton
-            icon={<Clock className="w-4 h-4" />}
-            label="Duration"
-            value={durationLabel}
-            active={prefs.maxDuration !== null}
+          {/* ── Duration Pill ── */}
+          <div className="relative">
+            <PillButton
+              icon={<Clock className="w-4 h-4" />}
+              label="Duration"
+              value={durationLabel}
+              active={prefs.maxDuration !== null}
 
-            accent="accent"
-            onClick={() => toggleDropdown('duration')}
-          />
-          <AnimatePresence>
-            {activeDropdown === 'duration' && (
-              <Dropdown onClose={closeDropdown}>
-                <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Max Flight Time</p>
-                <div className="space-y-0.5">
-                  {durationOptions.map((opt) => (
+              accent="accent"
+              onClick={() => toggleDropdown('duration')}
+            />
+            <AnimatePresence>
+              {activeDropdown === 'duration' && (
+                <Dropdown onClose={closeDropdown}>
+                  <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Max Flight Time</p>
+                  <div className="space-y-0.5">
+                    {durationOptions.map((opt) => (
+                      <DropdownOption
+                        key={opt.label}
+                        selected={prefs.maxDuration === opt.value}
+                        accent="accent"
+                        onClick={() => {
+                          prefs.setMaxDuration(opt.value);
+                          closeDropdown();
+                        }}
+                      >
+                        <Clock className="w-3.5 h-3.5 opacity-50 shrink-0" />
+                        {opt.label}
+                      </DropdownOption>
+                    ))}
+                  </div>
+                </Dropdown>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* ── Stops Pill ── */}
+          <div className="relative">
+            <PillButton
+              icon={<Plane className="w-4 h-4" />}
+              label="Stops"
+              value={stopsLabel}
+              active={prefs.stops !== 'any'}
+
+              accent="brand"
+              onClick={() => toggleDropdown('stops')}
+            />
+            <AnimatePresence>
+              {activeDropdown === 'stops' && (
+                <Dropdown onClose={closeDropdown}>
+                  <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Stops Preference</p>
+                  <div className="space-y-0.5">
+                    {stopsOptions.map((opt) => (
+                      <DropdownOption
+                        key={opt.value}
+                        selected={prefs.stops === opt.value}
+                        onClick={() => {
+                          prefs.setStops(opt.value);
+                          closeDropdown();
+                        }}
+                      >
+                        <span className="w-4 flex justify-center shrink-0">{opt.icon}</span>
+                        {opt.label}
+                      </DropdownOption>
+                    ))}
+                  </div>
+                </Dropdown>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* ── Separator ── */}
+          <div className="hidden sm:block w-px h-6 bg-gray-200 mx-1" />
+
+          {/* ── Departure Window Pill ── */}
+          <div className="relative">
+            <PillButton
+              icon={windowIcon}
+              label="Departure"
+              value={windowLabel}
+              active={prefs.departureWindow !== null}
+
+              accent="warning"
+              onClick={() => toggleDropdown('window')}
+            />
+            <AnimatePresence>
+              {activeDropdown === 'window' && (
+                <Dropdown onClose={closeDropdown} className="w-56">
+                  <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Departure Window</p>
+                  <div className="space-y-0.5">
                     <DropdownOption
-                      key={opt.label}
-                      selected={prefs.maxDuration === opt.value}
-                      accent="accent"
+                      selected={prefs.departureWindow === null}
                       onClick={() => {
-                        prefs.setMaxDuration(opt.value);
+                        prefs.setDepartureWindow(null);
                         closeDropdown();
                       }}
                     >
-                      <Clock className="w-3.5 h-3.5 opacity-50 shrink-0" />
-                      {opt.label}
+                      <span className="w-4 flex justify-center text-xs font-bold shrink-0">✦</span>
+                      <span>Any time</span>
                     </DropdownOption>
-                  ))}
-                </div>
-              </Dropdown>
-            )}
-          </AnimatePresence>
-        </div>
+                    {windowOptions.map((opt) => (
+                      <DropdownOption
+                        key={opt.value}
+                        selected={prefs.departureWindow === opt.value}
+                        onClick={() => {
+                          prefs.setDepartureWindow(opt.value);
+                          closeDropdown();
+                        }}
+                      >
+                        <span className="w-4 flex justify-center shrink-0">{opt.icon}</span>
+                        <div className="flex flex-col">
+                          <span>{opt.label}</span>
+                          <span className="text-xs text-gray-600">{opt.sub}</span>
+                        </div>
+                      </DropdownOption>
+                    ))}
+                  </div>
+                </Dropdown>
+              )}
+            </AnimatePresence>
+          </div>
 
-        {/* ── Stops Pill ── */}
-        <div className="relative">
-          <PillButton
-            icon={<Plane className="w-4 h-4" />}
-            label="Stops"
-            value={stopsLabel}
-            active={prefs.stops !== 'any'}
+          {/* ── Sort Pill ── */}
+          <div className="relative">
+            <PillButton
+              icon={<Star className="w-4 h-4" />}
+              label="Sort"
+              value={sortLabel}
+              active={isRT ? rtSortMode !== null : prefs.sort !== 'any'}
 
-            accent="brand"
-            onClick={() => toggleDropdown('stops')}
-          />
-          <AnimatePresence>
-            {activeDropdown === 'stops' && (
-              <Dropdown onClose={closeDropdown}>
-                <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Stops Preference</p>
-                <div className="space-y-0.5">
-                  {stopsOptions.map((opt) => (
-                    <DropdownOption
-                      key={opt.value}
-                      selected={prefs.stops === opt.value}
-                      onClick={() => {
-                        prefs.setStops(opt.value);
-                        closeDropdown();
-                      }}
-                    >
-                      <span className="w-4 flex justify-center shrink-0">{opt.icon}</span>
-                      {opt.label}
-                    </DropdownOption>
-                  ))}
-                </div>
-              </Dropdown>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* ── Separator ── */}
-        <div className="hidden sm:block w-px h-6 bg-gray-200 mx-1" />
-
-        {/* ── Departure Window Pill ── */}
-        <div className="relative">
-          <PillButton
-            icon={windowIcon}
-            label="Departure"
-            value={windowLabel}
-            active={prefs.departureWindow !== null}
-
-            accent="warning"
-            onClick={() => toggleDropdown('window')}
-          />
-          <AnimatePresence>
-            {activeDropdown === 'window' && (
-              <Dropdown onClose={closeDropdown} className="w-56">
-                <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Departure Window</p>
-                <div className="space-y-0.5">
-                  <DropdownOption
-                    selected={prefs.departureWindow === null}
-                    onClick={() => {
-                      prefs.setDepartureWindow(null);
-                      closeDropdown();
-                    }}
-                  >
-                    <span className="w-4 flex justify-center text-xs font-bold shrink-0">✦</span>
-                    <span>Any time</span>
-                  </DropdownOption>
-                  {windowOptions.map((opt) => (
-                    <DropdownOption
-                      key={opt.value}
-                      selected={prefs.departureWindow === opt.value}
-                      onClick={() => {
-                        prefs.setDepartureWindow(opt.value);
-                        closeDropdown();
-                      }}
-                    >
-                      <span className="w-4 flex justify-center shrink-0">{opt.icon}</span>
-                      <div className="flex flex-col">
-                        <span>{opt.label}</span>
-                        <span className="text-xs text-gray-600">{opt.sub}</span>
-                      </div>
-                    </DropdownOption>
-                  ))}
-                </div>
-              </Dropdown>
-            )}
-          </AnimatePresence>
-        </div>
-
-        {/* ── Sort Pill ── */}
-        <div className="relative">
-          <PillButton
-            icon={<Star className="w-4 h-4" />}
-            label="Sort"
-            value={sortLabel}
-            active={isRT ? rtSortMode !== null : prefs.sort !== 'any'}
-
-            accent="brand"
-            onClick={() => toggleDropdown('sort')}
-          />
-          <AnimatePresence>
-            {activeDropdown === 'sort' && (
-              <Dropdown onClose={closeDropdown} className="right-0 left-auto w-64">
-                <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Sort Results By</p>
-                <div className="space-y-0.5">
-                  {isRT
-                    ? rtSortOptions.map((opt) => (
+              accent="brand"
+              onClick={() => toggleDropdown('sort')}
+            />
+            <AnimatePresence>
+              {activeDropdown === 'sort' && (
+                <Dropdown onClose={closeDropdown} className="right-0 left-auto w-64">
+                  <p className="text-xs text-black uppercase tracking-wider font-bold mb-2 px-1">Sort Results By</p>
+                  <div className="space-y-0.5">
+                    {isRT
+                      ? rtSortOptions.map((opt) => (
                         <DropdownOption
                           key={opt.key}
                           selected={rtSortMode === opt.key}
@@ -898,7 +978,7 @@ export default function SmartPreferencesBar({
                           </div>
                         </DropdownOption>
                       ))
-                    : sortOptions.map((opt) => (
+                      : sortOptions.map((opt) => (
                         <DropdownOption
                           key={opt.value}
                           selected={prefs.sort === opt.value}
@@ -911,28 +991,97 @@ export default function SmartPreferencesBar({
                           </div>
                         </DropdownOption>
                       ))}
+                  </div>
+                </Dropdown>
+              )}
+            </AnimatePresence>
+          </div>
+
+          {/* ── 🧬 DNA Search Toggle ── */}
+          {onDnaSearch && (
+            <div className="relative mr-2 flex flex-col group">
+              <button
+                onClick={() => {
+                  if (dnaSearchEligible === false || dnaSearchLoading) return;
+                  onDnaSearch();
+                }}
+                disabled={dnaSearchEligible === false}
+                title={
+                  dnaSearchEligible === false
+                    ? 'Complete more bookings to unlock DNA Search'
+                    : dnaSearchActive
+                      ? 'Click to turn off DNA Search'
+                      : 'Personalize results using your Travel DNA'
+                }
+                className={cn(
+                  'flex items-center gap-2 px-3 py-1.5 rounded-xl text-[13px] font-semibold transition-all duration-300 border relative z-10',
+                  dnaSearchLoading
+                    ? 'bg-[#24C9A6]/10 border-[#24C9A6]/30 text-[#0F172A] shadow-[0_0_15px_rgba(36,201,166,0.3)]'
+                    : dnaSearchActive
+                      ? 'bg-[#24C9A6]/10 border-[#24C9A6]/30 text-[#0F172A] shadow-[0_0_15px_rgba(36,201,166,0.3)] scale-[1.03]'
+                      : dnaSearchEligible === false
+                        ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-50'
+                        : 'bg-white border-gray-200 text-[#0F172A]/70 hover:text-[#0F172A] hover:border-gray-300'
+                )}
+              >
+                {dnaSearchLoading ? (
+                  <div className="w-3.5 h-3.5 border-2 border-[#24C9A6]/30 border-t-[#24C9A6] rounded-full animate-spin shrink-0" />
+                ) : (
+                  <span className="text-sm leading-none shrink-0">🧬</span>
+                )}
+                <span className="tracking-tight whitespace-nowrap text-black">DNA Search</span>
+                <div className={cn(
+                  'relative w-8 h-[18px] rounded-full transition-all duration-300 shrink-0',
+                  dnaSearchLoading ? 'bg-[#24C9A6]' : dnaSearchActive ? 'bg-[#24C9A6]' : 'bg-gray-200'
+                )}>
+                  <motion.div
+                    className="absolute top-[2px] left-[2px] w-3.5 h-3.5 rounded-full bg-white shadow-sm"
+                    animate={
+                      dnaSearchLoading
+                        ? { x: [0, 12, 0] }
+                        : { x: dnaSearchActive ? 12 : 0 }
+                    }
+                    transition={
+                      dnaSearchLoading
+                        ? { duration: 1.2, repeat: Infinity, ease: 'easeInOut' }
+                        : { type: 'spring', stiffness: 500, damping: 30 }
+                    }
+                  />
                 </div>
-              </Dropdown>
+              </button>
+            </div>
+          )}
+
+          {/* DNA ineligible toast */}
+          <AnimatePresence>
+            {dnaIneligibleReason && (
+              <motion.div
+                initial={{ opacity: 0, y: -4, scale: 0.95 }}
+                animate={{ opacity: 1, y: 0, scale: 1 }}
+                exit={{ opacity: 0, y: -4, scale: 0.95 }}
+                className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-sm max-w-[280px]"
+              >
+                🧬 {dnaIneligibleReason}
+              </motion.div>
             )}
           </AnimatePresence>
-        </div>
 
-        {/* Reset button */}
-        <AnimatePresence>
-          {hasActivePrefs && (
-            <motion.button
-              initial={{ opacity: 0, scale: 0.8 }}
-              animate={{ opacity: 1, scale: 1 }}
-              exit={{ opacity: 0, scale: 0.8 }}
-              onClick={() => prefs.resetAll()}
-              className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
-              title="Reset all preferences"
-            >
-              <X className="w-3.5 h-3.5" />
-              <span>Reset</span>
-            </motion.button>
-          )}
-        </AnimatePresence>
+          {/* Reset button */}
+          <AnimatePresence>
+            {hasActivePrefs && (
+              <motion.button
+                initial={{ opacity: 0, scale: 0.8 }}
+                animate={{ opacity: 1, scale: 1 }}
+                exit={{ opacity: 0, scale: 0.8 }}
+                onClick={() => prefs.resetAll()}
+                className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
+                title="Reset all preferences"
+              >
+                <X className="w-3.5 h-3.5" />
+                <span>Reset</span>
+              </motion.button>
+            )}
+          </AnimatePresence>
         </div> {/* Close Softened Filter Group */}
       </motion.div>
 

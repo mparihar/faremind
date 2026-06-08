@@ -7,7 +7,7 @@ import { useManageBookingStore } from '@/store/useManageBookingStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import CancelBookingModal from '@/components/manage-booking/CancelBookingModal';
 import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
-
+import { canAddBaggage } from '@/lib/booking-capabilities';
 function StatusBadge({ status }: { status: string }) {
   const m: Record<string, [string, string]> = { CONFIRMED: ['bg-emerald-500/10 text-emerald-400', 'Confirmed'], TICKETED: ['bg-emerald-500/10 text-emerald-400', 'Ticketed'], CANCELLED: ['bg-red-500/10 text-red-400', 'Cancelled'], CREATED: ['bg-amber-500/10 text-amber-400', 'Processing'], COMPLETED: ['bg-blue-500/10 text-blue-400', 'Completed'] };
   const [cls, label] = m[status] || ['bg-slate-500/10 text-slate-400', status];
@@ -483,7 +483,8 @@ export default function BookingDetailPage() {
   ] : [
     { key: 'cancel', label: 'Cancel Booking', icon: XCircle, color: 'text-red-400 border-red-400/20 bg-red-400/5', hoverColor: 'hover:bg-red-400/10', hide: isPast, badge: fareRules && !fareRules.refundable ? 'Non-refundable' : null, badgeColor: 'text-red-400' },
     { key: 'date_change', label: 'Change Flight', icon: Calendar, color: 'text-purple-400 border-purple-400/20 bg-purple-400/5', hoverColor: 'hover:bg-purple-400/10', hide: isPast, disabled: fareRules ? !fareRules.changeable : false, disabledReason: 'Not allowed per fare rules' },
-    { key: 'seat_change', label: 'Change Seat', icon: Ticket, color: 'text-blue-400 border-blue-400/20 bg-blue-400/5', hoverColor: 'hover:bg-blue-400/10', hide: isPast },
+    { key: 'seat_change', label: 'Change Seat', icon: Ticket, color: 'text-blue-400 border-blue-400/20 bg-blue-400/5', hoverColor: 'hover:bg-blue-400/10', hide: isPast, disabled: (b.primaryProvider || '').toLowerCase() === 'duffel', disabledReason: 'Not supported by airline' },
+    { key: 'add_baggage', label: 'Add Baggage', icon: Luggage, color: 'text-orange-400 border-orange-400/20 bg-orange-400/5', hoverColor: 'hover:bg-orange-400/10', hide: isPast, disabled: !canAddBaggage(b), disabledReason: `Baggage changes for this booking are not available through FareMind. Please contact the airline directly using your airline PNR.${b.masterPnr || b.pnrs?.[0]?.pnrCode ? ` Airline PNR: ${b.masterPnr || b.pnrs?.[0]?.pnrCode}` : ''}` },
     { key: 'passenger_update', label: 'Update Passenger', icon: User, color: 'text-amber-400 border-amber-400/20 bg-amber-400/5', hoverColor: 'hover:bg-amber-400/10' },
   ].filter(a => !a.hide);
 

@@ -18,6 +18,7 @@ export interface SmartPreferences {
   sort: SortPreference;
   personalized: boolean;    // legacy AI personalization toggle
   aiIntelligence: boolean;  // AI Intelligence scoring engine toggle
+  dnaSearchActive: boolean; // 🧬 DNA Search active toggle
 }
 
 interface PreferencesStore extends SmartPreferences {
@@ -30,6 +31,7 @@ interface PreferencesStore extends SmartPreferences {
   setSort: (sort: SortPreference) => void;
   setPersonalized: (on: boolean) => void;
   setAiIntelligence: (on: boolean) => void;
+  setDnaSearchActive: (on: boolean) => void;
   resetAll: () => void;
   toQueryParams: () => Record<string, string>;
 }
@@ -44,6 +46,7 @@ const DEFAULT_STATE: SmartPreferences = {
   sort: 'any',
   personalized: false,
   aiIntelligence: true,
+  dnaSearchActive: false,
 };
 
 export const usePreferencesStore = create<PreferencesStore>((set, get) => ({
@@ -57,6 +60,7 @@ export const usePreferencesStore = create<PreferencesStore>((set, get) => ({
   setSort: (sort) => set({ sort }),
   setPersonalized: (personalized) => set({ personalized }),
   setAiIntelligence: (aiIntelligence) => set({ aiIntelligence }),
+  setDnaSearchActive: (dnaSearchActive) => set({ dnaSearchActive }),
   resetAll: () => set(DEFAULT_STATE),
 
   toQueryParams: () => {

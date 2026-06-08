@@ -30,6 +30,7 @@ export const PUT = withAdmin(async (req: NextRequest, { admin }) => {
       internationalRequiredBookings,
       domesticProfileEnabled,
       internationalProfileEnabled,
+      dnaSearchTopN,
       showLearningState,
       showConfidenceScore,
     } = body;
@@ -55,6 +56,14 @@ export const PUT = withAdmin(async (req: NextRequest, { admin }) => {
     const minErr = validateThreshold(minConfirmedBookingsRequired, 'minConfirmedBookingsRequired');
     if (minErr) return NextResponse.json({ error: minErr }, { status: 400 });
 
+    // Validate dnaSearchTopN (1-100)
+    if (dnaSearchTopN !== undefined) {
+      const topNVal = parseInt(dnaSearchTopN, 10);
+      if (isNaN(topNVal) || topNVal < 1 || topNVal > 100) {
+        return NextResponse.json({ error: 'dnaSearchTopN must be between 1 and 100' }, { status: 400 });
+      }
+    }
+
     const config = await updateTravelDnaConfig(
       {
         travelDnaEnabled,
@@ -69,6 +78,9 @@ export const PUT = withAdmin(async (req: NextRequest, { admin }) => {
           : undefined,
         domesticProfileEnabled,
         internationalProfileEnabled,
+        dnaSearchTopN: dnaSearchTopN !== undefined
+          ? parseInt(dnaSearchTopN, 10)
+          : undefined,
         showLearningState,
         showConfidenceScore,
       },

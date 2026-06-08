@@ -12,6 +12,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import CancelBookingModal from '@/components/manage-booking/CancelBookingModal';
 import { SeatMapModal, PassengerModal, DateChangeModal, ETicketModal, RefundModal, SupportModal } from '@/components/manage-booking/BookingModals';
 import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
+import { canAddBaggage } from '@/lib/booking-capabilities';
 
 function StatusBadge({ status }: { status: string }) {
   const m: Record<string, [string, string]> = {
@@ -49,7 +50,7 @@ export default function BookingDetailPage() {
   const params = useParams();
   const router = useRouter();
   const ref = params.ref as string;
-  const { booking, bookingLoading, loadBookingDetail, actions, loadActions, timeline, loadTimeline, activeModal, setActiveModal } = useManageBookingStore();
+  const { booking, bookingLoading, loadBookingDetail, actions, loadActions, timeline, loadTimeline, activeModal, setActiveModal, fareRules } = useManageBookingStore();
   const { loadSession } = useAuthStore();
   const [tab, setTab] = useState<Tab>('overview');
   const [emailSending, setEmailSending] = useState(false);
@@ -102,23 +103,39 @@ export default function BookingDetailPage() {
   const fallbackActions = isCancelled
     ? [{ key: 'refund_status', label: 'View Refund Status', available: true }, { key: 'contact_support', label: 'Contact Support', available: true }]
     : [
-        { key: 'cancel', label: 'Cancel Booking', available: !isPast },
+        { key: 'cancel', label: 'Cancel Booking', available: !isPast, badge: fareRules && !fareRules.refundable ? 'Non-refundable' : null, badgeColor: 'text-red-400' },
         { key: 'date_change', label: 'Change Flight', available: !isPast, disabled: !(b.pnrs?.some((p: any) => p.changeable)) },
         { key: 'seat_change', label: 'Change Seat', available: !isPast, disabled: !(b.pnrs?.some((p: any) => p.seatSelection !== null && p.seatSelection !== 'false' && p.seatSelection !== 'none' && p.seatSelection !== 'unavailable')) },
+        { key: 'add_baggage', label: 'Add Baggage', available: !isPast },
         { key: 'passenger_update', label: 'Update Passenger', available: true },
         { key: 'download_eticket', label: 'Download E-Ticket', available: b.ticketingStatus === 'ISSUED' },
         { key: 'download_full_itinerary', label: 'Download Full Itinerary', available: true },
         { key: 'email_itinerary', label: 'Email Itinerary', available: true },
         { key: 'contact_support', label: 'Contact Support', available: true },
       ];
-  const baseActions = (actions.length > 0 ? actions : fallbackActions).filter(a => a.available);
+  const baseActions = (actions.length > 0 ? actions : fallbackActions).filter((a: any) => a.available);
   // Always append document actions (these are client-side, not from backend)
   const documentActions = [
     { key: 'download_full_itinerary', label: 'Download Full Itinerary', available: true },
     { key: 'email_itinerary', label: 'Email Itinerary', available: true },
   ];
   const resolvedActions = [
-    ...baseActions.filter(a => a.key !== 'download_full_itinerary' && a.key !== 'email_itinerary'),
+    ...baseActions.filter((a: any) => a.key !== 'download_full_itinerary' && a.key !== 'email_itinerary').map((a: any) => {
+      if (a.key === 'cancel') {
+        return { ...a, badge: fareRules && !fareRules.refundable ? 'Non-refundable' : null, badgeColor: 'text-red-400' };
+      }
+      if (a.key === 'seat_change' && (b.primaryProvider || '').toLowerCase() === 'duffel') {
+        return { ...a, disabled: true };
+      }
+      if (a.key === 'add_baggage') {
+        return { 
+          ...a, 
+          disabled: !canAddBaggage(b), 
+          disabledReason: `Baggage changes for this booking are not available through FareMind. Please contact the airline directly using your airline PNR.${b.masterPnr || b.pnrs?.[0]?.pnrCode ? ` Airline PNR: ${b.masterPnr || b.pnrs?.[0]?.pnrCode}` : ''}` 
+        };
+      }
+      return a;
+    }),
     ...documentActions,
   ];
 
@@ -624,10 +641,11 @@ export default function BookingDetailPage() {
                 const cfg = actionConfig[a.key] || actionConfig.contact_support;
                 const Icon = cfg.icon;
                 return (
-                  <button key={a.key} onClick={() => !a.disabled && setActiveModal(a.key)}
-                    className={`w-full flex items-center gap-3 py-4 px-4 rounded-xl border transition-all text-left ${cfg.cls} ${a.disabled ? 'opacity-40 cursor-not-allowed grayscale' : ''}`}>
+                  <button key={a.key} onClick={() => !(a as any).disabled && setActiveModal(a.key)}
+                    className={`w-full flex items-center gap-3 py-4 px-4 rounded-xl border transition-all text-left ${cfg.cls} ${(a as any).disabled ? 'opacity-40 cursor-not-allowed grayscale' : ''}`}>
                     <Icon size={15} />
                     <span className="text-sm font-semibold flex-1">{a.label}</span>
+                    {!(a as any).disabled && (a as any).badge && <span className={`text-[10px] font-semibold ${(a as any).badgeColor || 'text-slate-500'}`}>{(a as any).badge}</span>}
                     <ChevronRight size={12} className="opacity-40" />
                   </button>
                 );

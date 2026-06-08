@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
+import { canAddBaggage } from '@/lib/booking-capabilities';
 
 const fmt = (n: string | number, c = 'USD') =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(Number(n));
@@ -63,23 +64,43 @@ function TripCountdown({ departureDate, destCity }: { departureDate: string; des
 }
 
 /* ── Quick Actions Grid ── */
-function QuickActions() {
+function QuickActions({ nextTrip }: { nextTrip: any }) {
   const actions = [
     { icon: ClipboardList, label: 'Manage\nBooking', href: '/account/manage-booking' },
     { icon: Armchair, label: 'Change\nSeat', href: '/account/manage-booking' },
-    { icon: Luggage, label: 'Add\nBaggage', href: '/account/manage-booking' },
+    { icon: Luggage, label: 'Add\nBaggage', href: '/account/manage-booking', hidden: nextTrip && !canAddBaggage(nextTrip) },
     { icon: Ticket, label: 'Check-\nin', href: '/account/manage-booking' },
-    { icon: UtensilsCrossed, label: 'Meal\nPreference', href: '/account/manage-booking' },
     { icon: PhoneCall, label: 'Contact\nSupport', href: '/account/support' },
-  ];
+  ].filter(a => !a.hidden);
+  const processedActions = actions.map(a => {
+    const isDisabled = a.label === 'Change\nSeat' && nextTrip && (nextTrip.primaryProvider || '').toLowerCase() === 'duffel';
+    return { ...a, isDisabled };
+  }).sort((a, b) => {
+    if (a.isDisabled && !b.isDisabled) return 1;
+    if (!a.isDisabled && b.isDisabled) return -1;
+    return 0;
+  });
+
   return (
     <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4">
       <h3 className="text-white text-sm font-bold flex items-center gap-2 mb-3">
         <Zap size={14} className="text-[#1ABC9C]" /> Quick Actions
       </h3>
       <div className="grid grid-cols-3 gap-3">
-        {actions.map(a => {
+        {processedActions.map(a => {
           const Icon = a.icon;
+          
+          if (a.isDisabled) {
+            return (
+              <div key={a.label} title="Not supported by airline" className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white/[0.02] border border-white/[0.04] opacity-40 cursor-not-allowed group grayscale">
+                <div className="w-9 h-9 rounded-xl bg-slate-800 border border-slate-700 flex items-center justify-center">
+                  <Icon size={16} className="text-slate-500" />
+                </div>
+                <span className="text-[10px] text-slate-500 font-semibold text-center leading-tight whitespace-pre-line">{a.label}</span>
+              </div>
+            );
+          }
+          
           return (
             <Link key={a.label} href={a.href}
               className="flex flex-col items-center gap-1.5 p-3 rounded-xl bg-white/[0.03] border border-white/[0.06] hover:bg-white/[0.07] hover:border-[#1ABC9C]/20 transition-all group">
@@ -238,20 +259,18 @@ export default function AccountDashboard() {
                         </div>
                         <div className="relative p-5">
                           {/* Top row: PNR + Trip type + Status */}
-                          <div className="flex items-center justify-between mb-4 flex-wrap gap-2">
-                            <div className="flex items-center gap-2 flex-wrap">
-                              {trip.masterBookingReference && (
-                                <>
-                                  <span className="text-xs text-slate-400 font-mono">REF: <span className="text-white font-black">{trip.masterBookingReference}</span></span>
-                                  <span className="text-slate-600 font-bold">·</span>
-                                </>
-                              )}
-                              <span className="text-xs text-slate-400 font-mono">Airline PNR: <span className="text-white font-black">{tPnr}</span></span>
-                              {isRT && <span className="text-[9px] font-bold text-[#1ABC9C] bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 px-2 py-0.5 rounded-full uppercase tracking-wider">Round Trip</span>}
-                            </div>
-                            <span className="text-emerald-400 font-bold text-[10px] flex items-center gap-1">
+                          <div className="flex items-center mb-4 flex-wrap gap-2">
+                            {trip.masterBookingReference && (
+                              <>
+                                <span className="text-xs text-slate-400 font-mono">REFERENCE: <span className="text-white font-black">{trip.masterBookingReference}</span></span>
+                                <span className="text-slate-600 font-bold">·</span>
+                              </>
+                            )}
+                            <span className="text-xs text-slate-400 font-mono">Airline PNR: <span className="text-white font-black">{tPnr}</span></span>
+                            <span className="text-emerald-400 font-bold text-[10px] flex items-center gap-1 ml-1">
                               <CheckCircle2 size={10} /> Confirmed
                             </span>
+                            {isRT && <span className="text-[9px] font-bold text-[#1ABC9C] bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 px-2 py-0.5 rounded-full uppercase tracking-wider ml-1">Round Trip</span>}
                           </div>
 
                           {/* Journey Legs */}
@@ -495,7 +514,7 @@ export default function AccountDashboard() {
               <TripCountdown departureDate={nextTrip.departureDate} destCity={destCity} />
             </motion.div>
           )}
-          <motion.div variants={anim}><QuickActions /></motion.div>
+          <motion.div variants={anim}><QuickActions nextTrip={nextTrip} /></motion.div>
           <motion.div variants={anim}><BenefitsCard memberSince={memberSince} /></motion.div>
         </div>
       </div>

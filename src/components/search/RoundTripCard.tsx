@@ -144,9 +144,14 @@ interface RoundTripCardProps {
   scoreOverride?: number;
   isAiHighlighted?: boolean;
   aiReasons?: string[];
+  // 🧬 DNA Search
+  dnaScore?: number;
+  dnaMatchLabel?: string;
+  dnaMatchReasons?: string[];
+  dnaMismatchReasons?: string[];
 }
 
-export default function RoundTripCard({ option, index, onSelect, onHover, isHovered, aiEnabled, isTopAiPick, isBestAiPick, scoreOverride, isAiHighlighted, aiReasons }: RoundTripCardProps) {
+export default function RoundTripCard({ option, index, onSelect, onHover, isHovered, aiEnabled, isTopAiPick, isBestAiPick, scoreOverride, isAiHighlighted, aiReasons, dnaScore, dnaMatchLabel, dnaMatchReasons, dnaMismatchReasons }: RoundTripCardProps) {
   const [viewing, setViewing] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -238,6 +243,24 @@ export default function RoundTripCard({ option, index, onSelect, onHover, isHove
               </span>
             );
           })}
+          {dnaScore !== undefined && dnaMatchLabel && (
+            <motion.span
+              initial={{ opacity: 0, scale: 0.85 }}
+              animate={{ opacity: 1, scale: 1 }}
+              className={cn(
+                'inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold border shadow-sm',
+                dnaScore >= 90
+                  ? 'bg-gradient-to-r from-emerald-500/15 to-emerald-500/5 border-emerald-400/40 text-emerald-700'
+                  : dnaScore >= 80
+                    ? 'bg-gradient-to-r from-teal-500/15 to-teal-500/5 border-teal-400/40 text-teal-700'
+                    : dnaScore >= 70
+                      ? 'bg-gradient-to-r from-amber-500/15 to-amber-500/5 border-amber-400/40 text-amber-700'
+                      : 'bg-slate-50 border-slate-200 text-slate-500'
+              )}
+            >
+              <span className="font-black tracking-wide">DNA</span> {dnaMatchLabel}
+            </motion.span>
+          )}
         </div>
       )}
 
@@ -253,7 +276,7 @@ export default function RoundTripCard({ option, index, onSelect, onHover, isHove
       </div>
 
       {/* Footer: price + meta + CTA */}
-      <div className="flex items-center justify-between gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-4 bg-white/30 border-t border-white/50 flex-wrap">
+      <div className="flex items-center gap-3 sm:gap-4 px-4 sm:px-5 py-3 sm:py-4 bg-white/30 border-t border-white/50 flex-wrap">
         <div className="flex items-center gap-4 flex-wrap">
           <div className="flex items-center gap-1.5 text-xs text-slate-500 font-medium">
             <Clock className="w-3.5 h-3.5 text-slate-400" />
@@ -266,9 +289,14 @@ export default function RoundTripCard({ option, index, onSelect, onHover, isHove
           {index < 51 && (scoreOverride ?? option.score) !== undefined && (
             <span className="text-xs text-slate-400 font-medium">Score {scoreOverride ?? option.score}</span>
           )}
+          {dnaScore !== undefined && (
+            <span className="text-xs font-semibold text-emerald-600" title="DNA Match Score">
+              <span className="font-black">DNA</span> {dnaScore}%
+            </span>
+          )}
         </div>
 
-        <div className="flex items-center gap-3 shrink-0">
+        <div className="ml-auto flex items-center gap-3 shrink-0">
           <div className="text-right">
             <p className="text-2xl font-black text-[#F97316] leading-none">
               {formatPrice(option.totalPrice, option.currency)}
@@ -315,6 +343,29 @@ export default function RoundTripCard({ option, index, onSelect, onHover, isHove
                 </div>
               );
             })}
+          </div>
+        </div>
+      )}
+
+      {/* 🧬 DNA Match Reasons */}
+      {dnaMatchReasons && dnaMatchReasons.length > 0 && (
+        <div className="px-5 pb-4 mt-[-4px]">
+          <div className="px-3 py-2.5 rounded-xl bg-emerald-500/6 border border-emerald-400/20 space-y-1">
+            <p className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1.5">
+              <span className="font-black">DNA</span> Why this matches your DNA
+            </p>
+            {dnaMatchReasons.slice(0, 3).map((reason, i) => (
+              <div key={i} className="flex items-start gap-1.5">
+                <Check className="w-3 h-3 text-emerald-500 shrink-0 mt-0.5" />
+                <span className="text-[11px] leading-relaxed text-slate-600">{reason}</span>
+              </div>
+            ))}
+            {dnaMismatchReasons && dnaMismatchReasons.length > 0 && dnaMismatchReasons.map((reason, i) => (
+              <div key={`mm-${i}`} className="flex items-start gap-1.5">
+                <X className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />
+                <span className="text-[11px] leading-relaxed text-amber-700/80">{reason}</span>
+              </div>
+            ))}
           </div>
         </div>
       )}

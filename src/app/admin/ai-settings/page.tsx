@@ -15,6 +15,7 @@ interface TravelDnaConfigData {
   internationalRequiredBookings: number;
   domesticProfileEnabled: boolean;
   internationalProfileEnabled: boolean;
+  dnaSearchTopN: number;
   showLearningState: boolean;
   showConfidenceScore: boolean;
   updatedByAdminEmail: string | null;
@@ -67,12 +68,16 @@ function ThresholdInput({
   label,
   description,
   icon: Icon,
+  unit = 'bookings',
+  max = 50,
 }: {
   value: number;
   onChange: (v: number) => void;
   label: string;
   description: string;
   icon: React.ElementType;
+  unit?: string;
+  max?: number;
 }) {
   return (
     <div className="flex items-start justify-between py-3">
@@ -89,15 +94,15 @@ function ThresholdInput({
         <input
           type="number"
           min={1}
-          max={50}
+          max={max}
           value={value}
           onChange={(e) => {
             const v = parseInt(e.target.value, 10);
-            if (!isNaN(v)) onChange(Math.min(50, Math.max(1, v)));
+            if (!isNaN(v)) onChange(Math.min(max, Math.max(1, v)));
           }}
           className="w-20 px-3 py-2 bg-slate-700 border border-slate-600 rounded-xl text-white text-sm font-bold text-center focus:outline-none focus:border-[#1ABC9C] transition-all tabular-nums"
         />
-        <span className="text-slate-500 text-xs">bookings</span>
+        <span className="text-slate-500 text-xs">{unit}</span>
       </div>
     </div>
   );
@@ -123,6 +128,7 @@ export default function AISettingsPage() {
           ...data.config,
           domesticRequiredBookings: data.config.domesticRequiredBookings ?? data.config.minConfirmedBookingsRequired ?? 5,
           internationalRequiredBookings: data.config.internationalRequiredBookings ?? data.config.minConfirmedBookingsRequired ?? 5,
+          dnaSearchTopN: data.config.dnaSearchTopN ?? 30,
         };
         setConfig(c);
         setOriginal(c);
@@ -149,6 +155,7 @@ export default function AISettingsPage() {
           internationalRequiredBookings: config.internationalRequiredBookings,
           domesticProfileEnabled: config.domesticProfileEnabled,
           internationalProfileEnabled: config.internationalProfileEnabled,
+          dnaSearchTopN: config.dnaSearchTopN,
           showLearningState: config.showLearningState,
           showConfidenceScore: config.showConfidenceScore,
         }),
@@ -163,6 +170,7 @@ export default function AISettingsPage() {
         ...data.config,
         domesticRequiredBookings: data.config.domesticRequiredBookings ?? 5,
         internationalRequiredBookings: data.config.internationalRequiredBookings ?? 5,
+        dnaSearchTopN: data.config.dnaSearchTopN ?? 30,
       };
       setConfig(c);
       setOriginal(c);
@@ -284,6 +292,17 @@ export default function AISettingsPage() {
             label="International Profile"
             description="Enable international travel DNA profile (cross-border flights)"
             icon={Plane}
+          />
+
+          {/* DNA Search Top N Cards */}
+          <ThresholdInput
+            value={config.dnaSearchTopN}
+            onChange={(v) => setConfig({ ...config, dnaSearchTopN: v })}
+            label="DNA Search Top N Cards"
+            description="Number of top AI-scored flight cards eligible for DNA Match scoring"
+            icon={Dna}
+            unit="cards"
+            max={100}
           />
 
           {/* Show Learning State */}

@@ -113,15 +113,15 @@ function ReservationCard({ booking }: { booking: any }) {
           <div className="flex-1 min-w-0">
             {/* Status + PNR row */}
             <div className="flex items-center gap-2.5 mb-3 flex-wrap">
-              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${status.cls}`}>
-                <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
-                {status.label}
+              <span className="text-xs text-slate-500 font-mono tracking-wider">
+                REFERENCE: <span className="text-white font-black">{booking.masterBookingReference}</span>
               </span>
               <span className="text-xs text-slate-500 font-mono tracking-wider">
                 Airline PNR: <span className="text-white font-black">{pnr}</span>
               </span>
-              <span className="text-xs text-slate-500 font-mono tracking-wider">
-                Ref: <span className="text-white font-black">{booking.masterBookingReference}</span>
+              <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${status.cls}`}>
+                <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />
+                {status.label}
               </span>
               {isRT && (
                 <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider bg-white/[0.04] px-2 py-0.5 rounded-full border border-white/[0.06]">

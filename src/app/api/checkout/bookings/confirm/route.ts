@@ -315,7 +315,7 @@ export async function POST(req: NextRequest) {
         };
 
         // Verify offer is still valid and get passenger IDs from the offer
-        const offer = await duffelRequest<any>('GET', `/air/offers/${offerId}?return_available_services=false`);
+        const offer = await duffelRequest<any>('GET', `/air/offers/${offerId}?return_available_services=true`);
         if (new Date(offer.expires_at) < new Date()) {
           await cancelStripeAuth('offer expired');
           return NextResponse.json(
@@ -654,6 +654,11 @@ export async function POST(req: NextRequest) {
 
           primaryProvider: 'duffel',
           rawProviderPayload: { sourceFlight: sourceFlight ?? null, sourceRoundTrip: sourceRoundTrip ?? null },
+
+          // Capabilities
+          providerCapabilities: {
+            addBaggageAllowed: offer?.available_services?.some((s: any) => s.type === 'baggage') ?? false,
+          },
         },
       });
 

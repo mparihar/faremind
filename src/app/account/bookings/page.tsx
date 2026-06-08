@@ -189,15 +189,15 @@ export default function MyTripsPage() {
                       <div className="flex-1 min-w-0">
                         {/* Status row */}
                         <div className="flex items-center gap-3 mb-4 flex-wrap">
-                          <StatusBadge status={b.bookingStatus} />
-                          <span className="text-sm text-slate-300 font-mono font-bold tracking-wider">
-                            {b.masterPnr || b.masterBookingReference}
-                          </span>
                           {b.masterBookingReference && b.masterPnr && (
                             <span className="text-[11px] text-slate-500 font-mono">
-                              REF: <span className="text-slate-300 font-bold">{b.masterBookingReference}</span>
+                              REFERENCE: <span className="text-slate-300 font-bold">{b.masterBookingReference}</span>
                             </span>
                           )}
+                          <span className="text-sm text-slate-300 font-mono font-bold tracking-wider">
+                            Airline PNR: {b.masterPnr || b.masterBookingReference}
+                          </span>
+                          <StatusBadge status={b.bookingStatus} />
                           {isRT && (
                             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-white/[0.04] px-2.5 py-0.5 rounded-full border border-white/[0.06]">
                               Round Trip
