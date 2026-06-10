@@ -54,7 +54,7 @@ function TrackVisibility({ id, onVisible, onHidden, children }: { id: string, on
   return <div ref={ref} className="h-full">{children}</div>;
 }
 
-// ── Compact offer expiry countdown (shown on search results page) ─────────────
+// ── Compact offer expiry countdown (shown in the sticky header) ───────────────
 function OfferExpiryBadge() {
   const { remainingSeconds, status } = useOfferSessionStore();
 
@@ -69,12 +69,12 @@ function OfferExpiryBadge() {
 
   return (
     <div
-      className={`flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold tabular-nums border transition-colors ${
+      className={`hidden sm:flex items-center gap-1.5 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm ${
         isCritical
-          ? 'bg-red-50 border-red-200 text-red-600 animate-pulse'
+          ? 'bg-red-500/90 text-white animate-pulse'
           : isWarning
-            ? 'bg-amber-50 border-amber-200 text-amber-600'
-            : 'bg-teal-50 border-teal-200 text-teal-600'
+            ? 'bg-amber-500/90 text-white'
+            : 'bg-white/[0.08] border border-white/[0.15] text-white/80'
       }`}
       title="These offers expire after this time — search again for fresh results"
     >
@@ -1045,6 +1045,7 @@ function SearchContent() {
             </div>
 
             <div className="flex items-center gap-2 sm:gap-3 flex-none">
+              <OfferExpiryBadge />
               {searchMeta && (
                 <div className={`hidden sm:flex items-center gap-1.5 px-4 py-1 rounded-full text-[10px] font-black uppercase tracking-wider shadow-sm ${
                   !searchMeta.usedMockData ? 'bg-[#1ABC9C] text-white' : 'bg-[#F97316] text-white'
@@ -1264,7 +1265,6 @@ function SearchContent() {
                       <h2 className="text-base font-black text-slate-800 uppercase tracking-wide">
                         {dnaSearchActive ? 'DNA-Matched Round-trips' : 'Round-trip options'}
                       </h2>
-                      <OfferExpiryBadge />
                       <span className="text-xs text-slate-400 font-medium ml-auto">
                         {dnaSearchActive
                           ? `🧬 DNA-ranked · ${dnaDisplayRT.length} results`
@@ -1317,7 +1317,6 @@ function SearchContent() {
                       <h2 className="text-base font-black text-slate-800 uppercase tracking-wide">
                         {dnaSearchActive ? 'DNA-Matched Flights' : 'Top flights for you'}
                       </h2>
-                      <OfferExpiryBadge />
                       <span className="text-xs text-slate-400 font-medium ml-auto">
                         {dnaSearchActive
                           ? `🧬 DNA-ranked · ${dnaDisplayOneWay.length} results`
