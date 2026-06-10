@@ -562,6 +562,10 @@ model MasterBooking {
   rawProviderPayload     Json?              @map("raw_provider_payload")
   providerCapabilities   Json?              @map("provider_capabilities")
 
+  // Offer lifecycle timestamps (from Duffel)
+  offerProvidedAt        DateTime?          @map("offer_provided_at")
+  offerExpiresAt         DateTime?          @map("offer_expires_at")
+
   createdAt              DateTime           @default(now()) @map("created_at")
   updatedAt              DateTime           @updatedAt @map("updated_at")
 
@@ -2207,6 +2211,10 @@ model BookingFailureAudit {
   resolutionNotes       String?   @map("resolution_notes") @db.Text
 
   createdAt             DateTime  @default(now()) @map("created_at")
+
+  // Offer lifecycle timestamps (from Duffel)
+  offerProvidedAt       DateTime? @map("offer_provided_at")
+  offerExpiresAt        DateTime? @map("offer_expires_at")
 
   @@index([customerEmail])
   @@index([createdAt])

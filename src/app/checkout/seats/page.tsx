@@ -419,6 +419,13 @@ export default function SeatsPage() {
     passengers, seatSelections, updateSeatSelection,
   } = store;
 
+  // Lap infants (under 2) sit on parent's lap — exclude from seat selection
+  const seatEligiblePax = useMemo(
+    () => passengers.filter(p => p.type !== 'infant'),
+    [passengers],
+  );
+  const hasInfants = passengers.length > seatEligiblePax.length;
+
   // Load DB-driven fees — populates computedFees in checkout store
   useFeeLoader();
 
@@ -472,12 +479,12 @@ export default function SeatsPage() {
 
   // Check if all passengers have a seat or preference for the given segment
   const allPaxDoneForSeg = useCallback((segKey: string, currentSelections: typeof seatSelections) => {
-    return passengers.every(p =>
+    return seatEligiblePax.every(p =>
       currentSelections.some(s =>
         s.passengerId === p.id && s.segmentKey === segKey && (s.seatNumber || s.preference),
       ),
     );
-  }, [passengers]);
+  }, [seatEligiblePax]);
 
   // Auto-advance effect: when all passengers are done on current segment, jump to next
   useEffect(() => {
@@ -524,7 +531,7 @@ export default function SeatsPage() {
     curr: string,
   ) => {
     if (!activeSeg) return;
-    const pax = passengers[activePaxIdx];
+    const pax = seatEligiblePax[activePaxIdx];
     if (!pax) return;
 
     // Toggle: clicking an already-assigned seat deselects it
@@ -545,14 +552,14 @@ export default function SeatsPage() {
     });
 
     // Auto-advance to next passenger that hasn't been assigned this segment
-    const nextUnassigned = passengers.findIndex((p, i) => {
+    const nextUnassigned = seatEligiblePax.findIndex((p, i) => {
       if (i <= activePaxIdx) return false;
       return !seatSelections.find(s => s.passengerId === p.id && s.segmentKey === activeSeg.key && s.seatNumber);
     });
     if (nextUnassigned !== -1) {
       setActivePaxIdx(nextUnassigned);
     }
-  }, [activeSeg, passengers, activePaxIdx, seatSelections, updateSeatSelection]);
+  }, [activeSeg, seatEligiblePax, activePaxIdx, seatSelections, updateSeatSelection]);
 
   // ── Preference handler (fallback) ───────────────────────────────────────────
   const handlePrefSelect = useCallback((paxId: string, segKey: string, pref: SeatPreference) => {
@@ -564,7 +571,7 @@ export default function SeatsPage() {
   // ── Assignments for active segment ─────────────────────────────────────────
   const activeAssignments = useMemo(() => {
     if (!activeSeg) return [];
-    return passengers
+    return seatEligiblePax
       .map((pax, i) => {
         const sel = seatSelections.find(s => s.passengerId === pax.id && s.segmentKey === activeSeg.key);
         if (!sel?.seatNumber) return null;
@@ -577,9 +584,9 @@ export default function SeatsPage() {
         };
       })
       .filter((a): a is NonNullable<typeof a> => a !== null);
-  }, [passengers, seatSelections, activeSeg, currency]);
+  }, [seatEligiblePax, seatSelections, activeSeg, currency]);
 
-  const passengerLabels = passengers.map((p, i) => paxLabel(p, i));
+  const passengerLabels = seatEligiblePax.map((p, i) => paxLabel(p, i));
 
   // ── Render ──────────────────────────────────────────────────────────────────
   return (
@@ -600,6 +607,16 @@ export default function SeatsPage() {
                 Choose seats for each traveler. Prices are shown per seat.
               </p>
             </div>
+
+            {/* Lap infant info banner */}
+            {hasInfants && (
+              <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-xs">
+                <Info className="w-4 h-4 shrink-0 mt-0.5" />
+                <span>
+                  <span className="font-semibold">Lap infants (under 2)</span> travel on a parent&apos;s lap and do not require a seat.
+                </span>
+              </div>
+            )}
 
             {/* Auto-advance toast */}
             <AnimatePresence>
@@ -700,7 +717,7 @@ export default function SeatsPage() {
                   )}
                   <PreferencePicker
                     segment={activeSeg}
-                    passengers={passengers}
+                    passengers={seatEligiblePax}
                     seatSelections={seatSelections}
                     onSelect={handlePrefSelect}
                   />
@@ -752,13 +769,13 @@ export default function SeatsPage() {
                     )}
 
                     {/* Passenger switcher below grid */}
-                    {passengers.length > 1 && (
+                    {seatEligiblePax.length > 1 && (
                       <div className="mt-5 pt-4 border-t border-slate-100">
                         <p className="text-xs font-bold text-slate-400 uppercase tracking-wide mb-2 flex items-center gap-1.5">
                           <Users className="w-3 h-3" /> Switch passenger
                         </p>
                         <div className="flex flex-wrap gap-2">
-                          {passengers.map((pax, i) => {
+                          {seatEligiblePax.map((pax, i) => {
                             const hasSeat = seatSelections.some(
                               s => s.passengerId === pax.id && s.segmentKey === activeSeg.key && s.seatNumber,
                             );

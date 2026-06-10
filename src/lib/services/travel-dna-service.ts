@@ -404,10 +404,10 @@ function extractBookingPreferences(booking: any): ExtractedPreference[] {
       }
     }
   } else {
-    prefs.push({ category: 'seat', key: 'no_seat_selected', label: 'No Seat Pre-selected' });
+    prefs.push({ category: 'seat', key: 'no_seat_selected', label: 'No Seat Preference' });
   }
 
-  // Baggage Preference
+  // Baggage Preference — binary: Extra Baggage or No Extra Baggage
   const checkedBags = (booking.baggage || []).filter(
     (b: any) => b.baggageType === 'checked' && b.quantity > 0
   );
@@ -418,10 +418,10 @@ function extractBookingPreferences(booking: any): ExtractedPreference[] {
     if (hasPaidBag || totalQty > 1) {
       prefs.push({ category: 'baggage', key: 'extra_baggage', label: 'Extra Baggage' });
     } else {
-      prefs.push({ category: 'baggage', key: 'checked_bag', label: '1 Checked Bag' });
+      prefs.push({ category: 'baggage', key: 'no_extra_baggage', label: 'No Extra Baggage' });
     }
   } else {
-    prefs.push({ category: 'baggage', key: 'carry_on_only', label: 'Carry-on Only' });
+    prefs.push({ category: 'baggage', key: 'no_extra_baggage', label: 'No Extra Baggage' });
   }
 
   // Travel Insurance Preference
@@ -489,6 +489,37 @@ function extractBookingPreferences(booking: any): ExtractedPreference[] {
     const daysBefore = Math.max(0, Math.round((departure.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
     const windowBucket = getBookingWindowBucket(daysBefore);
     prefs.push({ category: 'booking_window', key: windowBucket.key, label: windowBucket.label });
+  }
+
+  // Fare Value Preference — Cheapest Fare vs Comfort Fare
+  // Count comfort signals from the booking to determine fare value preference
+  let comfortSignals = 0;
+  // 1. Non-economy cabin = comfort
+  const cabinRaw = (booking.cabinClass || booking.cabin || '').toLowerCase();
+  if (cabinRaw.includes('business') || cabinRaw.includes('first') || cabinRaw.includes('premium')) {
+    comfortSignals++;
+  }
+  // 2. Refundable fare = comfort
+  const pnrData = booking.pnrs?.[0];
+  if (pnrData?.refundable) comfortSignals++;
+  // 3. Changeable fare = comfort
+  if (pnrData?.changeable) comfortSignals++;
+  // 4. Extra/paid baggage = comfort
+  const hasPaidBaggage = (booking.baggage || []).some(
+    (b: any) => b.baggageType === 'checked' && parseFloat(b.baggagePrice || '0') > 0
+  );
+  if (hasPaidBaggage) comfortSignals++;
+  // 5. Pre-selected seat = comfort
+  const hasSelectedSeat = (booking.seats || []).some(
+    (s: any) => s.seatNumber && s.seatNumber !== ''
+  );
+  if (hasSelectedSeat) comfortSignals++;
+
+  // 2+ comfort signals = Comfort Fare, otherwise = Cheapest Fare
+  if (comfortSignals >= 2) {
+    prefs.push({ category: 'fare_value', key: 'comfort_fare', label: 'Comfort Fare' });
+  } else {
+    prefs.push({ category: 'fare_value', key: 'cheapest_fare', label: 'Cheapest Fare' });
   }
 
   return prefs;

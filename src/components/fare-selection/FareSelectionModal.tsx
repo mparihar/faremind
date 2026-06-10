@@ -3,11 +3,12 @@
 import { useEffect, useState, useCallback, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { X, Plane, Zap, ChevronRight } from 'lucide-react';
+import { X, Plane, Zap, ChevronRight, Clock } from 'lucide-react';
 import FareCard from '@/components/fare-selection/FareCard';
 import { useFareStore, getSelectedFareOption } from '@/store/useFareStore';
 import { useBookingStore } from '@/store/useBookingStore';
 import { useCheckoutStore } from '@/store/useCheckoutStore';
+import { useOfferSessionStore } from '@/store/useOfferSessionStore';
 import type { FareSelectionPayload, PriceProtectionQuote } from '@/lib/fare-types';
 import { apiFetch } from '@/lib/api-client';
 import { getAirlineLogo } from '@/lib/utils';
@@ -37,6 +38,37 @@ function AiChip({ headline, reason, fareId, onScrollTo }: { headline: string; re
   );
 }
 
+// ── Compact offer countdown timer ─────────────────────────────────────────────
+
+function OfferTimer() {
+  const { remainingSeconds, status } = useOfferSessionStore();
+
+  if (status === 'IDLE' || remainingSeconds <= 0) return null;
+
+  const mins = Math.floor(remainingSeconds / 60);
+  const secs = remainingSeconds % 60;
+  const timeStr = `${mins}:${secs.toString().padStart(2, '0')}`;
+
+  const isWarning = remainingSeconds <= 180;
+  const isCritical = remainingSeconds <= 60;
+
+  return (
+    <div
+      className={`flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-bold tabular-nums border transition-colors ${
+        isCritical
+          ? 'bg-red-50 border-red-200 text-red-600 animate-pulse'
+          : isWarning
+            ? 'bg-amber-50 border-amber-200 text-amber-600'
+            : 'bg-teal-50 border-teal-200 text-teal-600'
+      }`}
+      title="Time remaining before this offer expires"
+    >
+      <Clock size={12} />
+      {timeStr}
+    </div>
+  );
+}
+
 interface Props {
   onClose: () => void;
 }
@@ -62,6 +94,43 @@ export default function FareSelectionModal({ onClose }: Props) {
       return { travelerCount: count, passengerBreakdown: breakdown };
     } catch { return { travelerCount: 1, passengerBreakdown: undefined as { adults: number; children: number; infants: number } | undefined }; }
   }, []);
+
+  // Update the offer session with this specific flight's offer ID
+  // Timer was already started on the search page; this re-targets it to the selected offer
+  // so checkout can track the correct providerOfferId. The startSession guard prevents
+  // restarting if the same offer is already tracked.
+  useEffect(() => {
+    const sourceFlight = useFareStore.getState().sourceFlight;
+    const sourceRoundTrip = useFareStore.getState().sourceRoundTrip;
+    const offerExpiresAt = sourceFlight?.offerExpiresAt ?? sourceRoundTrip?.offerExpiresAt;
+    const providerOfferId = sourceFlight?.providerOfferId ?? sourceRoundTrip?.providerOfferId;
+    const providerName = sourceFlight?.provider ?? sourceRoundTrip?.provider ?? 'duffel';
+
+    if (providerOfferId) {
+      // Read search criteria from sessionStorage
+      let searchCriteria: any;
+      try {
+        const ctx = JSON.parse(sessionStorage.getItem('fm_fare_context') || '{}');
+        searchCriteria = {
+          origin: ctx.origin,
+          destination: ctx.destination,
+          departureDate: ctx.date,
+          returnDate: ctx.returnDate,
+          adults: ctx.adults,
+          children: ctx.children,
+          infants: ctx.infants,
+          cabinClass: ctx.cabin,
+        };
+      } catch {}
+
+      useOfferSessionStore.getState().startSession({
+        provider: providerName,
+        providerOfferId,
+        expiresAt: offerExpiresAt,
+        searchCriteria,
+      });
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Load fare options from sessionStorage context
   useEffect(() => {
@@ -271,6 +340,8 @@ export default function FareSelectionModal({ onClose }: Props) {
               </div>
             )}
             <div className="flex items-center gap-3 shrink-0">
+              {/* Offer expiry timer */}
+              <OfferTimer />
               {selectedFare && payload && (
                 <div className="text-right">
                   <div className="text-xl font-bold text-[#F97316] leading-none">{fmtPrice(grandTotal, payload.currency)}</div>

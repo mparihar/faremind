@@ -160,7 +160,7 @@ export class DuffelApiError extends Error {
     message: string,
     public status: number,
     public errorType: string,
-    public errors: { message: string; type: string; code?: string }[],
+    public errors: { message: string; type: string; code?: string; title?: string; source?: string }[],
     public requestId?: string
   ) {
     super(message);

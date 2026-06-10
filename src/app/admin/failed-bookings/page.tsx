@@ -400,6 +400,37 @@ export default function FailedBookingsPage() {
                                 )}
                               </div>
 
+                              {/* Offer lifecycle timestamps */}
+                              {(rec.offerProvidedAt || rec.offerExpiresAt) && (
+                                <div className="mt-4 p-3 bg-slate-800/60 rounded-xl border border-slate-700/30">
+                                  <h4 className="text-[10px] font-black text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
+                                    <Clock size={12} /> Offer Lifecycle
+                                  </h4>
+                                  <div className="grid grid-cols-2 gap-3 text-xs">
+                                    <div>
+                                      <span className="text-slate-500">Offer Created:</span>{' '}
+                                      <span className="text-slate-300 font-semibold">
+                                        {rec.offerProvidedAt ? format(new Date(rec.offerProvidedAt), 'dd MMM yyyy hh:mm:ss a') : '—'}
+                                      </span>
+                                    </div>
+                                    <div>
+                                      <span className="text-slate-500">Offer Expires:</span>{' '}
+                                      <span className="text-slate-300 font-semibold">
+                                        {rec.offerExpiresAt ? format(new Date(rec.offerExpiresAt), 'dd MMM yyyy hh:mm:ss a') : '—'}
+                                      </span>
+                                    </div>
+                                  </div>
+                                  {rec.offerExpiresAt && (
+                                    <p className="text-[10px] mt-2 text-slate-500">
+                                      Failure occurred at {format(new Date(rec.createdAt), 'hh:mm:ss a')} —{' '}
+                                      {new Date(rec.offerExpiresAt) > new Date(rec.createdAt)
+                                        ? `${Math.round((new Date(rec.offerExpiresAt).getTime() - new Date(rec.createdAt).getTime()) / 60000)} min before expiry`
+                                        : 'after offer had already expired'}
+                                    </p>
+                                  )}
+                                </div>
+                              )}
+
                               {/* Resolution info */}
                               {rec.resolvedAt && rec.resolutionNotes && (
                                 <div className="mt-4">

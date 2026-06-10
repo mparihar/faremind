@@ -116,6 +116,7 @@ export function normalizeDuffelOffer(offer: DuffelOffer): UnifiedFlight {
     stops: Math.max(0, stops),
     valueScore: calculateValueScore(totalPrice, totalDuration, stops, refundable),
     fareClass: fareBrandName || cabinMarketingName || undefined,
+    offerExpiresAt: offer.expires_at || undefined,
   };
 }
 

@@ -12,6 +12,7 @@ import {
   type DnaCardResult,
   type DnaSearchResult,
 } from '@/lib/services/dna-search-service';
+import { deriveTravelerTraits, serializeTraitsForGpt } from '@/lib/services/dna-traits-service';
 import type { UnifiedFlight } from '@/lib/types';
 
 const openaiClient = process.env.OPENAI_API_KEY
@@ -42,8 +43,8 @@ function serializeCardForDna(flight: UnifiedFlight, index: number): string {
     : flight.baggage.carryOn > 0 ? 'carry-on only' : 'no bags';
   const flex = [
     flight.fareRules.refundable ? 'refundable' : 'non-refundable',
-    flight.fareRules.changeable ? 'changeable' : '',
-  ].filter(Boolean).join(', ');
+    flight.fareRules.changeable ? 'changeable' : 'non-changeable',
+  ].join(', ');
 
   return `[${index + 1}] flight_id="${flight.id}" | ${flight.airline.name} (${flight.airline.code}) | ${depStr}→${arrStr} | ${dur} | ${stops} | $${flight.totalPrice} ${flight.currency} | ${flight.cabinClass} | ${bags} | ${flex} | ai_score:${flight.valueScore}`;
 }
@@ -111,20 +112,25 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(cached);
   }
 
-  // ── Serialize DNA profile and flight cards ──────────────────────────────
+  // ── Derive Traveler Traits + Serialize for GPT ─────────────────────────
   const dnaConfig = await getTravelDnaConfig();
   const topN = dnaConfig.dnaSearchTopN ?? 30;
-  const dnaProfileText = serializeDnaProfile(dnaContext.preferences);
+
+  // Derive high-level traveler traits from raw preferences
+  const travelerTraits = deriveTravelerTraits(dnaContext.preferences);
+  const traitsText = serializeTraitsForGpt(travelerTraits);
+  console.log(`[DNA Search] Derived ${travelerTraits.length} traits:`, travelerTraits.map(t => `${t.traitName}(${t.confidence}%)`).join(', '));
+
   const topCards = flights.slice(0, topN);
   const cardLines = topCards.map((f, i) => serializeCardForDna(f, i));
 
-  const userPrompt = `Traveler DNA Profile:
-${dnaProfileText}
+  const userPrompt = `Traveler Traits:
+${traitsText}
 
-Flight cards (already AI-ranked, top ${topCards.length}):
+Flight Match Factors (already AI-ranked, top ${topCards.length}):
 ${cardLines.join('\n')}
 
-Evaluate each flight card against the traveler's DNA profile. Return a dnaScore (0-100) for each card with match/mismatch reasons.`;
+For each flight card, assign a dnaScore (0-100) and provide exactly 3 concise, traveler-friendly matchReasons that explain why this flight matches the traveler's DNA traits. Do not use raw preference names.`;
 
   try {
     const provider = process.env.AI_PROVIDER || 'openai';

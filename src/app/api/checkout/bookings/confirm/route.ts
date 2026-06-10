@@ -14,6 +14,22 @@ import { stripe } from '@/lib/stripe';
 const DUFFEL_API_URL = process.env.DUFFEL_API_URL || 'https://api.duffel.com';
 const DUFFEL_API_TOKEN = process.env.DUFFEL_API_TOKEN || '';
 
+// Custom error class to preserve Duffel error details (title, code, source)
+class DuffelBookingError extends Error {
+  errors: Array<{ message?: string; title?: string; code?: string; type?: string; source?: any }>;
+  status: number;
+  constructor(
+    message: string,
+    status: number,
+    errors: Array<{ message?: string; title?: string; code?: string; type?: string; source?: any }>,
+  ) {
+    super(message);
+    this.name = 'DuffelBookingError';
+    this.status = status;
+    this.errors = errors;
+  }
+}
+
 async function duffelRequest<T>(method: string, path: string, body?: Record<string, unknown>): Promise<T> {
   const url = `${DUFFEL_API_URL}${path}`;
   const headers: Record<string, string> = {
@@ -38,7 +54,7 @@ async function duffelRequest<T>(method: string, path: string, body?: Record<stri
       if (e.source?.pointer) detail += ` (at ${e.source.pointer})`;
       return detail;
     }).join('; ') || `HTTP ${response.status}`;
-    throw new Error(`Duffel API error (${response.status}): ${msg}`);
+    throw new DuffelBookingError(`Duffel API error (${response.status}): ${msg}`, response.status, errors);
   }
 
   if (response.status === 204) return {} as T;
@@ -80,6 +96,8 @@ interface BookingFailureContext {
   errorMessage: string;
   customerMessage: string;
   failureStage: string;
+  offerProvidedAt?: string | null;
+  offerExpiresAt?: string | null;
 }
 
 async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
@@ -142,6 +160,8 @@ async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
         failureStage: ctx.failureStage,
         stripePaymentIntentId: ctx.paymentIntentId || null,
         sessionId: ctx.sessionId || null,
+        offerProvidedAt: ctx.offerProvidedAt ? new Date(ctx.offerProvidedAt) : null,
+        offerExpiresAt: ctx.offerExpiresAt ? new Date(ctx.offerExpiresAt) : null,
       },
     });
 
@@ -367,6 +387,8 @@ export async function POST(req: NextRequest) {
     let providerPayableAmount = financials.providerPayableTotal;
     let providerCurrency = currency;
     let offer: any = null;
+    let offerProvidedAt: string | null = null;
+    let offerExpiresAt: string | null = null;
 
     // Helper: cancel Stripe authorization — customer is never charged
     const cancelStripeAuth = async (reason: string) => {
@@ -408,6 +430,11 @@ export async function POST(req: NextRequest) {
 
         // Verify offer is still valid and get passenger IDs from the offer
         offer = await duffelRequest<any>('GET', `/air/offers/${offerId}?return_available_services=true`);
+
+        // Capture offer lifecycle timestamps for audit tracking
+        offerProvidedAt = offer.created_at ?? null;
+        offerExpiresAt = offer.expires_at ?? null;
+
         if (new Date(offer.expires_at) < new Date()) {
           await cancelStripeAuth('offer expired');
           return NextResponse.json(
@@ -450,9 +477,18 @@ export async function POST(req: NextRequest) {
         // We MUST use these exact IDs when creating the order.
         const offerPassengers: Array<{ id: string; type: string }> = offer.passengers ?? [];
 
-        // Verify passenger count matches what Duffel expects
-        if (offerPassengers.length !== passengers.length) {
-          const mismatchMsg = `Offer has ${offerPassengers.length} passenger(s) but checkout has ${passengers.length}`;
+        // ── Infant-aware passenger count validation ──────────────────────────
+        // Duffel offers may not include infant_without_seat passengers in the
+        // re-fetched offer (common in test mode). We allow the difference if
+        // it's exactly the number of infant passengers in checkout.
+        const checkoutInfants = passengers.filter((p: any) => p.type === 'infant');
+        const checkoutNonInfants = passengers.filter((p: any) => p.type !== 'infant');
+        const offerInfants = offerPassengers.filter(op => op.type === 'infant_without_seat');
+        const offerNonInfants = offerPassengers.filter(op => op.type !== 'infant_without_seat');
+
+        // Non-infant count MUST match (adults + children)
+        if (offerNonInfants.length !== checkoutNonInfants.length) {
+          const mismatchMsg = `Offer has ${offerNonInfants.length} non-infant passenger(s) but checkout has ${checkoutNonInfants.length} (infants excluded)`;
           console.warn(`[Duffel] Passenger count mismatch: ${mismatchMsg}`);
           await cancelStripeAuth('passenger count mismatch');
 
@@ -463,12 +499,19 @@ export async function POST(req: NextRequest) {
             currency, errorCode: 'PASSENGER_COUNT_MISMATCH',
             errorMessage: mismatchMsg, customerMessage: customerMsg,
             failureStage: 'DUFFEL_OFFER_VALIDATION',
+            offerProvidedAt, offerExpiresAt,
           });
 
           return NextResponse.json(
             { error: mismatchMsg, errorCode: 'PASSENGER_COUNT_MISMATCH', customerMessage: customerMsg },
             { status: 400 }
           );
+        }
+
+        // If offer is missing infant passengers, log it but proceed —
+        // we'll generate placeholder IDs for them below
+        if (offerInfants.length < checkoutInfants.length) {
+          console.log(`[Duffel] Offer has ${offerInfants.length} infant passenger(s) but checkout has ${checkoutInfants.length} — will generate IDs for missing infants`);
         }
 
         // Match offer passengers to our checkout passengers by type
@@ -489,6 +532,13 @@ export async function POST(req: NextRequest) {
           const idx = usedIdx[paxType] ?? 0;
           usedIdx[paxType] = idx + 1;
           let paxId = offerPaxByType[paxType]?.[idx];
+
+          // For infants without a matching offer passenger: generate a placeholder ID
+          // Duffel accepts generated IDs for infant_without_seat passengers
+          if (!paxId && duffelType === 'infant_without_seat') {
+            paxId = `inf_generated_${idx}`;
+            console.log(`[Duffel] Generated placeholder ID for infant #${idx}: ${paxId}`);
+          }
 
           // Fallback: try to find any unused passenger ID
           if (!paxId) {
@@ -676,41 +726,39 @@ export async function POST(req: NextRequest) {
         // Cancel Stripe authorization — customer is NOT charged
         await cancelStripeAuth(`Duffel order failed: ${duffelErr.message}`);
 
-        // ── Map provider errors to user-friendly reasons ──────────────────
+        // ── Show actual Duffel root cause to the user ──────────────────
         const raw = (duffelErr.message || '').toLowerCase();
-        let reason: string;
 
+        // Extract the provider's own title if available (e.g. "Requested offer is no longer available")
+        const providerTitle: string = duffelErr.errors?.[0]?.title || duffelErr.errors?.[0]?.message || duffelErr.message || 'The airline was unable to process this booking.';
+
+        // Add actionable hint for known error categories
+        let hint = '';
         if (raw.includes('expired') || raw.includes('no longer available') || raw.includes('offer is not valid')) {
-          reason = 'The selected fare has expired or is no longer available. Please go back and search for new flights.';
+          hint = ' Please go back and search for new flights.';
         } else if (raw.includes('infant') && raw.includes('adult')) {
-          reason = 'Each infant passenger must be accompanied by an adult traveler. Please check your passenger details.';
+          hint = ' Each infant must be accompanied by an adult traveler.';
         } else if (raw.includes('passenger') && (raw.includes('count') || raw.includes('mismatch'))) {
-          reason = 'The number of passengers does not match the original search. Please search again with the correct traveler count.';
-        } else if (raw.includes('insufficient') || raw.includes('balance')) {
-          reason = 'We encountered a temporary issue processing this booking with the airline. Please try again in a few minutes.';
-        } else if (raw.includes('duplicate')) {
-          reason = 'A booking with these details may already exist. Please check your email for a confirmation before trying again.';
+          hint = ' Please search again with the correct traveler count.';
         } else if (raw.includes('passport') || raw.includes('document') || raw.includes('travel_document')) {
-          reason = 'The airline requires valid travel documents for this route. Please verify your passport details and try again.';
+          hint = ' Please verify your passport/travel document details.';
         } else if (raw.includes('date_of_birth') || raw.includes('born_on') || raw.includes('age')) {
-          reason = 'There is an issue with a passenger\'s date of birth. Please verify all dates of birth are correct.';
+          hint = ' Please verify all dates of birth are correct.';
         } else if (raw.includes('phone') || raw.includes('contact')) {
-          reason = 'A valid phone number is required. Please check the contact details and try again.';
+          hint = ' Please check the contact details.';
         } else if (raw.includes('email')) {
-          reason = 'A valid email address is required. Please verify the email and try again.';
+          hint = ' Please verify the email address.';
         } else if (raw.includes('name') && (raw.includes('given_name') || raw.includes('family_name'))) {
-          reason = 'Passenger names must match travel documents. Please check that all names are entered correctly.';
-        } else if (raw.includes('422') || raw.includes('validation')) {
-          reason = 'The airline could not validate the booking details. Please double-check all passenger information and try again.';
+          hint = ' Please check that all passenger names match travel documents.';
         } else if (raw.includes('timeout') || raw.includes('timed out')) {
-          reason = 'The airline system took too long to respond. Please try again.';
+          hint = ' The airline system took too long to respond.';
         } else if (raw.includes('500') || raw.includes('internal') || raw.includes('server')) {
-          reason = 'The airline system is temporarily unavailable. Please try again in a few minutes.';
-        } else {
-          reason = 'The airline was unable to process this booking at this time.';
+          hint = ' The airline system is temporarily unavailable.';
         }
 
-        const customerMessage = `${reason} Booking could not be completed at this time. Your card was not charged. Please try again.`;
+        // Ensure provider title ends with punctuation for clean message formatting
+        const titleWithPeriod = /[.!?]$/.test(providerTitle.trim()) ? providerTitle.trim() : `${providerTitle.trim()}.`;
+        const customerMessage = `${titleWithPeriod}${hint} Booking could not be completed at this time. Your card was not charged. Please try again.`;
 
         // Audit log — store full error for admin review
         await logBookingFailure({
@@ -719,6 +767,7 @@ export async function POST(req: NextRequest) {
           currency, errorCode: 'PROVIDER_ORDER_FAILED',
           errorMessage: duffelErr.message || 'Unknown Duffel error',
           customerMessage, failureStage: 'DUFFEL_ORDER_CREATION',
+          offerProvidedAt, offerExpiresAt,
         });
 
         return NextResponse.json(
@@ -842,6 +891,10 @@ export async function POST(req: NextRequest) {
           providerCurrency: providerCurrency,
           providerOfferId: offerId ?? null,
           providerOrderId: duffelOrder?.id ?? null,
+
+          // Offer lifecycle timestamps
+          offerProvidedAt: offerProvidedAt ? new Date(offerProvidedAt) : null,
+          offerExpiresAt: offerExpiresAt ? new Date(offerExpiresAt) : null,
 
           // Financial — FareMind Revenue
           markupAmount: financials.markupAmount,
@@ -1446,10 +1499,22 @@ export async function POST(req: NextRequest) {
     const msg = err?.message ?? String(err);
     console.error('[checkout/bookings/confirm] error:', msg, err);
 
+    // Extract Duffel root cause if available
+    let customerMsg: string;
+    if (err instanceof DuffelBookingError && err.errors?.length > 0) {
+      const providerTitle = err.errors[0]?.title || err.errors[0]?.message || msg;
+      customerMsg = `${providerTitle}. Booking could not be completed at this time. Your card was not charged. Please try again.`;
+    } else {
+      // For non-Duffel errors, show actual error context (sanitized)
+      const safeMsg = msg.includes('Duffel') || msg.includes('offer') || msg.includes('expired') || msg.includes('passenger')
+        ? msg.replace(/Duffel API error \(\d+\): /g, '')
+        : 'An unexpected error occurred';
+      customerMsg = `${safeMsg}. Booking could not be completed at this time. Your card was not charged. Please try again.`;
+    }
+
     // Audit log — capture unexpected errors for admin review
     // NOTE: body may not be available if JSON parsing itself failed,
     // so we guard every field access with try/catch.
-    const customerMsg = 'Booking could not be completed at this time. Your card was not charged. Please try again.';
     try {
       await logBookingFailure({
         passengers: [],

@@ -147,10 +147,26 @@ export const useOfferSessionStore = create<OfferSessionStore>((set, get) => ({
         // Use default 20 minutes if config fetch fails
       }
 
-      const fallbackExpiry = expiresAt
-        ? new Date(expiresAt).toISOString()
+      // Check if provider's expiresAt is still usable (> 2 min remaining)
+      const providerExpiryMs = expiresAt ? new Date(expiresAt).getTime() - Date.now() : 0;
+      const providerExpiryUsable = expiresAt && providerExpiryMs > 2 * 60 * 1000; // Must have > 2 min
+
+      const fallbackExpiry = providerExpiryUsable
+        ? new Date(expiresAt!).toISOString()
         : new Date(Date.now() + fallbackMinutes * 60 * 1000).toISOString();
       const remaining = Math.max(0, Math.floor((new Date(fallbackExpiry).getTime() - Date.now()) / 1000));
+
+      // Detailed audit logging for tracking "Fare Expired" triggers
+      console.log(`[OfferSession] 📋 Timer audit:`, {
+        providerExpiresAt: expiresAt || 'none',
+        providerRemainingMs: expiresAt ? providerExpiryMs : 'N/A',
+        providerUsable: providerExpiryUsable,
+        fallbackMinutes,
+        finalExpiresAt: fallbackExpiry,
+        finalRemainingSeconds: remaining,
+        timerSource: providerExpiryUsable ? 'provider (Duffel)' : `fallback (${fallbackMinutes}min)`,
+        status: remaining <= 0 ? 'EXPIRED' : remaining <= 180 ? 'WARNING' : 'ACTIVE',
+      });
 
       set({
         offerSessionId: null,

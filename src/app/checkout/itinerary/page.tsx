@@ -346,7 +346,9 @@ export default function CheckoutItineraryPage() {
     // 6. Init checkout store
     checkoutStore.initFromStores(resolvedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown);
 
-    // 7. Start offer expiry session
+    // 7. Start offer expiry session (fallback — timer is primarily started
+    //    in the FareSelectionModal when user first clicks "View". The startSession
+    //    method has an internal guard that skips restart if already active.)
     const offerExpiresAt = sourceFlight?.offerExpiresAt ?? sourceRoundTrip?.offerExpiresAt;
     const providerOfferId = sourceFlight?.providerOfferId ?? sourceRoundTrip?.providerOfferId ?? resolvedFare.offerId;
     const providerName = sourceFlight?.provider ?? sourceRoundTrip?.provider ?? 'duffel';
@@ -578,9 +580,15 @@ export default function CheckoutItineraryPage() {
                       <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">
                         Passenger {i + 1}
                         <span className="ml-1.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 normal-case text-[10px]">
-                          {pax.type === 'adult' ? 'Adult' : pax.type === 'child' ? 'Child' : 'Infant'}
+                          {pax.type === 'adult' ? 'Adult' : pax.type === 'child' ? 'Child' : 'Infant (Lap)'}
                         </span>
                       </p>
+                      {pax.type === 'infant' ? (
+                        <div className="flex items-center gap-1.5 text-xs rounded-lg px-2.5 py-1.5 bg-[#FFFBEB] border border-[#FBBF24]/30" style={{ color: '#B45309' }}>
+                          Seated on parent&apos;s lap · No seat or meal selection required
+                        </div>
+                      ) : (
+                      <>
                       {/* Show the all-in fare as a single line — taxes are already included in the
                           Duffel total_amount and we do not have a real per-component split. */}
                       <div className="flex justify-between items-center">
@@ -589,6 +597,8 @@ export default function CheckoutItineraryPage() {
                           {formatPrice(pax.subtotal, currency)}
                         </span>
                       </div>
+                      </>
+                      )}
                     </div>
                   ))}
 

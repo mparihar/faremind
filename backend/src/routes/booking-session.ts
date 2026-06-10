@@ -154,7 +154,26 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const remaining = getRemainingSeconds(expiresAt);
 
-      console.log(`[OfferSession] ✅ Started session ${session.id} for ${providerOfferId} — expires at ${expiresAt.toISOString()} (${remaining}s remaining)`);
+      // Detailed audit — track how much of the Duffel window was consumed before checkout
+      const providerExpiry = offerExpiryTimestamp ? new Date(offerExpiryTimestamp) : null;
+      const providerRemainingMin = providerExpiry
+        ? Math.round((providerExpiry.getTime() - Date.now()) / 60000)
+        : null;
+      const configuredRemainingMin = Math.round(expiryMinutes);
+      const timeConsumedBeforeCheckout = providerExpiry
+        ? `${30 - (providerRemainingMin ?? 0)} min consumed browsing`
+        : 'N/A (no provider timestamp)';
+
+      console.log(`[OfferSession] ✅ Started session ${session.id} for ${providerOfferId}`);
+      console.log(`[OfferSession] 📋 Expiry audit:`, {
+        providerExpiresAt: offerExpiryTimestamp || 'none',
+        providerRemainingMin: providerRemainingMin !== null ? `${providerRemainingMin} min` : 'N/A',
+        configuredLimitMin: `${configuredRemainingMin} min`,
+        effectiveExpiresAt: expiresAt.toISOString(),
+        effectiveRemainingMin: `${Math.round(remaining / 60)} min (${remaining}s)`,
+        source: providerExpiry && providerExpiry.getTime() < configuredExpiry.getTime() ? 'PROVIDER (Duffel)' : 'ADMIN CONFIG',
+        timeConsumedBeforeCheckout,
+      });
 
       return reply.send({
         offerSessionId: session.id,

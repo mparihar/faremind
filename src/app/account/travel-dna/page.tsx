@@ -9,6 +9,7 @@ import {
   Users, Calendar, TrendingUp, Sparkles, ArrowRight, Info,
   BarChart3, RefreshCw, Check, X, ToggleLeft, ToggleRight,
   HelpCircle, Save, ChevronRight, Lock as LockIcon, UtensilsCrossed,
+  DollarSign,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useTravelDnaStore } from '@/store/useTravelDnaStore';
@@ -29,6 +30,7 @@ const CATEGORY_ICON: Record<string, React.ElementType> = {
   fare_flexibility: RefreshCw,
   travel_party: Users,
   booking_window: Calendar,
+  fare_value: DollarSign,
 };
 
 // ─── Confidence Badge ────────────────────────────────────────────────────────
@@ -79,6 +81,55 @@ function ProgressRing({ progress, size = 90 }: { progress: number; size?: number
   );
 }
 
+// ─── Label Cleanup Map ──────────────────────────────────────────────────────
+// Converts raw internal DNA preference values to user-friendly display labels.
+
+const LABEL_CLEANUP: Record<string, string> = {
+  // Seat preferences
+  'No_preference': 'No Seat Preference',
+  'no_preference': 'No Seat Preference',
+  'no_seat_selected': 'No Seat Preference',
+  'window': 'Window Seat',
+  'aisle': 'Aisle Seat',
+  'middle': 'Middle Seat',
+  'extra_legroom': 'Extra Legroom Seat',
+  'pre_selected': 'Pre-selected Seat',
+  // Insurance
+  'with_insurance': 'Travel Insurance Added',
+  'no_insurance': 'No Travel Insurance',
+  // Price Protection
+  'with_protection': 'Price Drop Protection Added',
+  'no_protection': 'No Price Drop Protection',
+  // Baggage
+  'carry_on_only': 'No Extra Baggage',
+  'checked_bag': 'No Extra Baggage',
+  'extra_baggage': 'Extra Baggage',
+  // Meal
+  'standard': 'Standard Meal',
+  'no_meal_selected': 'No Meal Pre-selected',
+  // Departure Time
+  'morning': 'Morning Flight',
+  'afternoon': 'Afternoon Flight',
+  'evening': 'Evening Flight',
+  'night': 'Night Flight',
+  // Stops
+  'nonstop': 'Nonstop',
+  'one_stop': 'One Stop',
+  'two_plus_stops': 'Two+ Stops',
+  // Fare Flexibility
+  'refundable': 'Refundable Fare',
+  'non_refundable': 'Non-refundable Fare',
+  'changeable': 'Changeable Fare',
+  'non_changeable': 'Non-changeable Fare',
+  // Fare Value
+  'cheapest_fare': 'Cheapest Fare',
+  'comfort_fare': 'Comfort Fare',
+};
+
+function cleanLabel(raw: string): string {
+  return LABEL_CLEANUP[raw] || raw.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+
 // ─── Preference Row ─────────────────────────────────────────────────────────
 
 function PreferenceRow({
@@ -95,6 +146,7 @@ function PreferenceRow({
   isPending: boolean;
 }) {
   const Icon = CATEGORY_ICON[category] || BarChart3;
+  const displayLabel = cleanLabel(item.label);
 
   return (
     <motion.div
@@ -109,7 +161,7 @@ function PreferenceRow({
         </div>
         <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <p className="text-sm font-bold text-white truncate">{item.label} Preferred</p>
+            <p className="text-sm font-bold text-white truncate">{displayLabel} Preferred</p>
             <span className="text-xs font-black text-[#1ABC9C] tabular-nums">{item.score}%</span>
           </div>
           <ConfidenceBadge label={item.confidenceLabel} />

@@ -242,7 +242,7 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
                 Score {scoreOverride ?? flight.valueScore}
               </span>
             )}
-            {dnaScore !== undefined && (
+            {dnaScore !== undefined && dnaScore >= 0 && (
               <span className="text-xs font-semibold text-emerald-600" title="DNA Match Score">
                 <span className="font-black">DNA</span> {dnaScore}%
               </span>

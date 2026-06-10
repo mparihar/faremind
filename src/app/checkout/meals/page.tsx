@@ -3,7 +3,7 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ChevronRight, Check, Plane, Lock,
+  ChevronRight, Check, Plane, Lock, Info,
   Shield, Sparkles, ChevronDown,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
@@ -460,6 +460,13 @@ export default function MealsPage() {
     passengers, mealSelections, updateMealSelection,
   } = useCheckoutStore();
 
+  // Lap infants (under 2) get meals from the airline on request — skip from selection
+  const mealEligiblePax = useMemo(
+    () => passengers.filter(p => p.type !== 'infant'),
+    [passengers],
+  );
+  const hasInfants = passengers.length > mealEligiblePax.length;
+
   // Load DB-driven fees — populates computedFees in checkout store
   useFeeLoader();
 
@@ -531,6 +538,14 @@ export default function MealsPage() {
           </p>
         </div>
 
+        {/* Lap infant info note */}
+        {hasInfants && (
+          <div className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-xs">
+            <Info className="w-4 h-4 shrink-0" />
+            <span><span className="font-semibold">Infant meals</span> are provided by the airline on request. No selection required.</span>
+          </div>
+        )}
+
         {/* Main grid: each meal card + price summary as equal columns */}
         <div className={cn(
           'grid grid-cols-1 gap-6',
@@ -559,7 +574,7 @@ export default function MealsPage() {
                 segment={seg}
                 meals={sm.meals}
                 recommended={sm.recommended}
-                passengers={passengers}
+                passengers={mealEligiblePax}
                 mealSelections={mealSelections}
                 cardIndex={i}
                 onSelect={handleSelect}
