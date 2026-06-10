@@ -121,13 +121,15 @@ export async function createAdminSession(
   ipAddress?: string,
   userAgent?: string,
 ): Promise<string> {
-  const expiresAt = new Date(Date.now() + 8 * 60 * 60 * 1000); // 8h
+  const now = new Date();
+  const expiresAt = new Date(now.getTime() + 8 * 60 * 60 * 1000); // 8h
 
   const session = await prisma.adminSession.create({
     data: {
       adminUserId,
       token: crypto.randomUUID(),
       expiresAt,
+      lastActivityAt: now,
       ipAddress,
       userAgent,
     },

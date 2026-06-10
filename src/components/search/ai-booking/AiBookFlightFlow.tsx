@@ -655,10 +655,18 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
       }
 
       const flight = store.selectedFlight!;
+      // Resolve passenger breakdown from types array (AI flow tracks types individually)
+      const paxTypes = store.passengerTypes ?? [];
+      const adultCount = paxTypes.filter(t => t === 'adult').length || store.passengerCount;
+      const childCount = paxTypes.filter(t => t === 'child').length;
+      const infantCount = paxTypes.filter(t => t === 'infant').length;
       sessionStorage.setItem('fm_fare_context', JSON.stringify({
         offerId: flight.providerOfferId,
         basePrice: flight.totalPrice,
         travelers: store.passengerCount,
+        adults: adultCount,
+        children: childCount,
+        infants: infantCount,
         currency: flight.currency || 'USD',
         origin: flight.segments[0]?.departure.airport ?? '',
         destination: flight.segments[flight.segments.length - 1]?.arrival.airport ?? '',

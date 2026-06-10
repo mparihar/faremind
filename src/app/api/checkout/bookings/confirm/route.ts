@@ -61,6 +61,96 @@ function generateRef() {
   return 'FM' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
 }
 
+// ── Booking Failure Audit Logger ─────────────────────────────────────────────
+// Stores full details of every failed booking attempt for admin review.
+// Non-blocking — errors in audit logging never affect the customer response.
+
+interface BookingFailureContext {
+  passengers: any[];
+  selectedFare: any;
+  pricing: any;
+  sourceFlight: any;
+  sourceRoundTrip: any;
+  paymentIntentId: string | null;
+  sessionId: string | null;
+  userId: string | null;
+  routeLabel: string;
+  currency: string;
+  errorCode: string;
+  errorMessage: string;
+  customerMessage: string;
+  failureStage: string;
+}
+
+async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
+  try {
+    const primaryPax = ctx.passengers[0] ?? {};
+    const isRoundTrip = !!ctx.sourceRoundTrip;
+
+    // Derive route info
+    const originAirport = isRoundTrip
+      ? (ctx.sourceRoundTrip?.outboundJourney?.departureAirport ?? '')
+      : (ctx.sourceFlight?.segments?.[0]?.departure?.airport ?? '');
+    const destinationAirport = isRoundTrip
+      ? (ctx.sourceRoundTrip?.outboundJourney?.arrivalAirport ?? '')
+      : (ctx.sourceFlight?.segments?.[ctx.sourceFlight.segments.length - 1]?.arrival?.airport ?? '');
+    const airline = isRoundTrip
+      ? (ctx.sourceRoundTrip?.airlines?.[0] ?? '')
+      : (ctx.sourceFlight?.airline?.name ?? '');
+
+    // Derive dates
+    const departureDate = isRoundTrip
+      ? ctx.sourceRoundTrip?.outboundJourney?.segments?.[0]?.departure?.time
+      : ctx.sourceFlight?.segments?.[0]?.departure?.time;
+    const returnDate = isRoundTrip
+      ? ctx.sourceRoundTrip?.returnJourney?.segments?.[0]?.departure?.time
+      : null;
+
+    // Sanitize passenger data — strip sensitive fields for audit storage
+    const sanitizedPassengers = ctx.passengers.map((p: any) => ({
+      name: `${p.firstName || ''} ${p.lastName || ''}`.trim(),
+      type: p.type ?? 'adult',
+      email: p.email ?? '',
+      phone: p.phone ?? '',
+      dateOfBirth: p.dateOfBirth ?? '',
+      nationality: p.nationality ?? '',
+    }));
+
+    await (prisma as any).bookingFailureAudit.create({
+      data: {
+        customerEmail: primaryPax.email?.trim()?.toLowerCase() || 'unknown@unknown.com',
+        customerName: `${primaryPax.firstName || ''} ${primaryPax.lastName || ''}`.trim() || 'Unknown',
+        customerPhone: primaryPax.phone || null,
+        userId: ctx.userId || null,
+        originAirport: originAirport || 'N/A',
+        destinationAirport: destinationAirport || 'N/A',
+        routeLabel: ctx.routeLabel || `${originAirport} → ${destinationAirport}`,
+        tripType: isRoundTrip ? 'ROUND_TRIP' : 'ONE_WAY',
+        departureDate: departureDate ? new Date(departureDate).toISOString().split('T')[0] : null,
+        returnDate: returnDate ? new Date(returnDate).toISOString().split('T')[0] : null,
+        airline: airline || null,
+        cabinClass: ctx.selectedFare?.cabin || null,
+        passengerCount: ctx.passengers.length,
+        passengersJson: JSON.stringify(sanitizedPassengers),
+        totalAmount: ctx.pricing?.total ?? ctx.selectedFare?.totalPrice ?? 0,
+        currency: ctx.currency || 'USD',
+        offerId: ctx.selectedFare?.offerId || ctx.selectedFare?.id || null,
+        fareName: ctx.selectedFare?.name || null,
+        errorCode: ctx.errorCode,
+        errorMessage: ctx.errorMessage,
+        customerMessage: ctx.customerMessage,
+        failureStage: ctx.failureStage,
+        stripePaymentIntentId: ctx.paymentIntentId || null,
+        sessionId: ctx.sessionId || null,
+      },
+    });
+
+    console.log(`[BookingAudit] ✅ Failure recorded — ${ctx.errorCode} for ${primaryPax.email || 'unknown'}`);
+  } catch (auditErr) {
+    // Never let audit logging failure affect the customer response
+    console.error('[BookingAudit] ❌ Failed to record audit:', auditErr instanceof Error ? auditErr.message : auditErr);
+  }
+}
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -77,6 +167,7 @@ export async function POST(req: NextRequest) {
       mealSelections,
       sourceFlight,
       sourceRoundTrip,
+      routeLabel,
       userId,
       currency = 'USD',
     } = body;
@@ -275,6 +366,7 @@ export async function POST(req: NextRequest) {
     let duffelPassengerMap: Record<string, string> = {};
     let providerPayableAmount = financials.providerPayableTotal;
     let providerCurrency = currency;
+    let offer: any = null;
 
     // Helper: cancel Stripe authorization — customer is never charged
     const cancelStripeAuth = async (reason: string) => {
@@ -315,7 +407,7 @@ export async function POST(req: NextRequest) {
         };
 
         // Verify offer is still valid and get passenger IDs from the offer
-        const offer = await duffelRequest<any>('GET', `/air/offers/${offerId}?return_available_services=true`);
+        offer = await duffelRequest<any>('GET', `/air/offers/${offerId}?return_available_services=true`);
         if (new Date(offer.expires_at) < new Date()) {
           await cancelStripeAuth('offer expired');
           return NextResponse.json(
@@ -360,13 +452,21 @@ export async function POST(req: NextRequest) {
 
         // Verify passenger count matches what Duffel expects
         if (offerPassengers.length !== passengers.length) {
-          console.warn(
-            `[Duffel] Passenger count mismatch: offer has ${offerPassengers.length} passenger(s) but checkout has ${passengers.length}. ` +
-            `The offer was likely searched for a different number of travelers.`
-          );
+          const mismatchMsg = `Offer has ${offerPassengers.length} passenger(s) but checkout has ${passengers.length}`;
+          console.warn(`[Duffel] Passenger count mismatch: ${mismatchMsg}`);
           await cancelStripeAuth('passenger count mismatch');
+
+          const customerMsg = `The number of passengers does not match the original search. Booking could not be completed at this time. Your card was not charged. Please try again.`;
+          await logBookingFailure({
+            passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
+            paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
+            currency, errorCode: 'PASSENGER_COUNT_MISMATCH',
+            errorMessage: mismatchMsg, customerMessage: customerMsg,
+            failureStage: 'DUFFEL_OFFER_VALIDATION',
+          });
+
           return NextResponse.json(
-            { error: `This offer was booked for ${offerPassengers.length} traveler(s) but you have ${passengers.length}. Please search again with the correct number of passengers.` },
+            { error: mismatchMsg, errorCode: 'PASSENGER_COUNT_MISMATCH', customerMessage: customerMsg },
             { status: 400 }
           );
         }
@@ -429,6 +529,24 @@ export async function POST(req: NextRequest) {
           console.log(`[Duffel] Passenger ${i}: phone raw="${passengers[i]?.phone}" → normalized="${dp.phone_number}"`);
         });
 
+        // ── Link infants to adults (Duffel requirement) ─────────────────────
+        // Duffel requires each infant_without_seat passenger to be referenced
+        // by exactly one adult passenger via the `infant_passenger_id` field.
+        const infantPaxIds = duffelPassengers
+          .filter(dp => dp.type === 'infant_without_seat')
+          .map(dp => dp.id);
+        const adultPaxList = duffelPassengers.filter(dp => dp.type === 'adult');
+
+        infantPaxIds.forEach((infantId, idx) => {
+          const matchingAdult = adultPaxList[idx];
+          if (matchingAdult && infantId) {
+            (matchingAdult as any).infant_passenger_id = infantId;
+            console.log(`[Duffel] Linked infant ${infantId} to adult ${matchingAdult.id}`);
+          } else {
+            console.warn(`[Duffel] Could not link infant ${infantId} to an adult — no matching adult at index ${idx}`);
+          }
+        });
+
         // Build seat services to send to Duffel at order creation.
         // IMPORTANT: Each seat has per-passenger service IDs (serviceIds[]).
         // Duffel requires exactly one service per passenger per segment.
@@ -469,6 +587,12 @@ export async function POST(req: NextRequest) {
           `(provider fare: $${revalidatedProviderFare.toFixed(2)} + seats: $${seatServiceTotal.toFixed(2)}), ` +
           `customer grand total: $${financials.customerGrandTotal.toFixed(2)}`
         );
+
+        // Debug: log full passenger payload for troubleshooting
+        console.log('[Duffel] Passenger payload:', JSON.stringify(duffelPassengers.map(dp => ({
+          id: dp.id, type: dp.type, given_name: dp.given_name, family_name: dp.family_name,
+          born_on: (dp as any).born_on, infant_passenger_id: (dp as any).infant_passenger_id ?? null,
+        })), null, 2));
 
         // Build the provider order request payload
         const duffelOrderRequest = {
@@ -552,11 +676,50 @@ export async function POST(req: NextRequest) {
         // Cancel Stripe authorization — customer is NOT charged
         await cancelStripeAuth(`Duffel order failed: ${duffelErr.message}`);
 
-        // Provide a more specific customer message based on the error
-        const isExpiredError = duffelErr.message?.includes('expired') || duffelErr.message?.includes('no longer available');
-        const customerMessage = isExpiredError
-          ? 'Unfortunately the fare is no longer available. Your card was not charged. Please refresh flight results.'
-          : 'Booking could not be completed at this time. Your card was not charged. Please try again.';
+        // ── Map provider errors to user-friendly reasons ──────────────────
+        const raw = (duffelErr.message || '').toLowerCase();
+        let reason: string;
+
+        if (raw.includes('expired') || raw.includes('no longer available') || raw.includes('offer is not valid')) {
+          reason = 'The selected fare has expired or is no longer available. Please go back and search for new flights.';
+        } else if (raw.includes('infant') && raw.includes('adult')) {
+          reason = 'Each infant passenger must be accompanied by an adult traveler. Please check your passenger details.';
+        } else if (raw.includes('passenger') && (raw.includes('count') || raw.includes('mismatch'))) {
+          reason = 'The number of passengers does not match the original search. Please search again with the correct traveler count.';
+        } else if (raw.includes('insufficient') || raw.includes('balance')) {
+          reason = 'We encountered a temporary issue processing this booking with the airline. Please try again in a few minutes.';
+        } else if (raw.includes('duplicate')) {
+          reason = 'A booking with these details may already exist. Please check your email for a confirmation before trying again.';
+        } else if (raw.includes('passport') || raw.includes('document') || raw.includes('travel_document')) {
+          reason = 'The airline requires valid travel documents for this route. Please verify your passport details and try again.';
+        } else if (raw.includes('date_of_birth') || raw.includes('born_on') || raw.includes('age')) {
+          reason = 'There is an issue with a passenger\'s date of birth. Please verify all dates of birth are correct.';
+        } else if (raw.includes('phone') || raw.includes('contact')) {
+          reason = 'A valid phone number is required. Please check the contact details and try again.';
+        } else if (raw.includes('email')) {
+          reason = 'A valid email address is required. Please verify the email and try again.';
+        } else if (raw.includes('name') && (raw.includes('given_name') || raw.includes('family_name'))) {
+          reason = 'Passenger names must match travel documents. Please check that all names are entered correctly.';
+        } else if (raw.includes('422') || raw.includes('validation')) {
+          reason = 'The airline could not validate the booking details. Please double-check all passenger information and try again.';
+        } else if (raw.includes('timeout') || raw.includes('timed out')) {
+          reason = 'The airline system took too long to respond. Please try again.';
+        } else if (raw.includes('500') || raw.includes('internal') || raw.includes('server')) {
+          reason = 'The airline system is temporarily unavailable. Please try again in a few minutes.';
+        } else {
+          reason = 'The airline was unable to process this booking at this time.';
+        }
+
+        const customerMessage = `${reason} Booking could not be completed at this time. Your card was not charged. Please try again.`;
+
+        // Audit log — store full error for admin review
+        await logBookingFailure({
+          passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
+          paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
+          currency, errorCode: 'PROVIDER_ORDER_FAILED',
+          errorMessage: duffelErr.message || 'Unknown Duffel error',
+          customerMessage, failureStage: 'DUFFEL_ORDER_CREATION',
+        });
 
         return NextResponse.json(
           {
@@ -608,6 +771,47 @@ export async function POST(req: NextRequest) {
     const customerEmail = primaryPax.email ?? '';
     const customerName = `${primaryPax.firstName ?? ''} ${primaryPax.lastName ?? ''}`.trim();
 
+    // ══════════════════════════════════════════════════════════════════════════
+    // AUTO-REGISTER: Primary Contact → Platform User
+    // ══════════════════════════════════════════════════════════════════════════
+    // The Primary Contact form collects the same fields as Sign Up (First Name,
+    // Last Name, Email, Phone). We auto-register them as a platform user so
+    // they can sign in via OTP later and access features like DNA Search.
+    // If they already have a platform account, we just link the booking to it.
+
+    let resolvedUserId = userId ?? null;
+
+    if (customerEmail) {
+      try {
+        const normEmail = customerEmail.trim().toLowerCase();
+        const existingUser = await prisma.user.findUnique({ where: { email: normEmail } });
+
+        if (existingUser) {
+          // User already registered — link booking to their account
+          resolvedUserId = existingUser.id;
+          console.log(`[Checkout] Platform user found for ${normEmail} → ${existingUser.id}`);
+        } else {
+          // Auto-register: create platform user from primary contact info
+          const newUser = await prisma.user.create({
+            data: {
+              email:        normEmail,
+              firstName:    (primaryPax.firstName ?? '').trim() || 'Traveler',
+              lastName:     (primaryPax.lastName ?? '').trim() || '',
+              phone:        (primaryPax.phone ?? '').trim() || null,
+              passwordHash: 'otp-only',   // OTP-based auth, no password
+              emailVerified: false,        // Will be verified on first OTP sign-in
+            },
+          });
+          resolvedUserId = newUser.id;
+          console.log(`[Checkout] ✅ Auto-registered platform user for ${normEmail} → ${newUser.id}`);
+        }
+      } catch (autoRegErr: any) {
+        // Non-blocking: if auto-registration fails, booking still proceeds
+        // (e.g., race condition with concurrent bookings for same email)
+        console.warn(`[Checkout] ⚠️ Auto-registration failed for ${customerEmail}: ${autoRegErr.message}`);
+      }
+    }
+
     // ── Full transaction ─────────────────────────────────────────────────────
     const txResult = await prisma.$transaction(async (tx) => {
       // 1. MasterBooking
@@ -617,7 +821,7 @@ export async function POST(req: NextRequest) {
           masterPnr,
           customerEmail,
           customerName,
-          userId: userId ?? null,
+          userId: resolvedUserId,
           tripType: isRoundTrip ? 'ROUND_TRIP' : 'ONE_WAY',
           originAirport,
           originCity,
@@ -1209,6 +1413,9 @@ export async function POST(req: NextRequest) {
     //   - thirdPartyPayableTotal, raw provider payloads
     //   - internal reconciliation data
 
+    // Determine if auto-registration created a new user
+    const isNewPlatformUser = resolvedUserId && resolvedUserId !== userId;
+
     return NextResponse.json({
       success: true,
       pnr: masterPnr,
@@ -1219,6 +1426,8 @@ export async function POST(req: NextRequest) {
       passengerNames: passengers.map((p: any) => `${p.firstName} ${p.lastName}`.trim()),
       totalCharged: totalAmount,
       currency,
+      platformUserId: resolvedUserId ?? undefined,
+      isNewPlatformUser: !!isNewPlatformUser,
       pnrStrategy: pnrResult.strategy,
       isSplitTicket: pnrResult.isSplitTicket,
       riskLabel: pnrResult.riskLabel,
@@ -1236,8 +1445,35 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     console.error('[checkout/bookings/confirm] error:', msg, err);
+
+    // Audit log — capture unexpected errors for admin review
+    // NOTE: body may not be available if JSON parsing itself failed,
+    // so we guard every field access with try/catch.
+    const customerMsg = 'Booking could not be completed at this time. Your card was not charged. Please try again.';
+    try {
+      await logBookingFailure({
+        passengers: [],
+        selectedFare: {},
+        pricing: {},
+        sourceFlight: null,
+        sourceRoundTrip: null,
+        paymentIntentId: null,
+        sessionId: null,
+        userId: null,
+        routeLabel: '',
+        currency: 'USD',
+        errorCode: 'UNEXPECTED_ERROR',
+        errorMessage: msg,
+        customerMessage: customerMsg,
+        failureStage: 'UNKNOWN',
+      });
+    } catch { /* never let audit break the response */ }
+
     return NextResponse.json(
-      { error: process.env.NODE_ENV === 'development' ? msg : 'Internal server error' },
+      {
+        error: process.env.NODE_ENV === 'development' ? msg : 'Internal server error',
+        customerMessage: customerMsg,
+      },
       { status: 500 }
     );
   }

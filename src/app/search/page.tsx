@@ -151,13 +151,30 @@ function SearchContent() {
   const [dnaSearchLoading, setDnaSearchLoading] = useState(false);
   const [dnaSearchResults, setDnaSearchResults] = useState<DnaSearchResult | null>(null);
   const [dnaSearchEligible, setDnaSearchEligible] = useState<boolean | null>(null);
+  // Snapshot of round-trip flights at DNA search time — used to display when DNA is active
+  // This prevents ID mismatches when flights are re-fetched during the 30-60s DNA API call
+  const [dnaSnapshotRT, setDnaSnapshotRT] = useState<RoundTripOption[]>([]);
   const dnaSearchActive = prefs.dnaSearchActive;
 
-  // DNA results map for quick lookup by card ID
+  // DNA results map — keyed by cardId (matches the snapshot flight IDs)
   const dnaResultsMap = useMemo(() => {
-    if (!dnaSearchResults?.results) return null;
-    return new Map<string, DnaRankedCard>(dnaSearchResults.results.map(r => [r.cardId, r]));
+    if (!dnaSearchResults?.results || dnaSearchResults.results.length === 0) return null;
+    const map = new Map<string, DnaRankedCard>();
+    for (const r of dnaSearchResults.results) {
+      map.set(r.cardId, r);
+    }
+    return map;
   }, [dnaSearchResults]);
+
+  // Guard: if DNA toggle is ON (persisted) but results are lost (page reload), reset the toggle
+  // The user can re-trigger DNA Search manually
+  useEffect(() => {
+    if (dnaSearchActive && !dnaSearchResults && !dnaSearchLoading) {
+      console.warn('[DNA Search] Toggle is active but results are missing — resetting toggle');
+      prefs.setDnaSearchActive(false);
+    }
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [dnaSearchActive, dnaSearchResults, dnaSearchLoading]);
 
   // ── Filter transition spinner ─────────────────────────────────────────────
   const [isFiltering, setIsFiltering] = useState(false);
@@ -183,6 +200,7 @@ function SearchContent() {
   const cabin = searchParams.get('cabin') || 'economy';
   const returnDateParam = searchParams.get('return') || '';
   const tripParam = searchParams.get('trip') || 'one_way';
+  const dnaAutoTrigger = searchParams.get('dna') === '1';
 
   const originAirport = useMemo(() => AIRPORTS.find((a) => a.code === origin), [origin]);
   const destAirport = useMemo(() => AIRPORTS.find((a) => a.code === destination), [destination]);
@@ -220,6 +238,7 @@ function SearchContent() {
     prefs.setDnaSearchActive(false);
     setDnaSearchResults(null);
     setDnaSearchEligible(null);
+    setDnaSnapshotRT([]);
 
     const params = new URLSearchParams({
       origin, destination, date, adults, cabin,
@@ -619,18 +638,20 @@ function SearchContent() {
     return filtered.length > 0 ? filtered : panelFilteredRT;
   }, [panelFilteredRT, aiAssistResult]);
 
-  // 🧬 DNA-aware RT display: DNA-scored cards first (by DNA score desc), then remaining AI-ranked
+  // 🧬 DNA-aware RT display: uses the SNAPSHOT flights (from when DNA search started)
+  // sorted by DNA score. This guarantees IDs match the dnaResultsMap keys.
   const dnaDisplayRT = useMemo(() => {
-    if (!dnaSearchActive || !dnaResultsMap) return displayPanelRT;
-    const dnaScored = displayPanelRT.filter(rt => dnaResultsMap.has(rt.id));
-    const nonDna = displayPanelRT.filter(rt => !dnaResultsMap.has(rt.id));
+    if (!dnaSearchActive || !dnaResultsMap || dnaSnapshotRT.length === 0) return displayPanelRT;
+    // Use snapshot flights — their IDs match the map's cardIds
+    const dnaScored = dnaSnapshotRT.filter(rt => dnaResultsMap.has(rt.id));
+    const nonDna = dnaSnapshotRT.filter(rt => !dnaResultsMap.has(rt.id));
     dnaScored.sort((a, b) => {
       const dnaA = dnaResultsMap.get(a.id)?.finalDnaScore ?? 0;
       const dnaB = dnaResultsMap.get(b.id)?.finalDnaScore ?? 0;
       return dnaB - dnaA;
     });
     return [...dnaScored, ...nonDna];
-  }, [displayPanelRT, dnaSearchActive, dnaResultsMap]);
+  }, [displayPanelRT, dnaSearchActive, dnaResultsMap, dnaSnapshotRT]);
 
   // 🧬 DNA Search handler — placed here so all dependencies (tripParam, panelFilteredRT, panelFilteredOneWay, origin, destination, date) are initialized
   const [dnaIneligibleReason, setDnaIneligibleReason] = useState<string | null>(null);
@@ -638,13 +659,24 @@ function SearchContent() {
   const [dnaSearchBannerVisible, setDnaSearchBannerVisible] = useState(false);
   const [dnaFlightCount, setDnaFlightCount] = useState(0);
 
-  const handleDnaSearch = useCallback(async () => {
-    // If already active, toggle off instantly
-    if (dnaSearchActive) {
+  const handleDnaSearch = useCallback(async (): Promise<boolean> => {
+    // If user is not signed in, redirect to login with return URL + dna=1
+    if (!authUser) {
+      const currentUrl = window.location.pathname + window.location.search;
+      // Append dna=1 to the current search URL for auto-trigger after login
+      const separator = currentUrl.includes('?') ? '&' : '?';
+      const returnUrl = `${currentUrl}${separator}dna=1`;
+      router.push(`/auth/login?redirect=${encodeURIComponent(returnUrl)}`);
+      return false;
+    }
+
+    // If already active WITH results, toggle off instantly (user clicked to deactivate)
+    if (dnaSearchActive && dnaSearchResults) {
       prefs.setDnaSearchActive(false);
       setDnaSearchResults(null);
+      setDnaSnapshotRT([]);
       setDnaIneligibleReason(null);
-      return;
+      return false;
     }
 
     // Clear previous ineligible state so user can retry
@@ -680,6 +712,12 @@ function SearchContent() {
 
       console.log(`[DNA Search] Sending ${cardsToSend.length} cards, userId=${authUser?.id ?? 'none'}`);
       setDnaFlightCount(cardsToSend.length);
+
+      // Snapshot the flights being sent — used for display when DNA is active
+      // This prevents ID mismatches if flights are re-fetched during the 30-60s DNA API call
+      if (tripParam === 'round_trip') {
+        setDnaSnapshotRT(panelFilteredRT.slice());
+      }
 
       // Determine if search is international based on airport codes
       // Common US major airport codes — if both are US, it's domestic
@@ -735,11 +773,20 @@ function SearchContent() {
           setDnaSearchStatus(null);
           setDnaIneligibleReason(null);
         }, 4000);
+        return false;
       } else {
         setDnaSearchEligible(true);
         setDnaSearchResults(data);
         prefs.setDnaSearchActive(true);
         setDnaSearchStatus('complete');
+        // Debug: trace DNA mapping
+        console.log('[DNA Search] ✅ Results received:', {
+          resultCount: data.results.length,
+          sampleCardIds: data.results.slice(0, 3).map((r: any) => r.cardId),
+          sampleDnaScores: data.results.slice(0, 3).map((r: any) => r.dnaScore),
+          sampleRTIds: panelFilteredRT.slice(0, 3).map(rt => rt.id),
+          sampleOWIds: panelFilteredOneWay.slice(0, 3).map(f => f.id),
+        });
         trackDnaEvent('dna_search_completed', {
           source: 'flight_page',
           totalResults: data.results.length,
@@ -750,9 +797,10 @@ function SearchContent() {
           setDnaSearchBannerVisible(false);
           setDnaSearchStatus(null);
         }, 3000);
+        return true;
       }
     } catch (err) {
-      console.error('[DNA Search] Error:', err);
+      console.warn('[DNA Search] Error:', err);
       await minLoadingDelay;
       setDnaIneligibleReason('DNA Search encountered an error. Please try again.');
       setDnaSearchStatus('error');
@@ -761,10 +809,34 @@ function SearchContent() {
         setDnaSearchStatus(null);
         setDnaIneligibleReason(null);
       }, 4000);
+      return false;
     } finally {
       setDnaSearchLoading(false);
     }
-  }, [dnaSearchActive, tripParam, panelFilteredRT, panelFilteredOneWay, origin, destination, date, prefs, authUser]);
+  }, [dnaSearchActive, dnaSearchResults, tripParam, panelFilteredRT, panelFilteredOneWay, origin, destination, date, prefs, authUser, router]);
+
+  // 🧬 Auto-trigger DNA Search when redirected back from login with dna=1
+  const dnaAutoTriggered = useRef(false);
+  useEffect(() => {
+    if (
+      dnaAutoTrigger &&
+      authUser &&
+      !dnaAutoTriggered.current &&
+      !loading &&
+      !dnaSearchLoading &&
+      !dnaSearchResults &&   // No results yet — trigger DNA search
+      (results.length > 0 || roundTripOptions.length > 0)
+    ) {
+      dnaAutoTriggered.current = true;
+      // Remove dna=1 from URL to prevent re-triggering on refresh
+      const url = new URL(window.location.href);
+      url.searchParams.delete('dna');
+      window.history.replaceState({}, '', url.toString());
+      console.log('[DNA Search] 🧬 Auto-triggering DNA Search after sign-in redirect');
+      // Trigger DNA Search
+      handleDnaSearch();
+    }
+  }, [dnaAutoTrigger, authUser, loading, dnaSearchLoading, dnaSearchResults, results, roundTripOptions, handleDnaSearch]);
 
   // ── Active map flight: show hovered card's polylines, or first card by default ──
   const activeMapRoundTrips = useMemo(() => {

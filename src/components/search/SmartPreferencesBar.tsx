@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect } from 'react';
+import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   DollarSign,
@@ -23,6 +23,7 @@ import {
   BarChart3,
   CalendarDays,
   Dna,
+  Loader2,
 } from 'lucide-react';
 import { cn, formatPrice } from '@/lib/utils';
 import {
@@ -193,12 +194,22 @@ export default function SmartPreferencesBar({
   const prefs = usePreferencesStore();
   const [activeDropdown, setActiveDropdown] = useState<string | null>(null);
   const [budgetRange, setBudgetRange] = useState<[number, number]>([prefs.budgetMin, prefs.budgetMax]);
+  const [resetting, setResetting] = useState(false);
 
   const toggleDropdown = (name: string) => {
     setActiveDropdown((prev) => (prev === name ? null : name));
   };
 
   const closeDropdown = () => setActiveDropdown(null);
+
+  const handleReset = useCallback(() => {
+    if (resetting) return;
+    setResetting(true);
+    setTimeout(() => {
+      prefs.resetAll();
+      setResetting(false);
+    }, 600);
+  }, [resetting, prefs]);
 
   // ─── Budget display ───
   const budgetLabel = prefs.budgetActive
@@ -568,28 +579,33 @@ export default function SmartPreferencesBar({
                         : 'Personalize results using your Travel DNA'
                   }
                   className={cn(
-                    'flex items-center gap-2 px-3 py-1.5 rounded-xl text-[13px] font-semibold transition-all duration-300 border relative z-10',
-                    dnaSearchLoading
-                      ? 'bg-[#24C9A6]/10 border-[#24C9A6]/30 text-[#0F172A] shadow-[0_0_15px_rgba(36,201,166,0.3)]'
+                    'group flex items-center gap-2 px-3 py-1.5 rounded-xl text-[13px] font-bold transition-all duration-300 border relative z-10 overflow-visible',
+                    dnaSearchEligible === false
+                      ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-50'
                       : dnaSearchActive
-                        ? 'bg-[#24C9A6]/10 border-[#24C9A6]/30 text-[#0F172A] shadow-[0_0_15px_rgba(36,201,166,0.3)] scale-[1.03]'
-                        : dnaSearchEligible === false
-                          ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-50'
-                          : 'bg-white border-gray-200 text-[#0F172A]/70 hover:text-[#0F172A] hover:border-gray-300'
+                        ? 'bg-gradient-to-r from-[#009CA6] to-[#00828C] border-[#009CA6]/50 text-white shadow-[0_0_20px_rgba(0,156,166,0.4)] scale-[1.02] ring-2 ring-[#009CA6]/20 ring-offset-1 ring-offset-transparent'
+                        : 'bg-white/80 backdrop-blur-md border-[#009CA6]/40 text-[#009CA6] shadow-[0_2px_10px_rgba(0,156,166,0.1)] hover:bg-[#009CA6]/10 hover:shadow-[0_0_15px_rgba(0,156,166,0.3)] hover:border-[#009CA6]/60'
                   )}
                 >
-                  {dnaSearchLoading ? (
-                    <div className="w-3.5 h-3.5 border-2 border-[#24C9A6]/30 border-t-[#24C9A6] rounded-full animate-spin shrink-0" />
-                  ) : (
-                    <span className="text-sm leading-none shrink-0">🧬</span>
+                  {/* Ping effect when inactive */}
+                  {!dnaSearchActive && dnaSearchEligible !== false && (
+                    <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 z-20">
+                      <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#009CA6] opacity-75"></span>
+                      <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#009CA6]"></span>
+                    </span>
                   )}
-                  <span className="tracking-tight whitespace-nowrap text-black">DNA Search</span>
+                  {dnaSearchLoading ? (
+                    <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
+                  ) : (
+                    <span className={cn("text-sm leading-none shrink-0 transition-transform duration-500", !dnaSearchActive && "group-hover:rotate-180 group-hover:scale-110")}>🧬</span>
+                  )}
+                  <span className={cn('tracking-tight whitespace-nowrap', dnaSearchEligible === false ? 'text-gray-400' : dnaSearchActive ? 'text-white' : 'text-[#009CA6] group-hover:text-[#00828C]')}>DNA Search</span>
                   <div className={cn(
                     'relative w-8 h-[18px] rounded-full transition-all duration-300 shrink-0',
-                    dnaSearchLoading ? 'bg-[#24C9A6]' : dnaSearchActive ? 'bg-[#24C9A6]' : 'bg-gray-200'
+                    dnaSearchEligible === false ? 'bg-gray-200' : dnaSearchActive ? 'bg-white/30' : 'bg-[#009CA6]/20 shadow-inner'
                   )}>
                     <motion.div
-                      className="absolute top-[2px] left-[2px] w-3.5 h-3.5 rounded-full bg-white shadow-sm"
+                      className={cn('absolute top-[2px] left-[2px] w-3.5 h-3.5 rounded-full shadow-sm bg-[#009CA6]')}
                       animate={
                         dnaSearchLoading
                           ? { x: [0, 12, 0] }
@@ -613,7 +629,7 @@ export default function SmartPreferencesBar({
                   initial={{ opacity: 0, y: -4, scale: 0.95 }}
                   animate={{ opacity: 1, y: 0, scale: 1 }}
                   exit={{ opacity: 0, y: -4, scale: 0.95 }}
-                  className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-sm max-w-[280px]"
+                  className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-sm max-w-fit whitespace-nowrap"
                 >
                   🧬 {dnaIneligibleReason}
                 </motion.div>
@@ -627,11 +643,12 @@ export default function SmartPreferencesBar({
                   initial={{ opacity: 0, scale: 0.8 }}
                   animate={{ opacity: 1, scale: 1 }}
                   exit={{ opacity: 0, scale: 0.8 }}
-                  onClick={() => prefs.resetAll()}
-                  className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
+                  onClick={handleReset}
+                  disabled={resetting}
+                  className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-gray-600 hover:text-gray-800 hover:bg-gray-100 transition-all disabled:opacity-60"
                   title="Reset all preferences"
                 >
-                  <X className="w-3.5 h-3.5" />
+                  {resetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
                   <span>Reset</span>
                 </motion.button>
               )}
@@ -1014,28 +1031,33 @@ export default function SmartPreferencesBar({
                       : 'Personalize results using your Travel DNA'
                 }
                 className={cn(
-                  'flex items-center gap-2 px-3 py-1.5 rounded-xl text-[13px] font-semibold transition-all duration-300 border relative z-10',
-                  dnaSearchLoading
-                    ? 'bg-[#24C9A6]/10 border-[#24C9A6]/30 text-[#0F172A] shadow-[0_0_15px_rgba(36,201,166,0.3)]'
+                  'group flex items-center gap-2 px-3 py-1.5 rounded-xl text-[13px] font-bold transition-all duration-300 border relative z-10 overflow-visible',
+                  dnaSearchEligible === false
+                    ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-50'
                     : dnaSearchActive
-                      ? 'bg-[#24C9A6]/10 border-[#24C9A6]/30 text-[#0F172A] shadow-[0_0_15px_rgba(36,201,166,0.3)] scale-[1.03]'
-                      : dnaSearchEligible === false
-                        ? 'bg-gray-50 border-gray-200 text-gray-400 cursor-not-allowed opacity-50'
-                        : 'bg-white border-gray-200 text-[#0F172A]/70 hover:text-[#0F172A] hover:border-gray-300'
+                      ? 'bg-gradient-to-r from-[#009CA6] to-[#00828C] border-[#009CA6]/50 text-white shadow-[0_0_20px_rgba(0,156,166,0.4)] scale-[1.02] ring-2 ring-[#009CA6]/20 ring-offset-1 ring-offset-transparent'
+                      : 'bg-white/80 backdrop-blur-md border-[#009CA6]/40 text-[#009CA6] shadow-[0_2px_10px_rgba(0,156,166,0.1)] hover:bg-[#009CA6]/10 hover:shadow-[0_0_15px_rgba(0,156,166,0.3)] hover:border-[#009CA6]/60'
                 )}
               >
-                {dnaSearchLoading ? (
-                  <div className="w-3.5 h-3.5 border-2 border-[#24C9A6]/30 border-t-[#24C9A6] rounded-full animate-spin shrink-0" />
-                ) : (
-                  <span className="text-sm leading-none shrink-0">🧬</span>
+                {/* Ping effect when inactive */}
+                {!dnaSearchActive && dnaSearchEligible !== false && (
+                  <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5 z-20">
+                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#009CA6] opacity-75"></span>
+                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#009CA6]"></span>
+                  </span>
                 )}
-                <span className="tracking-tight whitespace-nowrap text-black">DNA Search</span>
+                {dnaSearchLoading ? (
+                  <div className="w-3.5 h-3.5 border-2 border-white/30 border-t-white rounded-full animate-spin shrink-0" />
+                ) : (
+                  <span className={cn("text-sm leading-none shrink-0 transition-transform duration-500", !dnaSearchActive && "group-hover:rotate-180 group-hover:scale-110")}>🧬</span>
+                )}
+                <span className={cn('tracking-tight whitespace-nowrap', dnaSearchEligible === false ? 'text-gray-400' : dnaSearchActive ? 'text-white' : 'text-[#009CA6] group-hover:text-[#00828C]')}>DNA Search</span>
                 <div className={cn(
                   'relative w-8 h-[18px] rounded-full transition-all duration-300 shrink-0',
-                  dnaSearchLoading ? 'bg-[#24C9A6]' : dnaSearchActive ? 'bg-[#24C9A6]' : 'bg-gray-200'
+                  dnaSearchEligible === false ? 'bg-gray-200' : dnaSearchActive ? 'bg-white/30' : 'bg-[#009CA6]/20 shadow-inner'
                 )}>
                   <motion.div
-                    className="absolute top-[2px] left-[2px] w-3.5 h-3.5 rounded-full bg-white shadow-sm"
+                    className={cn('absolute top-[2px] left-[2px] w-3.5 h-3.5 rounded-full shadow-sm bg-[#009CA6]')}
                     animate={
                       dnaSearchLoading
                         ? { x: [0, 12, 0] }
@@ -1059,7 +1081,7 @@ export default function SmartPreferencesBar({
                 initial={{ opacity: 0, y: -4, scale: 0.95 }}
                 animate={{ opacity: 1, y: 0, scale: 1 }}
                 exit={{ opacity: 0, y: -4, scale: 0.95 }}
-                className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-sm max-w-[280px]"
+                className="bg-amber-50 border border-amber-200 text-amber-800 text-[11px] font-medium px-3 py-1.5 rounded-lg shadow-sm max-w-fit whitespace-nowrap"
               >
                 🧬 {dnaIneligibleReason}
               </motion.div>
@@ -1073,11 +1095,12 @@ export default function SmartPreferencesBar({
                 initial={{ opacity: 0, scale: 0.8 }}
                 animate={{ opacity: 1, scale: 1 }}
                 exit={{ opacity: 0, scale: 0.8 }}
-                onClick={() => prefs.resetAll()}
-                className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-gray-400 hover:text-gray-600 hover:bg-gray-100 transition-all"
+                onClick={handleReset}
+                disabled={resetting}
+                className="ml-auto flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-bold text-gray-600 hover:text-gray-800 hover:bg-gray-100 transition-all disabled:opacity-60"
                 title="Reset all preferences"
               >
-                <X className="w-3.5 h-3.5" />
+                {resetting ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <X className="w-3.5 h-3.5" />}
                 <span>Reset</span>
               </motion.button>
             )}

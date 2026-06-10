@@ -396,6 +396,8 @@ function PaymentFormInner() {
           riskLabel?: string | null;
           riskExplanation?: string | null;
           pnrs?: Array<{ pnrCode: string; pnrType: string; journeyDirection: 'ALL'|'OUTBOUND'|'RETURN'; isPrimary: boolean; airlineCode?: string|null; airlineName?: string|null; displayLabel: string }>;
+          isNewPlatformUser?: boolean;
+          platformUserId?: string;
         };
 
       if (!bookingRes.success && 'error' in bookingRes && bookingRes.error) {
@@ -428,6 +430,8 @@ function PaymentFormInner() {
         riskLabel:      bookingRes.riskLabel ?? null,
         riskExplanation: bookingRes.riskExplanation ?? null,
         pnrs:           bookingRes.pnrs ?? [],
+        isNewPlatformUser: bookingRes.isNewPlatformUser ?? false,
+        platformUserId:    bookingRes.platformUserId,
       });
 
       // 5. Send notification (non-blocking)

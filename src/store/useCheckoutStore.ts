@@ -89,6 +89,9 @@ export interface BookingConfirmation {
   riskLabel?: string | null;
   riskExplanation?: string | null;
   pnrs?: ConfirmedPnr[];
+  // Auto-registration: primary contact was registered as a platform user
+  isNewPlatformUser?: boolean;
+  platformUserId?: string;
 }
 
 // ─── Store interface ──────────────────────────────────────────────────────────
@@ -235,17 +238,36 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
   setSessionId: (sessionId) => set({ sessionId }),
 
   initFromStores: (selectedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown) => {
-    const count  = Math.max(1, travelerCount);
-    // Build passengers with correct types based on breakdown
+    // ── Resolve passenger breakdown ───────────────────────────────────────
+    // If no explicit breakdown is provided, always try to recover it from
+    // sessionStorage. This is the single defensive fallback so that every
+    // call path (itinerary page, fare modal, AI booking store) produces
+    // the correct passenger types — adults, children AND infants.
+    let resolvedBreakdown = passengerBreakdown;
+    if (!resolvedBreakdown && typeof window !== 'undefined') {
+      try {
+        const ctx = JSON.parse(sessionStorage.getItem('fm_fare_context') || '{}');
+        if (typeof ctx.adults === 'number') {
+          resolvedBreakdown = {
+            adults: ctx.adults,
+            children: ctx.children ?? 0,
+            infants: ctx.infants ?? 0,
+          };
+        }
+      } catch { /* sessionStorage unavailable */ }
+    }
+
+    // ── Build passengers array with correct types ─────────────────────────
     let passengers: PassengerInfo[];
-    if (passengerBreakdown) {
-      const { adults, children: childCount, infants } = passengerBreakdown;
+    if (resolvedBreakdown) {
+      const { adults, children: childCount, infants } = resolvedBreakdown;
       passengers = [];
       let idx = 0;
       for (let i = 0; i < Math.max(1, adults); i++) passengers.push(makePassenger(idx++, 'adult'));
       for (let i = 0; i < childCount; i++) passengers.push(makePassenger(idx++, 'child'));
       for (let i = 0; i < infants; i++) passengers.push(makePassenger(idx++, 'infant'));
     } else {
+      const count = Math.max(1, travelerCount);
       passengers = Array.from({ length: count }, (_, i) => makePassenger(i));
     }
     set({
@@ -308,9 +330,10 @@ export function buildLocalPricing(store: CheckoutStore): PricingBreakdown {
   const taxRate = 0.156; // ~15.6% taxes estimate
 
   const perPassenger: PerPassengerPrice[] = passengers.map(p => {
+    // Infants (lap) are typically free or same as adult on Duffel; children get 25% discount
     const base = p.type === 'child' ? Math.round(perPersonBase * 0.75) : perPersonBase;
     const taxes = Math.round(base * taxRate);
-    return { passengerId: p.id, type: p.type === 'infant' ? 'adult' : p.type, baseFare: base - taxes, taxes, subtotal: base };
+    return { passengerId: p.id, type: p.type, baseFare: base - taxes, taxes, subtotal: base };
   });
 
   const seatFees = seatSelections.reduce((s, x) => s + (x.priceUsd ?? 0), 0);

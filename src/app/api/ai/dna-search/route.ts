@@ -174,6 +174,7 @@ Evaluate each flight card against the traveler's DNA profile. Return a dnaScore 
     const aiCards = topCards.map(f => ({
       cardId: f.id,
       aiScore: f.valueScore,
+      providerOfferId: (f as any).providerOfferId,
     }));
 
     // Compute hybrid scores

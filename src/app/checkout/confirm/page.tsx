@@ -667,6 +667,34 @@ export default function ConfirmPage() {
           )}
         </AnimatePresence>
 
+        {/* ── NEW PLATFORM USER WELCOME ── */}
+        {confirmation.isNewPlatformUser && (
+          <motion.div variants={itemV}>
+            <div className="relative overflow-hidden rounded-2xl border border-[#009CA6]/30 shadow-sm">
+              <div className="absolute inset-0 bg-gradient-to-br from-[#009CA6]/8 via-sky-50 to-teal-50" />
+              <div className="relative flex items-start gap-4 p-5">
+                <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-[#009CA6] to-teal-500 flex items-center justify-center flex-shrink-0 shadow-md shadow-[#009CA6]/25">
+                  <User className="w-6 h-6 text-white" />
+                </div>
+                <div className="min-w-0">
+                  <p className="text-sm font-bold text-slate-900 mb-1">Welcome to <span className="text-white bg-slate-800 px-1.5 py-0.5 rounded text-xs font-black">FARE</span><span className="text-[#009CA6] font-black text-xs">MIND</span>!</p>
+                  <p className="text-xs text-slate-600 leading-relaxed">
+                    A platform account has been created for <strong>{passengers[0]?.email}</strong>.
+                    You can now sign in anytime using your email — we'll send you a one-time code.
+                    Access your bookings, unlock <span className="font-semibold text-emerald-600">Travel DNA</span> insights, and manage your trips from your dashboard.
+                  </p>
+                  <Link
+                    href="/auth/login"
+                    className="inline-flex items-center gap-1.5 mt-3 text-xs font-bold text-[#009CA6] hover:text-teal-700 transition-colors"
+                  >
+                    Sign in to your account →
+                  </Link>
+                </div>
+              </div>
+            </div>
+          </motion.div>
+        )}
+
         {/* ── 7. ACTION BUTTONS ── */}
         <motion.div variants={itemV}>
           <div className="flex flex-col sm:flex-row items-stretch gap-3">

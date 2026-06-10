@@ -18,6 +18,7 @@ interface AuthStore {
 
   verifyOtp: (email: string, otp: string) => Promise<boolean>;
   logout: () => void;
+  logoutWithServerRevoke: () => Promise<void>;
   loadSession: () => void;
   setError: (error: string | null) => void;
   updateAvatar: (avatar: string | null) => void;
@@ -82,6 +83,33 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
       const { useManageBookingStore } = require('@/store/useManageBookingStore');
       useManageBookingStore.getState().reset();
     } catch {}
+  },
+
+  /**
+   * Logout with server-side session revocation.
+   * Used when the inactivity timer fires — ensures the DB session is cleaned up,
+   * not just the client-side state.
+   */
+  logoutWithServerRevoke: async () => {
+    const { sessionToken } = get();
+
+    // Revoke on server (fire-and-forget; don't block UI)
+    if (sessionToken) {
+      try {
+        await fetch(apiUrl('/api/auth/session'), {
+          method: 'DELETE',
+          headers: {
+            'Content-Type': 'application/json',
+            'Authorization': `Bearer ${sessionToken}`,
+          },
+        });
+      } catch {
+        // Server revocation is best-effort; client cleanup proceeds regardless
+      }
+    }
+
+    // Clear client state (same as regular logout)
+    get().logout();
   },
 
   loadSession: () => {

@@ -6,7 +6,7 @@ import { useAdminStore } from '@/store/useAdminStore';
 import {
   LayoutDashboard, BookOpen, GitMerge, Users2, DollarSign,
   ScrollText, Bell, Settings, LogOut, Shield, ChevronRight,
-  Brain, UserRoundSearch,
+  Brain, UserRoundSearch, AlertTriangle,
 } from 'lucide-react';
 import type { AdminRole } from '@/store/useAdminStore';
 
@@ -21,6 +21,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: '/admin/dashboard',            label: 'Dashboard',            icon: LayoutDashboard },
   { href: '/admin/bookings',             label: 'Bookings',             icon: BookOpen },
+  { href: '/admin/failed-bookings',      label: 'Failed Bookings',      icon: AlertTriangle },
   { href: '/admin/customers',            label: 'Customer Users',       icon: UserRoundSearch, minRole: 'OPS_ADMIN' },
   { href: '/admin/work-queues',          label: 'Work Queues',          icon: GitMerge },
   { href: '/admin/partners',             label: 'Partners',             icon: Users2, minRole: 'OPS_ADMIN' },

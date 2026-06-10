@@ -122,6 +122,7 @@ function LoginPageContent() {
   const router = useRouter();
   const searchParams = useSearchParams();
   const redirectTo = searchParams.get('redirect') ?? '/account';
+  const isDnaRedirect = redirectTo.includes('dna=1');
   const { verifyOtp, loading: authLoading, error, setError } = useAuthStore();
 
   const [step, setStep]         = useState<AuthStep>('email');
@@ -229,8 +230,20 @@ function LoginPageContent() {
         <div className="text-center mb-8">
 
           <h1 className="text-2xl font-black"><span className="text-white">FARE</span><span className="text-[#009CA6]">MIND</span></h1>
-          <p className="text-slate-400 text-sm mt-1">Sign in to your account</p>
+          <p className="text-slate-400 text-sm mt-1">{isDnaRedirect ? 'Sign in to activate your Travel DNA' : 'Sign in to your account'}</p>
         </div>
+
+        {/* DNA-specific banner */}
+        {isDnaRedirect && (
+          <div className="mb-4 bg-gradient-to-r from-[#1ABC9C]/10 to-[#009CA6]/10 border border-[#1ABC9C]/20 rounded-xl p-5 text-center">
+            <p className="text-sm font-bold tracking-wide">
+              ✨ <span className="text-white">FARE</span><span className="text-[#009CA6]">MIND</span> <span className="text-[#1ABC9C]">DNA Search</span>
+            </p>
+            <p className="text-slate-300 text-xs mt-2 leading-relaxed">
+              Sign in or create an account to unlock personalized flight<br />recommendations powered by your <span className="text-[#1ABC9C] font-semibold">Travel DNA</span>.
+            </p>
+          </div>
+        )}
 
         {/* Card */}
         <div
@@ -438,7 +451,7 @@ function LoginPageContent() {
 
                 {success && (
                   <p className="text-[#1ABC9C] text-sm text-center font-semibold">
-                    Redirecting to dashboard…
+                    {isDnaRedirect ? '🧬 Activating your Travel DNA...' : 'Redirecting to dashboard…'}
                   </p>
                 )}
               </motion.div>

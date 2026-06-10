@@ -213,6 +213,31 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                   );
                 }
 
+                if (item.label === 'Travel DNA') {
+                  return (
+                    <Link
+                      key={item.href}
+                      href={href}
+                      className={cn(
+                        'relative flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all duration-300 group overflow-visible',
+                        isActive
+                          ? 'text-white bg-[#1ABC9C]/20 border border-[#1ABC9C]/50 shadow-[0_0_15px_rgba(26,188,156,0.15)]'
+                          : 'text-[#1ABC9C] hover:text-white border border-[#1ABC9C]/30 hover:border-[#1ABC9C]/80 bg-[#1ABC9C]/10 hover:bg-[#1ABC9C]/20 hover:shadow-[0_0_20px_rgba(26,188,156,0.4)]'
+                      )}
+                    >
+                      <Icon className="w-4 h-4 transition-transform duration-500 group-hover:rotate-180 group-hover:scale-110" />
+                      <span className="relative z-10">{label}</span>
+                      
+                      {!isActive && (
+                        <span className="absolute -top-1 -right-1 flex h-2.5 w-2.5">
+                          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#009CA6] opacity-75"></span>
+                          <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#009CA6]"></span>
+                        </span>
+                      )}
+                    </Link>
+                  );
+                }
+
                 return (
                   <Link
                     key={item.href}
@@ -411,6 +436,32 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                         <Icon className="w-4 h-4" />
                         {label}
                       </button>
+                    );
+                  }
+
+                  if (item.label === 'Travel DNA') {
+                    return (
+                      <Link
+                        key={item.href}
+                        href={href}
+                        onClick={() => setMobileOpen(false)}
+                        className={cn(
+                          'relative flex items-center gap-3 px-4 py-3 rounded-xl text-sm font-bold transition-all group overflow-visible',
+                          isActive
+                            ? 'text-white bg-[#1ABC9C]/20 border border-[#1ABC9C]/50 shadow-[0_0_15px_rgba(26,188,156,0.15)]'
+                            : 'text-[#1ABC9C] bg-[#1ABC9C]/10 hover:bg-[#1ABC9C]/20 border border-transparent'
+                        )}
+                      >
+                        <Icon className="w-5 h-5 transition-transform duration-500 group-hover:rotate-180 group-hover:scale-110" />
+                        {label}
+                        
+                        {!isActive && (
+                          <span className="absolute top-3 right-3 flex h-2.5 w-2.5">
+                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-[#009CA6] opacity-75"></span>
+                            <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-[#009CA6]"></span>
+                          </span>
+                        )}
+                      </Link>
                     );
                   }
 

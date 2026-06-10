@@ -93,7 +93,7 @@ interface FloatingAIAssistantProps {
   focusedFlightId?: string | null;
   rtMetaMap?: Map<string, RtLegMeta>;
   roundTripOptions?: RoundTripOption[];
-  onDnaSearch?: () => Promise<void>;
+  onDnaSearch?: () => Promise<boolean>;
   dnaSearchResults?: DnaSearchResult | null;
 }
 
@@ -189,24 +189,44 @@ export default function FloatingAIAssistant({
       trackDnaEvent('dna_search_started', { source: 'chatbot' });
 
       try {
-        await onDnaSearch();
-        // After DNA search completes, show top 5 DNA matches
-        // We'll get them from dnaSearchResults prop on next render
-        const assistantMsg: ChatMessage = {
-          id: uid(),
-          role: 'assistant',
-          text: '🧬 Analyzing your Travel DNA profile against these flights...',
-          isDnaSearch: true,
-          ts: Date.now(),
-        };
-        setMessages(prev => [...prev, assistantMsg]);
-      } catch {
+        const success = await onDnaSearch();
+        if (success) {
+          // DNA search succeeded — show analyzing message
+          const assistantMsg: ChatMessage = {
+            id: uid(),
+            role: 'assistant',
+            text: '🧬 Analyzing your Travel DNA profile against these flights...',
+            isDnaSearch: true,
+            ts: Date.now(),
+          };
+          setMessages(prev => [...prev, assistantMsg]);
+        } else {
+          // DNA search not eligible — user is being redirected to sign in by the parent handler
+          const errMsg: ChatMessage = {
+            id: uid(), role: 'assistant',
+            text: '🔐 Redirecting you to sign in to activate your FareMind DNA...',
+            ts: Date.now(),
+          };
+          setMessages([errMsg]);
+          // Clear messages after 2s (redirect may happen before this)
+          setTimeout(() => {
+            setMessages([]);
+            setActiveChip(null);
+          }, 2000);
+        }
+      } catch (err) {
+        // Network/unexpected error — show error then reset to main screen
+        const reason = err instanceof Error ? err.message : 'Unable to run DNA Search right now.';
         const errMsg: ChatMessage = {
           id: uid(), role: 'assistant',
-          text: 'Unable to run DNA Search right now. Make sure your FareMind DNA profile is active.',
+          text: `⚠️ ${reason}`,
           ts: Date.now(),
         };
-        setMessages(prev => [...prev, errMsg]);
+        setMessages([errMsg]);
+        setTimeout(() => {
+          setMessages([]);
+          setActiveChip(null);
+        }, 3000);
       } finally {
         setLoading(false);
       }
@@ -915,13 +935,13 @@ export default function FloatingAIAssistant({
               animate={{ scale: [1, 1.55], opacity: [0.22, 0] }}
               transition={{ duration: 2.2, repeat: Infinity, ease: 'easeOut' }}
               className="absolute inset-0 rounded-2xl pointer-events-none"
-              style={{ background: 'linear-gradient(135deg, #0d7a72, #14b8a6)' }}
+              style={{ background: 'linear-gradient(135deg, #111111, #222222)' }}
             />
             <motion.span
               animate={{ scale: [1, 1.25], opacity: [0.15, 0] }}
               transition={{ duration: 2.2, repeat: Infinity, ease: 'easeOut', delay: 0.6 }}
               className="absolute inset-0 rounded-2xl pointer-events-none"
-              style={{ background: 'linear-gradient(135deg, #0d7a72, #14b8a6)' }}
+              style={{ background: 'linear-gradient(135deg, #111111, #222222)' }}
             />
           </>
         )}
@@ -940,8 +960,8 @@ export default function FloatingAIAssistant({
           whileTap={{ scale: 0.96 }}
           className="relative flex items-center gap-0 h-12 rounded-2xl text-white overflow-hidden cursor-pointer select-none"
           style={isOpen
-            ? { background: 'linear-gradient(135deg, #006e70 0%, #008284 100%)', boxShadow: 'none', border: '1px solid rgba(0,154,156,0.3)' }
-            : { background: 'linear-gradient(135deg, #007a7c 0%, #009A9C 45%, #00b5b7 100%)', boxShadow: '0 6px 32px rgba(0,154,156,0.50), 0 2px 8px rgba(0,0,0,0.15), 0 0 0 1px rgba(0,154,156,0.15)' }
+            ? { background: '#111111', boxShadow: 'none', border: '1px solid rgba(255,255,255,0.1)' }
+            : { background: '#000000', boxShadow: '0 6px 32px rgba(0,0,0,0.50), 0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.06)' }
           }
         >
           {/* Shimmer sweep */}
@@ -958,7 +978,7 @@ export default function FloatingAIAssistant({
             {/* Inner orb glow */}
             {!isOpen && (
               <span className="absolute w-8 h-8 rounded-full opacity-40 blur-md"
-                style={{ background: 'radial-gradient(circle, #66e0d0, #009A9C)' }} />
+                style={{ background: 'radial-gradient(circle, #555555, #222222)' }} />
             )}
             <AnimatePresence mode="wait">
               {isOpen ? (
@@ -996,7 +1016,7 @@ export default function FloatingAIAssistant({
           {/* Label */}
           <span className="px-4">
             <span className="text-[13px] font-black tracking-tight text-white whitespace-nowrap">
-              {isOpen ? 'Close' : <><span>FARE</span><span>MIND</span> AI</>}
+              {isOpen ? 'Close' : <><span>FARE</span><span style={{ color: '#009CA6' }}>MIND</span> AI</>}
             </span>
           </span>
 

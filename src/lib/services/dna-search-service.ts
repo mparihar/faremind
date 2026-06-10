@@ -16,6 +16,7 @@ export interface DnaCardResult {
 
 export interface DnaRankedCard {
   cardId: string;
+  providerOfferId?: string;  // stable Duffel offer ID for reliable matching
   aiScore: number;           // original AI score (0–100)
   dnaScore: number;          // GPT DNA match score (0–100)
   finalDnaScore: number;     // hybrid: AI×0.70 + DNA×0.30
@@ -59,7 +60,7 @@ export function computeHybridScore(aiScore: number, dnaScore: number): number {
 }
 
 export function computeHybridScores(
-  aiCards: Array<{ cardId: string; aiScore: number }>,
+  aiCards: Array<{ cardId: string; aiScore: number; providerOfferId?: string }>,
   gptResults: DnaCardResult[],
 ): DnaRankedCard[] {
   const dnaMap = new Map(gptResults.map(r => [r.cardId, r]));
@@ -71,6 +72,7 @@ export function computeHybridScores(
 
     return {
       cardId: card.cardId,
+      providerOfferId: card.providerOfferId,
       aiScore: card.aiScore,
       dnaScore,
       finalDnaScore,

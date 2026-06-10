@@ -190,7 +190,7 @@ export default function HomePage() {
               className="inline-flex items-center gap-2 px-4 py-1 rounded-full bg-[#1ABC9C] text-white shadow-sm mb-4"
             >
               <Sparkles className="w-4 h-4 text-white" />
-              <span className="text-[12px] font-bold tracking-wide text-white uppercase">YOUR PERSONAL TRAVEL CONSULTANT</span>
+              <span className="text-[12px] font-bold tracking-wide text-white uppercase">YOUR INTELLIGENT TRAVEL CONSULTANT</span>
             </motion.div>
 
             <motion.h1

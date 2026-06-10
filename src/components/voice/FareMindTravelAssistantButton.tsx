@@ -240,7 +240,8 @@ export default function FareMindTravelAssistantButton() {
       }
       setErrorMessage(msg);
       setState('error');
-      console.error('[Voice] Recording Failed:', msg);
+      setExpanded(true); // Keep panel open so user sees the friendly error message
+      console.warn('[Voice] Recording Failed:', msg);
     }
   }, [supported, state, isPassengerPage]);
 
@@ -641,7 +642,7 @@ export default function FareMindTravelAssistantButton() {
                     ) : !user ? (
                       <a href="/auth/login" className="flex items-center gap-2 px-2 py-1.5 rounded-lg hover:bg-white/[0.03] transition-all">
                         <span className="text-[10px]">🧬</span>
-                        <span className="text-[10px] text-slate-500 font-medium">Sign in to enable FAREMIND DNA™.</span>
+                        <span className="text-[10px] text-slate-500 font-medium">Sign in to enable <span className="font-black text-white">FARE</span><span className="font-black" style={{ color: '#009CA6' }}>MIND</span> DNA™.</span>
                       </a>
                     ) : null}
                   </div>

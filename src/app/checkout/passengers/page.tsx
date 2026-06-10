@@ -353,8 +353,8 @@ function validatePassenger(pax: PassengerInfo, departureDate?: string): Passenge
   return errors;
 }
 
-function isFormValid(passengers: PassengerInfo[]): boolean {
-  return passengers.every(p => Object.keys(validatePassenger(p)).length === 0);
+function isFormValid(passengers: PassengerInfo[], departureDate?: string): boolean {
+  return passengers.every(p => Object.keys(validatePassenger(p, departureDate)).length === 0);
 }
 
 // ─── Primitives ───────────────────────────────────────────────────────────────

@@ -174,6 +174,19 @@ async function getConfirmedBookings(userId: string) {
 
 // ── Trip Classification ──────────────────────────────────────────────────────
 
+// US major airport codes — if both origin & destination are in this set, it's domestic
+const US_AIRPORTS = new Set([
+  'ATL','LAX','ORD','DFW','DEN','JFK','SFO','SEA','LAS','MCO',
+  'EWR','CLT','PHX','IAH','MIA','BOS','MSP','DTW','FLL','PHL',
+  'LGA','BWI','SLC','SAN','DCA','IAD','TPA','HNL','PDX','STL',
+  'MCI','RDU','SMF','SNA','AUS','CLE','OAK','SJC','IND','CVG',
+  'CMH','BNA','PIT','SAT','MKE','RSW','ABQ','OMA','BUF','RIC',
+  'OGG','ANC','BOI','TUS','ELP','BDL','JAX','BHM','CHS','GRR',
+  'DSM','SDF','MSY','PBI','MEM','OKC','ONT','BUR','GEG','FAT',
+  'TUL','ICT','LIT','SYR','ROC','ALB','ORF','RNO','GSP','DAY',
+  'SAV','COS','LEX','MHT','SBN','AVL','TYS','XNA','PSP','GNV',
+]);
+
 function classifyTripCategory(booking: any): ProfileType {
   const originCountry = booking.originCountry;
   const destCountry = booking.destinationCountry;
@@ -200,7 +213,33 @@ function classifyTripCategory(booking: any): ProfileType {
     }
   }
 
-  // Default to domestic if all countries match or unavailable
+  // ── Fallback: detect international from airport codes ──────────────────
+  // Country fields are often not populated by the booking flow, so infer
+  // from airport codes. If either origin or destination is NOT a known US
+  // airport, treat as international.
+  const originAirport = (booking.originAirport || '').toUpperCase();
+  const destAirport = (booking.destinationAirport || '').toUpperCase();
+
+  if (originAirport && destAirport) {
+    const originIsUS = US_AIRPORTS.has(originAirport);
+    const destIsUS = US_AIRPORTS.has(destAirport);
+    if (!(originIsUS && destIsUS)) return 'INTERNATIONAL';
+  }
+
+  // Also check journey-level airports
+  if (booking.journeys?.length) {
+    for (const journey of booking.journeys) {
+      const jOrigin = (journey.originAirport || '').toUpperCase();
+      const jDest = (journey.destinationAirport || '').toUpperCase();
+      if (jOrigin && jDest) {
+        const oUS = US_AIRPORTS.has(jOrigin);
+        const dUS = US_AIRPORTS.has(jDest);
+        if (!(oUS && dUS)) return 'INTERNATIONAL';
+      }
+    }
+  }
+
+  // Default to domestic if all airports are US or unavailable
   return 'DOMESTIC';
 }
 

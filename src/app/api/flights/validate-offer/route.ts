@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { getOffer, DuffelApiError } from '@/lib/providers/duffel';
+import { getActiveMarkupRule, calculateMarkupAmount } from '@/lib/services/markup-service';
 
 export async function POST(request: NextRequest) {
   let body: { offer_id?: string; expected_price?: number };
@@ -23,8 +24,18 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ status: 'unavailable', reason: 'expired' });
     }
 
-    const currentPrice = parseFloat(offer.total_amount);
+    const providerPrice = parseFloat(offer.total_amount);
     const currency = offer.total_currency;
+
+    // Apply markup to the provider price so it matches what the frontend tiles display.
+    // Without this, the raw Duffel price will always differ from the marked-up tile price,
+    // causing every click to incorrectly report "price_changed".
+    let currentPrice = providerPrice;
+    const rule = await getActiveMarkupRule();
+    if (rule) {
+      const markupAmount = calculateMarkupAmount(rule, providerPrice);
+      currentPrice = Math.round((providerPrice + markupAmount) * 100) / 100;
+    }
 
     if (expected_price !== undefined) {
       const diff = Math.abs(currentPrice - expected_price);

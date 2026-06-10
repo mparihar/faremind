@@ -50,13 +50,14 @@ enum UserRole {
 }
 
 model Session {
-  id        String   @id @default(cuid())
-  userId    String   @map("user_id")
-  token     String   @unique
-  expiresAt DateTime @map("expires_at")
-  ipAddress String?  @map("ip_address")
-  userAgent String?  @map("user_agent")
-  createdAt DateTime @default(now()) @map("created_at")
+  id             String   @id @default(cuid())
+  userId         String   @map("user_id")
+  token          String   @unique
+  expiresAt      DateTime @map("expires_at")
+  lastActivityAt DateTime @default(now()) @map("last_activity_at")
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
@@ -1084,14 +1085,15 @@ model AdminOtp {
 }
 
 model AdminSession {
-  id           String   @id @default(cuid())
-  adminUserId  String   @map("admin_user_id")
-  token        String   @unique
-  refreshToken String?  @unique @map("refresh_token")
-  expiresAt    DateTime @map("expires_at")
-  ipAddress    String?  @map("ip_address")
-  userAgent    String?  @map("user_agent")
-  createdAt    DateTime @default(now()) @map("created_at")
+  id             String   @id @default(cuid())
+  adminUserId    String   @map("admin_user_id")
+  token          String   @unique
+  refreshToken   String?  @unique @map("refresh_token")
+  expiresAt      DateTime @map("expires_at")
+  lastActivityAt DateTime @default(now()) @map("last_activity_at")
+  ipAddress      String?  @map("ip_address")
+  userAgent      String?  @map("user_agent")
+  createdAt      DateTime @default(now()) @map("created_at")
 
   adminUser AdminUser @relation(fields: [adminUserId], references: [id], onDelete: Cascade)
 
@@ -2154,4 +2156,61 @@ model PaymentMethod {
   @@index([userId])
   @@index([providerPaymentMethodId])
   @@map("payment_methods")
+}
+
+// ═══════════════════════════════════════════════
+// BOOKING FAILURE AUDITS
+// ═══════════════════════════════════════════════
+
+model BookingFailureAudit {
+  id                    String    @id @default(cuid())
+
+  // Customer identification
+  customerEmail         String    @map("customer_email")
+  customerName          String    @map("customer_name")
+  customerPhone         String?   @map("customer_phone")
+  userId                String?   @map("user_id")
+
+  // Route & flight details
+  originAirport         String    @map("origin_airport")
+  destinationAirport    String    @map("destination_airport")
+  routeLabel            String    @map("route_label")
+  tripType              String    @default("ONE_WAY") @map("trip_type")
+  departureDate         String?   @map("departure_date")
+  returnDate            String?   @map("return_date")
+  airline               String?
+  cabinClass            String?   @map("cabin_class")
+
+  // Passenger details
+  passengerCount        Int       @map("passenger_count")
+  passengersJson        String    @map("passengers_json") @db.Text
+
+  // Pricing & fare
+  totalAmount           Decimal   @map("total_amount") @db.Decimal(10, 2)
+  currency              String    @default("USD")
+  offerId               String?   @map("offer_id")
+  fareName              String?   @map("fare_name")
+
+  // Error details (root cause — internal only, never shown to customer)
+  errorCode             String    @map("error_code")
+  errorMessage          String    @map("error_message") @db.Text
+  customerMessage       String    @map("customer_message")
+  failureStage          String    @map("failure_stage")
+
+  // Payment context
+  stripePaymentIntentId String?   @map("stripe_payment_intent_id")
+  sessionId             String?   @map("session_id")
+
+  // Admin resolution tracking
+  resolvedAt            DateTime? @map("resolved_at")
+  resolvedBy            String?   @map("resolved_by")
+  resolutionNotes       String?   @map("resolution_notes") @db.Text
+
+  createdAt             DateTime  @default(now()) @map("created_at")
+
+  @@index([customerEmail])
+  @@index([createdAt])
+  @@index([errorCode])
+  @@index([resolvedAt])
+  @@map("booking_failure_audits")
 }

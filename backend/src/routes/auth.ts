@@ -185,10 +185,13 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         data:  { lastLoginAt: new Date(), emailVerified: true },
       });
 
-      // Create session (30-day expiry)
+      // Create session (24h absolute max; 15-min inactivity timeout is the real guard)
       const token     = generateToken();
-      const expiresAt = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-      await prisma.session.create({ data: { userId: user.id, token, expiresAt } });
+      const now       = new Date();
+      const expiresAt = new Date(now.getTime() + 24 * 60 * 60 * 1000);
+      await prisma.session.create({
+        data: { userId: user.id, token, expiresAt, lastActivityAt: now },
+      });
 
       return reply.send({
         success: true,
@@ -219,6 +222,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // GET /api/auth/validate-session
+  // Enforces 15-min server-side inactivity + sliding window
   fastify.get('/validate-session', async (request, reply) => {
     try {
       const authHeader = request.headers.authorization;
@@ -232,6 +236,21 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       if (!session) return reply.send({ valid: false });
 
+      // ── Server-side inactivity check (15 minutes) ────────────────────
+      const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
+      const lastActivity = session.lastActivityAt?.getTime() ?? session.createdAt.getTime();
+      if (Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
+        // Session expired due to inactivity — revoke it
+        await prisma.session.delete({ where: { id: session.id } }).catch(() => {});
+        return reply.send({ valid: false, reason: 'inactivity' });
+      }
+
+      // ── Sliding window: touch lastActivityAt ─────────────────────────
+      await prisma.session.update({
+        where: { id: session.id },
+        data: { lastActivityAt: new Date() },
+      });
+
       return reply.send({
         valid: true,
         user: {
@@ -244,6 +263,22 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) {
       fastify.log.error(e, '[auth/validate-session]');
       return reply.send({ valid: false });
+    }
+  });
+
+  // DELETE /api/auth/session — Server-side session revocation
+  // Called by the client when inactivity logout fires, to clean up the DB session.
+  fastify.delete('/session', async (request, reply) => {
+    try {
+      const authHeader = request.headers.authorization;
+      const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+      if (!token) return reply.code(401).send({ error: 'No token' });
+
+      await prisma.session.deleteMany({ where: { token } });
+      return reply.send({ ok: true });
+    } catch (e) {
+      fastify.log.error(e, '[auth/delete-session]');
+      return reply.code(500).send({ error: 'Server error' });
     }
   });
 };

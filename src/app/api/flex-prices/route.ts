@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { searchRoundTripFlights } from '@/lib/providers/orchestrator';
 import { flexCacheKey, flexCacheGet, flexCacheSet } from '@/lib/flex-search-cache';
+import { applyMarkupToRoundTripOptions } from '@/lib/services/markup-service';
 
 function isFutureDate(dateStr: string): boolean {
   const today = new Date();
@@ -42,7 +43,11 @@ export async function GET(request: NextRequest) {
         origin, destination, date: dep, returnDate: ret, adults, cabin,
       });
       allOptions = res.options;
-      // Cache the full multi-cabin option set so /api/search can reuse it
+
+      // Apply FareMind markup so tile prices match what /api/search shows
+      await applyMarkupToRoundTripOptions(allOptions);
+
+      // Cache the full multi-cabin option set (WITH markup) so /api/search can reuse it
       if (allOptions.length > 0) flexCacheSet(cacheKey, allOptions);
     }
 

@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -11,6 +11,8 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
+import SessionExpiryWarning from '@/components/session/SessionExpiryWarning';
+import { apiUrl } from '@/lib/api-client';
 
 const SIDEBAR_NAV = [
   { href: '/account', label: 'Dashboard', icon: LayoutDashboard, exact: true },
@@ -145,11 +147,12 @@ function DashboardHeader({ user, onMenuToggle }: { user: any; onMenuToggle: () =
 export default function AccountLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
-  const { user, loadSession, logout } = useAuthStore();
+  const { user, loadSession, logout, logoutWithServerRevoke, sessionToken } = useAuthStore();
   const [ready, setReady] = useState(false);
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const [notifCount, setNotifCount] = useState(2);
   const [isAdminUser, setIsAdminUser] = useState(false);
+  const [showExpiryWarning, setShowExpiryWarning] = useState(false);
 
   useEffect(() => {
     loadSession();
@@ -161,11 +164,32 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
     }
   }, []);
 
-  // 15 minutes inactivity logout
-  useInactivityLogout(15 * 60 * 1000, () => {
-    logout();
+  // 15 minutes inactivity → server-side revoke + redirect to hero page
+  const handleInactivityLogout = useCallback(async () => {
+    await logoutWithServerRevoke();
     router.push('/');
+  }, [logoutWithServerRevoke, router]);
+
+  const handleExpiryWarning = useCallback(() => {
+    setShowExpiryWarning(true);
+  }, []);
+
+  const { resetTimer } = useInactivityLogout(15 * 60 * 1000, handleInactivityLogout, {
+    warningMs: 60_000,
+    onWarning: handleExpiryWarning,
   });
+
+  // "Stay Signed In" handler — dismiss warning, reset timer, touch server session
+  const handleStaySignedIn = useCallback(() => {
+    setShowExpiryWarning(false);
+    resetTimer();
+    // Touch the server session to extend lastActivityAt
+    if (sessionToken) {
+      fetch(apiUrl('/api/auth/validate-session'), {
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      }).catch(() => {});
+    }
+  }, [resetTimer, sessionToken]);
 
   // Check if user has admin access
   useEffect(() => {
@@ -315,6 +339,14 @@ export default function AccountLayout({ children }: { children: React.ReactNode 
           </main>
         </div>
       </div>
+
+      {/* Session expiry warning toast */}
+      <SessionExpiryWarning
+        show={showExpiryWarning}
+        secondsRemaining={60}
+        onStaySignedIn={handleStaySignedIn}
+        variant="user"
+      />
     </div>
   );
 }

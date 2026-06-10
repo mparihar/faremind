@@ -275,9 +275,38 @@ export default function CheckoutItineraryPage() {
       try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; }
     }
 
-    // 1. Already initialized in checkout store
+    // 1. Already initialized in checkout store — still validate passengers
+    //    match the expected breakdown (count AND types) from session context.
     if (checkoutStore.selectedFare) {
-      setPricing(buildLocalPricing(checkoutStore));
+      // Re-read breakdown from sessionStorage to ensure correct pax types
+      const ctx = ssGet('fm_fare_context') as { travelers?: number; adults?: number; children?: number; infants?: number } | null;
+      const expectedCount = typeof ctx?.travelers === 'number' ? ctx.travelers : checkoutStore.travelerCount;
+      const breakdown = (typeof ctx?.adults === 'number')
+        ? { adults: ctx.adults, children: ctx.children ?? 0, infants: ctx.infants ?? 0 }
+        : undefined;
+
+      // Check both count AND type composition — if either is wrong, re-init
+      const currentTypes = checkoutStore.passengers.map(p => p.type);
+      const expectedTypes: string[] = [];
+      if (breakdown) {
+        for (let i = 0; i < Math.max(1, breakdown.adults); i++) expectedTypes.push('adult');
+        for (let i = 0; i < breakdown.children; i++) expectedTypes.push('child');
+        for (let i = 0; i < breakdown.infants; i++) expectedTypes.push('infant');
+      }
+
+      const typesMatch = expectedTypes.length > 0
+        ? expectedTypes.length === currentTypes.length && expectedTypes.every((t, i) => t === currentTypes[i])
+        : expectedCount === checkoutStore.passengers.length;
+
+      if (!typesMatch) {
+        // Passenger count or type mismatch — re-initialize with correct breakdown
+        checkoutStore.initFromStores(
+          checkoutStore.selectedFare, checkoutStore.fareOption,
+          checkoutStore.sourceFlight, checkoutStore.sourceRoundTrip,
+          expectedCount, breakdown,
+        );
+      }
+      setPricing(buildLocalPricing(useCheckoutStore.getState()));
       setReady(true);
       return;
     }
@@ -549,7 +578,7 @@ export default function CheckoutItineraryPage() {
                       <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">
                         Passenger {i + 1}
                         <span className="ml-1.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 normal-case text-[10px]">
-                          {pax.type === 'adult' ? 'Adult' : 'Child'}
+                          {pax.type === 'adult' ? 'Adult' : pax.type === 'child' ? 'Child' : 'Infant'}
                         </span>
                       </p>
                       {/* Show the all-in fare as a single line — taxes are already included in the

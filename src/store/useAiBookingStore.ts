@@ -745,13 +745,22 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     // ── Hydrate useCheckoutStore ──
     const checkout = useCheckoutStore.getState();
 
-    // Init with flight/fare/count
+    // Init with flight/fare/count + breakdown
+    const paxTypes = s.passengerTypes ?? [];
+    const breakdownFromTypes = paxTypes.length > 0
+      ? {
+          adults: paxTypes.filter(t => t === 'adult').length || passengerCount,
+          children: paxTypes.filter(t => t === 'child').length,
+          infants: paxTypes.filter(t => t === 'infant').length,
+        }
+      : undefined;
     checkout.initFromStores(
       selectedFare,
       fareOption,
       selectedRoundTrip ? null : selectedFlight,
       selectedRoundTrip,
       passengerCount,
+      breakdownFromTypes,
     );
 
     // Set all passengers

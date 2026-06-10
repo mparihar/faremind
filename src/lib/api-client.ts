@@ -40,8 +40,19 @@ export async function apiFetch<T>(
 
   if (response.status === 401) {
     if (typeof window !== 'undefined') {
+      // Try to read the reason (inactivity vs generic auth failure)
+      let reason = 'unknown';
+      try {
+        const body = await response.clone().json();
+        reason = body.reason || 'expired';
+      } catch {}
+
       const { useAuthStore } = require('@/store/useAuthStore');
       useAuthStore.getState().logout();
+
+      if (reason === 'inactivity') {
+        console.warn('[apiFetch] Session expired due to inactivity');
+      }
       window.location.href = '/';
     }
     throw new Error('Session expired');
