@@ -74,7 +74,7 @@ function OfferExpiryBadge() {
           ? 'bg-red-500/90 text-white animate-pulse'
           : isWarning
             ? 'bg-amber-500/90 text-white'
-            : 'bg-transparent border border-[#1ABC9C]/40 text-[#1ABC9C]'
+            : 'bg-transparent border border-[#00ff41]/30 text-[#00ff41]'
       }`}
       title="These offers expire after this time — search again for fresh results"
     >
