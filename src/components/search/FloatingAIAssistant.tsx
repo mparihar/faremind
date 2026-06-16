@@ -9,8 +9,10 @@ import type { RoundTripOption } from '@/lib/round-trip-types';
 import type { DnaSearchResult, DnaRankedCard } from '@/lib/services/dna-search-service';
 import { trackDnaEvent } from '@/lib/analytics/dna-search-analytics';
 import AiBookFlightFlow from './ai-booking/AiBookFlightFlow';
+import AiManageBookingFlow from './ai-booking/AiManageBookingFlow';
 import { useAiBookingStore } from '@/store/useAiBookingStore';
 import { useOfferSessionStore } from '@/store/useOfferSessionStore';
+import { detectManageBookingIntent } from '@/lib/ai-manage-booking-utils';
 import {
   isSpeechRecognitionSupported,
   startListening,
@@ -128,6 +130,8 @@ export default function FloatingAIAssistant({
   const [loading,   setLoading]   = useState(false);
   const [activeChip, setActiveChip] = useState<string | null>(null);
   const [bookingMode, setBookingMode] = useState(false);
+  const [manageBookingMode, setManageBookingMode] = useState(false);
+  const [manageBookingIntent, setManageBookingIntent] = useState<'cancel' | 'update_passenger' | 'manage' | null>(null);
   const [isRecording, setIsRecording] = useState(false);
   const [voiceSupported] = useState(() => typeof window !== 'undefined' && isSpeechRecognitionSupported());
   const scrollRef   = useRef<HTMLDivElement>(null);
@@ -174,6 +178,14 @@ export default function FloatingAIAssistant({
 
   const submit = useCallback(async (q: string) => {
     if (!q.trim() || !flights.length || loading) return;
+
+    // ✈️ Manage Booking intent detection
+    const mbIntent = detectManageBookingIntent(q);
+    if (mbIntent) {
+      setManageBookingIntent(mbIntent);
+      setManageBookingMode(true);
+      return;
+    }
 
     // 🧬 DNA Search command detection
     const dnaCommands = ['dna search', 'dna matches', 'my dna', 'matching my dna', 'run dna', 'search using my dna', '__DNA_SEARCH__'];
@@ -321,6 +333,11 @@ export default function FloatingAIAssistant({
       setBookingMode(false);
       resetBookingFlow();
     }
+    // Reset manage-booking flow if it was active
+    if (manageBookingMode) {
+      setManageBookingMode(false);
+      setManageBookingIntent(null);
+    }
   }
 
   /** User selects a flight from the top 5 AI recommendations → enter booking mode */
@@ -388,8 +405,8 @@ export default function FloatingAIAssistant({
             {/* Co-Pilot accent bar */}
             <div className="h-1 w-full shrink-0" style={{ background: 'linear-gradient(90deg, #007a7c 0%, #009A9C 50%, #00b5b7 100%)' }} />
 
-            {/* Header — hidden in booking mode (AiBookFlightFlow has its own) */}
-            {!bookingMode && (
+            {/* Header — hidden in booking/manage-booking mode (they have their own) */}
+            {!bookingMode && !manageBookingMode && (
             <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 shrink-0 bg-white">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm shrink-0 relative overflow-hidden"
                 style={{ background: 'linear-gradient(135deg, #007a7c 0%, #009A9C 55%, #00b5b7 100%)' }}>
@@ -424,6 +441,10 @@ export default function FloatingAIAssistant({
                       setBookingMode(false);
                       resetBookingFlow();
                     }
+                    if (manageBookingMode) {
+                      setManageBookingMode(false);
+                      setManageBookingIntent(null);
+                    }
                     setIsOpen(false);
                   }}
                   title="Close"
@@ -448,6 +469,16 @@ export default function FloatingAIAssistant({
                   onExit={() => {
                     setBookingMode(false);
                     resetBookingFlow();
+                  }}
+                />
+              </div>
+            ) : manageBookingMode ? (
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden" style={{ background: 'linear-gradient(180deg, #f0fdfb 0%, #f8fffe 100%)' }}>
+                <AiManageBookingFlow
+                  preselectedAction={manageBookingIntent}
+                  onExit={() => {
+                    setManageBookingMode(false);
+                    setManageBookingIntent(null);
                   }}
                 />
               </div>
@@ -528,6 +559,19 @@ export default function FloatingAIAssistant({
                     className="px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all bg-gradient-to-r from-[#1ABC9C] to-emerald-500 border-[#1ABC9C]/40 text-white shadow-md shadow-[#1ABC9C]/20 hover:shadow-lg hover:shadow-[#1ABC9C]/30"
                   >
                     ✈ Book a Flight
+                  </motion.button>
+
+                  {/* ✈️ Manage Booking — special action chip */}
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => {
+                      setManageBookingIntent('manage');
+                      setManageBookingMode(true);
+                    }}
+                    className="px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all bg-gradient-to-r from-teal-500 to-cyan-600 border-teal-400/40 text-white shadow-md shadow-teal-500/20 hover:shadow-lg hover:shadow-teal-500/30"
+                  >
+                    📋 Manage Booking
                   </motion.button>
 
                   {/* 🧬 DNA Search — special action chip */}
@@ -952,6 +996,10 @@ export default function FloatingAIAssistant({
             if (willClose && bookingMode) {
               setBookingMode(false);
               resetBookingFlow();
+            }
+            if (willClose && manageBookingMode) {
+              setManageBookingMode(false);
+              setManageBookingIntent(null);
             }
             setIsOpen(v => !v);
           }}

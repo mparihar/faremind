@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/store/useAdminStore';
 import { useAdminStore } from '@/store/useAdminStore';
@@ -114,7 +114,7 @@ export default function FailedBookingsPage() {
           </div>
           <div>
             <h1 className="text-2xl font-black text-white">Failed Bookings</h1>
-            <p className="text-slate-400 text-sm mt-0.5">
+            <p className="text-red-400 text-sm mt-0.5 font-bold">
               {total.toLocaleString()} failure record{total !== 1 ? 's' : ''}
               {resolvedFilter === 'false' && ' (unresolved)'}
               {resolvedFilter === 'true' && ' (resolved)'}
@@ -232,10 +232,9 @@ export default function FailedBookingsPage() {
                 const passengers = (() => { try { return JSON.parse(rec.passengersJson); } catch { return []; } })();
 
                 return (
-                  <> 
+                  <React.Fragment key={rec.id}>
                     {/* Main row */}
                     <tr
-                      key={rec.id}
                       className="hover:bg-white/[0.02] transition-colors cursor-pointer"
                       onClick={() => setExpandedId(isExpanded ? null : rec.id)}
                     >
@@ -493,7 +492,7 @@ export default function FailedBookingsPage() {
                         </td>
                       </tr>
                     )}
-                  </>
+                  </React.Fragment>
                 );
               })}
             </tbody>

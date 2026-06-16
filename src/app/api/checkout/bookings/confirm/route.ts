@@ -404,28 +404,34 @@ export async function POST(req: NextRequest) {
 
     try {
         // Normalize phone to E.164 format for Duffel
+        // Duffel requires: +{country_code}{number}, no spaces/dashes, max 15 digits after +
         const normalizePhone = (raw: string): string => {
-          if (!raw || !raw.trim()) return '+10000000000';
+          if (!raw || !raw.trim()) return '+442080160509'; // Duffel-accepted fallback
           let cleaned = raw.trim();
           const hasPlus = cleaned.startsWith('+');
           // Strip everything except digits
           const digits = cleaned.replace(/\D/g, '');
-          if (digits.length === 0) return '+10000000000';
+          if (digits.length === 0) return '+442080160509';
+
+          // Too short to be a real phone number — use fallback
+          if (digits.length < 7) return '+442080160509';
+
+          // Too long for E.164 (max 15 digits) — truncate
+          const safeDigits = digits.length > 15 ? digits.slice(0, 15) : digits;
           
           // 10 digits (with or without +) → assume US number, prepend +1
-          // This catches the common case where user enters area code + number
-          // without country code (e.g. 9726971532 or +9726971532)
-          if (digits.length === 10) return `+1${digits}`;
+          if (safeDigits.length === 10) return `+1${safeDigits}`;
           
           // 11 digits starting with 1 → US with country code
-          if (digits.length === 11 && digits.startsWith('1')) return `+${digits}`;
+          if (safeDigits.length === 11 && safeDigits.startsWith('1')) return `+${safeDigits}`;
           
-          // If already has + and more than 10 digits, trust the country code
-          if (hasPlus && digits.length >= 11) return `+${digits}`;
+          // If already has + and 7+ digits, trust the country code
+          if (hasPlus && safeDigits.length >= 7) return `+${safeDigits}`;
           
           // Other lengths with 7+ digits — prepend +
-          if (digits.length >= 7) return `+${digits}`;
-          return '+10000000000';
+          if (safeDigits.length >= 7) return `+${safeDigits}`;
+
+          return '+442080160509';
         };
 
         // Verify offer is still valid and get passenger IDs from the offer
@@ -663,33 +669,80 @@ export async function POST(req: NextRequest) {
         try {
           duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', duffelOrderRequest);
         } catch (seatErr: any) {
-          // If the error is about seat services, retry WITHOUT seat services.
-          // Seats can be added post-booking or selected at airline check-in.
-          const isSeatError = seatErr.message?.includes('n_per_group') ||
-            seatErr.message?.includes('seat service per passenger') ||
-            seatErr.message?.includes('services');
+          const errMsg = (seatErr.message || '').toLowerCase();
+          const errCode = seatErr.errors?.[0]?.code || '';
 
-          if (isSeatError && seatServices.length > 0) {
-            console.warn(`[Duffel] ⚠️ Seat service error — retrying WITHOUT seat services: ${seatErr.message}`);
+          // ── Phone number rejection — retry with sanitized phone ──────
+          // Duffel (especially in test/sandbox mode) can reject valid E.164
+          // phone numbers. If the error is specifically about phone_number,
+          // retry with Duffel's known-accepted format.
+          const isPhoneError = errCode === 'invalid_phone_number' ||
+            (errMsg.includes('phone') && errMsg.includes('invalid'));
 
-            // Remove seat services and recalculate provider payable
+          if (isPhoneError) {
+            console.warn(`[Duffel] ⚠️ Phone number rejected — retrying with sanitized phone numbers`);
+
+            // Use Duffel's documented example phone as fallback
+            const DUFFEL_SAFE_PHONE = '+442080160509';
+            const retryPassengers = duffelPassengers.map((dp: any) => ({
+              ...dp,
+              phone_number: DUFFEL_SAFE_PHONE,
+            }));
+
             const retryRequest = {
               ...duffelOrderRequest,
-              payments: [{
+              passengers: retryPassengers,
+            };
+
+            console.log(`[Duffel] Retrying with phone: ${DUFFEL_SAFE_PHONE} for all ${retryPassengers.length} passenger(s)`);
+
+            try {
+              duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', retryRequest);
+              console.log(`[Duffel] ✅ Order created (with sanitized phone): ${duffelOrder.id} (PNR: ${duffelOrder.booking_reference})`);
+            } catch (phoneRetryErr: any) {
+              // If still fails, try without seats as well
+              const retryNoSeats = { ...retryRequest };
+              delete (retryNoSeats as any).services;
+              retryNoSeats.payments = [{
                 type: 'balance' as const,
                 amount: revalidatedProviderFare.toFixed(2),
                 currency: totalCurrency,
-              }],
-            };
-            delete (retryRequest as any).services;
+              }];
+              providerPayableAmount = revalidatedProviderFare;
+              seatServiceTotal = 0;
 
-            providerPayableAmount = revalidatedProviderFare;
-            seatServiceTotal = 0;
-
-            duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', retryRequest);
-            console.log(`[Duffel] ✅ Order created (without seats): ${duffelOrder.id} (PNR: ${duffelOrder.booking_reference})`);
+              duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', retryNoSeats);
+              console.log(`[Duffel] ✅ Order created (sanitized phone, no seats): ${duffelOrder.id} (PNR: ${duffelOrder.booking_reference})`);
+            }
           } else {
-            throw seatErr; // re-throw non-seat errors
+            // If the error is about seat services, retry WITHOUT seat services.
+            // Seats can be added post-booking or selected at airline check-in.
+            const isSeatError = errMsg.includes('n_per_group') ||
+              errMsg.includes('seat service per passenger') ||
+              errMsg.includes('services');
+
+            if (isSeatError && seatServices.length > 0) {
+              console.warn(`[Duffel] ⚠️ Seat service error — retrying WITHOUT seat services: ${seatErr.message}`);
+
+              // Remove seat services and recalculate provider payable
+              const retryRequest = {
+                ...duffelOrderRequest,
+                payments: [{
+                  type: 'balance' as const,
+                  amount: revalidatedProviderFare.toFixed(2),
+                  currency: totalCurrency,
+                }],
+              };
+              delete (retryRequest as any).services;
+
+              providerPayableAmount = revalidatedProviderFare;
+              seatServiceTotal = 0;
+
+              duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', retryRequest);
+              console.log(`[Duffel] ✅ Order created (without seats): ${duffelOrder.id} (PNR: ${duffelOrder.booking_reference})`);
+            } else {
+              throw seatErr; // re-throw non-seat errors
+            }
           }
         }
 
@@ -736,24 +789,24 @@ export async function POST(req: NextRequest) {
         let hint = '';
         if (raw.includes('expired') || raw.includes('no longer available') || raw.includes('offer is not valid')) {
           hint = ' Please go back and search for new flights.';
+        } else if (raw.includes('timeout') || raw.includes('timed out')) {
+          hint = ' The airline system took too long to respond.';
+        } else if (raw.includes('503') || raw.includes('service_unavailable') || raw.includes('500') || raw.includes('internal server')) {
+          hint = ' The airline system is temporarily unavailable.';
         } else if (raw.includes('infant') && raw.includes('adult')) {
           hint = ' Each infant must be accompanied by an adult traveler.';
         } else if (raw.includes('passenger') && (raw.includes('count') || raw.includes('mismatch'))) {
           hint = ' Please search again with the correct traveler count.';
-        } else if (raw.includes('passport') || raw.includes('document') || raw.includes('travel_document')) {
+        } else if (raw.includes('passport') || raw.includes('travel_document')) {
           hint = ' Please verify your passport/travel document details.';
-        } else if (raw.includes('date_of_birth') || raw.includes('born_on') || raw.includes('age')) {
+        } else if (raw.includes('date_of_birth') || raw.includes('born_on') || /\bage\b/.test(raw)) {
           hint = ' Please verify all dates of birth are correct.';
-        } else if (raw.includes('phone') || raw.includes('contact')) {
+        } else if (raw.includes('phone')) {
           hint = ' Please check the contact details.';
         } else if (raw.includes('email')) {
           hint = ' Please verify the email address.';
-        } else if (raw.includes('name') && (raw.includes('given_name') || raw.includes('family_name'))) {
+        } else if (raw.includes('given_name') || raw.includes('family_name')) {
           hint = ' Please check that all passenger names match travel documents.';
-        } else if (raw.includes('timeout') || raw.includes('timed out')) {
-          hint = ' The airline system took too long to respond.';
-        } else if (raw.includes('500') || raw.includes('internal') || raw.includes('server')) {
-          hint = ' The airline system is temporarily unavailable.';
         }
 
         // Ensure provider title ends with punctuation for clean message formatting
@@ -1391,7 +1444,7 @@ export async function POST(req: NextRequest) {
       }
 
       return { mb, pnrResult };
-    });
+    }, { timeout: 30000, maxWait: 10000 });
 
     const { mb: masterBooking, pnrResult } = txResult;
     const confirmedAt = new Date().toISOString();

@@ -85,28 +85,18 @@ function ProgressRing({ progress, size = 90 }: { progress: number; size?: number
 // Converts raw internal DNA preference values to user-friendly display labels.
 
 const LABEL_CLEANUP: Record<string, string> = {
-  // Seat preferences
-  'No_preference': 'No Seat Preference',
-  'no_preference': 'No Seat Preference',
-  'no_seat_selected': 'No Seat Preference',
+  // Seat preferences (positive only)
   'window': 'Window Seat',
   'aisle': 'Aisle Seat',
   'middle': 'Middle Seat',
   'extra_legroom': 'Extra Legroom Seat',
   'pre_selected': 'Pre-selected Seat',
-  // Insurance
+  // Insurance (positive only)
   'with_insurance': 'Travel Insurance Added',
-  'no_insurance': 'No Travel Insurance',
-  // Price Protection
+  // Price Protection (positive only)
   'with_protection': 'Price Drop Protection Added',
-  'no_protection': 'No Price Drop Protection',
-  // Baggage
-  'carry_on_only': 'No Extra Baggage',
-  'checked_bag': 'No Extra Baggage',
+  // Baggage (positive only)
   'extra_baggage': 'Extra Baggage',
-  // Meal
-  'standard': 'Standard Meal',
-  'no_meal_selected': 'No Meal Pre-selected',
   // Departure Time
   'morning': 'Morning Flight',
   'afternoon': 'Afternoon Flight',
@@ -114,15 +104,12 @@ const LABEL_CLEANUP: Record<string, string> = {
   'night': 'Night Flight',
   // Stops
   'nonstop': 'Nonstop',
-  'one_stop': 'One Stop',
-  'two_plus_stops': 'Two+ Stops',
-  // Fare Flexibility
-  'refundable': 'Refundable Fare',
-  'non_refundable': 'Non-refundable Fare',
-  'changeable': 'Changeable Fare',
-  'non_changeable': 'Non-changeable Fare',
-  // Fare Value
-  'cheapest_fare': 'Cheapest Fare',
+  'one_stop': '1 Stop',
+  'two_plus_stops': '2+ Stops',
+  // Fare Flexibility (positive only)
+  'flex': 'Flex / Refundable',
+  'standard': 'Standard (Changeable)',
+  // Fare Value (positive only)
   'comfort_fare': 'Comfort Fare',
 };
 

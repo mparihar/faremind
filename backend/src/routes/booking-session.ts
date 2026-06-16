@@ -154,26 +154,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const remaining = getRemainingSeconds(expiresAt);
 
-      // Detailed audit — track how much of the Duffel window was consumed before checkout
-      const providerExpiry = offerExpiryTimestamp ? new Date(offerExpiryTimestamp) : null;
-      const providerRemainingMin = providerExpiry
-        ? Math.round((providerExpiry.getTime() - Date.now()) / 60000)
-        : null;
-      const configuredRemainingMin = Math.round(expiryMinutes);
-      const timeConsumedBeforeCheckout = providerExpiry
-        ? `${30 - (providerRemainingMin ?? 0)} min consumed browsing`
-        : 'N/A (no provider timestamp)';
 
-      console.log(`[OfferSession] ✅ Started session ${session.id} for ${providerOfferId}`);
-      console.log(`[OfferSession] 📋 Expiry audit:`, {
-        providerExpiresAt: offerExpiryTimestamp || 'none',
-        providerRemainingMin: providerRemainingMin !== null ? `${providerRemainingMin} min` : 'N/A',
-        configuredLimitMin: `${configuredRemainingMin} min`,
-        effectiveExpiresAt: expiresAt.toISOString(),
-        effectiveRemainingMin: `${Math.round(remaining / 60)} min (${remaining}s)`,
-        source: providerExpiry && providerExpiry.getTime() < configuredExpiry.getTime() ? 'PROVIDER (Duffel)' : 'ADMIN CONFIG',
-        timeConsumedBeforeCheckout,
-      });
+
 
       return reply.send({
         offerSessionId: session.id,
@@ -212,7 +194,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           where: { id },
           data: { status: 'EXPIRED', expiredAt: new Date() },
         });
-        console.log(`[OfferSession] ⏰ Session ${id} auto-expired`);
+
       }
 
       return reply.send({
@@ -244,7 +226,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         },
       });
 
-      console.log(`[OfferSession] ❌ Session ${id} manually expired`);
+
 
       return reply.send({
         offerSessionId: session.id,
@@ -271,7 +253,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         data: { status: 'BOOKED' },
       });
 
-      console.log(`[OfferSession] ✈️ Session ${id} marked BOOKED`);
+
 
       return reply.send({
         offerSessionId: session.id,

@@ -16,6 +16,40 @@ export function getAirlineLogo(code: string): string {
   return `https://images.kiwi.com/airlines/64/${code}.png`;
 }
 
+// IATA code → full airline name (covers major carriers seen in search results)
+const AIRLINE_NAMES: Record<string, string> = {
+  '6E': 'IndiGo', '9W': 'Jet Airways', AA: 'American Airlines', AC: 'Air Canada',
+  AF: 'Air France', AI: 'Air India', AK: 'AirAsia', AM: 'Aeroméxico',
+  AS: 'Alaska Airlines', AT: 'Royal Air Maroc', AY: 'Finnair', AZ: 'ITA Airways',
+  BA: 'British Airways', BG: 'Biman Bangladesh', BR: 'EVA Air', BX: 'Air Busan',
+  CA: 'Air China', CI: 'China Airlines', CM: 'Copa Airlines', CX: 'Cathay Pacific',
+  CZ: 'China Southern', DL: 'Delta Air Lines', EI: 'Aer Lingus', EK: 'Emirates',
+  ET: 'Ethiopian Airlines', EW: 'Eurowings', EY: 'Etihad Airways', FJ: 'Fiji Airways',
+  FR: 'Ryanair', GA: 'Garuda Indonesia', GF: 'Gulf Air', HA: 'Hawaiian Airlines',
+  HU: 'Hainan Airlines', IB: 'Iberia', IX: 'Air India Express', JL: 'Japan Airlines',
+  KE: 'Korean Air', KL: 'KLM', KU: 'Kuwait Airways', LA: 'LATAM Airlines',
+  LH: 'Lufthansa', LO: 'LOT Polish Airlines', LX: 'Swiss International Air Lines',
+  MH: 'Malaysia Airlines', MS: 'EgyptAir', MU: 'China Eastern', NH: 'ANA',
+  NK: 'Spirit Airlines', NZ: 'Air New Zealand', OK: 'Czech Airlines', OM: 'MIAT Mongolian',
+  OS: 'Austrian Airlines', OZ: 'Asiana Airlines', PC: 'Pegasus Airlines',
+  PG: 'Bangkok Airways', PK: 'PIA', PR: 'Philippine Airlines', PS: 'UIA',
+  QF: 'Qantas', QR: 'Qatar Airways', RJ: 'Royal Jordanian', RO: 'TAROM',
+  SA: 'South African Airways', SK: 'SAS', SN: 'Brussels Airlines', SQ: 'Singapore Airlines',
+  SU: 'Aeroflot', SV: 'Saudia', TG: 'Thai Airways', TK: 'Turkish Airlines',
+  TP: 'TAP Air Portugal', UA: 'United Airlines', UL: 'SriLankan Airlines',
+  UK: 'Vistara', UX: 'Air Europa', VA: 'Virgin Australia', VN: 'Vietnam Airlines',
+  VS: 'Virgin Atlantic', VY: 'Vueling', W6: 'Wizz Air', WN: 'Southwest Airlines',
+  WS: 'WestJet', WY: 'Oman Air', ZZ: 'Duffel Airways',
+  LW: 'Lufthansa CityLine', CL: 'Lufthansa CityLine', EN: 'Air Dolomiti',
+  '4Y': 'Eurowings Discover', '4U': 'Germanwings', SG: 'SpiceJet',
+  SWISS: 'SWISS', LF: 'Lufthansa', J2: 'Azerbaijan Airlines',
+};
+
+/** Resolve IATA code to full airline name. Falls back to the code itself. */
+export function getAirlineName(code: string): string {
+  return AIRLINE_NAMES[code] || code;
+}
+
 export function generateId(): string {
   return Math.random().toString(36).substr(2, 9) + Date.now().toString(36);
 }

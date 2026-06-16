@@ -11,9 +11,13 @@ import { prisma } from './db';
 // MASTER BOOKING LOOKUPS
 // ═══════════════════════════════════════════════
 
-/** Lookup by booking reference + last name (guest access) */
+/** Lookup by booking reference + last name (guest access).
+ *  Matches on masterBookingReference, masterPnr, airline PNR (pnrCode),
+ *  or providerOrderId so guests can look up via the PNR they received.
+ */
 export async function lookupMasterBooking(ref: string, lastName: string) {
-  const booking = await prisma.masterBooking.findFirst({
+  // Try direct master-level match first
+  let booking = await prisma.masterBooking.findFirst({
     where: {
       OR: [
         { masterBookingReference: ref },
@@ -26,6 +30,30 @@ export async function lookupMasterBooking(ref: string, lastName: string) {
       pnrs: true,
     },
   });
+
+  // If not found, search by airline PNR or provider order ID
+  if (!booking) {
+    const pnrMatch = await prisma.bookingPnr.findFirst({
+      where: {
+        OR: [
+          { pnrCode: ref },
+          { providerOrderId: ref },
+        ],
+      },
+      select: { bookingId: true },
+    });
+    if (pnrMatch) {
+      booking = await prisma.masterBooking.findUnique({
+        where: { id: pnrMatch.bookingId },
+        include: {
+          passengers: true,
+          journeys: { orderBy: { journeyOrder: 'asc' } },
+          pnrs: true,
+        },
+      });
+    }
+  }
+
   if (!booking) return null;
 
   // Verify last name matches at least one passenger

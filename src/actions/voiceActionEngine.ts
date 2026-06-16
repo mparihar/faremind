@@ -262,6 +262,30 @@ function typeLabel(type: string): string {
 // ─── Main function ──────────────────────────────────────────────────────────
 
 /**
+ * Collapse spaced-out characters from voice transcription.
+ * Speech-to-text sometimes returns single letters separated by spaces,
+ * e.g. "p a r i h a r" → "parihar".
+ */
+function collapseSpacedLetters(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  if (/^\S(\s\S)+$/.test(trimmed)) {
+    return trimmed.replace(/\s/g, '');
+  }
+  const parts = trimmed.split(/\s{2,}/);
+  if (parts.length > 1 && parts.every(p => /^\S(\s\S)+$/.test(p))) {
+    return parts.map(p => p.replace(/\s/g, '')).join(' ');
+  }
+  return trimmed;
+}
+
+// Fields where spaced-letter collapsing should be applied
+const COLLAPSE_FIELDS = new Set<string>([
+  'firstName', 'middleName', 'lastName', 'gender',
+  'nationality', 'passportCountry', 'passportNumber',
+]);
+
+/**
  * Apply voice-parsed passenger data to the checkout store.
  *
  * Does NOT overwrite existing non-empty fields unless `forceOverwrite` is true.
@@ -356,8 +380,11 @@ export function applyPassengerVoiceData(
     const newStr = String(newValue).trim();
     if (!newStr) continue;
 
+    // Collapse spaced-out letters from voice input (e.g. "p a r i h a r" → "parihar")
+    const collapsed = COLLAPSE_FIELDS.has(mapping.paramKey) ? collapseSpacedLetters(newStr) : newStr;
+
     const existingValue = String(passenger[mapping.passengerKey] ?? '').trim();
-    const transformedValue = mapping.transform ? mapping.transform(newStr) : newStr;
+    const transformedValue = mapping.transform ? mapping.transform(collapsed) : collapsed;
     const displayValue = mapping.displayTransform ? mapping.displayTransform(transformedValue) : transformedValue;
     const label = FIELD_LABELS[mapping.passengerKey] ?? mapping.passengerKey;
 

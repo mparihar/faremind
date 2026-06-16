@@ -35,9 +35,7 @@ const TRAIT_RULES: TraitRule[] = [
     traitName: 'Value Conscious Traveler',
     matchers: [
       { category: 'cabin', keys: ['economy'], weight: 1.2 },
-      { category: 'fare_value', keys: ['cheapest_fare'], weight: 1.5 },
-      { category: 'fare_flexibility', keys: ['basic'], weight: 1.0 },
-      { category: 'baggage', keys: ['no_extra_baggage', 'carry_on_only'], weight: 0.8 },
+      { category: 'fare_flexibility', keys: ['standard'], weight: 0.8 },
     ],
   },
 
@@ -92,13 +90,14 @@ const TRAIT_RULES: TraitRule[] = [
     ],
   },
 
-  // ─── Trait 8: Comfort Traveler ────────────────────────────────────────────
+  // ─── Trait 8: Comfort Seeker ──────────────────────────────────────────
   {
-    traitName: 'Comfort Traveler',
+    traitName: 'Comfort Seeker',
     matchers: [
       { category: 'cabin', keys: ['premium_economy', 'business', 'first'], weight: 1.5 },
       { category: 'fare_value', keys: ['comfort_fare'], weight: 1.3 },
       { category: 'seat', keys: ['window', 'aisle', 'extra_legroom', 'pre_selected'], weight: 0.8 },
+      { category: 'baggage', keys: ['extra_baggage'], weight: 0.7 },
     ],
   },
 
@@ -227,24 +226,17 @@ function labelToKey(label: string): string {
     'Pre-selected Seat': 'pre_selected',
     'No Seat Preference': 'no_seat_selected',
     'No Seat Pre-selected': 'no_seat_selected',
-    // Baggage
+    // Baggage (positive only)
     'Extra Baggage': 'extra_baggage',
-    'No Extra Baggage': 'no_extra_baggage',
-    'Carry-on Only': 'carry_on_only',
-    '1 Checked Bag': 'checked_bag',
-    // Fare Flexibility
+    // Fare Flexibility (positive only)
     'Flex / Refundable': 'flex',
     'Standard (Changeable)': 'standard',
-    'Basic (Non-refundable)': 'basic',
-    // Fare Value
-    'Cheapest Fare': 'cheapest_fare',
+    // Fare Value (positive only)
     'Comfort Fare': 'comfort_fare',
-    // Insurance
+    // Insurance (positive only)
     'Travel Insurance Added': 'with_insurance',
-    'No Travel Insurance': 'no_insurance',
-    // Price Protection
+    // Price Protection (positive only)
     'Price Drop Protection Added': 'with_protection',
-    'No Price Drop Protection': 'no_protection',
     // Meal
     'Standard Meal': 'standard',
     'No Meal Pre-selected': 'no_meal_selected',

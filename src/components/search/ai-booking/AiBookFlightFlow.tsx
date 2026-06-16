@@ -253,11 +253,15 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
     const roundTrip = resolveRoundTrip(flight.id);
     store.selectFlight(flight, roundTrip);
 
-    // Start offer expiry countdown timer
-    offerSession.startSession({
-      provider: flight.provider || 'faremind',
-      providerOfferId: flight.providerOfferId || flight.id,
-    });
+    // Update offer tracking — continue the existing timer from search page if active
+    const sessionState = useOfferSessionStore.getState();
+    const offerId = flight.providerOfferId || flight.id;
+    const provider = flight.provider || 'faremind';
+    if (sessionState.status === 'ACTIVE' || sessionState.status === 'WARNING') {
+      sessionState.updateTrackedOffer(offerId, provider);
+    } else {
+      offerSession.startSession({ provider, providerOfferId: offerId });
+    }
 
     // Fetch real fare options from the API
     setFareLoading(true);

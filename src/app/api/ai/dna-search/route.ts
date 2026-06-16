@@ -9,8 +9,13 @@ import {
   buildDnaCacheKey,
   getCachedDnaResult,
   setCachedDnaResult,
+  extractTopPreferences,
+  matchCardAgainstPreferences,
+  generateFallbackReasons,
+  serializeMatchedFactsForGpt,
   type DnaCardResult,
   type DnaSearchResult,
+  type MatchedPreferenceFact,
 } from '@/lib/services/dna-search-service';
 import { deriveTravelerTraits, serializeTraitsForGpt } from '@/lib/services/dna-traits-service';
 import type { UnifiedFlight } from '@/lib/types';
@@ -112,7 +117,7 @@ export async function POST(req: NextRequest) {
     return NextResponse.json(cached);
   }
 
-  // ── Derive Traveler Traits + Serialize for GPT ─────────────────────────
+  // ── Derive Traveler Traits + Extract Top Preferences ────────────────────
   const dnaConfig = await getTravelDnaConfig();
   const topN = dnaConfig.dnaSearchTopN ?? 30;
 
@@ -121,16 +126,63 @@ export async function POST(req: NextRequest) {
   const traitsText = serializeTraitsForGpt(travelerTraits);
   console.log(`[DNA Search] Derived ${travelerTraits.length} traits:`, travelerTraits.map(t => `${t.traitName}(${t.confidence}%)`).join(', '));
 
+  // ── Step 1: Extract top 12 strongest DNA preferences ─────────────────────
+  const topPrefs = extractTopPreferences(dnaContext.preferences, 12);
+
   const topCards = flights.slice(0, topN);
+
+  // ── Step 2: Match each card against top preferences deterministically ────
+  const cardMatchData: Array<{
+    cardId: string;
+    airlineName: string;
+    matchedFacts: MatchedPreferenceFact[];
+  }> = topCards.map(f => {
+    const first = f.segments[0];
+    const dep = first ? new Date(first.departure.time) : null;
+    const depHour = dep && !isNaN(dep.getTime()) ? dep.getHours() : 8;
+
+    const matched = matchCardAgainstPreferences({
+      id: f.id,
+      airlineCode: f.airline.code,
+      airlineName: f.airline.name,
+      stops: f.stops,
+      departureHour: depHour,
+      cabinClass: f.cabinClass,
+      baggageChecked: f.baggage.checked,
+      refundable: f.fareRules.refundable,
+      changeable: f.fareRules.changeable,
+    }, topPrefs);
+
+    return {
+      cardId: f.id,
+      airlineName: f.airline.name,
+      matchedFacts: matched,
+    };
+  });
+
+  // Log match summary
+  const matchSummary = cardMatchData.slice(0, 5).map(c =>
+    `${c.cardId.slice(0, 8)}...(${c.matchedFacts.length} matches: ${c.matchedFacts.map(f => f.preferenceKey).join(',')})`
+  );
+  console.log(`[DNA Search] Card match summary (first 5):`, matchSummary);
+
+  // ── Step 3: Build GPT prompt with matched facts ──────────────────────────
+  const traitNames = travelerTraits.map(t => t.traitName);
+  const matchedFactsPrompt = serializeMatchedFactsForGpt(cardMatchData, traitNames);
+
+  // Also include card flight details for dnaScore calculation
   const cardLines = topCards.map((f, i) => serializeCardForDna(f, i));
 
-  const userPrompt = `Traveler Traits:
-${traitsText}
+  const userPrompt = `${matchedFactsPrompt}
 
-Flight Match Factors (already AI-ranked, top ${topCards.length}):
+Flight card details (for dnaScore calculation, already AI-ranked, top ${topCards.length}):
 ${cardLines.join('\n')}
 
-For each flight card, assign a dnaScore (0-100) and provide exactly 3 concise, traveler-friendly matchReasons that explain why this flight matches the traveler's DNA traits. Do not use raw preference names.`;
+For each card:
+1. Assign a dnaScore (0-100) based on overall DNA alignment with the traveler traits.
+2. Rewrite ONLY the matchedPreferenceFacts for that card into natural, varied, traveler-friendly matchReasons.
+3. Do NOT invent reasons beyond the matched facts. If a card has 0 facts, return an empty matchReasons array.
+4. Ensure reasons use different wording across cards even when the same preference type matches.`;
 
   try {
     const provider = process.env.AI_PROVIDER || 'openai';
@@ -142,7 +194,7 @@ For each flight card, assign a dnaScore (0-100) and provide exactly 3 concise, t
       const response = await anthropicClient.messages.create({
         model,
         max_tokens: 4000,
-        temperature: 0.2,
+        temperature: 0.3,
         system: DNA_SEARCH_SYSTEM_PROMPT,
         messages: [{ role: 'user', content: userPrompt }],
       });
@@ -158,7 +210,7 @@ For each flight card, assign a dnaScore (0-100) and provide exactly 3 concise, t
           { role: 'user', content: userPrompt },
         ],
         response_format: { type: 'json_object' },
-        temperature: 0.2,
+        temperature: 0.3,
         max_tokens: 4000,
       });
       raw = completion.choices[0]?.message?.content ?? '{}';
@@ -175,6 +227,23 @@ For each flight card, assign a dnaScore (0-100) and provide exactly 3 concise, t
     // Validate — only keep results for cards that actually exist
     const validIds = new Set(topCards.map(f => f.id));
     const validGptCards = gptCards.filter(c => validIds.has(c.cardId));
+
+    // ── Fallback: For cards GPT missed, use deterministic reasons ──────────
+    const gptCardIds = new Set(validGptCards.map(c => c.cardId));
+    const matchDataMap = new Map(cardMatchData.map(c => [c.cardId, c]));
+
+    for (const card of topCards) {
+      if (gptCardIds.has(card.id)) continue;
+      const matchData = matchDataMap.get(card.id);
+      if (matchData && matchData.matchedFacts.length > 0) {
+        validGptCards.push({
+          cardId: card.id,
+          dnaScore: 50, // conservative score for GPT-missed cards
+          matchReasons: generateFallbackReasons(matchData.matchedFacts),
+          mismatchReasons: [],
+        });
+      }
+    }
 
     // Build AI score map from the cards
     const aiCards = topCards.map(f => ({
@@ -197,12 +266,40 @@ For each flight card, assign a dnaScore (0-100) and provide exactly 3 concise, t
     // Cache the result
     setCachedDnaResult(cacheKey, result);
 
-    console.log(`[DNA Search] Evaluated ${topCards.length} cards for user ${userId}, top DNA score: ${rankedResults[0]?.dnaScore ?? 0}`);
+    console.log(`[DNA Search] Evaluated ${topCards.length} cards for user ${userId}, top DNA score: ${rankedResults[0]?.dnaScore ?? 0}, GPT returned: ${gptCards.length}, fallback: ${validGptCards.length - gptCardIds.size}`);
 
     return NextResponse.json(result);
   } catch (err: unknown) {
+    // ── Complete GPT failure — use deterministic fallback for all cards ────
     const msg = err instanceof Error ? err.message : 'DNA Search error';
-    console.error('[ai/dna-search] error:', msg);
-    return NextResponse.json({ error: msg }, { status: 500 });
+    console.error('[ai/dna-search] GPT error, using deterministic fallback:', msg);
+
+    const fallbackCards: DnaCardResult[] = cardMatchData.map(c => ({
+      cardId: c.cardId,
+      dnaScore: Math.min(100, Math.max(0, c.matchedFacts.length * 15 + 25)),
+      matchReasons: generateFallbackReasons(c.matchedFacts),
+      mismatchReasons: [],
+    }));
+
+    const aiCards = topCards.map(f => ({
+      cardId: f.id,
+      aiScore: f.valueScore,
+      providerOfferId: (f as any).providerOfferId,
+    }));
+
+    const rankedResults = computeHybridScores(aiCards, fallbackCards);
+
+    const result: DnaSearchResult = {
+      eligible: true,
+      results: rankedResults,
+      searchSessionId: sessionId,
+      cached: false,
+      dnaSearchTopN: topN,
+    };
+
+    setCachedDnaResult(cacheKey, result);
+    console.log(`[DNA Search] Fallback mode: ${topCards.length} cards evaluated with deterministic reasons`);
+
+    return NextResponse.json(result);
   }
 }

@@ -58,7 +58,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         tripType: trip === 'round_trip' ? 'ROUND_TRIP' : 'ONE_WAY',
         resultsCount: mergedFlights.length, lowestPrice, currency: 'USD',
         searchDurationMs: totalTimeMs,
-      }).catch((err) => console.warn('[Search] Log failed:', err.message));
+      }).catch(() => {});
 
       let rankedFlights = mergedFlights;
 
@@ -127,7 +127,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       await cacheSet(cacheKey, response, 120);
       return response;
     } catch (error) {
-      console.error('[Search] Critical error:', error);
       reply.code(500).send({ error: 'Search failed. Please try again.' });
     }
   });

@@ -5,10 +5,10 @@ import { rankFlightOffers } from '@/lib/ai-scoring';
 import { applyMarkupToOffers, applyMarkupToRoundTripOptions } from '@/lib/services/markup-service';
 import type { AiUserPreferences, WeightPresetName, AiSortMode } from '@/lib/ai-scoring/types';
 import type { RoundTripUserPrefs } from '@/lib/round-trip-types';
-import { flexCacheKey, flexCacheGet } from '@/lib/flex-search-cache';
 import { prisma } from '@/lib/db';
 import { getTravelDnaForRecommendation } from '@/lib/services/travel-dna-service';
 import type { TravelDnaRecommendationContext } from '@/lib/services/travel-dna-service';
+import { flexCacheKey, flexCacheSet } from '@/lib/flex-search-cache';
 
 export const maxDuration = 120; // Allow up to 2 minutes for search
 
@@ -58,18 +58,21 @@ export async function GET(request: NextRequest) {
 
     // ── Round-trip path ──────────────────────────────────────────────────────
     if (trip === 'round_trip' && returnDate) {
-      // Check if flex-price strip already fetched results for this exact tile.
-      // If so, reuse that dataset so the cheapest card matches the tile price.
-      const cachedOptions = flexCacheGet(flexCacheKey(origin!, destination!, date!, returnDate, adults, cabin));
-      const rtResult = cachedOptions
-        ? { options: cachedOptions, totalTimeMs: 0, searchId: 'cached', usedMockData: false, providers: [] }
-        : await searchRoundTripFlights({
+      // Always perform a fresh search — no cache reuse
+      const rtResult = await searchRoundTripFlights({
             origin: origin!, destination: destination!,
             date: date!, returnDate, adults, children, infants, cabin,
           });
 
       // ── Apply internal markup before AI ranking ──────────────────────────
       await applyMarkupToRoundTripOptions(rtResult.options);
+
+      // Cache round-trip results so the flex date strip gets an instant hit
+      // for the center tile instead of making a redundant search.
+      if (rtResult.options.length > 0) {
+        const fKey = flexCacheKey(origin!, destination!, date!, returnDate, adults, cabin);
+        flexCacheSet(fKey, rtResult.options);
+      }
 
       // ── Unified AI Ranking (ROUND_TRIP) ───────────────────────────────────
       const rtAiPrefs: AiUserPreferences = {
@@ -116,7 +119,7 @@ export async function GET(request: NextRequest) {
         tripType: 'ROUND_TRIP', resultsCount: allRankedRT.length,
         lowestPrice: allRankedRT[0]?.totalPrice, currency: allRankedRT[0]?.currency ?? 'USD',
         searchDurationMs: rtResult.totalTimeMs,
-      }).catch((e) => console.warn('[RT Search] log failed:', e.message));
+      }).catch(() => {});
       const providerStatus = getProviderStatus();
       return NextResponse.json({
         roundTripOptions: allRankedRT,
@@ -130,6 +133,8 @@ export async function GET(request: NextRequest) {
           providerStatus: {
             duffel: providerStatus.duffel.configured ? 'connected' : 'not_configured',
             amadeus: providerStatus.amadeus.configured ? 'connected' : 'not_configured',
+            mystifly: providerStatus.mystifly?.configured ? 'connected' : 'not_configured',
+            providerMode: providerStatus.providerMode || 'BOTH',
           },
           rankingMetadata: rtRankResult.metadata,
         },
@@ -177,7 +182,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (backendFlights.length === 0) {
-      console.log('[Search] Using local orchestrator fallback for one-way search');
+
       try {
         const localResult = await searchFlights({
           origin: origin!, destination: destination!,
@@ -194,12 +199,6 @@ export async function GET(request: NextRequest) {
       }
     }
 
-    // Log what cabin classes actually came back
-    const cabinBreakdown: Record<string, number> = {};
-    backendFlights.forEach((f: any) => {
-      cabinBreakdown[f.cabinClass] = (cabinBreakdown[f.cabinClass] || 0) + 1;
-    });
-    console.log(`[Search] ${origin}→${destination} | ${backendFlights.length} flights | cabins:`, cabinBreakdown);
 
     // ── Apply internal markup before AI ranking ──────────────────────────
     await applyMarkupToOffers(backendFlights);
@@ -256,7 +255,7 @@ export async function GET(request: NextRequest) {
       adults, children, infants, cabinClass: cabin.toUpperCase() as any,
       tripType: 'ONE_WAY', resultsCount: rankedFlights.length,
       lowestPrice, currency: 'USD', searchDurationMs: backendMeta.totalTimeMs || 0,
-    }).catch((err) => console.warn('[Search] Failed to log search:', err.message));
+    }).catch(() => {});
 
     // Build class counts for the filter panel
     const classCounts: Record<string, { count: number; minPrice: number }> = {};
@@ -282,6 +281,8 @@ export async function GET(request: NextRequest) {
         providerStatus: {
           duffel: providerStatus.duffel.configured ? 'connected' : 'not_configured',
           amadeus: providerStatus.amadeus.configured ? 'connected' : 'not_configured',
+          mystifly: providerStatus.mystifly?.configured ? 'connected' : 'not_configured',
+          providerMode: providerStatus.providerMode || 'BOTH',
         },
         filters: { classes: classCounts },
         rankingMetadata: rankResult.metadata,

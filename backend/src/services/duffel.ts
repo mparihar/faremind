@@ -351,10 +351,7 @@ export async function searchFlights(params: DuffelSearchParams): Promise<DuffelO
     retries: 1, // Offer requests can be slow, don't over-retry
   });
 
-  const offers = offerRequest.offers || [];
-  console.log(`[Duffel] Search ${params.origin}→${params.destination}: ${offers.length} offers returned`);
-
-  return offers;
+  return offerRequest.offers || [];
 }
 
 /**
@@ -455,7 +452,6 @@ export async function createBooking(params: DuffelBookingParams): Promise<Duffel
     retries: 0, // Never retry a payment
   });
 
-  console.log(`[Duffel] ✅ Order created: ${order.id} (PNR: ${order.booking_reference})`);
   return order;
 }
 
@@ -508,16 +504,12 @@ export async function cancelBooking(orderId: string): Promise<{
     body: { order_id: orderId } as Record<string, unknown>,
   });
 
-  console.log(`[Duffel] Cancellation quote: ${cancellation.refund_amount} ${cancellation.refund_currency} (expires: ${cancellation.expires_at})`);
-
   // Step 2: Confirm cancellation
   const confirmed = await duffelRequest<DuffelCancellation>({
     method: 'POST',
     path: `/air/order_cancellations/${cancellation.id}/actions/confirm`,
     retries: 0, // Don't retry cancellation confirmation
   });
-
-  console.log(`[Duffel] ✅ Cancellation confirmed: ${confirmed.id}`);
 
   return {
     cancellation: confirmed,
@@ -581,7 +573,6 @@ export async function createCancellationQuote(orderId: string): Promise<DuffelCa
     body: { order_id: orderId } as Record<string, unknown>,
   });
 
-  console.log(`[Duffel] Cancellation quote created: ${cancellation.id} — refund ${cancellation.refund_amount} ${cancellation.refund_currency}`);
   return cancellation;
 }
 
@@ -595,7 +586,6 @@ export async function confirmCancellation(cancellationId: string): Promise<Duffe
     retries: 0,
   });
 
-  console.log(`[Duffel] ✅ Cancellation confirmed: ${confirmed.id}`);
   return confirmed;
 }
 
@@ -709,8 +699,6 @@ export async function createOrderChangeRequest(
     retries: 1,
   });
 
-  const offerCount = result.order_change_offers?.length ?? 0;
-  console.log(`[Duffel] Order change request created: ${result.id} — ${offerCount} offers available`);
   return result;
 }
 
@@ -753,7 +741,6 @@ export async function createOrderChange(
     retries: 0, // Never retry payment operations
   });
 
-  console.log(`[Duffel] Order change created: ${result.id}`);
   return result;
 }
 
@@ -767,7 +754,6 @@ export async function confirmOrderChange(changeId: string): Promise<OrderChange>
     retries: 0,
   });
 
-  console.log(`[Duffel] ✅ Order change confirmed: ${result.id}`);
   return result;
 }
 

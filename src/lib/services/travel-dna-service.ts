@@ -386,7 +386,7 @@ function extractBookingPreferences(booking: any): ExtractedPreference[] {
     }
   }
 
-  // Seat Preference
+  // Seat Preference — only track if user actively selected a seat
   const seats = booking.seats || [];
   if (seats.length > 0) {
     for (const seat of seats) {
@@ -403,38 +403,39 @@ function extractBookingPreferences(booking: any): ExtractedPreference[] {
         prefs.push({ category: 'seat', key: 'pre_selected', label: 'Pre-selected Seat' });
       }
     }
-  } else {
-    prefs.push({ category: 'seat', key: 'no_seat_selected', label: 'No Seat Preference' });
   }
+  // No seats selected → don't track (absence = 0 score by omission)
 
-  // Baggage Preference — binary: Extra Baggage or No Extra Baggage
+  // Baggage Preference — track Checked Baggage (included in fare) separately from Extra Baggage (purchased on top)
   const checkedBags = (booking.baggage || []).filter(
     (b: any) => b.baggageType === 'checked' && b.quantity > 0
   );
   if (checkedBags.length > 0) {
-    // Any checked bag with a price > 0 is a purchased extra bag
-    const hasPaidBag = checkedBags.some((b: any) => parseFloat(b.baggagePrice || '0') > 0);
-    const totalQty = checkedBags.reduce((sum: number, b: any) => sum + (b.quantity || 1), 0);
-    if (hasPaidBag || totalQty > 1) {
-      prefs.push({ category: 'baggage', key: 'extra_baggage', label: 'Extra Baggage' });
-    } else {
-      prefs.push({ category: 'baggage', key: 'no_extra_baggage', label: 'No Extra Baggage' });
-    }
-  } else {
-    prefs.push({ category: 'baggage', key: 'no_extra_baggage', label: 'No Extra Baggage' });
-  }
+    const includedBags = checkedBags.filter((b: any) => parseFloat(b.baggagePrice || '0') === 0);
+    const paidBags = checkedBags.filter((b: any) => parseFloat(b.baggagePrice || '0') > 0);
 
-  // Travel Insurance Preference
+    // Checked Baggage = fare includes checked bags (no extra cost)
+    if (includedBags.length > 0) {
+      prefs.push({ category: 'baggage', key: 'checked_baggage', label: 'Checked Baggage' });
+    }
+
+    // Extra Baggage = user purchased additional bags on top of what's included
+    if (paidBags.length > 0) {
+      prefs.push({ category: 'baggage', key: 'extra_baggage', label: 'Extra Baggage' });
+    }
+  }
+  // No checked baggage → don't track (absence = 0 score by omission)
+
+  // Travel Insurance Preference — only track if user actively added insurance
   const hasInsurance = (booking.addons || []).some(
     (a: any) => a.addonType?.toLowerCase().includes('insurance') || a.addonName?.toLowerCase().includes('insurance')
   );
-  prefs.push({
-    category: 'insurance',
-    key: hasInsurance ? 'with_insurance' : 'no_insurance',
-    label: hasInsurance ? 'Travel Insurance Added' : 'No Travel Insurance',
-  });
+  if (hasInsurance) {
+    prefs.push({ category: 'insurance', key: 'with_insurance', label: 'Travel Insurance Added' });
+  }
+  // No insurance → don't track (absence = 0 score by omission)
 
-  // Price Drop Protection Preference
+  // Price Drop Protection Preference — only track if user actively added protection
   const hasPriceProtection = (booking.addons || []).some(
     (a: any) =>
       a.addonType?.toLowerCase().includes('price') ||
@@ -442,13 +443,12 @@ function extractBookingPreferences(booking: any): ExtractedPreference[] {
       a.addonName?.toLowerCase().includes('price') ||
       a.addonName?.toLowerCase().includes('protection')
   );
-  prefs.push({
-    category: 'price_protection',
-    key: hasPriceProtection ? 'with_protection' : 'no_protection',
-    label: hasPriceProtection ? 'Price Drop Protection Added' : 'No Price Drop Protection',
-  });
+  if (hasPriceProtection) {
+    prefs.push({ category: 'price_protection', key: 'with_protection', label: 'Price Drop Protection Added' });
+  }
+  // No price protection → don't track (absence = 0 score by omission)
 
-  // Meal Preference
+  // Meal Preference — only track if user actively selected a specific meal
   const meals = booking.meals || [];
   if (meals.length > 0) {
     const mealSeen = new Set<string>();
@@ -460,22 +460,25 @@ function extractBookingPreferences(booking: any): ExtractedPreference[] {
         prefs.push({ category: 'meal', key: mealCode.toLowerCase(), label: `${label} Meal` });
       }
     }
-    if (mealSeen.size === 0) {
-      prefs.push({ category: 'meal', key: 'standard', label: 'Standard Meal' });
+    // If only standard meals selected, track that as a positive preference
+    if (mealSeen.size === 0 && meals.length > 0) {
+      // Check if meals were explicitly pre-selected (not just default)
+      const hasExplicitMeal = meals.some((m: any) => m.mealCode && m.mealCode !== 'NONE');
+      if (hasExplicitMeal) {
+        prefs.push({ category: 'meal', key: 'standard', label: 'Standard Meal' });
+      }
     }
-  } else {
-    prefs.push({ category: 'meal', key: 'no_meal_selected', label: 'No Meal Pre-selected' });
   }
+  // No meal data → don't track (absence = 0 score by omission)
 
-  // Fare Flexibility Preference
+  // Fare Flexibility Preference — only track positive flexibility, not basic
   for (const pnr of booking.pnrs || []) {
     if (pnr.refundable && pnr.changeable) {
       prefs.push({ category: 'fare_flexibility', key: 'flex', label: 'Flex / Refundable' });
     } else if (pnr.changeable) {
       prefs.push({ category: 'fare_flexibility', key: 'standard', label: 'Standard (Changeable)' });
-    } else {
-      prefs.push({ category: 'fare_flexibility', key: 'basic', label: 'Basic (Non-refundable)' });
     }
+    // Basic (Non-refundable) → don't track (absence of flexibility = 0 score)
   }
 
   // Travel Party Pattern
@@ -491,8 +494,8 @@ function extractBookingPreferences(booking: any): ExtractedPreference[] {
     prefs.push({ category: 'booking_window', key: windowBucket.key, label: windowBucket.label });
   }
 
-  // Fare Value Preference — Cheapest Fare vs Comfort Fare
-  // Count comfort signals from the booking to determine fare value preference
+  // Fare Value Preference — only track Comfort Fare (positive preference)
+  // Count comfort signals from the booking
   let comfortSignals = 0;
   // 1. Non-economy cabin = comfort
   const cabinRaw = (booking.cabinClass || booking.cabin || '').toLowerCase();
@@ -515,14 +518,36 @@ function extractBookingPreferences(booking: any): ExtractedPreference[] {
   );
   if (hasSelectedSeat) comfortSignals++;
 
-  // 2+ comfort signals = Comfort Fare, otherwise = Cheapest Fare
+  // 2+ comfort signals = Comfort Fare preference tracked
   if (comfortSignals >= 2) {
     prefs.push({ category: 'fare_value', key: 'comfort_fare', label: 'Comfort Fare' });
-  } else {
-    prefs.push({ category: 'fare_value', key: 'cheapest_fare', label: 'Cheapest Fare' });
   }
+  // Cheapest Fare → don't track (absence of comfort = 0 score by omission)
 
-  return prefs;
+  // ── CRITICAL: Filter out ALL negative/null preferences ──────────────────
+  // Items like "No Preference", "No Seat", "No Meal", "No Insurance", etc.
+  // are NOT real user preferences — they represent the ABSENCE of a feature
+  // or the airline not offering something. Never store these.
+  const NEGATIVE_KEYS = new Set([
+    'no_preference', 'no_seat_selected', 'no_seat_preference',
+    'no_meal_selected', 'no_meal',
+    'no_insurance', 'no_travel_insurance',
+    'no_protection', 'no_price_protection',
+    'no_baggage', 'no_extra_baggage', 'carry_on_only',
+    'none', 'unknown', 'not_selected',
+  ]);
+
+  return prefs.filter(p => {
+    const keyLower = p.key.toLowerCase();
+    const labelLower = p.label.toLowerCase();
+    // Reject if key is in the negative set
+    if (NEGATIVE_KEYS.has(keyLower)) return false;
+    // Reject if label starts with "No " (e.g., "No Preference", "No Seat Preference")
+    if (labelLower.startsWith('no ')) return false;
+    // Reject if label contains "not selected" or "not offered"
+    if (labelLower.includes('not selected') || labelLower.includes('not offered')) return false;
+    return true;
+  });
 }
 
 // ── Calculate Scores ─────────────────────────────────────────────────────────

@@ -45,6 +45,8 @@ interface OfferSessionStore {
   tick: () => void;
   markExpired: () => void;
   markBooked: () => void;
+  /** Update the tracked offer ID without restarting the timer countdown */
+  updateTrackedOffer: (providerOfferId: string, provider?: string) => void;
   clearSession: () => void;
   setWarningShown: () => void;
   setCriticalWarningShown: () => void;
@@ -249,6 +251,19 @@ export const useOfferSessionStore = create<OfferSessionStore>((set, get) => ({
 
     // Clear sessionStorage
     try { sessionStorage.removeItem(STORAGE_KEY); } catch {}
+  },
+
+  updateTrackedOffer: (providerOfferId, provider) => {
+    const state = get();
+    // Only update if there's an active session — don't start a new one
+    if (state.status === 'IDLE' || state.status === 'EXPIRED') return;
+    // Update the tracked offer ID without touching the timer/expiry
+    set({
+      providerOfferId,
+      ...(provider ? { provider } : {}),
+    });
+    get().persistToStorage();
+    console.log(`[OfferSession] Updated tracked offer → ${providerOfferId} (timer unchanged: ${state.remainingSeconds}s remaining)`);
   },
 
   clearSession: () => {

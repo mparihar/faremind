@@ -2,6 +2,7 @@
 
 import { motion } from 'framer-motion';
 import { Clock, Armchair, ChevronRight, Sparkles, Tag, Zap, Check, X } from 'lucide-react';
+import { useAiRecommendationLimit } from '@/hooks/useAiRecommendationLimit';
 import { cn, formatDuration, formatTime, formatPrice, getStopsLabel, getAirlineLogo } from '@/lib/utils';
 import type { UnifiedFlight } from '@/lib/types';
 
@@ -23,6 +24,7 @@ interface FlightCardProps {
 }
 
 export default function FlightCard({ flight, index, isCompact, onSelect, scoreOverride, aiReasons, isAiHighlighted, aiBadge, dnaScore, dnaMatchLabel, dnaMatchReasons, dnaMismatchReasons, finalDnaScore }: FlightCardProps) {
+  const aiRecLimit = useAiRecommendationLimit();
   const firstSeg = flight.segments[0];
   const lastSeg  = flight.segments[flight.segments.length - 1];
 
@@ -259,7 +261,7 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
         )}
 
         {/* AI reasoning bullets */}
-        {aiReasons && aiReasons.length > 0 && !isCompact && index < 25 && (
+        {aiReasons && aiReasons.length > 0 && !isCompact && index < aiRecLimit && (
           <div className="mt-2.5 px-3 py-2.5 rounded-xl bg-[#1ABC9C]/6 border border-[#1ABC9C]/20 space-y-1">
             <p className="flex items-center gap-1.5 text-[10px] font-bold text-[#1ABC9C] uppercase tracking-wider mb-1.5">
               <Sparkles className="w-3 h-3" /> Why FAREMIND AI recommends this
@@ -293,7 +295,7 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
             <p className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1.5">
               <span className="font-black">DNA</span> Why this matches your DNA
             </p>
-            {dnaMatchReasons.slice(0, 3).map((reason, i) => (
+            {dnaMatchReasons.slice(0, 5).map((reason, i) => (
               <div key={i} className="flex items-start gap-1.5">
                 <Check className="w-3 h-3 text-emerald-500 shrink-0 mt-0.5" />
                 <span className="text-[11px] leading-relaxed text-slate-600">{reason}</span>

@@ -279,7 +279,6 @@ class MystiflyAuthService {
   private async createSession(): Promise<string> {
     const url = `${MYSTIFLY_API_URL}/api/CreateSession`;
 
-    console.log('[Mystifly] Creating new session...');
 
     const response = await fetch(url, {
       method: 'POST',
@@ -325,10 +324,6 @@ class MystiflyAuthService {
 
     this.token = sessionId;
     this.tokenExpiry = Date.now() + this.TOKEN_TTL_MS;
-
-    // Mask the token in logs for security
-    const masked = sessionId.substring(0, 8) + '***';
-    console.log(`[Mystifly] ✅ Session created: ${masked} (expires in 25m)`);
 
     return sessionId;
   }
@@ -533,9 +528,6 @@ export async function searchFlights(params: MystiflySearchParams): Promise<any> 
     retries: 1, // Search can be slow
   });
 
-  const itineraryCount = result?.Data?.PricedItineraries?.length || 0;
-  console.log(`[Mystifly] Search ${params.origin}→${params.destination}: ${itineraryCount} itineraries returned`);
-
   return result;
 }
 
@@ -557,7 +549,6 @@ export async function revalidateFlight(fareSourceCode: string): Promise<any> {
     },
   });
 
-  console.log(`[Mystifly] Revalidation complete for FSC: ${fareSourceCode.substring(0, 20)}...`);
   return result;
 }
 
@@ -607,14 +598,6 @@ export async function bookFlight(params: MystiflyBookParams): Promise<any> {
     retries: 0, // Never retry booking operations
   });
 
-  const uniqueId = result?.Data?.UniqueID || result?.UniqueID;
-  if (uniqueId) {
-    console.log(`[Mystifly] ✅ Booking created: ${uniqueId}`);
-  } else {
-    const errMsg = result?.Data?.Error?.ErrorMessage || 'Unknown booking error';
-    console.error(`[Mystifly] ❌ Booking failed: ${errMsg}`);
-  }
-
   return result;
 }
 
@@ -647,7 +630,6 @@ export async function orderTicket(
     retries: 0, // Never retry ticketing
   });
 
-  console.log(`[Mystifly] OrderTicket for ${uniqueId}: ${result?.Data?.Success ? '✅ Success' : '❌ Failed'}`);
   return result;
 }
 
@@ -671,7 +653,6 @@ export async function cancelBooking(uniqueId: string): Promise<any> {
     retries: 0, // Never retry cancellations
   });
 
-  console.log(`[Mystifly] Cancel ${uniqueId}: ${result?.Data?.Success ? '✅ Cancelled' : '❌ Failed'}`);
   return result;
 }
 

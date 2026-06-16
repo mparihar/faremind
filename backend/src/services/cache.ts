@@ -1,69 +1,60 @@
 /**
- * Redis cache service — gracefully no-ops when REDIS_URL is not set.
- * All cache misses fall through to live data; the app works without Redis.
+ * Lightweight in-memory TTL cache.
+ *
+ * Replaces the previous ioredis-based implementation to eliminate:
+ *  - ioredis library loading overhead (~50ms)
+ *  - Connection attempt delays when REDIS_URL is absent
+ *  - Debug logging on every hit/miss
+ *
+ * Perfectly adequate for a single-process Fastify backend.
+ * All cache misses fall through to live data.
  */
 
-import Redis from 'ioredis';
+interface CacheEntry { value: string; expiresAt: number; }
 
-let _redis: Redis | null = null;
+const store = new Map<string, CacheEntry>();
 
-function getRedis(): Redis | null {
-  if (!process.env.REDIS_URL) return null;
-  if (_redis) return _redis;
+// Lazy cleanup — runs at most every 60s to evict expired entries
+let lastCleanup = Date.now();
+const CLEANUP_INTERVAL = 60_000;
 
-  _redis = new Redis(process.env.REDIS_URL, {
-    lazyConnect: true,
-    maxRetriesPerRequest: 2,
-    connectTimeout: 3_000,
-    commandTimeout: 2_000,
-    enableReadyCheck: false,
-  });
-
-  _redis.on('error', (err: Error) => {
-    // Log once; don't crash the server on Redis failures
-    console.warn('[Cache] Redis error:', err.message);
-  });
-
-  return _redis;
-}
-
-export async function cacheGet<T>(key: string): Promise<T | null> {
-  const r = getRedis();
-  if (!r) return null;
-  try {
-    const raw = await r.get(key);
-    if (!raw) return null;
-    console.debug(`[Cache] HIT ${key}`);
-    return JSON.parse(raw) as T;
-  } catch {
-    console.debug(`[Cache] MISS ${key}`);
-    return null;
+function maybeCleanup(): void {
+  const now = Date.now();
+  if (now - lastCleanup < CLEANUP_INTERVAL) return;
+  lastCleanup = now;
+  for (const [k, v] of store) {
+    if (v.expiresAt <= now) store.delete(k);
   }
 }
 
+export async function cacheGet<T>(key: string): Promise<T | null> {
+  const entry = store.get(key);
+  if (!entry) return null;
+  if (entry.expiresAt <= Date.now()) {
+    store.delete(key);
+    return null;
+  }
+  return JSON.parse(entry.value) as T;
+}
+
 export async function cacheSet(key: string, value: unknown, ttlSec = 120): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  try {
-    await r.set(key, JSON.stringify(value), 'EX', ttlSec);
-  } catch { /* non-critical — live data will still be returned */ }
+  maybeCleanup();
+  store.set(key, {
+    value: JSON.stringify(value),
+    expiresAt: Date.now() + ttlSec * 1000,
+  });
 }
 
 export async function cacheDel(...keys: string[]): Promise<void> {
-  const r = getRedis();
-  if (!r || keys.length === 0) return;
-  try {
-    await r.del(...keys);
-  } catch { /* non-critical */ }
+  for (const k of keys) store.delete(k);
 }
 
 export async function cacheDelPattern(pattern: string): Promise<void> {
-  const r = getRedis();
-  if (!r) return;
-  try {
-    const keys = await r.keys(pattern);
-    if (keys.length > 0) await r.del(...keys);
-  } catch { /* non-critical */ }
+  // Convert simple glob pattern (e.g. "flight_search:*") to a prefix match
+  const prefix = pattern.replace(/\*.*$/, '');
+  for (const k of store.keys()) {
+    if (k.startsWith(prefix)) store.delete(k);
+  }
 }
 
 // ─── Cache key builders ───────────────────────────────────────────────────────

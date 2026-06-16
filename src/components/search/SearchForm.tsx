@@ -23,6 +23,7 @@ import {
 import { cn, getTomorrow, getNextWeek } from '@/lib/utils';
 import { AIRPORTS } from '@/lib/mock-data';
 import { useSearchStore } from '@/store/useSearchStore';
+import { useOfferSessionStore } from '@/store/useOfferSessionStore';
 import { usePreferencesStore } from '@/store/usePreferencesStore';
 import type { CabinClass, TripType } from '@/lib/types';
 import SmartPreferencesBar from '@/components/search/SmartPreferencesBar';
@@ -266,6 +267,9 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
   };
 
   const handleSearch = () => {
+    // Immediately clear offer session timer — stops the clock on new search
+    useOfferSessionStore.getState().clearSession();
+
     const hasOriginError = origin.trim().length > 0 && !originCode;
     const hasDestError = destination.trim().length > 0 && !destCode;
     setOriginError(hasOriginError || (!originCode && !origin.trim()));
@@ -345,6 +349,8 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
           tripType: vd.tripType,
         };
         setQuery(query);
+        // Clear offer session timer immediately for voice-triggered search too
+        useOfferSessionStore.getState().clearSession();
         setLoading(true);
 
         const params = new URLSearchParams({

@@ -129,6 +129,7 @@ Rules:
 - For "primary contact" or "contact details", use FILL_PRIMARY_CONTACT
 - For phone numbers, extract country code (e.g. "+1") and local number separately
 - If the user says "update" or "change", they intend to overwrite existing values
+- IMPORTANT: Names and text values must NEVER have spaces between individual letters. If the transcript spells out letters separately (e.g. "P A R I H A R"), collapse them into a single word (e.g. "Parihar"). Always return proper words, not spaced-out letters.
 
 If traveler target is unclear, return:
 {
@@ -211,6 +212,25 @@ function maskPassport(pp: unknown): string {
 const VALID_CABIN = new Set(['ECONOMY', 'PREMIUM_ECONOMY', 'BUSINESS', 'FIRST']);
 const VALID_TRIP = new Set(['ROUND_TRIP', 'ONE_WAY']);
 const VALID_GENDER = new Set(['male', 'female', 'other']);
+
+/**
+ * Collapse spaced-out characters from voice transcription.
+ * Speech-to-text sometimes returns single letters separated by spaces,
+ * e.g. "p a r i h a r" → "parihar".
+ */
+function collapseSpacedLetters(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  if (/^\S(\s\S)+$/.test(trimmed)) {
+    return trimmed.replace(/\s/g, '');
+  }
+  // Multi-word: "M o h a n   P a r i h a r" → "Mohan Parihar"
+  const parts = trimmed.split(/\s{2,}/);
+  if (parts.length > 1 && parts.every(p => /^\S(\s\S)+$/.test(p))) {
+    return parts.map(p => p.replace(/\s/g, '')).join(' ');
+  }
+  return trimmed;
+}
 
 // ─── Plugin ─────────────────────────────────────────────────────────────────
 
@@ -367,10 +387,16 @@ async function handlePassengerParse(
   // Normalize passenger params
   const normalizedParams: Record<string, any> = {};
 
-  // String fields — pass through if present
+  // String fields — pass through if present, collapse spaced letters for names
+  const NAME_FIELDS = new Set(['firstName', 'middleName', 'lastName']);
   for (const field of ['firstName', 'middleName', 'lastName', 'email', 'phoneCountryCode', 'phoneNumber', 'passportNumber', 'nationality', 'passportCountry']) {
     if (params[field] && typeof params[field] === 'string' && params[field].trim()) {
-      normalizedParams[field] = params[field].trim();
+      let val = params[field].trim();
+      // Collapse spaced-out letters for name, nationality, passport fields
+      if (NAME_FIELDS.has(field) || field === 'nationality' || field === 'passportCountry' || field === 'passportNumber') {
+        val = collapseSpacedLetters(val);
+      }
+      normalizedParams[field] = val;
     }
   }
 

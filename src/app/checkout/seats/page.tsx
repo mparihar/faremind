@@ -610,7 +610,7 @@ export default function SeatsPage() {
 
             {/* Lap infant info banner */}
             {hasInfants && (
-              <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-blue-50 border border-blue-200 text-blue-700 text-xs">
+              <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs">
                 <Info className="w-4 h-4 shrink-0 mt-0.5" />
                 <span>
                   <span className="font-semibold">Lap infants (under 2)</span> travel on a parent&apos;s lap and do not require a seat.

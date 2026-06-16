@@ -3,6 +3,7 @@
 import { motion } from 'framer-motion';
 import { useState, useEffect, useRef } from 'react';
 import { ArrowRight, ArrowLeft, Clock, Armchair, Sparkles, Tag, Zap, Minimize2, ChevronRight, Check, X } from 'lucide-react';
+import { useAiRecommendationLimit } from '@/hooks/useAiRecommendationLimit';
 import { cn, formatDuration, formatTime, formatPrice, getAirlineLogo } from '@/lib/utils';
 import type { RoundTripOption, JourneySegment } from '@/lib/round-trip-types';
 
@@ -152,6 +153,7 @@ interface RoundTripCardProps {
 }
 
 export default function RoundTripCard({ option, index, onSelect, onHover, isHovered, aiEnabled, isTopAiPick, isBestAiPick, scoreOverride, isAiHighlighted, aiReasons, dnaScore, dnaMatchLabel, dnaMatchReasons, dnaMismatchReasons }: RoundTripCardProps) {
+  const aiRecLimit = useAiRecommendationLimit();
   const [viewing, setViewing] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -317,7 +319,7 @@ export default function RoundTripCard({ option, index, onSelect, onHover, isHove
       </div>
 
       {/* AI reasoning bullets */}
-      {aiReasons && aiReasons.length > 0 && index < 25 && (
+      {aiReasons && aiReasons.length > 0 && index < aiRecLimit && (
         <div className="px-5 pb-4 mt-[-4px]">
           <div className="px-3 py-2.5 rounded-xl bg-[#1ABC9C]/6 border border-[#1ABC9C]/20 space-y-1">
             <p className="flex items-center gap-1.5 text-[10px] font-bold text-[#1ABC9C] uppercase tracking-wider mb-1.5">
@@ -354,7 +356,7 @@ export default function RoundTripCard({ option, index, onSelect, onHover, isHove
             <p className="flex items-center gap-1.5 text-[10px] font-bold text-emerald-600 uppercase tracking-wider mb-1.5">
               Why this matches your DNA
             </p>
-            {dnaMatchReasons.slice(0, 3).map((reason, i) => (
+            {dnaMatchReasons.slice(0, 5).map((reason, i) => (
               <div key={i} className="flex items-start gap-1.5">
                 <Check className="w-3 h-3 text-emerald-500 shrink-0 mt-0.5" />
                 <span className="text-[11px] leading-relaxed text-slate-600">{reason}</span>

@@ -2,11 +2,16 @@
  * Flight Search Orchestrator
  *
  * The core aggregation engine that:
- * 1. Calls Duffel (NDC) + Amadeus (GDS) in parallel
+ * 1. Calls Duffel (NDC) + Amadeus (GDS) + Mystifly (GDS Aggregator) in parallel
  * 2. Normalizes responses into the unified schema
  * 3. Merges, deduplicates, and ranks results
  * 4. Falls back to mock data if API keys are not configured
  * 5. Logs search analytics to the database
+ *
+ * Provider mode controlled by FLIGHT_PROVIDER_MODE env var:
+ *   DUFFEL  → Only Duffel
+ *   MYSTIFLY → Only Mystifly
+ *   BOTH    → Duffel + Mystifly in parallel (default)
  *
  * This is the single source of truth for all flight search logic.
  */
@@ -19,8 +24,35 @@ import {
   mergeAndRankFlights,
 } from '@/lib/providers/normalizer';
 import { normalizeDuffelRoundTripOffer } from '@/lib/providers/round-trip-normalizer';
+import { searchMystiflyRoundTrip } from '@/lib/providers/mystifly-client';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
+
+// ─── Provider Mode (testing flag — easy to remove after testing) ───
+// Values: 'DUFFEL' | 'MYSTIFLY' | 'BOTH' (default)
+
+type ProviderMode = 'DUFFEL' | 'MYSTIFLY' | 'BOTH';
+
+function getProviderMode(): ProviderMode {
+  const raw = process.env.FLIGHT_PROVIDER_MODE;
+  const mode = (raw || 'BOTH').toUpperCase().trim();
+  if (mode === 'DUFFEL' || mode === 'MYSTIFLY' || mode === 'BOTH') {
+    return mode;
+  }
+  return 'BOTH';
+}
+
+
+
+function shouldUseDuffel(): boolean {
+  const mode = getProviderMode();
+  return (mode === 'DUFFEL' || mode === 'BOTH') && isDuffelConfigured();
+}
+
+function shouldUseMystifly(): boolean {
+  const mode = getProviderMode();
+  return (mode === 'MYSTIFLY' || mode === 'BOTH') && isMystiflyConfigured();
+}
 
 // ─── Provider Availability Check ───
 
@@ -35,10 +67,19 @@ function isAmadeusConfigured(): boolean {
   return id.length > 0 && !id.includes('your_') && secret.length > 0 && !secret.includes('your_');
 }
 
+function isMystiflyConfigured(): boolean {
+  const sessionId = process.env.MYSTIFLY_SESSION_ID || '';
+  if (sessionId.length > 0) return true;
+  const user = process.env.MYSTIFLY_USERNAME || '';
+  const pass = process.env.MYSTIFLY_PASSWORD || '';
+  const acct = process.env.MYSTIFLY_ACCOUNT_NUMBER || '';
+  return user.length > 0 && pass.length > 0 && acct.length > 0;
+}
+
 // ─── Provider Results ───
 
 export interface ProviderResult {
-  provider: 'duffel' | 'amadeus';
+  provider: 'duffel' | 'amadeus' | 'mystifly';
   flights: UnifiedFlight[];
   responseTimeMs: number;
   error?: string;
@@ -204,23 +245,25 @@ export async function searchFlights(params: {
 }): Promise<SearchResult> {
   const overallStart = Date.now();
   const searchId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
+  const mode = getProviderMode();
 
-  const hasDuffel = isDuffelConfigured();
+  const useDuffel = shouldUseDuffel();
   const hasAmadeus = isAmadeusConfigured();
-  const hasAnyProvider = hasDuffel || hasAmadeus;
+  const useMystifly = shouldUseMystifly();
+  const hasAnyProvider = useDuffel || hasAmadeus || useMystifly;
 
-  console.log(`[Search ${searchId}] Starting flight search: ${params.origin} → ${params.destination} on ${params.date}`);
-  console.log(`[Search ${searchId}] Providers: Duffel=${hasDuffel ? 'ON' : 'OFF'}, Amadeus=${hasAmadeus ? 'ON' : 'OFF'}`);
 
   let providerResults: ProviderResult[];
 
   if (hasAnyProvider) {
     const promises: Promise<ProviderResult>[] = [];
-    if (hasDuffel) promises.push(searchDuffel(params));
+    if (useDuffel) promises.push(searchDuffel(params));
     if (hasAmadeus) promises.push(searchAmadeus(params));
+    // Note: For one-way, Mystifly is handled via the backend proxy in the search route.
+    // This orchestrator is used for one-way local fallback.
     providerResults = await Promise.all(promises);
   } else {
-    console.log(`[Search ${searchId}] No providers configured`);
+
     providerResults = [];
   }
 
@@ -228,7 +271,6 @@ export async function searchFlights(params: {
   const rankedFlights = mergeAndRankFlights(allFlights);
   const totalTimeMs = Date.now() - overallStart;
 
-  console.log(`[Search ${searchId}] Complete: ${rankedFlights.length} flights in ${totalTimeMs}ms`);
 
   return {
     flights: rankedFlights,
@@ -262,50 +304,95 @@ export async function searchRoundTripFlights(params: {
 }): Promise<RoundTripSearchResult> {
   const overallStart = Date.now();
   const searchId = `rt_${Date.now()}_${Math.random().toString(36).substring(2, 10)}`;
+  const mode = getProviderMode();
+  const useDuffel = shouldUseDuffel();
+  const useMystifly = shouldUseMystifly();
 
-  console.log(`[RT ${searchId}] ${params.origin} ⇄ ${params.destination} | out:${params.date} ret:${params.returnDate} | all-cabin search`);
 
   const options: RoundTripOption[] = [];
   const providerResults: ProviderResult[] = [];
 
-  if (isDuffelConfigured()) {
-    const start = Date.now();
-    try {
-      // Omit cabin_class so Duffel returns offers for ALL available cabin
-      // classes in a single API call — avoids rate-limiting (429) that occurs
-      // when firing 4 parallel per-cabin requests.
-      const raw = await duffel.searchFlights({
-        origin: params.origin,
-        destination: params.destination,
-        departureDate: params.date,
-        returnDate: params.returnDate,
-        adults: params.adults,
-        children: params.children,
-        infants: params.infants,
-        // cabinClass intentionally omitted → Duffel returns all classes
-      });
+  // ── Build parallel search promises ──
+  const promises: Array<{ provider: string; promise: Promise<void> }> = [];
 
-      const normalized = (Array.isArray(raw) ? raw : [])
-        .map((offer: any) => {
-          try { return normalizeDuffelRoundTripOffer(offer); }
-          catch (e) { console.warn('[RT Duffel] normalize failed:', (e as Error).message); return null; }
-        })
-        .filter((o): o is RoundTripOption => o !== null);
+  // Duffel
+  if (useDuffel) {
+    promises.push({
+      provider: 'duffel',
+      promise: (async () => {
+        const start = Date.now();
+        try {
+          // Omit cabin_class so Duffel returns offers for ALL available cabin
+          // classes in a single API call — avoids rate-limiting (429) that occurs
+          // when firing 4 parallel per-cabin requests.
+          const raw = await duffel.searchFlights({
+            origin: params.origin,
+            destination: params.destination,
+            departureDate: params.date,
+            returnDate: params.returnDate,
+            adults: params.adults,
+            children: params.children,
+            infants: params.infants,
+            // cabinClass intentionally omitted → Duffel returns all classes
+          });
 
-      options.push(...normalized);
-      providerResults.push({ provider: 'duffel', flights: [], responseTimeMs: Date.now() - start, isMock: false });
-    } catch (error) {
-      const msg = error instanceof Error ? error.message : 'Unknown error';
-      console.error('[RT Duffel] search failed:', msg);
-      providerResults.push({ provider: 'duffel', flights: [], responseTimeMs: Date.now() - start, error: msg, isMock: false });
-    }
+          const normalized = (Array.isArray(raw) ? raw : [])
+            .map((offer: any) => {
+              try { return normalizeDuffelRoundTripOffer(offer); }
+              catch (e) { console.warn('[RT Duffel] normalize failed:', (e as Error).message); return null; }
+            })
+            .filter((o): o is RoundTripOption => o !== null);
+
+          options.push(...normalized);
+          providerResults.push({ provider: 'duffel', flights: [], responseTimeMs: Date.now() - start, isMock: false });
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'Unknown error';
+          console.error('[RT Duffel] search failed:', msg);
+          providerResults.push({ provider: 'duffel', flights: [], responseTimeMs: Date.now() - start, error: msg, isMock: false });
+        }
+      })(),
+    });
   }
 
+  // Mystifly (via backend proxy)
+  if (useMystifly) {
+    promises.push({
+      provider: 'mystifly',
+      promise: (async () => {
+        const start = Date.now();
+        try {
+          const result = await searchMystiflyRoundTrip({
+            origin: params.origin,
+            destination: params.destination,
+            date: params.date,
+            returnDate: params.returnDate,
+            adults: params.adults,
+            children: params.children,
+            infants: params.infants,
+            cabin: params.cabin,
+          });
+
+          if (result.error) {
+            console.warn(`[RT Mystifly] Error: ${result.error}`);
+            providerResults.push({ provider: 'mystifly', flights: [], responseTimeMs: result.responseTimeMs, error: result.error, isMock: false });
+          } else {
+            options.push(...result.options);
+            providerResults.push({ provider: 'mystifly', flights: [], responseTimeMs: result.responseTimeMs, isMock: false });
+          }
+        } catch (error) {
+          const msg = error instanceof Error ? error.message : 'Unknown error';
+          console.error('[RT Mystifly] search failed:', msg);
+          providerResults.push({ provider: 'mystifly', flights: [], responseTimeMs: Date.now() - start, error: msg, isMock: false });
+        }
+      })(),
+    });
+  }
+
+  // Run all providers in parallel
+  await Promise.allSettled(promises.map(p => p.promise));
+
   const totalTimeMs = Date.now() - overallStart;
-  // Log cabin breakdown for debugging
-  const cabinBreakdown: Record<string, number> = {};
-  options.forEach(o => { cabinBreakdown[o.cabinClass] = (cabinBreakdown[o.cabinClass] || 0) + 1; });
-  console.log(`[RT ${searchId}] Done: ${options.length} options in ${totalTimeMs}ms | cabins:`, cabinBreakdown);
+
 
   return { options, providers: providerResults, searchId, totalTimeMs, usedMockData: false };
 }
@@ -313,9 +400,11 @@ export async function searchRoundTripFlights(params: {
 // ─── Provider Status Check ───
 
 export function getProviderStatus() {
+  const mode = getProviderMode();
   return {
     duffel: {
       configured: isDuffelConfigured(),
+      active: shouldUseDuffel(),
       type: 'NDC' as const,
       description: 'Direct airline connections',
     },
@@ -324,5 +413,12 @@ export function getProviderStatus() {
       type: 'GDS' as const,
       description: 'Global Distribution System',
     },
+    mystifly: {
+      configured: isMystiflyConfigured(),
+      active: shouldUseMystifly(),
+      type: 'GDS_AGGREGATOR' as const,
+      description: 'GDS Aggregator (MyFareBox)',
+    },
+    providerMode: mode,
   };
 }

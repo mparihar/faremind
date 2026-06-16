@@ -81,15 +81,6 @@ async function main() {
     timeWindow: '1 minute',
   });
 
-  // ─── Request timing hook ──────────────────────────────────────────────────
-
-  fastify.addHook('onResponse', (request, reply, done) => {
-    fastify.log.info(
-      { method: request.method, url: request.url, statusCode: reply.statusCode, responseTime: reply.elapsedTime.toFixed(1) },
-      '[API]'
-    );
-    done();
-  });
 
   // ─── Routes ─────────────────────────────────────────────────────────────────
 
@@ -129,19 +120,7 @@ async function main() {
 
   try {
     await fastify.listen({ port: PORT, host: '0.0.0.0' });
-    const dbUrl = process.env.DATABASE_URL || '';
-    const dbHost = dbUrl ? new URL(dbUrl).hostname : 'NOT SET';
-    console.log(`\n═══════════════════════════════════════════════`);
-    console.log(`  FareMind Backend — Fastify API Gateway`);
-    console.log(`  Port:        ${PORT}`);
-    console.log(`  Environment: ${process.env.NODE_ENV || 'development'}`);
-    console.log(`  CWD:         ${process.cwd()}`);
-    console.log(`  CORS Origin: ${FRONTEND_URL}`);
-    console.log(`  Database:    ${dbUrl ? `connected (${dbHost})` : '❌ DATABASE_URL NOT SET'}`);
-    console.log(`  Redis:       ${process.env.REDIS_URL ? 'connected' : 'disabled (no REDIS_URL)'}`);
-    console.log(`  Duffel:      ${process.env.DUFFEL_API_TOKEN ? '✅ configured' : '❌ DUFFEL_API_TOKEN NOT SET'}`);
-    console.log(`  Mystifly:    ${process.env.MYSTIFLY_SESSION_ID || process.env.MYSTIFLY_USERNAME ? '✅ configured' : '❌ NOT CONFIGURED'}`);
-    console.log(`═══════════════════════════════════════════════\n`);
+    console.log(`\n  FareMind Backend (:${PORT}) — ${process.env.NODE_ENV || 'development'}\n`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

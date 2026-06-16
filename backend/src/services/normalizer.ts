@@ -6,7 +6,7 @@
  */
 
 import type { UnifiedFlight, FlightSegment, Provider } from '../lib/types';
-import { calculateValueScore, getAirlineLogo, generateId } from '../lib/utils';
+import { calculateValueScore, getAirlineLogo, getAirlineName, generateId } from '../lib/utils';
 import type { DuffelOffer } from './duffel';
 import { fromCabinType } from './mystifly';
 
@@ -238,14 +238,14 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
         },
         airline: {
           code: marketingCode,
-          name: marketingCode, // Mystifly doesn't provide airline names in search
+          name: getAirlineName(marketingCode),
           logo: getAirlineLogo(marketingCode),
         },
         flightNumber: `${marketingCode} ${flightNum}`,
         duration: parseMystiflyDuration(seg.JourneyDuration || seg.journeyDuration),
         aircraft: seg.Equipment || seg.equipment || undefined,
         operatingCarrier: operatingCode !== marketingCode
-          ? { code: operatingCode, name: operatingCode }
+          ? { code: operatingCode, name: getAirlineName(operatingCode) }
           : undefined,
       });
     }

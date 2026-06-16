@@ -92,6 +92,23 @@ export function generateReasons(
     }
   }
 
+  // ── Baggage reasons (HIGH PRIORITY — show early) ──
+  // Baggage is a key decision factor, especially for international flights.
+  if (features.baggage.checkedBagsIncluded > 0 && features.baggage.carryOnIncluded) {
+    const bags: string[] = [];
+    if (features.baggage.carryOnPieces > 0) bags.push(`${features.baggage.carryOnPieces} carry-on`);
+    if (features.baggage.checkedBagsIncluded > 0) {
+      bags.push(`${features.baggage.checkedBagsIncluded} checked bag${features.baggage.checkedBagsIncluded > 1 ? 's' : ''}`);
+    }
+    positiveReasons.push(`${bags.join(' & ')} included — no surprise fees at check-in`);
+  } else if (features.baggage.checkedBagsIncluded > 0) {
+    positiveReasons.push(`${features.baggage.checkedBagsIncluded} checked bag${features.baggage.checkedBagsIncluded > 1 ? 's' : ''} included`);
+  } else if (features.baggage.carryOnIncluded && features.baggage.checkedBagsIncluded === 0) {
+    negativeWarnings.push('Carry-on only — no checked baggage included');
+  } else if (features.baggage.checkedBagsIncluded === 0) {
+    negativeWarnings.push('No checked baggage included — additional fee may apply');
+  }
+
   // ── Stops reasons ──
   if (features.totalStops === 0) {
     if (features.tripType === 'ROUND_TRIP') {
@@ -153,17 +170,7 @@ export function generateReasons(
     negativeWarnings.push('Inconvenient flight times — early morning or late-night segments');
   }
 
-  // ── Baggage reasons ──
-  if (features.baggage.checkedBagsIncluded > 0 && features.baggage.carryOnIncluded) {
-    const bags: string[] = [];
-    if (features.baggage.carryOnPieces > 0) bags.push(`${features.baggage.carryOnPieces} carry-on`);
-    if (features.baggage.checkedBagsIncluded > 0) {
-      bags.push(`${features.baggage.checkedBagsIncluded} checked bag${features.baggage.checkedBagsIncluded > 1 ? 's' : ''}`);
-    }
-    positiveReasons.push(`${bags.join(' & ')} included — no surprise fees at check-in`);
-  } else if (features.baggage.checkedBagsIncluded === 0 && features.isInternational) {
-    negativeWarnings.push('No checked baggage included — additional fee may apply');
-  }
+
 
   // ── Non-flexible warning (only if fare has zero flexibility) ──
   if (!hasFlex) {

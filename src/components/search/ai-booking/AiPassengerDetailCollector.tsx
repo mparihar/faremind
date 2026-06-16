@@ -123,18 +123,46 @@ function normalizePhone(raw: string): string {
   return raw.trim(); // fallback — validation should catch invalid
 }
 
+/**
+ * Collapse spaced-out characters from voice input.
+ * Speech-to-text sometimes spells words letter-by-letter with spaces,
+ * e.g. "p a r i h a r" → "parihar", "R i s h i" → "Rishi".
+ * Only collapses when the pattern is clearly single-letter-space sequences.
+ */
+function collapseSpacedLetters(value: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) return trimmed;
+  // Check if the string matches a pattern of single characters separated by spaces
+  // e.g., "p a r i h a r" or "R i s h i"
+  if (/^\S(\s\S)+$/.test(trimmed)) {
+    return trimmed.replace(/\s/g, '');
+  }
+  // Also handle multi-word cases where individual words are spelled out
+  // e.g., "M o h a n   P a r i h a r" → "Mohan Parihar"
+  // Split by double-space (word boundary) and collapse each word
+  const parts = trimmed.split(/\s{2,}/);
+  if (parts.length > 1 && parts.every(p => /^\S(\s\S)+$/.test(p))) {
+    return parts.map(p => p.replace(/\s/g, '')).join(' ');
+  }
+  return trimmed;
+}
+
 function normalizeField(field: keyof AiPassengerData, value: string): string {
   switch (field) {
+    case 'firstName':
+    case 'middleName':
+    case 'lastName':
+      return collapseSpacedLetters(value).trim();
     case 'gender':
-      return value.toLowerCase().trim() as string;
+      return collapseSpacedLetters(value).toLowerCase().trim() as string;
     case 'passportNumber':
-      return value.toUpperCase().trim();
+      return collapseSpacedLetters(value).toUpperCase().trim();
     case 'phone':
       return normalizePhone(value);
     case 'nationality':
     case 'passportCountry': {
-      // Capitalize first letter of each word
-      return value.trim().replace(/\b\w/g, c => c.toUpperCase());
+      // Collapse spaced letters, then capitalize first letter of each word
+      return collapseSpacedLetters(value).trim().replace(/\b\w/g, c => c.toUpperCase());
     }
     default:
       return value.trim();

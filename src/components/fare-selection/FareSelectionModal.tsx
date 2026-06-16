@@ -96,9 +96,9 @@ export default function FareSelectionModal({ onClose }: Props) {
   }, []);
 
   // Update the offer session with this specific flight's offer ID
-  // Timer was already started on the search page; this re-targets it to the selected offer
-  // so checkout can track the correct providerOfferId. The startSession guard prevents
-  // restarting if the same offer is already tracked.
+  // Timer was already started on the search page; we only re-target the tracked
+  // offer ID so checkout can reference the correct providerOfferId.
+  // The timer countdown is NOT restarted — it continues from the search page.
   useEffect(() => {
     const sourceFlight = useFareStore.getState().sourceFlight;
     const sourceRoundTrip = useFareStore.getState().sourceRoundTrip;
@@ -107,28 +107,34 @@ export default function FareSelectionModal({ onClose }: Props) {
     const providerName = sourceFlight?.provider ?? sourceRoundTrip?.provider ?? 'duffel';
 
     if (providerOfferId) {
-      // Read search criteria from sessionStorage
-      let searchCriteria: any;
-      try {
-        const ctx = JSON.parse(sessionStorage.getItem('fm_fare_context') || '{}');
-        searchCriteria = {
-          origin: ctx.origin,
-          destination: ctx.destination,
-          departureDate: ctx.date,
-          returnDate: ctx.returnDate,
-          adults: ctx.adults,
-          children: ctx.children,
-          infants: ctx.infants,
-          cabinClass: ctx.cabin,
-        };
-      } catch {}
+      const session = useOfferSessionStore.getState();
+      if (session.status === 'ACTIVE' || session.status === 'WARNING') {
+        // Timer is already running from search page — just update the tracked offer ID
+        session.updateTrackedOffer(providerOfferId, providerName);
+      } else {
+        // No active timer (e.g. page refresh, direct navigation) — start a new session
+        let searchCriteria: any;
+        try {
+          const ctx = JSON.parse(sessionStorage.getItem('fm_fare_context') || '{}');
+          searchCriteria = {
+            origin: ctx.origin,
+            destination: ctx.destination,
+            departureDate: ctx.date,
+            returnDate: ctx.returnDate,
+            adults: ctx.adults,
+            children: ctx.children,
+            infants: ctx.infants,
+            cabinClass: ctx.cabin,
+          };
+        } catch {}
 
-      useOfferSessionStore.getState().startSession({
-        provider: providerName,
-        providerOfferId,
-        expiresAt: offerExpiresAt,
-        searchCriteria,
-      });
+        session.startSession({
+          provider: providerName,
+          providerOfferId,
+          expiresAt: offerExpiresAt,
+          searchCriteria,
+        });
+      }
     }
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 

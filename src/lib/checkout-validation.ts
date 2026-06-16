@@ -197,21 +197,29 @@ export function checkProviderPriceChange(
     };
   }
 
-  const priceDelta = Math.abs(revalidatedFare - storedFare);
-  const deltaPct = (priceDelta / storedFare) * 100;
+  const priceDelta = revalidatedFare - storedFare; // positive = increase, negative = decrease
+  const deltaPct = (Math.abs(priceDelta) / storedFare) * 100;
 
-  if (deltaPct > maxDeltaPct) {
+  // Only reject price INCREASES — a price drop benefits the user
+  if (priceDelta > 0 && deltaPct > maxDeltaPct) {
     return {
       valid: false,
       storedFare,
       revalidatedFare,
       deltaPct,
       error:
-        `Provider price changed: stored $${storedFare.toFixed(2)} → ` +
-        `revalidated $${revalidatedFare.toFixed(2)} (${deltaPct.toFixed(1)}% change, ` +
+        `Provider price increased: stored $${storedFare.toFixed(2)} → ` +
+        `revalidated $${revalidatedFare.toFixed(2)} (${deltaPct.toFixed(1)}% increase, ` +
         `max allowed: ${maxDeltaPct}%)`,
       errorCode: 'PROVIDER_PRICE_CHANGED',
     };
+  }
+
+  if (priceDelta < 0) {
+    console.log(
+      `[Checkout] ✅ Provider price dropped: $${storedFare.toFixed(2)} → $${revalidatedFare.toFixed(2)} ` +
+      `(${deltaPct.toFixed(1)}% decrease) — allowing in customer's favor`
+    );
   }
 
   return { valid: true, storedFare, revalidatedFare, deltaPct };

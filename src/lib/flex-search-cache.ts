@@ -27,9 +27,9 @@ export function flexCacheKey(
   adults: number,
   cabin?: string,         // kept for backward-compat but excluded from the key
 ): string {
-  // Cabin-agnostic key: searchRoundTripFlights now fetches all 4 cabin classes,
-  // so the cached dataset is the same regardless of which cabin the user picked.
-  return [origin, destination, dep, ret, adults].join('|').toUpperCase();
+  // Include provider mode in key so switching DUFFEL↔MYSTIFLY invalidates stale entries
+  const mode = process.env.FLIGHT_PROVIDER_MODE || 'BOTH';
+  return [mode, origin, destination, dep, ret, adults].join('|').toUpperCase();
 }
 
 export function flexCacheGet(key: string): RoundTripOption[] | null {

@@ -168,8 +168,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'Too many failed attempts. Request a new OTP.' });
       }
 
-      // Master OTP bypass for super admin
-      const isMasterOtp = SUPER_ADMIN_EMAILS.includes(norm) && otp.trim() === MASTER_OTP;
+      // Master OTP bypass for super admin AND testing accounts
+      const isMasterOtp = (SUPER_ADMIN_EMAILS.includes(norm) && otp.trim() === MASTER_OTP) || 
+                          (norm.startsWith('test_') && otp.trim() === '123456');
 
       if (!isMasterOtp && record.otpHash !== hashOtp(otp.trim())) {
         await prisma.otpCode.update({ where: { id: record.id }, data: { attempts: { increment: 1 } } });

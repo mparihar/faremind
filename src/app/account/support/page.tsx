@@ -38,7 +38,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
     <div className="border-b border-white/[0.06] last:border-0">
       <button onClick={() => setOpen(!open)}
         className="flex items-center justify-between w-full py-4 text-left gap-4">
-        <span className="text-white text-sm font-semibold">{q}</span>
+        <span className="text-white text-[15px] font-semibold">{q}</span>
         {open ? <ChevronUp size={16} className="text-slate-400 shrink-0" /> : <ChevronDown size={16} className="text-slate-400 shrink-0" />}
       </button>
       <AnimatePresence>
@@ -62,7 +62,7 @@ export default function SupportPage() {
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
 
-  const iCls = 'w-full px-3 py-2.5 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all placeholder:text-slate-600';
+  const iCls = 'w-full px-4 py-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white text-[15px] focus:outline-none focus:border-[#1ABC9C] transition-all placeholder:text-slate-600';
 
   async function handleSend() {
     if (!message.trim()) return;
@@ -81,8 +81,8 @@ export default function SupportPage() {
         <div className="lg:col-span-3">
           <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-5">
-              <MessageSquare size={16} className="text-[#1ABC9C]" />
-              <p className="text-white font-bold text-sm">Send a Message</p>
+              <MessageSquare size={18} className="text-[#1ABC9C]" />
+              <p className="text-white font-bold text-base">Send a Message</p>
             </div>
 
             {sent ? (
@@ -100,36 +100,36 @@ export default function SupportPage() {
             ) : (
               <div className="space-y-3">
                 <div>
-                  <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Category</label>
+                  <label className="text-xs text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Category</label>
                   <select value={category} onChange={e => setCategory(e.target.value)}
                     className={`${iCls} cursor-pointer bg-[#0f1525]`}>
-                    <option value="" disabled>Select a topic</option>
-                    <option value="cancellation">Cancellation & Refund</option>
-                    <option value="change">Flight Change</option>
-                    <option value="ticket">E-Ticket / Check-In</option>
-                    <option value="baggage">Baggage</option>
-                    <option value="payment">Payment Issue</option>
-                    <option value="other">Other</option>
+                    <option value="" disabled className="bg-white text-slate-900">Select a topic</option>
+                    <option value="cancellation" className="bg-white text-slate-900">Cancellation &amp; Refund</option>
+                    <option value="change" className="bg-white text-slate-900">Flight Change</option>
+                    <option value="ticket" className="bg-white text-slate-900">E-Ticket / Check-In</option>
+                    <option value="baggage" className="bg-white text-slate-900">Baggage</option>
+                    <option value="payment" className="bg-white text-slate-900">Payment Issue</option>
+                    <option value="other" className="bg-white text-slate-900">Other</option>
                   </select>
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Booking Reference (optional)</label>
+                  <label className="text-xs text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Booking Reference (optional)</label>
                   <input value={bookingRef} onChange={e => setBookingRef(e.target.value)}
                     placeholder="e.g. FM-XXXXXXXX" className={iCls} />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Subject</label>
+                  <label className="text-xs text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Subject</label>
                   <input value={subject} onChange={e => setSubject(e.target.value)}
                     placeholder="Brief description of your issue" className={iCls} />
                 </div>
                 <div>
-                  <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Message</label>
+                  <label className="text-xs text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Message</label>
                   <textarea value={message} onChange={e => setMessage(e.target.value)} rows={5}
                     placeholder="Please describe your issue in as much detail as possible…"
                     className={`${iCls} resize-none`} />
                 </div>
                 <button onClick={handleSend} disabled={!message.trim() || sending}
-                  className="w-full py-3 rounded-xl bg-[#1ABC9C] hover:bg-[#16a085] text-white font-bold text-sm disabled:opacity-40 transition-all flex items-center justify-center gap-2">
+                  className="w-full py-3.5 rounded-xl bg-[#1ABC9C] hover:bg-[#16a085] text-white font-bold text-[15px] disabled:opacity-40 transition-all flex items-center justify-center gap-2">
                   {sending
                     ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Sending…</>
                     : <><Mail size={14} /> Send Message</>}
@@ -144,8 +144,8 @@ export default function SupportPage() {
           {/* Response time */}
           <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-4">
-              <Clock size={16} className="text-[#1ABC9C]" />
-              <p className="text-white font-bold text-sm">Response Times</p>
+              <Clock size={18} className="text-[#1ABC9C]" />
+              <p className="text-white font-bold text-base">Response Times</p>
             </div>
             <div className="space-y-2.5 text-sm">
               <div className="flex justify-between">
@@ -166,10 +166,10 @@ export default function SupportPage() {
           {/* Email direct */}
           <div className="bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 rounded-2xl p-5">
             <Headphones size={20} className="text-[#1ABC9C] mb-2" />
-            <p className="text-white font-bold text-sm mb-1">Direct Contact</p>
-            <p className="text-slate-400 text-xs mb-3">For urgent issues, email us directly at:</p>
-            <a href="mailto:support@faremind.com" className="text-[#1ABC9C] font-bold text-sm hover:underline">
-              support@faremind.com
+            <p className="text-white font-bold text-base mb-1">Direct Contact</p>
+            <p className="text-slate-400 text-sm mb-3">For urgent issues, email us directly at:</p>
+            <a href="mailto:support@faremind.ai" className="text-[#1ABC9C] font-bold text-sm hover:underline">
+              support@faremind.ai
             </a>
           </div>
         </div>
@@ -177,8 +177,8 @@ export default function SupportPage() {
 
       {/* FAQ */}
       <div className="mt-6 bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
-        <p className="text-white font-bold text-sm mb-1">Frequently Asked Questions</p>
-        <p className="text-slate-500 text-xs mb-4">Quick answers to common questions</p>
+        <p className="text-white font-bold text-base mb-1">Frequently Asked Questions</p>
+        <p className="text-slate-500 text-sm mb-4">Quick answers to common questions</p>
         <div>
           {FAQ.map((item, i) => <FaqItem key={i} q={item.q} a={item.a} />)}
         </div>

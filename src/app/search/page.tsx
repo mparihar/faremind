@@ -25,6 +25,7 @@ import type { UnifiedFlight } from '@/lib/types';
 import type { DnaSearchResult, DnaRankedCard } from '@/lib/services/dna-search-service';
 import { trackDnaEvent } from '@/lib/analytics/dna-search-analytics';
 import DnaSearchProgressBanner, { type DnaSearchStatus } from '@/components/search/DnaSearchProgressBanner';
+import { OfferExpiryModals } from '@/components/checkout/OfferExpiryModals';
 
 import type { RoundTripOption, RoundTripSortMode } from '@/lib/round-trip-types';
 import { rankFlightOffers } from '@/lib/ai-scoring';
@@ -239,21 +240,25 @@ function SearchContent() {
   const destAirport = useMemo(() => AIRPORTS.find((a) => a.code === destination), [destination]);
 
   useEffect(() => {
-    const budgetMin = searchParams.get('budget_min');
-    const budgetMax = searchParams.get('budget_max');
-    const maxDuration = searchParams.get('max_duration');
-    const stops = searchParams.get('stops');
-    const depWindow = searchParams.get('departure_window');
-    const sort = searchParams.get('sort');
-    const personalized = searchParams.get('personalized');
-    if (budgetMin && budgetMax) prefs.setBudget(Number(budgetMin), Number(budgetMax));
-    if (maxDuration) prefs.setMaxDuration(Number(maxDuration));
-    if (stops === 'nonstop' || stops === '1stop') prefs.setStops(stops);
-    if (depWindow === 'morning' || depWindow === 'afternoon' || depWindow === 'evening' || depWindow === 'night') prefs.setDepartureWindow(depWindow);
-    if (sort === 'cheapest' || sort === 'fastest' || sort === 'any') {
-      prefs.setSort(sort as SortPreference);
-    }
-    if (!prefs.aiIntelligence) prefs.setAiIntelligence(true);
+    // Defer preference hydration to avoid "state update on unmounted component" warning.
+    // The zustand store updates trigger synchronous re-renders on sibling/child components
+    // that may not have finished mounting yet during the initial useEffect pass.
+    queueMicrotask(() => {
+      const budgetMin = searchParams.get('budget_min');
+      const budgetMax = searchParams.get('budget_max');
+      const maxDuration = searchParams.get('max_duration');
+      const stops = searchParams.get('stops');
+      const depWindow = searchParams.get('departure_window');
+      const sort = searchParams.get('sort');
+      if (budgetMin && budgetMax) prefs.setBudget(Number(budgetMin), Number(budgetMax));
+      if (maxDuration) prefs.setMaxDuration(Number(maxDuration));
+      if (stops === 'nonstop' || stops === '1stop') prefs.setStops(stops);
+      if (depWindow === 'morning' || depWindow === 'afternoon' || depWindow === 'evening' || depWindow === 'night') prefs.setDepartureWindow(depWindow);
+      if (sort === 'cheapest' || sort === 'fastest' || sort === 'any') {
+        prefs.setSort(sort as SortPreference);
+      }
+      if (!prefs.aiIntelligence) prefs.setAiIntelligence(true);
+    });
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
@@ -263,13 +268,19 @@ function SearchContent() {
     setSearchMeta(null);
     setResults([]);           // Clear one-way results
     setRoundTripOptions([]);  // Clear round-trip results
+    // Clear the previous offer expiry timer so it doesn't show during loading
+    // Deferred to avoid triggering re-renders on sibling components not yet mounted
+    queueMicrotask(() => useOfferSessionStore.getState().clearSession());
     setSelectedAirlines(new Set());
     setSelectedClasses(new Set());
     setSelectedFeatures(new Set());
     setAiAssistResult(null);
-    // Reset DNA Search state on new search — BUT NOT if DNA is currently loading
-    // (login redirect can cause search to re-run while DNA API call is in-flight)
-    if (!dnaSearchLoading) {
+    // Reset DNA Search state on new search — BUT NOT if:
+    // 1. DNA is currently loading (login redirect can re-run search while DNA API call is in-flight)
+    // 2. DNA results already exist and are active (a concurrent/duplicate search finishing
+    //    should NOT wipe valid DNA results — the snapshot protects against ID mismatches)
+    const hasDnaData = dnaSearchLoading || (prefs.dnaSearchActive && dnaSearchResults);
+    if (!hasDnaData) {
       prefs.setDnaSearchActive(false);
       setDnaSearchResults(null);
       setDnaSearchEligible(null);
@@ -292,10 +303,13 @@ function SearchContent() {
         } else if (data.roundTripOptions) {
           setRoundTripOptions(data.roundTripOptions);
           // Start offer expiry timer from the earliest Duffel offer timestamp
+          // BUT skip if DNA Search is active — DNA re-ranks existing offers without
+          // fetching new ones, so the timer should continue from the original search.
+          const dnaActive = prefs.dnaSearchActive;
           const expiryTimes = (data.roundTripOptions as RoundTripOption[])
             .map((rt: RoundTripOption) => rt.offerExpiresAt)
             .filter(Boolean) as string[];
-          if (expiryTimes.length > 0) {
+          if (expiryTimes.length > 0 && !dnaActive) {
             const earliest = expiryTimes.sort()[0];
             const firstOffer = data.roundTripOptions[0];
             useOfferSessionStore.getState().clearSession();
@@ -309,11 +323,12 @@ function SearchContent() {
           }
         } else if (data.flights) {
           setResults(data.flights);
-          // Start offer expiry timer from the earliest Duffel offer timestamp
+          // Same guard: don't restart timer during active DNA session
+          const dnaActive = prefs.dnaSearchActive;
           const expiryTimes = (data.flights as UnifiedFlight[])
             .map((f: UnifiedFlight) => f.offerExpiresAt)
             .filter(Boolean) as string[];
-          if (expiryTimes.length > 0) {
+          if (expiryTimes.length > 0 && !dnaActive) {
             const earliest = expiryTimes.sort()[0];
             const firstFlight = data.flights[0];
             useOfferSessionStore.getState().clearSession();
@@ -953,6 +968,9 @@ function SearchContent() {
     <div className={`bg-rising-sun-image relative text-slate-900 ${viewMode === 'map' ? 'h-screen flex flex-col overflow-hidden' : 'min-h-screen'}`}>
       <div className="absolute inset-0 scenic-overlay pointer-events-none" />
 
+      {/* Offer expiry warning & expired modals */}
+      <OfferExpiryModals />
+
       {/* Header */}
       <div ref={headerRef} className={`bg-[#1a1a2e]/95 backdrop-blur-xl border-b border-white/[0.06] shadow-lg ${viewMode === 'map' ? 'flex-none z-40' : 'sticky top-0 z-40'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -1114,8 +1132,8 @@ function SearchContent() {
 
       {/* Main content */}
       {loading ? (
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8 relative z-10">
-          <div className="flex flex-col items-center justify-center py-24 gap-6">
+        <div className="fixed inset-0 z-30 flex items-center justify-center">
+          <div className="flex flex-col items-center gap-6">
             <div className="w-20 h-20 border-[4px] border-black/10 border-t-black rounded-full animate-spin" />
             <div className="text-center">
               <p className="text-xl font-semibold text-black mb-1">Searching flights...</p>

@@ -32,15 +32,7 @@ function createPrismaClient(): PrismaClient {
   });
 
   const adapter = new PrismaPg(pool);
-  const client = new PrismaClient({ adapter });
-
-  // Log successful connection
-  if (connectionString) {
-    const host = new URL(connectionString).hostname;
-    console.log(`[DB] ✅ Prisma client created — pool connected to ${host}`);
-  }
-
-  return client;
+  return new PrismaClient({ adapter });
 }
 
 export function getPrisma(): PrismaClient {

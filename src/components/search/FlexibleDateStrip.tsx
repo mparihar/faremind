@@ -99,46 +99,77 @@ export default function FlexibleDateStrip({
     setTileLoading(NON_CENTER.reduce((a, i) => ({ ...a, [i]: true }), {}));
 
     async function run() {
-      // Stagger requests to avoid Duffel rate-limiting (429).
-      // Fetch 2 tiles at a time with a small gap between batches.
-      const BATCH_SIZE = 2;
-      const DELAY_MS = 400;
+      // Fetch tiles with concurrency limit of 2 to stay under Duffel rate limits.
+      // Priority: tiles closest to the selected date first (4,2 → 5,1 → 6,0).
+      const FETCH_ORDER = [4, 2, 5, 1, 6, 0];
+      const CONCURRENCY = 2;
+      const MAX_RETRIES = 1;
+      const RETRY_DELAY = 1500;
 
-      for (let b = 0; b < NON_CENTER.length; b += BATCH_SIZE) {
+      // Simple semaphore — limits in-flight requests to CONCURRENCY
+      let running = 0;
+      const queue: Array<() => void> = [];
+      function acquire(): Promise<void> {
+        if (running < CONCURRENCY) { running++; return Promise.resolve(); }
+        return new Promise<void>((resolve) => queue.push(() => { running++; resolve(); }));
+      }
+      function release(): void {
+        running--;
+        if (queue.length > 0) queue.shift()!();
+      }
+
+      async function fetchTile(idx: number) {
         if (cancelled) return;
+        const { dep, ret } = pairs[idx];
 
-        const batch = NON_CENTER.slice(b, b + BATCH_SIZE);
+        if (!isFutureDate(dep)) {
+          setTileLoading((prev) => ({ ...prev, [idx]: false }));
+          return;
+        }
 
-        await Promise.all(batch.map(async (idx: number) => {
-          if (cancelled) return;
-          const { dep, ret } = pairs[idx];
+        await acquire();
+        if (cancelled) { release(); return; }
 
-          if (!isFutureDate(dep)) {
-            setTileLoading((prev) => ({ ...prev, [idx]: false }));
-            return;
-          }
+        const ctrl = new AbortController();
+        controllers.push(ctrl);
 
-          const ctrl = new AbortController();
-          controllers.push(ctrl);
+        let attempt = 0;
+        let success = false;
 
+        while (attempt <= MAX_RETRIES && !cancelled && !success) {
           try {
+            if (attempt > 0) {
+              await new Promise((r) => setTimeout(r, RETRY_DELAY));
+            }
+
             const params = new URLSearchParams({ origin, destination, dep, ret, adults, cabin });
             const r = await fetch(`/api/flex-prices?${params}`, { signal: ctrl.signal });
-            if (cancelled || !r.ok) return;
-            const data: TileData = await r.json();
-            if (!cancelled) setTileData((prev) => ({ ...prev, [idx]: data }));
-          } catch (err: unknown) {
-            if ((err as Error)?.name === 'AbortError') return;
-          } finally {
-            if (!cancelled) setTileLoading((prev) => ({ ...prev, [idx]: false }));
-          }
-        }));
 
-        // Wait between batches to stay under Duffel rate limits
-        if (b + BATCH_SIZE < NON_CENTER.length && !cancelled) {
-          await new Promise((r) => setTimeout(r, DELAY_MS));
+            if (cancelled) break;
+
+            if (r.status === 429 || r.status >= 500) {
+              attempt++;
+              continue;
+            }
+            if (!r.ok) break;
+
+            const data: TileData = await r.json();
+            if (!cancelled) {
+              setTileData((prev) => ({ ...prev, [idx]: data }));
+              success = true;
+            }
+          } catch (err: unknown) {
+            if ((err as Error)?.name === 'AbortError') break;
+            attempt++;
+          }
         }
+
+        if (!cancelled) setTileLoading((prev) => ({ ...prev, [idx]: false }));
+        release();
       }
+
+      // Launch all tiles — the semaphore controls concurrency
+      await Promise.allSettled(FETCH_ORDER.map(fetchTile));
     }
 
     run();
@@ -165,60 +196,13 @@ export default function FlexibleDateStrip({
   async function handleClick(idx: number) {
     if (idx === CENTER_IDX) return;
     const price = effectivePrices[idx];
-    const tile  = tileData[idx];
     if (!price) return;
 
-    if (!tile?.offerId) {
-      navigateTo(pairs[idx].dep, pairs[idx].ret);
-      return;
-    }
-
-    setValidation((prev) => ({ ...prev, [idx]: { kind: 'validating' } }));
-
-    try {
-      const res  = await fetch('/api/flights/validate-offer', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ offer_id: tile.offerId, expected_price: price }),
-      });
-      const data = await res.json();
-
-      if (data.status === 'valid') {
-        setValidation((prev) => ({ ...prev, [idx]: { kind: 'idle' } }));
-        navigateTo(pairs[idx].dep, pairs[idx].ret);
-      } else if (data.status === 'price_changed') {
-        setValidation((prev) => ({
-          ...prev,
-          [idx]: { kind: 'price_changed', currentPrice: data.current_price, previousPrice: data.previous_price, currency: data.currency },
-        }));
-        setPendingIdx(idx);
-        setTileData((prev) => ({ ...prev, [idx]: { ...tile, minPrice: data.current_price } }));
-      } else {
-        // Offer expired — mark this tile as unavailable and suggest the next best fare
-        setValidation((prev) => ({ ...prev, [idx]: { kind: 'unavailable' } }));
-
-        // Find the next cheapest available tile (price > expired price, excluding center)
-        const expiredPrice = price;
-        const candidates = effectivePrices
-          .map((p, i) => ({ price: p, idx: i }))
-          .filter(({ price: p, idx: i }) =>
-            i !== CENTER_IDX && i !== idx && p !== null &&
-            validation[i]?.kind !== 'unavailable'
-          )
-          .sort((a, b) => (a.price as number) - (b.price as number));
-
-        // Pick the first candidate that's >= expired price, or just the cheapest available
-        const nextBest = candidates.find(c => (c.price as number) >= expiredPrice) || candidates[0];
-        if (nextBest) {
-          setSuggestedIdx(nextBest.idx);
-          // Auto-clear suggestion after 8 seconds
-          setTimeout(() => setSuggestedIdx((prev) => prev === nextBest.idx ? null : prev), 8000);
-        }
-      }
-    } catch {
-      setValidation((prev) => ({ ...prev, [idx]: { kind: 'idle' } }));
-      navigateTo(pairs[idx].dep, pairs[idx].ret);
-    }
+    // Navigate directly — the full search on the target page provides
+    // the authoritative live prices. Skipping validate-offer avoids
+    // showing a transient validated price that may differ from the
+    // fresh search results on the destination page.
+    navigateTo(pairs[idx].dep, pairs[idx].ret);
   }
 
   // ── Render ────────────────────────────────────────────────────────────

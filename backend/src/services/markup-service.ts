@@ -128,10 +128,7 @@ export async function applyMarkupToOffers(flights: UnifiedFlight[]): Promise<voi
   if (flights.length === 0) return;
 
   const rule = await getActiveMarkupRule();
-  if (!rule) {
-    console.log('[Markup] No active MARKUP_FEE rule — flights pass through at provider price');
-    return;
-  }
+  if (!rule) return;
 
   let appliedCount = 0;
 
@@ -155,9 +152,7 @@ export async function applyMarkupToOffers(flights: UnifiedFlight[]): Promise<voi
     }
   }
 
-  if (appliedCount > 0) {
-    console.log(`[Markup] Applied ${rule.calculationModel} (${rule.percentageValue}%) markup to ${appliedCount}/${flights.length} offers (rule: ${rule.id})`);
-  }
+
 }
 
 /** Clear the in-memory cache (for testing or admin rule changes) */

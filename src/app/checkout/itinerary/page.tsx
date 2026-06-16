@@ -346,27 +346,37 @@ export default function CheckoutItineraryPage() {
     // 6. Init checkout store
     checkoutStore.initFromStores(resolvedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown);
 
-    // 7. Start offer expiry session (fallback — timer is primarily started
-    //    in the FareSelectionModal when user first clicks "View". The startSession
-    //    method has an internal guard that skips restart if already active.)
+    // 7. Continue the offer expiry session — timer was started on the search page.
+    //    Only update the tracked offer ID; do NOT restart the countdown.
+    //    If no timer is active (page refresh), start a fresh session as fallback.
     const offerExpiresAt = sourceFlight?.offerExpiresAt ?? sourceRoundTrip?.offerExpiresAt;
     const providerOfferId = sourceFlight?.providerOfferId ?? sourceRoundTrip?.providerOfferId ?? resolvedFare.offerId;
     const providerName = sourceFlight?.provider ?? sourceRoundTrip?.provider ?? 'duffel';
-    useOfferSessionStore.getState().startSession({
-      provider: providerName,
-      providerOfferId,
-      expiresAt: offerExpiresAt,
-      searchCriteria: ctx ? {
-        origin: (ctx as any).origin,
-        destination: (ctx as any).destination,
-        departureDate: (ctx as any).date,
-        returnDate: (ctx as any).returnDate,
-        adults: (ctx as any).adults,
-        children: (ctx as any).children,
-        infants: (ctx as any).infants,
-        cabinClass: (ctx as any).cabin,
-      } : undefined,
-    });
+    const sessionState = useOfferSessionStore.getState();
+    if (sessionState.status === 'ACTIVE' || sessionState.status === 'WARNING') {
+      // Timer already running — just update tracked offer
+      sessionState.updateTrackedOffer(providerOfferId, providerName);
+    } else {
+      // No active timer (page refresh or direct navigation) — hydrate or start fresh
+      const hydrated = sessionState.hydrateFromStorage();
+      if (!hydrated) {
+        sessionState.startSession({
+          provider: providerName,
+          providerOfferId,
+          expiresAt: offerExpiresAt,
+          searchCriteria: ctx ? {
+            origin: (ctx as any).origin,
+            destination: (ctx as any).destination,
+            departureDate: (ctx as any).date,
+            returnDate: (ctx as any).returnDate,
+            adults: (ctx as any).adults,
+            children: (ctx as any).children,
+            infants: (ctx as any).infants,
+            cabinClass: (ctx as any).cabin,
+          } : undefined,
+        });
+      }
+    }
 
     const snapshot = useCheckoutStore.getState();
     setPricing(buildLocalPricing(snapshot));
