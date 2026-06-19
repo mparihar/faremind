@@ -36,6 +36,7 @@ export const GET = withAdmin(async (req: NextRequest) => {
   const [records, total] = await Promise.all([
     (prisma as any).bookingFailureAudit.findMany({
       where,
+      include: { assignedTo: { select: { fullName: true } } },
       orderBy: { createdAt: 'desc' },
       skip: (page - 1) * limit,
       take: limit,

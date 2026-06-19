@@ -30,6 +30,7 @@ async function sendOtpEmail(toEmail: string, toName: string, otp: string): Promi
     console.warn(`[auth] BREVO_API_KEY not set — OTP for ${toEmail}: ${otp}`);
     return;
   }
+  const emailSubject = `${otp} — Your FAREMIND sign-in code`;
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">
       <h2 style="color:#1ABC9C;margin-bottom:8px">Your FAREMIND sign-in code</h2>
@@ -46,7 +47,7 @@ async function sendOtpEmail(toEmail: string, toName: string, otp: string): Promi
     body: JSON.stringify({
       sender: { name: SENDER_NAME, email: SENDER_EMAIL },
       to: [{ email: toEmail, name: toName }],
-      subject: `${otp} — Your FAREMIND sign-in code`,
+      subject: emailSubject,
       htmlContent: html,
       textContent: `Your FAREMIND sign-in code is: ${otp}\n\nValid for 5 minutes. Do not share it.`,
     }),
@@ -55,8 +56,11 @@ async function sendOtpEmail(toEmail: string, toName: string, otp: string): Promi
   if (!res.ok) {
     const body = await res.text();
     console.error(`[auth] Brevo error ${res.status}:`, body);
+    try { await prisma.emailLog.create({ data: { recipient: toEmail, recipientName: toName, subject: emailSubject, template: 'OTP Verification', status: 'FAILED', provider: 'Brevo', errorMessage: `HTTP ${res.status}` } }); } catch {}
     throw new Error(`Brevo ${res.status}: ${body}`);
   }
+
+  try { await prisma.emailLog.create({ data: { recipient: toEmail, recipientName: toName, subject: emailSubject, template: 'OTP Verification', status: 'SENT', provider: 'Brevo' } }); } catch {}
 }
 
 async function createAndSendOtp(email: string, name: string): Promise<void> {
@@ -194,10 +198,22 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         data: { userId: user.id, token, expiresAt, lastActivityAt: now },
       });
 
+      // Check if user is also an admin (for score visibility on platform)
+      const adminUser = await prisma.adminUser.findUnique({
+        where: { email: norm },
+        select: { role: true, isActive: true },
+      }).catch(() => null);
+
+      const isAdminViewer = !!(
+        adminUser &&
+        adminUser.isActive &&
+        ['SUPER_ADMIN', 'OPS_ADMIN', 'SUPPORT'].includes(adminUser.role)
+      );
+
       return reply.send({
         success: true,
         sessionToken: token,
-        user: { id: user.id, email: user.email, name: `${user.firstName} ${user.lastName}`, avatar: user.avatar || null },
+        user: { id: user.id, email: user.email, name: `${user.firstName} ${user.lastName}`, avatar: user.avatar || null, isAdminViewer, role: user.role },
       });
     } catch (e) {
       fastify.log.error(e, '[auth/verify-otp]');
@@ -252,6 +268,18 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         data: { lastActivityAt: new Date() },
       });
 
+      // ── Check if this user is also an admin (for score visibility) ──
+      const adminUser = await prisma.adminUser.findUnique({
+        where: { email: session.user.email },
+        select: { role: true, isActive: true },
+      }).catch(() => null);
+
+      const isAdminViewer = !!(
+        adminUser &&
+        adminUser.isActive &&
+        ['SUPER_ADMIN', 'OPS_ADMIN', 'SUPPORT'].includes(adminUser.role)
+      );
+
       return reply.send({
         valid: true,
         user: {
@@ -259,6 +287,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           email: session.user.email,
           name: `${session.user.firstName} ${session.user.lastName}`,
           avatar: session.user.avatar || null,
+          isAdminViewer,
+          role: session.user.role,
         },
       });
     } catch (e) {

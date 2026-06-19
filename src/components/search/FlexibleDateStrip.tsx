@@ -3,7 +3,6 @@
 import { useEffect, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { format } from 'date-fns';
-import { useRouter } from 'next/navigation';
 import { CalendarDays, AlertTriangle, Loader2, ShieldCheck } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -28,6 +27,8 @@ interface FlexibleDateStripProps {
   departureDate: string;
   returnDate: string;
   adults: string;
+  children?: string;
+  infants?: string;
   cabin: string;
   tripParam: string;
   /** Min price from the already-loaded full search — anchors the center tile price. */
@@ -63,9 +64,8 @@ const CENTER_IDX = 3;
 const NON_CENTER = [0, 1, 2, 4, 5, 6];
 
 export default function FlexibleDateStrip({
-  origin, destination, departureDate, returnDate, adults, cabin, tripParam, currentMinPrice,
+  origin, destination, departureDate, returnDate, adults, children = '0', infants = '0', cabin, tripParam, currentMinPrice,
 }: FlexibleDateStripProps) {
-  const router = useRouter();
 
   // Build date pairs once from props
   const pairs = [
@@ -142,7 +142,7 @@ export default function FlexibleDateStrip({
               await new Promise((r) => setTimeout(r, RETRY_DELAY));
             }
 
-            const params = new URLSearchParams({ origin, destination, dep, ret, adults, cabin });
+            const params = new URLSearchParams({ origin, destination, dep, ret, adults, children, infants, cabin });
             const r = await fetch(`/api/flex-prices?${params}`, { signal: ctrl.signal });
 
             if (cancelled) break;
@@ -175,7 +175,7 @@ export default function FlexibleDateStrip({
     run();
     return () => { cancelled = true; controllers.forEach((c) => c.abort()); };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [origin, destination, departureDate, returnDate, adults, cabin]);
+  }, [origin, destination, departureDate, returnDate, adults, children, infants, cabin]);
 
   // ── Derived values ────────────────────────────────────────────────────
   // Build effective per-tile price: center uses currentMinPrice; others use fetched data
@@ -187,10 +187,14 @@ export default function FlexibleDateStrip({
   const validNonCenter = effectivePrices.filter((p, i) => i !== CENTER_IDX && p !== null) as number[];
   const lowestPrice = validNonCenter.length > 0 ? Math.min(...validNonCenter) : null;
 
-  // ── Click → validate → navigate ──────────────────────────────────────
+  // ── Click → navigate immediately ──────────────────────────────────────
+  const [clickedIdx, setClickedIdx] = useState<number | null>(null);
+
   function navigateTo(dep: string, ret: string) {
-    const p = new URLSearchParams({ origin, destination, date: dep, return: ret, adults, cabin, trip: tripParam });
-    router.push(`/search?${p}`);
+    const p = new URLSearchParams({ origin, destination, date: dep, return: ret, adults, children, infants, cabin, trip: tripParam, fromFlex: '1' });
+    // Use window.location for immediate hard navigation — faster than router.push
+    // which goes through Next.js client-side routing with extra overhead.
+    window.location.assign(`/search?${p}`);
   }
 
   async function handleClick(idx: number) {
@@ -198,10 +202,11 @@ export default function FlexibleDateStrip({
     const price = effectivePrices[idx];
     if (!price) return;
 
-    // Navigate directly — the full search on the target page provides
-    // the authoritative live prices. Skipping validate-offer avoids
-    // showing a transient validated price that may differ from the
-    // fresh search results on the destination page.
+    // Show instant visual feedback
+    setClickedIdx(idx);
+
+    // Navigate immediately — the full search on the target page provides
+    // the authoritative live prices.
     navigateTo(pairs[idx].dep, pairs[idx].ret);
   }
 
@@ -230,6 +235,7 @@ export default function FlexibleDateStrip({
           const vs          = validation[idx] ?? { kind: 'idle' };
           const isValidating = vs.kind === 'validating';
           const isSuggested = suggestedIdx === idx && vs.kind !== 'unavailable';
+          const isClicked   = clickedIdx === idx;
 
           return (
             <div key={idx} className="flex-1 min-w-[88px] relative">
@@ -237,24 +243,26 @@ export default function FlexibleDateStrip({
                 whileHover={!noFare && !isCenter && !loading && !isValidating ? { scale: 1.03, y: -1 } : {}}
                 whileTap={!noFare && !isCenter && !loading && !isValidating ? { scale: 0.97 } : {}}
                 onClick={() => handleClick(idx)}
-                disabled={noFare || isCenter || loading || isValidating || vs.kind === 'unavailable'}
+                disabled={noFare || isCenter || loading || isValidating || isClicked || vs.kind === 'unavailable'}
                 className={cn(
                   'w-full h-full rounded-xl px-2.5 py-2 text-left transition-all border',
                   isCenter
                     ? 'bg-[#0F172A] border-[#0F172A] text-white shadow-lg cursor-default'
-                    : loading
-                      ? 'bg-slate-50 border-slate-100 animate-pulse cursor-wait'
-                      : noFare
-                        ? 'bg-slate-50 border-slate-100 opacity-40 cursor-not-allowed'
-                        : vs.kind === 'unavailable'
-                          ? 'bg-red-50/60 border-red-200 opacity-50 cursor-not-allowed line-through'
-                          : isSuggested
-                            ? 'bg-[#1ABC9C]/10 border-[#1ABC9C] shadow-md shadow-[#1ABC9C]/15 ring-2 ring-[#1ABC9C]/40 animate-pulse cursor-pointer'
-                            : vs.kind === 'price_changed'
-                              ? 'bg-amber-50 border-amber-300'
-                              : isCheapest
-                                ? 'bg-[#1ABC9C]/5 border-[#1ABC9C]/30 hover:border-[#1ABC9C]/60 hover:shadow-sm cursor-pointer'
-                                : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm cursor-pointer',
+                    : isClicked
+                      ? 'bg-[#0F172A] border-[#0F172A] text-white shadow-lg ring-2 ring-[#1ABC9C]/50 cursor-wait'
+                      : loading
+                        ? 'bg-slate-50 border-slate-100 animate-pulse cursor-wait'
+                        : noFare
+                          ? 'bg-slate-50 border-slate-100 opacity-40 cursor-not-allowed'
+                          : vs.kind === 'unavailable'
+                            ? 'bg-red-50/60 border-red-200 opacity-50 cursor-not-allowed line-through'
+                            : isSuggested
+                              ? 'bg-[#1ABC9C]/10 border-[#1ABC9C] shadow-md shadow-[#1ABC9C]/15 ring-2 ring-[#1ABC9C]/40 animate-pulse cursor-pointer'
+                              : vs.kind === 'price_changed'
+                                ? 'bg-amber-50 border-amber-300'
+                                : isCheapest
+                                  ? 'bg-[#1ABC9C]/5 border-[#1ABC9C]/30 hover:border-[#1ABC9C]/60 hover:shadow-sm cursor-pointer'
+                                  : 'bg-white border-slate-200 hover:border-slate-300 hover:shadow-sm cursor-pointer',
                 )}
               >
                 <p className={cn(

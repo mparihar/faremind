@@ -1,13 +1,27 @@
-/**
- * Post-Booking Management — Email Notification Templates
- *
- * Uses the same Brevo pattern as existing email.ts.
- * Does NOT modify or import from the existing email.ts.
- */
+import { prisma } from './db';
 
 const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 const SENDER_EMAIL  = process.env.BREVO_SENDER_EMAIL ?? 'noreply@faremind.com';
 const SENDER_NAME   = 'FareMind';
+
+// Derive template name from email subject for logging
+function deriveTemplate(subject: string): string {
+  const lower = subject.toLowerCase();
+  if (lower.includes('cancelled')) return 'Cancellation Notice';
+  if (lower.includes('flight updated') || lower.includes('flight changed')) return 'Flight Changed';
+  if (lower.includes('refund completed')) return 'Refund Processed';
+  if (lower.includes('refund initiated')) return 'Refund Initiated';
+  if (lower.includes('seat changed') || lower.includes('seat updated')) return 'Seat Changed';
+  if (lower.includes('itinerary')) return 'Itinerary';
+  if (lower.includes('[admin]')) return 'Admin Notification';
+  return 'General';
+}
+
+// Extract booking ref from subject (FM-XXXXXXXX pattern)
+function extractBookingRef(subject: string): string | null {
+  const match = subject.match(/FM-?\w{6,10}/i);
+  return match?.[0] ?? null;
+}
 
 async function sendEmail(to: { email: string; name: string }, subject: string, html: string, text: string, attachment?: { name: string; content: string }): Promise<void> {
   const apiKey = process.env.BREVO_API_KEY;
@@ -15,6 +29,9 @@ async function sendEmail(to: { email: string; name: string }, subject: string, h
     console.warn(`[manage-booking-email] BREVO_API_KEY not set — skipping email to ${to.email}`);
     return;
   }
+
+  let status: 'SENT' | 'FAILED' = 'SENT';
+  let errorMsg: string | null = null;
 
   try {
     const payload: any = {
@@ -36,9 +53,31 @@ async function sendEmail(to: { email: string; name: string }, subject: string, h
     if (!res.ok) {
       const body = await res.text();
       console.error(`[manage-booking-email] Brevo error ${res.status}:`, body);
+      status = 'FAILED';
+      errorMsg = `HTTP ${res.status}: ${body.slice(0, 200)}`;
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error('[manage-booking-email] Send failed:', err);
+    status = 'FAILED';
+    errorMsg = err.message || 'Unknown error';
+  }
+
+  // Log to email_logs table (non-blocking)
+  try {
+    await prisma.emailLog.create({
+      data: {
+        recipient: to.email,
+        recipientName: to.name,
+        subject,
+        template: deriveTemplate(subject),
+        status,
+        provider: 'Brevo',
+        bookingRef: extractBookingRef(subject),
+        errorMessage: errorMsg,
+      },
+    });
+  } catch (logErr) {
+    console.error('[email-log] Failed to log email:', logErr instanceof Error ? logErr.message : logErr);
   }
 }
 

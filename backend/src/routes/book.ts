@@ -9,7 +9,7 @@ import { fireNotification } from '../lib/notify';
 const plugin: FastifyPluginAsync = async (fastify) => {
   fastify.post('/', async (request, reply) => {
     try {
-      const { providerOfferId, provider, flight, passengers, userId, enablePriceTracking = true } = request.body as any;
+      const { providerOfferId, provider, flight, passengers, userId, enablePriceTracking = true, wheelchairSelections } = request.body as any;
 
       if (!provider || !passengers?.length) return reply.code(400).send({ error: 'Missing required fields: provider, passengers' });
       if (!flight) return reply.code(400).send({ error: 'Missing flight details' });
@@ -27,6 +27,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(503).send({ error: 'Booking service is not configured. Please contact support.' });
       }
 
+      // Map wheelchair selections to Duffel SSR services
+      const wheelchairServices = (wheelchairSelections || [])
+        .filter((w: any) => w.code && w.code !== 'NONE')
+        .map((w: any, i: number) => ({
+          passenger_id: `passenger_${i}`,
+          ssr_code: w.code,
+        }));
+
       let providerBookingId: string | undefined;
       let pnr: string;
       const bookingStatus: 'CONFIRMED' | 'PENDING' = 'CONFIRMED';
@@ -41,6 +49,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             type: p.type || 'adult',
           })),
           paymentAmount: flight.totalPrice, paymentCurrency: flight.currency || 'USD',
+          ...(wheelchairServices.length > 0 ? { services: wheelchairServices } : {}),
         });
         providerBookingId = order.id;
         pnr = order.booking_reference;

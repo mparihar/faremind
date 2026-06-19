@@ -24,7 +24,7 @@ const SIDEBAR_NAV = [
   { href: '/account/refunds', label: 'Refunds & Credits', icon: CreditCard },
   { href: '/account/notifications', label: 'Notifications', icon: Bell },
   { href: '/account/profile', label: 'Profile', icon: User },
-  { href: '/account/support', label: 'Support', icon: Headphones },
+  { href: '/support', label: 'Support', icon: Headphones },
 ];
 
 const ADMIN_NAV = [
@@ -93,7 +93,7 @@ function DashboardHeader({ user, onMenuToggle }: { user: any; onMenuToggle: () =
           <Bell size={17} />
           <span className="absolute top-1 right-1 w-2 h-2 rounded-full bg-[#1ABC9C] border border-[#0a0f1e]" />
         </Link>
-        <Link href="/account/support"
+        <Link href="/support"
           className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/[0.06] transition-all">
           <HelpCircle size={17} />
         </Link>

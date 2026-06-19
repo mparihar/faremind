@@ -1,0 +1,499 @@
+'use client';
+
+import { useState, useEffect, use } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
+import { useAuthStore } from '@/store/useAuthStore';
+import { apiUrl } from '@/lib/api-client';
+import {
+  ArrowLeft,
+  Plane,
+  Users,
+  CreditCard,
+  Clock,
+  Edit3,
+  XCircle,
+  Mail,
+  RefreshCw,
+  Check,
+  AlertCircle,
+  Info,
+  Loader2,
+  ChevronDown,
+  ChevronUp,
+} from 'lucide-react';
+import { cn } from '@/lib/utils';
+
+const STATUS_COLORS: Record<string, string> = {
+  CONFIRMED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
+  TICKETED: 'bg-blue-500/15 text-blue-400 border-blue-500/25',
+  CREATED: 'bg-amber-500/15 text-amber-400 border-amber-500/25',
+  FAILED: 'bg-red-500/15 text-red-400 border-red-500/25',
+  CANCELLED: 'bg-slate-500/15 text-slate-400 border-slate-500/25',
+  CANCEL_REQUESTED: 'bg-orange-500/15 text-orange-400 border-orange-500/25',
+  PENDING: 'bg-yellow-500/15 text-yellow-400 border-yellow-500/25',
+  CAPTURED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
+};
+
+const EDITABLE_FIELDS = [
+  { key: 'email', label: 'Email', type: 'email' },
+  { key: 'phone', label: 'Phone', type: 'tel' },
+  { key: 'nationality', label: 'Nationality', type: 'text' },
+  { key: 'passportNumber', label: 'Passport Number', type: 'text' },
+  { key: 'passportExpiry', label: 'Passport Expiry', type: 'date' },
+  { key: 'issuingCountry', label: 'Issuing Country', type: 'text' },
+];
+
+export default function AgentBookingDetailPage({ params }: { params: Promise<{ fbr: string }> }) {
+  const { fbr } = use(params);
+  const router = useRouter();
+  const searchParams = useSearchParams();
+  const { sessionToken } = useAuthStore();
+  const [booking, setBooking] = useState<any>(null);
+  const [loading, setLoading] = useState(true);
+  const [activeTab, setActiveTab] = useState(searchParams.get('tab') || 'overview');
+  const [editingPassenger, setEditingPassenger] = useState<string | null>(null);
+  const [editValues, setEditValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [actionMsg, setActionMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [showCancelDialog, setShowCancelDialog] = useState(false);
+  const [eventsExpanded, setEventsExpanded] = useState(false);
+
+  useEffect(() => {
+    if (!sessionToken) return;
+    fetchBooking();
+  }, [sessionToken, fbr]);
+
+  async function fetchBooking() {
+    setLoading(true);
+    try {
+      const res = await fetch(apiUrl(`/api/agent/bookings/${fbr}`), {
+        headers: { Authorization: `Bearer ${sessionToken}` },
+      });
+      if (res.ok) {
+        const data = await res.json();
+        setBooking(data.booking);
+      } else {
+        setActionMsg({ type: 'error', text: 'Booking not found or access denied.' });
+      }
+    } catch {
+      setActionMsg({ type: 'error', text: 'Failed to load booking.' });
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  async function handlePassengerUpdate(passengerId: string) {
+    setSaving(true);
+    setActionMsg(null);
+    try {
+      const res = await fetch(apiUrl('/api/agent/passenger-update'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ bookingReference: fbr, passengerId, updates: editValues }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setActionMsg({ type: 'success', text: `Updated: ${data.updatedFields?.join(', ')}` });
+        setEditingPassenger(null);
+        fetchBooking();
+      } else {
+        setActionMsg({ type: 'error', text: data.error || 'Update failed.' });
+      }
+    } catch {
+      setActionMsg({ type: 'error', text: 'Network error.' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleCancellation() {
+    setSaving(true);
+    setActionMsg(null);
+    try {
+      const res = await fetch(apiUrl('/api/agent/cancellation-request'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ bookingReference: fbr, reason: cancelReason }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setActionMsg({ type: 'success', text: data.message });
+        setShowCancelDialog(false);
+        fetchBooking();
+      } else {
+        setActionMsg({ type: 'error', text: data.error || 'Cancellation failed.' });
+      }
+    } catch {
+      setActionMsg({ type: 'error', text: 'Network error.' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  async function handleResendItinerary() {
+    setSaving(true);
+    setActionMsg(null);
+    try {
+      const res = await fetch(apiUrl('/api/agent/resend-itinerary'), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+        body: JSON.stringify({ bookingReference: fbr }),
+      });
+      const data = await res.json();
+      if (res.ok) {
+        setActionMsg({ type: 'success', text: data.message });
+      } else {
+        setActionMsg({ type: 'error', text: data.error || 'Failed to resend.' });
+      }
+    } catch {
+      setActionMsg({ type: 'error', text: 'Network error.' });
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  if (loading) {
+    return (
+      <div className="flex items-center justify-center min-h-[60vh]">
+        <RefreshCw className="w-6 h-6 text-[#1ABC9C] animate-spin" />
+      </div>
+    );
+  }
+
+  if (!booking) {
+    return (
+      <div className="p-8 text-center">
+        <AlertCircle className="w-10 h-10 text-red-400 mx-auto mb-3" />
+        <p className="text-white font-semibold">Booking not found</p>
+        <button onClick={() => router.push('/agent/bookings')} className="text-[#1ABC9C] text-sm mt-2 hover:underline">
+          Back to bookings
+        </button>
+      </div>
+    );
+  }
+
+  const tabs = [
+    { id: 'overview', label: 'Overview', icon: Plane },
+    { id: 'passengers', label: 'Passengers', icon: Users },
+    { id: 'payments', label: 'Payments', icon: CreditCard },
+    { id: 'timeline', label: 'Timeline', icon: Clock },
+  ];
+
+  return (
+    <div className="p-6 lg:p-8 max-w-6xl mx-auto">
+      {/* Back + Header */}
+      <div className="mb-6">
+        <button onClick={() => router.push('/agent/bookings')} className="flex items-center gap-1.5 text-xs text-slate-500 hover:text-white mb-4 transition-colors">
+          <ArrowLeft className="w-3.5 h-3.5" /> Back to bookings
+        </button>
+
+        <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
+          <div>
+            <div className="flex items-center gap-3 mb-1">
+              <h1 className="text-xl font-black text-white">{booking.masterBookingReference}</h1>
+              <span className={cn('px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border', STATUS_COLORS[booking.bookingStatus] || '')}>
+                {booking.bookingStatus?.replace(/_/g, ' ')}
+              </span>
+            </div>
+            <p className="text-sm text-slate-400">
+              {booking.originAirport} → {booking.destinationAirport} • {booking.customerName}
+            </p>
+          </div>
+
+          <div className="flex items-center gap-2">
+            <button
+              onClick={handleResendItinerary}
+              disabled={saving}
+              className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-slate-400 hover:text-white bg-white/[0.04] hover:bg-white/[0.08] border border-white/10 transition-all"
+            >
+              <Mail className="w-3.5 h-3.5" /> Resend Itinerary
+            </button>
+            {!['CANCELLED', 'CANCEL_REQUESTED', 'FAILED'].includes(booking.bookingStatus) && (
+              <button
+                onClick={() => setShowCancelDialog(true)}
+                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-red-400 hover:text-red-300 bg-red-500/[0.06] hover:bg-red-500/[0.12] border border-red-500/20 transition-all"
+              >
+                <XCircle className="w-3.5 h-3.5" /> Request Cancel
+              </button>
+            )}
+          </div>
+        </div>
+      </div>
+
+      {/* Action message */}
+      {actionMsg && (
+        <div className={cn(
+          'mb-4 flex items-start gap-2.5 p-3 rounded-xl border',
+          actionMsg.type === 'success' ? 'bg-emerald-500/10 border-emerald-500/20' : 'bg-red-500/10 border-red-500/20'
+        )}>
+          {actionMsg.type === 'success' ? <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
+          <p className={cn('text-xs', actionMsg.type === 'success' ? 'text-emerald-400' : 'text-red-400')}>{actionMsg.text}</p>
+        </div>
+      )}
+
+      {/* Tabs */}
+      <div className="flex items-center gap-1 border-b border-white/[0.06] mb-6">
+        {tabs.map((tab) => {
+          const Icon = tab.icon;
+          return (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id)}
+              className={cn(
+                'flex items-center gap-2 px-4 py-3 text-sm font-medium border-b-2 transition-all -mb-[1px]',
+                activeTab === tab.id
+                  ? 'text-[#1ABC9C] border-[#1ABC9C]'
+                  : 'text-slate-500 border-transparent hover:text-white'
+              )}
+            >
+              <Icon className="w-4 h-4" /> {tab.label}
+            </button>
+          );
+        })}
+      </div>
+
+      {/* Tab content */}
+      {activeTab === 'overview' && (
+        <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+          {/* Flight details */}
+          <div className="bg-slate-900/80 border border-white/[0.06] rounded-2xl p-6">
+            <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Plane className="w-4 h-4 text-[#1ABC9C]" /> Flight Details</h3>
+            <div className="space-y-3">
+              <div className="grid grid-cols-2 gap-3 text-sm">
+                <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Route</p><p className="text-white font-semibold">{booking.originAirport} → {booking.destinationAirport}</p></div>
+                <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Trip Type</p><p className="text-white">{booking.tripType?.replace(/_/g, ' ')}</p></div>
+                <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Departure</p><p className="text-white">{new Date(booking.departureDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p></div>
+                {booking.returnDate && <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Return</p><p className="text-white">{new Date(booking.returnDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p></div>}
+              </div>
+
+              {booking.pnrs?.length > 0 && (
+                <div className="pt-3 border-t border-white/[0.06]">
+                  <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">PNR Codes</p>
+                  <div className="flex flex-wrap gap-2">
+                    {booking.pnrs.map((pnr: any, i: number) => (
+                      <span key={i} className="px-3 py-1.5 rounded-lg bg-slate-800/60 text-xs font-mono text-white border border-white/[0.06]">
+                        {pnr.pnrCode} <span className="text-slate-500 text-[10px]">({pnr.pnrType?.replace(/_/g, ' ')})</span>
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Customer + Payment */}
+          <div className="bg-slate-900/80 border border-white/[0.06] rounded-2xl p-6">
+            <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Users className="w-4 h-4 text-[#1ABC9C]" /> Customer & Payment</h3>
+            <div className="space-y-3 text-sm">
+              <div className="grid grid-cols-2 gap-3">
+                <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Customer</p><p className="text-white font-semibold">{booking.customerName}</p></div>
+                <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Email</p><p className="text-white truncate">{booking.customerEmail}</p></div>
+                <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Total</p><p className="text-white font-bold">${Number(booking.totalAmount).toLocaleString()} {booking.currency}</p></div>
+                <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Payment</p>
+                  <span className={cn('inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase border', STATUS_COLORS[booking.paymentStatus] || '')}>
+                    {booking.paymentStatus?.replace(/_/g, ' ')}
+                  </span>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Segments */}
+          {booking.segments?.length > 0 && (
+            <div className="lg:col-span-2 bg-slate-900/80 border border-white/[0.06] rounded-2xl p-6">
+              <h3 className="text-sm font-bold text-white mb-4">Flight Segments</h3>
+              <div className="space-y-3">
+                {booking.segments.map((seg: any, i: number) => (
+                  <div key={i} className="flex items-center gap-4 p-3 rounded-xl bg-slate-800/40 border border-white/[0.04]">
+                    <div className="text-center shrink-0">
+                      <p className="text-xs font-bold text-white">{seg.depAirport}</p>
+                      <p className="text-[10px] text-slate-500">{seg.departureTime ? new Date(seg.departureTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                    </div>
+                    <div className="flex-1 border-t border-dashed border-slate-700 relative">
+                      <Plane className="w-3 h-3 text-[#1ABC9C] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-800/40" />
+                    </div>
+                    <div className="text-center shrink-0">
+                      <p className="text-xs font-bold text-white">{seg.arrAirport}</p>
+                      <p className="text-[10px] text-slate-500">{seg.arrivalTime ? new Date(seg.arrivalTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                    </div>
+                    <div className="shrink-0 text-right">
+                      <p className="text-xs text-slate-400">{seg.airlineName || seg.marketingCarrier}</p>
+                      <p className="text-[10px] text-slate-500">{seg.flightNumber}</p>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      {activeTab === 'passengers' && (
+        <div className="space-y-4">
+          <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-4">
+            <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <p className="text-xs text-amber-400">
+              <strong>Identity fields</strong> (Name, DOB, Gender) cannot be edited directly after booking. Contact Admin for identity changes.
+            </p>
+          </div>
+
+          {booking.passengers?.map((pax: any) => (
+            <div key={pax.id} className="bg-slate-900/80 border border-white/[0.06] rounded-2xl p-5">
+              <div className="flex items-center justify-between mb-4">
+                <div>
+                  <p className="text-sm font-bold text-white">{pax.firstName} {pax.middleName || ''} {pax.lastName}</p>
+                  <p className="text-xs text-slate-500">{pax.type || 'ADULT'} • {pax.gender || 'Not specified'} • DOB: {pax.dateOfBirth ? new Date(pax.dateOfBirth).toLocaleDateString() : 'N/A'}</p>
+                </div>
+                {editingPassenger !== pax.id && (
+                  <button
+                    onClick={() => {
+                      setEditingPassenger(pax.id);
+                      setEditValues({
+                        email: pax.email || '',
+                        phone: pax.phone || '',
+                        nationality: pax.nationality || '',
+                        passportNumber: pax.passportNumber || '',
+                        passportExpiry: pax.passportExpiry ? new Date(pax.passportExpiry).toISOString().split('T')[0] : '',
+                        issuingCountry: pax.issuingCountry || '',
+                      });
+                    }}
+                    className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold text-[#1ABC9C] hover:text-white bg-[#1ABC9C]/10 hover:bg-[#1ABC9C]/20 border border-[#1ABC9C]/20 transition-all"
+                  >
+                    <Edit3 className="w-3 h-3" /> Edit
+                  </button>
+                )}
+              </div>
+
+              {editingPassenger === pax.id ? (
+                <div className="space-y-3 pt-3 border-t border-white/[0.06]">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {EDITABLE_FIELDS.map((field) => (
+                      <div key={field.key}>
+                        <label className="block text-[10px] text-slate-500 uppercase font-bold mb-1">{field.label}</label>
+                        <input
+                          type={field.type}
+                          value={editValues[field.key] || ''}
+                          onChange={(e) => setEditValues({ ...editValues, [field.key]: e.target.value })}
+                          className="w-full px-3 py-2 rounded-lg bg-slate-800/50 border border-white/10 text-white text-sm focus:outline-none focus:border-[#1ABC9C]/50 transition-all"
+                        />
+                      </div>
+                    ))}
+                  </div>
+                  <div className="flex items-center gap-2 pt-2">
+                    <button
+                      onClick={() => handlePassengerUpdate(pax.id)}
+                      disabled={saving}
+                      className="flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold text-white bg-[#1ABC9C] hover:bg-[#16A085] transition-all disabled:opacity-50"
+                    >
+                      {saving ? <Loader2 className="w-3 h-3 animate-spin" /> : <Check className="w-3 h-3" />} Save
+                    </button>
+                    <button
+                      onClick={() => setEditingPassenger(null)}
+                      className="px-4 py-2 rounded-lg text-xs font-medium text-slate-400 hover:text-white bg-white/[0.04] transition-all"
+                    >
+                      Cancel
+                    </button>
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 pt-3 border-t border-white/[0.06]">
+                  {EDITABLE_FIELDS.map((field) => (
+                    <div key={field.key}>
+                      <p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">{field.label}</p>
+                      <p className="text-xs text-white">{(pax as any)[field.key] || '—'}</p>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {activeTab === 'payments' && (
+        <div className="bg-slate-900/80 border border-white/[0.06] rounded-2xl overflow-hidden">
+          <div className="divide-y divide-white/[0.04]">
+            {booking.payments?.length ? booking.payments.map((p: any) => (
+              <div key={p.id} className="flex items-center gap-4 px-6 py-4">
+                <CreditCard className="w-5 h-5 text-slate-500 shrink-0" />
+                <div className="flex-1">
+                  <p className="text-sm text-white font-semibold">${Number(p.amount).toLocaleString()} {p.currency}</p>
+                  <p className="text-xs text-slate-500">{p.type} • {new Date(p.createdAt).toLocaleString()}</p>
+                </div>
+                <span className={cn('px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border', STATUS_COLORS[p.status] || '')}>
+                  {p.status}
+                </span>
+              </div>
+            )) : (
+              <div className="p-8 text-center text-sm text-slate-500">No payment records</div>
+            )}
+          </div>
+        </div>
+      )}
+
+      {activeTab === 'timeline' && (
+        <div className="bg-slate-900/80 border border-white/[0.06] rounded-2xl p-6">
+          <div className="space-y-4">
+            {booking.events?.slice(0, eventsExpanded ? undefined : 10).map((evt: any, i: number) => (
+              <div key={i} className="flex gap-3">
+                <div className="w-2 h-2 rounded-full bg-[#1ABC9C] mt-1.5 shrink-0" />
+                <div>
+                  <p className="text-sm text-white font-medium">{evt.title}</p>
+                  {evt.description && <p className="text-xs text-slate-500 mt-0.5">{evt.description}</p>}
+                  <p className="text-[10px] text-slate-600 mt-1">{new Date(evt.createdAt).toLocaleString()}</p>
+                </div>
+              </div>
+            ))}
+            {booking.events?.length > 10 && (
+              <button
+                onClick={() => setEventsExpanded(!eventsExpanded)}
+                className="flex items-center gap-1.5 text-xs text-[#1ABC9C] hover:text-white transition-colors"
+              >
+                {eventsExpanded ? <ChevronUp className="w-3 h-3" /> : <ChevronDown className="w-3 h-3" />}
+                {eventsExpanded ? 'Show less' : `Show all ${booking.events.length} events`}
+              </button>
+            )}
+            {(!booking.events || booking.events.length === 0) && (
+              <p className="text-sm text-slate-500">No events recorded</p>
+            )}
+          </div>
+        </div>
+      )}
+
+      {/* Cancel dialog */}
+      {showCancelDialog && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
+          <div className="bg-slate-900 border border-white/10 rounded-2xl p-6 w-full max-w-md shadow-2xl">
+            <h3 className="text-lg font-bold text-white mb-2">Request Cancellation</h3>
+            <p className="text-xs text-slate-400 mb-4">
+              This will submit a cancellation request to Admin. Financial processing (refund/penalty) will be handled by Admin/Super Admin.
+            </p>
+            <textarea
+              value={cancelReason}
+              onChange={(e) => setCancelReason(e.target.value)}
+              placeholder="Reason for cancellation (optional)"
+              className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-white/10 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-red-500/50 resize-none h-24"
+            />
+            <div className="flex items-center justify-end gap-2 mt-4">
+              <button
+                onClick={() => setShowCancelDialog(false)}
+                className="px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition-colors"
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleCancellation}
+                disabled={saving}
+                className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-50"
+              >
+                {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                Submit Request
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}

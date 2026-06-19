@@ -93,6 +93,10 @@ export const PATCH = withAdmin(async (req: NextRequest, { admin, params }: any) 
       select: { id: true, email: true, fullName: true, phone: true, role: true, isActive: true },
     });
 
+    if (update.role === 'SUPPORT' && target.role !== 'SUPPORT') {
+      import('@/lib/email').then(m => m.sendSupportRoleGrantedEmail(updated.email, updated.fullName)).catch(e => console.error(e));
+    }
+
     await auditLog({
       adminUserId: admin.sub,
       action: 'UPDATE_ADMIN_USER',

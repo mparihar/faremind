@@ -42,12 +42,14 @@ interface NotifyPayload {
 // Brevo email sender (same pattern as manage-booking-emails)
 // ═══════════════════════════════════════════════════════════
 
-async function sendBrevo(to: string, subject: string, html: string, text: string): Promise<void> {
+async function sendBrevo(to: string, subject: string, html: string, text: string, meta?: { recipientName?: string; template?: string; bookingRef?: string | null }): Promise<void> {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) {
     console.warn(`[notify] BREVO_API_KEY not set — skipping email to ${to}`);
     return;
   }
+  let status: 'SENT' | 'FAILED' = 'SENT';
+  let errorMsg: string | null = null;
   try {
     const res = await fetch(BREVO_API_URL, {
       method: 'POST',
@@ -63,9 +65,31 @@ async function sendBrevo(to: string, subject: string, html: string, text: string
     if (!res.ok) {
       const body = await res.text();
       console.error(`[notify] Brevo ${res.status}: ${body}`);
+      status = 'FAILED';
+      errorMsg = `HTTP ${res.status}: ${body.slice(0, 200)}`;
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error(`[notify] Send failed to ${to}:`, err);
+    status = 'FAILED';
+    errorMsg = err.message || 'Unknown error';
+  }
+
+  // Log to email_logs table (non-blocking)
+  try {
+    await prisma.emailLog.create({
+      data: {
+        recipient: to,
+        recipientName: meta?.recipientName || to.split('@')[0],
+        subject,
+        template: meta?.template || 'Notification',
+        status,
+        provider: 'Brevo',
+        bookingRef: meta?.bookingRef ?? null,
+        errorMessage: errorMsg,
+      },
+    });
+  } catch (logErr) {
+    console.error('[email-log] Failed to log notification email:', logErr instanceof Error ? logErr.message : logErr);
   }
 }
 
@@ -466,12 +490,34 @@ async function getAdminRecipients(eventType: string): Promise<string[]> {
 export async function fireNotification(payload: NotifyPayload): Promise<void> {
   try {
     const { event_type, customer_email, data } = payload;
+    const ref = String(data.booking_reference ?? data.pnr ?? '') || null;
+    const customerName = String(data.customer_name ?? 'Customer');
+
+    // Derive a human-readable template name from the event type
+    const templateMap: Record<string, string> = {
+      BOOKING_CONFIRMED: 'Booking Confirmation',
+      BOOKING_PENDING: 'Booking Pending',
+      BOOKING_FAILED: 'Booking Failed',
+      BOOKING_CANCELLED: 'Cancellation Notice',
+      BOOKING_UPDATED: 'Booking Updated',
+      DATE_CHANGE_SUBMITTED: 'Date Change Requested',
+      DATE_CHANGE_APPROVED: 'Date Change Approved',
+      DATE_CHANGE_REJECTED: 'Date Change Rejected',
+      PAYMENT_SUCCESS: 'Payment Receipt',
+      PAYMENT_FAILED: 'Payment Failed',
+      PRICE_DROP_ALERT: 'Price Alert',
+      PRICE_DROP_REFUND: 'Price Drop Refund',
+      CHECKIN_REMINDER: 'Check-in Reminder',
+      UPCOMING_TRIP: 'Trip Reminder',
+      SUPPORT_MANUAL: 'Support Request',
+    };
+    const template = templateMap[event_type] || event_type;
 
     // Customer email
     if (CUSTOMER_EVENTS.has(event_type) && customer_email) {
       const spec = buildCustomerEmail(event_type, data);
       if (spec) {
-        sendBrevo(customer_email, spec.subject, spec.html, spec.text).catch(() => {});
+        sendBrevo(customer_email, spec.subject, spec.html, spec.text, { recipientName: customerName, template, bookingRef: ref }).catch(() => {});
       }
     }
 
@@ -481,8 +527,28 @@ export async function fireNotification(payload: NotifyPayload): Promise<void> {
       if (spec) {
         const adminEmails = await getAdminRecipients(event_type);
         for (const adminEmail of adminEmails) {
-          sendBrevo(adminEmail, spec.subject, spec.html, spec.text).catch(() => {});
+          sendBrevo(adminEmail, spec.subject, spec.html, spec.text, { recipientName: 'Admin', template: `[Admin] ${template}`, bookingRef: ref }).catch(() => {});
         }
+      }
+    }
+
+    // Agent email — if booking was created by an agent, CC them on key events
+    const AGENT_NOTIFY_EVENTS = new Set<string>([
+      'BOOKING_CONFIRMED', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
+      'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
+      'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
+    ]);
+    const agentEmail = data.agent_email ? String(data.agent_email) : null;
+    const agentName = data.agent_name ? String(data.agent_name) : 'Agent';
+    if (agentEmail && AGENT_NOTIFY_EVENTS.has(event_type)) {
+      const spec = buildSupportEmail(event_type, data);
+      if (spec) {
+        const agentSubject = spec.subject.replace('[FAREMIND]', '[FAREMIND Agent]');
+        sendBrevo(agentEmail, agentSubject, spec.html, spec.text, {
+          recipientName: agentName,
+          template: `[Agent] ${template}`,
+          bookingRef: ref,
+        }).catch(() => {});
       }
     }
   } catch (err) {

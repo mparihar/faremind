@@ -26,7 +26,6 @@ import type { DnaSearchResult, DnaRankedCard } from '@/lib/services/dna-search-s
 import { trackDnaEvent } from '@/lib/analytics/dna-search-analytics';
 import DnaSearchProgressBanner, { type DnaSearchStatus } from '@/components/search/DnaSearchProgressBanner';
 import { OfferExpiryModals } from '@/components/checkout/OfferExpiryModals';
-
 import type { RoundTripOption, RoundTripSortMode } from '@/lib/round-trip-types';
 import { rankFlightOffers } from '@/lib/ai-scoring';
 import type { AiScoredOption } from '@/lib/ai-scoring';
@@ -142,6 +141,7 @@ function SearchContent() {
   const prefs = usePreferencesStore();
   const { user: authUser } = useAuthStore();
   const fareStore = useFareStore();
+  const showScores = !!authUser?.isAdminViewer;
 
   const [showSearch, setShowSearch] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'map'>('map');
@@ -294,6 +294,7 @@ function SearchContent() {
       infants: infantsParam,
       trip: tripParam,
       ...(returnDateParam ? { returnDate: returnDateParam } : {}),
+      ...(searchParams.get('fromFlex') === '1' ? { fromFlex: '1' } : {}),
     });
     fetch(`/api/search?${params}`)
       .then((res) => res.json())
@@ -971,6 +972,9 @@ function SearchContent() {
       {/* Offer expiry warning & expired modals */}
       <OfferExpiryModals />
 
+
+
+
       {/* Header */}
       <div ref={headerRef} className={`bg-[#1a1a2e]/95 backdrop-blur-xl border-b border-white/[0.06] shadow-lg ${viewMode === 'map' ? 'flex-none z-40' : 'sticky top-0 z-40'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
@@ -1269,6 +1273,8 @@ function SearchContent() {
                     departureDate={date}
                     returnDate={returnDateParam}
                     adults={adults}
+                    children={childrenParam}
+                    infants={infantsParam}
                     cabin={activeCabin}
                     tripParam={tripParam}
                     currentMinPrice={panelFilteredRT[0]?.totalPrice ?? null}
@@ -1313,6 +1319,7 @@ function SearchContent() {
                           dnaMatchLabel={dnaSearchActive ? dnaData?.dnaMatchLabel : undefined}
                           dnaMatchReasons={dnaSearchActive && i < (dnaFlightCount || 25) ? dnaData?.matchReasons : undefined}
                           dnaMismatchReasons={dnaSearchActive && i < (dnaFlightCount || 25) ? dnaData?.mismatchReasons : undefined}
+                          showScores={showScores}
                         />
                         );
                       })}
@@ -1373,6 +1380,7 @@ function SearchContent() {
                             dnaMatchReasons={dnaSearchActive && i < (dnaFlightCount || 25) ? dnaData?.matchReasons : undefined}
                             dnaMismatchReasons={dnaSearchActive && i < (dnaFlightCount || 25) ? dnaData?.mismatchReasons : undefined}
                             finalDnaScore={dnaSearchActive ? dnaData?.finalDnaScore : undefined}
+                            showScores={showScores}
                           />
                         </motion.div>
                         );
@@ -1498,6 +1506,8 @@ function SearchContent() {
                         departureDate={date}
                         returnDate={returnDateParam}
                         adults={adults}
+                        children={childrenParam}
+                        infants={infantsParam}
                         cabin={activeCabin}
                         tripParam={tripParam}
                         currentMinPrice={panelFilteredRT[0]?.totalPrice ?? null}
@@ -1533,6 +1543,7 @@ function SearchContent() {
                           dnaMatchLabel={dnaSearchActive ? dnaData?.dnaMatchLabel : undefined}
                           dnaMatchReasons={dnaSearchActive && i < (dnaFlightCount || 25) ? dnaData?.matchReasons : undefined}
                           dnaMismatchReasons={dnaSearchActive && i < (dnaFlightCount || 25) ? dnaData?.mismatchReasons : undefined}
+                          showScores={showScores}
                         />
                         );
                       })}
@@ -1616,6 +1627,7 @@ function SearchContent() {
                         dnaMatchReasons={dnaSearchActive && i < (dnaFlightCount || 25) ? dnaData?.matchReasons : undefined}
                         dnaMismatchReasons={dnaSearchActive && i < (dnaFlightCount || 25) ? dnaData?.mismatchReasons : undefined}
                         finalDnaScore={dnaSearchActive ? dnaData?.finalDnaScore : undefined}
+                        showScores={showScores}
                       />
                       );
                     })}
@@ -1683,6 +1695,7 @@ function SearchContent() {
           isTopAiPick={prefs.aiIntelligence && (() => { const idx = panelFilteredRT.findIndex(r => r.id === selectedRoundTrip.id); return idx > 0 && idx < 15; })()}
           aiScoreOverride={prefs.aiIntelligence ? (dnaSearchActive ? dnaAiSnapshotRT : aiRTMap)?.get(selectedRoundTrip.id)?.aiScore : undefined}
           aiReasonsOverride={prefs.aiIntelligence ? (dnaSearchActive ? dnaAiSnapshotRT : aiRTMap)?.get(selectedRoundTrip.id)?.aiReasons : undefined}
+          showScores={showScores}
           onClose={() => setSelectedRoundTrip(null)}
           onBook={() => {
             fareStore.reset();

@@ -51,41 +51,64 @@ export const GET = withAdmin(async (_req: NextRequest, { params }) => {
   }
 
   return NextResponse.json({ user });
-}, 'OPS_ADMIN');
+}, 'SUPPORT');
 
 /**
  * PATCH /api/admin/customers/[userId]
- * Toggle user active status (soft disable/enable).
+ * Toggle user active status or role.
  */
 export const PATCH = withAdmin(async (req: NextRequest, { admin, params }) => {
-  const userId = params.userId;
-  const body = await req.json();
+  try {
+    const userId = params.userId;
+    const body = await req.json();
 
-  const user = await prisma.user.findUnique({ where: { id: userId } });
-  if (!user) {
-    return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    const user = await prisma.user.findUnique({ where: { id: userId } });
+    if (!user) {
+      return NextResponse.json({ error: 'User not found' }, { status: 404 });
+    }
+
+    // Handle role update via raw SQL (Prisma v7 pg-adapter has enum casting issues)
+    if (body.role && ['USER', 'FAREMIND_AGENT'].includes(body.role)) {
+      await prisma.$executeRawUnsafe(
+        `UPDATE users SET role = $1::"UserRole" WHERE id = $2`,
+        body.role,
+        userId
+      );
+    }
+
+    // Handle isActive toggle via ORM (booleans work fine)
+    if (typeof body.isActive === 'boolean') {
+      await prisma.user.update({
+        where: { id: userId },
+        data: { isActive: body.isActive },
+      });
+    }
+
+    // Re-fetch the updated user
+    const updated = await prisma.user.findUnique({
+      where: { id: userId },
+      select: { id: true, email: true, isActive: true, role: true },
+    });
+
+    const action = body.role
+      ? (body.role === 'FAREMIND_AGENT' ? 'ASSIGN_AGENT_ROLE' : 'REMOVE_AGENT_ROLE')
+      : (body.isActive ? 'ENABLE_CUSTOMER' : 'DISABLE_CUSTOMER');
+
+    await auditLog({
+      adminUserId: admin.sub,
+      action,
+      entityType: 'User',
+      entityId: userId,
+      before: { isActive: user.isActive, role: user.role },
+      after: { isActive: updated?.isActive, role: updated?.role },
+      ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
+    });
+
+    return NextResponse.json({ user: updated });
+  } catch (err: any) {
+    console.error('[admin/customers PATCH] Error:', err);
+    return NextResponse.json({ error: err?.message || 'Failed to update user' }, { status: 500 });
   }
-
-  const data: any = {};
-  if (typeof body.isActive === 'boolean') data.isActive = body.isActive;
-
-  const updated = await prisma.user.update({
-    where: { id: userId },
-    data,
-    select: { id: true, email: true, isActive: true },
-  });
-
-  await auditLog({
-    adminUserId: admin.sub,
-    action: body.isActive ? 'ENABLE_CUSTOMER' : 'DISABLE_CUSTOMER',
-    entityType: 'User',
-    entityId: userId,
-    before: { isActive: user.isActive },
-    after: { isActive: updated.isActive },
-    ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
-  });
-
-  return NextResponse.json({ user: updated });
 }, 'OPS_ADMIN');
 
 /**

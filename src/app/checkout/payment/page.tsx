@@ -352,6 +352,10 @@ function PaymentFormInner() {
       console.log(`[Payment] ✅ Stripe authorization successful: ${paymentIntentId} (status: ${paymentIntent.status})`);
 
       // 3. Confirm booking — calls Next.js route directly (creates Duffel order + captures Stripe)
+      // Inject agent booking context if booking on behalf of customer
+      const agentCtxRaw = typeof window !== 'undefined' ? sessionStorage.getItem('agentBookingContext') : null;
+      const agentCtx = agentCtxRaw ? JSON.parse(agentCtxRaw) : null;
+
       const bookingRes = await fetch('/api/checkout/bookings/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -381,10 +385,18 @@ function PaymentFormInner() {
           travelInsurance: store.travelInsurance,
           seatSelections,
           mealSelections,
+          wheelchairSelections: store.wheelchairSelections,
           sourceFlight,
           sourceRoundTrip,
           currency: currency ?? 'USD',
           userId: user?.id ?? null,
+          // Agent booking attribution
+          ...(agentCtx ? {
+            agentUserId: agentCtx.agentUserId,
+            agentName: agentCtx.agentName,
+            agentEmail: agentCtx.agentEmail,
+            createdByRole: agentCtx.createdByRole || 'AGENT',
+          } : {}),
         }),
       })
         .then((r) => r.json()) as {
@@ -479,11 +491,22 @@ function PaymentFormInner() {
             serviceFee:    pricing.serviceFee,
             total:         pricing.total,
           },
+          // Agent attribution — CC agent on booking confirmation email
+          ...(agentCtx ? {
+            agentEmail: agentCtx.agentEmail,
+            agentName: agentCtx.agentName,
+          } : {}),
         }),
       }).catch(() => {});
 
       store.setPaymentStatus('succeeded');
       useOfferSessionStore.getState().markBooked();
+
+      // Clear agent context after successful booking
+      if (agentCtx) {
+        sessionStorage.removeItem('agentBookingContext');
+      }
+
       router.push('/checkout/confirm');
     } catch (err) {
       const msg =

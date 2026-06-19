@@ -113,15 +113,11 @@ export default function AiFareClassSelector({ fares, onSelect }: Props) {
               </span>
             </div>
 
-            {/* Price + AI score */}
+            {/* Price */}
             <div className="flex items-center justify-between gap-2 mb-2.5">
               <span className="text-[15px] font-black text-[#F97316]">
                 {formatPrice(fare.totalPrice, fare.currency)}
               </span>
-              <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[#1ABC9C]/10">
-                <Sparkles className="w-2.5 h-2.5 text-[#1ABC9C]" />
-                <span className="text-[11px] font-black text-[#1ABC9C]">AI {fare.aiScore}</span>
-              </div>
             </div>
 
             {/* Features */}

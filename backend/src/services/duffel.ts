@@ -408,6 +408,11 @@ export interface DuffelBookingParams {
   paymentAmount: number;
   paymentCurrency: string;
   metadata?: Record<string, string>;
+  /** Wheelchair / special assistance SSR codes per passenger */
+  services?: {
+    passenger_id: string;
+    ssr_code: string;  // e.g. 'WCHR', 'WCHS', 'WCHC', 'WCOB'
+  }[];
 }
 
 /**
@@ -433,22 +438,35 @@ export async function createBooking(params: DuffelBookingParams): Promise<Duffel
     throw error;
   }
 
+  const orderBody: Record<string, unknown> = {
+    selected_offers: [params.offerId],
+    passengers: params.passengers,
+    type: 'instant',
+    payments: [
+      {
+        type: 'balance',
+        amount: params.paymentAmount.toFixed(2),
+        currency: params.paymentCurrency,
+      },
+    ],
+    metadata: params.metadata || { booked_via: 'faremind' },
+  };
+
+  // Attach wheelchair / special assistance SSRs if any
+  if (params.services && params.services.length > 0) {
+    orderBody.services = params.services.map(s => ({
+      passenger_id: s.passenger_id,
+      type: 'special_assistance',
+      data: { ssr_code: s.ssr_code },
+    }));
+    console.log(`[Duffel] 🦽 Attaching ${params.services.length} wheelchair SSR(s):`,
+      params.services.map(s => `${s.passenger_id}→${s.ssr_code}`).join(', '));
+  }
+
   const order = await duffelRequest<DuffelOrder>({
     method: 'POST',
     path: '/air/orders',
-    body: {
-      selected_offers: [params.offerId],
-      passengers: params.passengers,
-      type: 'instant',
-      payments: [
-        {
-          type: 'balance',
-          amount: params.paymentAmount.toFixed(2),
-          currency: params.paymentCurrency,
-        },
-      ],
-      metadata: params.metadata || { booked_via: 'faremind' },
-    } as Record<string, unknown>,
+    body: orderBody,
     retries: 0, // Never retry a payment
   });
 

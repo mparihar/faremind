@@ -531,9 +531,9 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
                           </div>
                           <div className="flex items-center justify-center gap-1">
                             <span className="text-[10px] font-black text-emerald-400">${outFlightInfo.price}</span>
-                            <span className="text-[7px] font-mono opacity-50">{outFlightInfo.flightCode}</span>
+                            <span className="text-[9px] font-mono text-white/90">{outFlightInfo.flightCode}</span>
                           </div>
-                          <p className="text-[7px] opacity-50 mt-0.5">
+                          <p className="text-[9px] font-semibold text-white/90 mt-0.5">
                             {outFlightInfo.stops === 0 ? 'Non-stop' : `${outFlightInfo.stops} stop${outFlightInfo.stops > 1 ? 's' : ''}`}
                           </p>
                         </>
@@ -573,9 +573,9 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
                             <span className="text-[10px] font-extrabold tracking-wide">{retFlightInfo.duration}</span>
                           </div>
                           <div className="flex items-center justify-center gap-1">
-                            <span className="text-[7px] font-mono opacity-70">{retFlightInfo.flightCode}</span>
+                            <span className="text-[9px] font-mono text-white/90">{retFlightInfo.flightCode}</span>
                           </div>
-                          <p className="text-[7px] opacity-60 mt-0.5">
+                          <p className="text-[9px] font-semibold text-white/90 mt-0.5">
                             {retFlightInfo.stops === 0 ? 'Non-stop' : `${retFlightInfo.stops} stop${retFlightInfo.stops > 1 ? 's' : ''}`}
                           </p>
                         </>

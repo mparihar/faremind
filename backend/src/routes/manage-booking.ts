@@ -29,6 +29,7 @@ async function sendBookingOtpEmail(toEmail: string, toName: string, otp: string)
     console.warn(`[manage-booking] BREVO_API_KEY not set — OTP for ${toEmail}: ${otp}`);
     return;
   }
+  const emailSubject = `${otp} — Your FAREMIND booking access code`;
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">
       <h2 style="color:#1ABC9C;margin-bottom:8px">Your FAREMIND booking access code</h2>
@@ -45,7 +46,7 @@ async function sendBookingOtpEmail(toEmail: string, toName: string, otp: string)
     body: JSON.stringify({
       sender: { name: SENDER_NAME, email: SENDER_EMAIL },
       to: [{ email: toEmail, name: toName }],
-      subject: `${otp} — Your FAREMIND booking access code`,
+      subject: emailSubject,
       htmlContent: html,
       textContent: `Your FAREMIND booking access code is: ${otp}\n\nValid for 5 minutes. Do not share it.`,
     }),
@@ -54,8 +55,11 @@ async function sendBookingOtpEmail(toEmail: string, toName: string, otp: string)
   if (!res.ok) {
     const body = await res.text();
     console.error(`[manage-booking] Brevo error ${res.status}:`, body);
+    try { await prisma.emailLog.create({ data: { recipient: toEmail, recipientName: toName, subject: emailSubject, template: 'Booking OTP', status: 'FAILED', provider: 'Brevo', errorMessage: `HTTP ${res.status}` } }); } catch {}
     throw new Error(`Brevo ${res.status}: ${body}`);
   }
+
+  try { await prisma.emailLog.create({ data: { recipient: toEmail, recipientName: toName, subject: emailSubject, template: 'Booking OTP', status: 'SENT', provider: 'Brevo' } }); } catch {}
 }
 
 const plugin: FastifyPluginAsync = async (fastify) => {

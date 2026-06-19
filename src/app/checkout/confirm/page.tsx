@@ -9,7 +9,7 @@ import {
   Check, Copy, Share2, Download, LayoutDashboard, Search,
   ShieldCheck, Plane, User, CreditCard, CheckCircle2, Clock,
   AlertCircle, Loader2, CalendarDays, MapPin, ArrowRightLeft,
-  Info,
+  Info, Briefcase,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
@@ -313,6 +313,20 @@ export default function ConfirmPage() {
   const router = useRouter();
   const store = useCheckoutStore();
   const [downloadState, setDownloadState] = useState<DownloadState>('idle');
+
+  // Detect agent booking mode
+  const [agentCtx, setAgentCtx] = useState<{ agentName?: string; customerName?: string; customerEmail?: string } | null>(null);
+  useEffect(() => {
+    try {
+      const raw = sessionStorage.getItem('agentBookingContext');
+      if (raw) {
+        const ctx = JSON.parse(raw);
+        setAgentCtx(ctx);
+        // Clear after reading (booking complete)
+        sessionStorage.removeItem('agentBookingContext');
+      }
+    } catch {}
+  }, []);
 
   const { confirmation, selectedFare, sourceFlight, sourceRoundTrip, passengers, priceProtection, pricing } = store;
   const effectivePricing = pricing ?? buildLocalPricing(store);
@@ -698,9 +712,15 @@ export default function ConfirmPage() {
         {/* ── 7. ACTION BUTTONS ── */}
         <motion.div variants={itemV}>
           <div className="flex flex-col sm:flex-row items-stretch gap-3">
-            <Link href="/account" className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#1ABC9C] to-emerald-500 hover:from-emerald-500 hover:to-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 transition-all hover:scale-[1.02] active:scale-[0.98] flex-1">
-              <LayoutDashboard className="w-4 h-4" />View Dashboard
-            </Link>
+            {agentCtx ? (
+              <Link href="/agent/bookings" className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#1ABC9C] to-emerald-500 hover:from-emerald-500 hover:to-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 transition-all hover:scale-[1.02] active:scale-[0.98] flex-1">
+                <Briefcase className="w-4 h-4" />Back to Agent Portal
+              </Link>
+            ) : (
+              <Link href="/account" className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#1ABC9C] to-emerald-500 hover:from-emerald-500 hover:to-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 transition-all hover:scale-[1.02] active:scale-[0.98] flex-1">
+                <LayoutDashboard className="w-4 h-4" />View Dashboard
+              </Link>
+            )}
 
             <button
               onClick={handleDownload}
@@ -720,8 +740,8 @@ export default function ConfirmPage() {
               {downloadState === 'preparing' ? 'Preparing…' : downloadState === 'done' ? 'Downloaded!' : downloadState === 'error' ? 'Try Again' : 'Download Itinerary'}
             </button>
 
-            <Link href="/" className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all flex-1 hover:scale-[1.02] active:scale-[0.98]">
-              <Search className="w-4 h-4" />Search Flights
+            <Link href={agentCtx ? '/agent/new-booking' : '/'} className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all flex-1 hover:scale-[1.02] active:scale-[0.98]">
+              <Search className="w-4 h-4" />{agentCtx ? 'New Booking' : 'Search Flights'}
             </Link>
           </div>
         </motion.div>

@@ -42,3 +42,22 @@ export function flexCacheGet(key: string): RoundTripOption[] | null {
 export function flexCacheSet(key: string, options: RoundTripOption[]): void {
   store.set(key, { options, ts: Date.now() });
 }
+
+/** Clear all flex-cache entries for a given origin→destination route.
+ *  Called on fresh searches (hero / modify) so the flex-date strip
+ *  re-fetches live prices instead of showing stale cached tiles. */
+export function flexCacheClearRoute(origin: string, destination: string): void {
+  const prefix = `${(process.env.FLIGHT_PROVIDER_MODE || 'BOTH').toUpperCase()}|${origin.toUpperCase()}|${destination.toUpperCase()}|`;
+  for (const key of store.keys()) {
+    if (key.startsWith(prefix)) {
+      store.delete(key);
+    }
+  }
+}
+
+/** Clear ALL flex-cache entries across all routes.
+ *  Called when user navigates back to the home page (hero).
+ */
+export function flexCacheClearAll(): void {
+  store.clear();
+}

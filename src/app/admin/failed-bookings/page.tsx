@@ -7,9 +7,9 @@ import { useAdminStore } from '@/store/useAdminStore';
 import {
   RefreshCw, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
   AlertTriangle, Phone, Mail, Trash2, CheckCircle2, X, Plane, Clock,
-  Users, DollarSign, ShieldAlert,
+  Users, DollarSign, ShieldAlert, Inbox
 } from 'lucide-react';
-import { format } from 'date-fns';
+import { format, formatDistanceToNow } from 'date-fns';
 
 const ERROR_CODE_LABELS: Record<string, { label: string; color: string }> = {
   PROVIDER_ORDER_FAILED:    { label: 'Provider Failed',     color: 'bg-red-500/15 text-red-400' },
@@ -18,6 +18,13 @@ const ERROR_CODE_LABELS: Record<string, { label: string; color: string }> = {
   MISSING_PAYMENT:          { label: 'Missing Payment',      color: 'bg-orange-500/15 text-orange-400' },
   MISSING_OFFER_ID:         { label: 'Missing Offer',        color: 'bg-yellow-500/15 text-yellow-400' },
   PROVIDER_NOT_CONFIGURED:  { label: 'Not Configured',       color: 'bg-slate-500/15 text-slate-400' },
+};
+
+const STATUS_STYLES: Record<string, { cls: string; icon: React.ElementType }> = {
+  OPEN:              { cls: 'bg-blue-400/15 text-blue-400',    icon: Inbox },
+  IN_PROGRESS:       { cls: 'bg-amber-400/15 text-amber-400', icon: Clock },
+  RESOLVED:          { cls: 'bg-emerald-400/15 text-emerald-400', icon: CheckCircle2 },
+  CLOSED:            { cls: 'bg-slate-400/15 text-slate-400',  icon: X },
 };
 
 function getErrorBadge(code: string) {
@@ -29,6 +36,7 @@ export default function FailedBookingsPage() {
   const router = useRouter();
   const { user: adminUser } = useAdminStore();
   const [records, setRecords] = useState<any[]>([]);
+  const [supportStaff, setSupportStaff] = useState<any[]>([]);
   const [total, setTotal]     = useState(0);
   const [pages, setPages]     = useState(1);
   const [page, setPage]       = useState(1);
@@ -39,7 +47,7 @@ export default function FailedBookingsPage() {
   const [dateFrom, setDateFrom]       = useState('');
   const [dateTo, setDateTo]           = useState('');
   const [errorCodeFilter, setErrorCodeFilter] = useState('');
-  const [resolvedFilter, setResolvedFilter]   = useState(''); // '' | 'true' | 'false'
+  const [statusFilter, setStatusFilter]   = useState(''); 
 
   // Expanded row
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -53,15 +61,32 @@ export default function FailedBookingsPage() {
   const [deleting, setDeleting] = useState<string | null>(null);
 
   const isOpsOrAbove = adminUser?.role === 'SUPER_ADMIN' || adminUser?.role === 'OPS_ADMIN';
+  const isAdminOrSuper = adminUser?.role === 'SUPER_ADMIN' || adminUser?.role === 'ADMIN';
 
   const load = useCallback(async () => {
     setLoading(true);
+    
+    // Fetch users for assignment dropdown
+    try {
+      const usersRes = await adminFetch('/api/admin/users');
+      if (usersRes.ok) {
+        const json = await usersRes.json();
+        setSupportStaff((json.users || []).filter((u: any) => ['SUPPORT', 'SUPER_ADMIN', 'OPS_ADMIN', 'ADMIN'].includes(u.role)));
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
     const params = new URLSearchParams({ page: String(page), limit: '25' });
     if (emailSearch.trim()) params.set('email', emailSearch.trim());
     if (dateFrom) params.set('from', dateFrom);
     if (dateTo) params.set('to', dateTo);
     if (errorCodeFilter) params.set('errorCode', errorCodeFilter);
-    if (resolvedFilter) params.set('resolved', resolvedFilter);
+    if (statusFilter === 'false') {
+      params.set('resolved', 'false');
+    } else if (statusFilter === 'true') {
+      params.set('resolved', 'true');
+    }
 
     const res = await adminFetch(`/api/admin/failed-bookings?${params}`);
     if (res.status === 401) { router.replace('/admin/login'); return; }
@@ -70,26 +95,43 @@ export default function FailedBookingsPage() {
     setTotal(data.total ?? 0);
     setPages(data.pages ?? 1);
     setLoading(false);
-  }, [page, emailSearch, dateFrom, dateTo, errorCodeFilter, resolvedFilter, router]);
+  }, [page, emailSearch, dateFrom, dateTo, errorCodeFilter, statusFilter, router]);
 
   useEffect(() => { load(); }, [load]);
+
+  const updateBooking = async (id: string, updates: any) => {
+    try {
+      const res = await adminFetch(`/api/admin/failed-bookings/${id}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(updates),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || 'Failed to update booking');
+      } else {
+        load();
+      }
+    } catch (e) {
+      console.error(e);
+    }
+  };
 
   const handleResolve = async () => {
     if (!resolveId) return;
     setResolving(true);
-    try {
-      const res = await adminFetch(`/api/admin/failed-bookings/${resolveId}`, {
-        method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ resolutionNotes: resolveNotes }),
-      });
-      if (res.ok) {
-        setResolveId(null);
-        setResolveNotes('');
-        load();
-      }
-    } finally {
-      setResolving(false);
+    await updateBooking(resolveId, { status: 'RESOLVED', resolutionNotes: resolveNotes });
+    setResolveId(null);
+    setResolveNotes('');
+    setResolving(false);
+  };
+
+  const handleStatusChange = (id: string, currentStatus: string, newStatus: string) => {
+    if (newStatus === 'RESOLVED') {
+      setResolveId(id);
+      setResolveNotes('');
+    } else {
+      updateBooking(id, { status: newStatus });
     }
   };
 
@@ -116,8 +158,8 @@ export default function FailedBookingsPage() {
             <h1 className="text-2xl font-black text-white">Failed Bookings</h1>
             <p className="text-red-400 text-sm mt-0.5 font-bold">
               {total.toLocaleString()} failure record{total !== 1 ? 's' : ''}
-              {resolvedFilter === 'false' && ' (unresolved)'}
-              {resolvedFilter === 'true' && ' (resolved)'}
+              {statusFilter === 'false' && ' (unresolved)'}
+              {statusFilter === 'true' && ' (resolved)'}
             </p>
           </div>
         </div>
@@ -132,7 +174,6 @@ export default function FailedBookingsPage() {
 
       {/* Filters */}
       <div className="flex flex-wrap items-end gap-3 mb-5">
-        {/* Email search */}
         <div className="relative w-64">
           <Search size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400" />
           <input
@@ -143,7 +184,6 @@ export default function FailedBookingsPage() {
           />
         </div>
 
-        {/* Date from */}
         <div>
           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">From</label>
           <input
@@ -154,7 +194,6 @@ export default function FailedBookingsPage() {
           />
         </div>
 
-        {/* Date to */}
         <div>
           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">To</label>
           <input
@@ -165,7 +204,6 @@ export default function FailedBookingsPage() {
           />
         </div>
 
-        {/* Error code */}
         <div>
           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Error Code</label>
           <select
@@ -180,12 +218,11 @@ export default function FailedBookingsPage() {
           </select>
         </div>
 
-        {/* Resolved filter */}
         <div>
           <label className="block text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Status</label>
           <select
-            value={resolvedFilter}
-            onChange={e => { setResolvedFilter(e.target.value); setPage(1); }}
+            value={statusFilter}
+            onChange={e => { setStatusFilter(e.target.value); setPage(1); }}
             className="px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all"
           >
             <option value="">All</option>
@@ -194,10 +231,9 @@ export default function FailedBookingsPage() {
           </select>
         </div>
 
-        {/* Clear filters */}
-        {(emailSearch || dateFrom || dateTo || errorCodeFilter || resolvedFilter) && (
+        {(emailSearch || dateFrom || dateTo || errorCodeFilter || statusFilter) && (
           <button
-            onClick={() => { setEmailSearch(''); setDateFrom(''); setDateTo(''); setErrorCodeFilter(''); setResolvedFilter(''); setPage(1); }}
+            onClick={() => { setEmailSearch(''); setDateFrom(''); setDateTo(''); setErrorCodeFilter(''); setStatusFilter(''); setPage(1); }}
             className="px-3 py-2.5 text-xs text-red-400 hover:text-red-300 font-semibold transition-all"
           >
             Clear all
@@ -206,23 +242,23 @@ export default function FailedBookingsPage() {
       </div>
 
       {/* Table */}
-      <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden min-h-[400px]">
         <div className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/50">
-                {['', 'Date', 'Customer', 'Route', 'Amount', 'Error', 'Status', 'Actions'].map(h => (
+                {['', 'Date', 'Customer', 'Route', 'Amount', 'Error', 'Assignee', 'Status', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/30">
               {loading ? (
-                <tr><td colSpan={8} className="px-5 py-16 text-center">
+                <tr><td colSpan={9} className="px-5 py-16 text-center">
                   <RefreshCw size={24} className="text-[#1ABC9C] animate-spin mx-auto" />
                 </td></tr>
               ) : records.length === 0 ? (
-                <tr><td colSpan={8} className="px-5 py-16 text-center">
+                <tr><td colSpan={9} className="px-5 py-16 text-center">
                   <AlertTriangle size={24} className="text-slate-600 mx-auto mb-2" />
                   <p className="text-slate-500 text-sm">No failed bookings found</p>
                 </td></tr>
@@ -230,20 +266,18 @@ export default function FailedBookingsPage() {
                 const isExpanded = expandedId === rec.id;
                 const badge = getErrorBadge(rec.errorCode);
                 const passengers = (() => { try { return JSON.parse(rec.passengersJson); } catch { return []; } })();
+                const StatusIcon = STATUS_STYLES[rec.status]?.icon ?? Clock;
 
                 return (
                   <React.Fragment key={rec.id}>
-                    {/* Main row */}
                     <tr
                       className="hover:bg-white/[0.02] transition-colors cursor-pointer"
                       onClick={() => setExpandedId(isExpanded ? null : rec.id)}
                     >
-                      {/* Expand toggle */}
                       <td className="px-3 py-3 text-slate-400">
                         {isExpanded ? <ChevronUp size={14} /> : <ChevronDown size={14} />}
                       </td>
 
-                      {/* Date */}
                       <td className="px-4 py-3 whitespace-nowrap">
                         <p className="text-slate-300 text-xs font-semibold">
                           {format(new Date(rec.createdAt), 'dd MMM yyyy')}
@@ -253,7 +287,6 @@ export default function FailedBookingsPage() {
                         </p>
                       </td>
 
-                      {/* Customer */}
                       <td className="px-4 py-3">
                         <p className="text-white text-sm font-semibold">{rec.customerName}</p>
                         <p className="text-slate-400 text-xs">{rec.customerEmail}</p>
@@ -262,7 +295,6 @@ export default function FailedBookingsPage() {
                         )}
                       </td>
 
-                      {/* Route */}
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-1.5">
                           <Plane size={12} className="text-slate-500" />
@@ -276,7 +308,6 @@ export default function FailedBookingsPage() {
                         </p>
                       </td>
 
-                      {/* Amount */}
                       <td className="px-4 py-3">
                         <p className="text-white text-sm font-bold">
                           ${Number(rec.totalAmount).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 })}
@@ -284,68 +315,50 @@ export default function FailedBookingsPage() {
                         <p className="text-slate-500 text-[10px]">{rec.currency}</p>
                       </td>
 
-                      {/* Error code badge */}
                       <td className="px-4 py-3">
                         <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${badge.color}`}>
                           {badge.label}
                         </span>
                       </td>
 
-                      {/* Status */}
-                      <td className="px-4 py-3">
-                        {rec.resolvedAt ? (
-                          <div>
-                            <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-emerald-500/15 text-emerald-400 text-[10px] font-bold">
-                              <CheckCircle2 size={10} /> Resolved
-                            </span>
-                            <p className="text-slate-500 text-[10px] mt-0.5">{rec.resolvedBy}</p>
-                          </div>
-                        ) : (
-                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-500/15 text-amber-400 text-[10px] font-bold">
-                            <Clock size={10} /> Pending
-                          </span>
-                        )}
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                        <select 
+                          value={rec.assignedToId || ''} 
+                          onChange={(e) => updateBooking(rec.id, { assignedToId: e.target.value || null })}
+                          className="bg-slate-800 border border-slate-700 rounded-lg text-xs text-white px-2 py-1 focus:outline-none focus:border-[#1ABC9C] max-w-[120px] cursor-pointer"
+                        >
+                          <option value="">Unassigned</option>
+                          {supportStaff.map(staff => (
+                            <option key={staff.id} value={staff.id}>{staff.fullName}</option>
+                          ))}
+                        </select>
                       </td>
 
-                      {/* Actions */}
+                      <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
+                         <select 
+                          value={rec.status} 
+                          onChange={(e) => handleStatusChange(rec.id, rec.status, e.target.value)}
+                          className={`bg-slate-800 border border-slate-700 rounded-lg text-xs text-white px-2 py-1 focus:outline-none focus:border-[#1ABC9C] max-w-[120px] cursor-pointer`}
+                        >
+                          {Object.keys(STATUS_STYLES).map(s => {
+                            if (s === 'CLOSED' && !isAdminOrSuper) return null;
+                            return <option key={s} value={s}>{s.replace(/_/g, ' ')}</option>;
+                          })}
+                        </select>
+                      </td>
+
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <div className="flex items-center gap-1.5">
-                          {/* Call customer */}
                           {rec.customerPhone && (
-                            <a
-                              href={`tel:${rec.customerPhone}`}
-                              className="p-1.5 rounded-lg bg-[#1ABC9C]/10 text-[#1ABC9C] hover:bg-[#1ABC9C]/20 transition-all"
-                              title="Call customer"
-                            >
+                            <a href={`tel:${rec.customerPhone}`} className="p-1.5 rounded-lg bg-[#1ABC9C]/10 text-[#1ABC9C] hover:bg-[#1ABC9C]/20 transition-all" title="Call customer">
                               <Phone size={12} />
                             </a>
                           )}
-                          {/* Email customer */}
-                          <a
-                            href={`mailto:${rec.customerEmail}`}
-                            className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all"
-                            title="Email customer"
-                          >
+                          <a href={`mailto:${rec.customerEmail}`} className="p-1.5 rounded-lg bg-blue-500/10 text-blue-400 hover:bg-blue-500/20 transition-all" title="Email customer">
                             <Mail size={12} />
                           </a>
-                          {/* Resolve */}
-                          {!rec.resolvedAt && (
-                            <button
-                              onClick={() => { setResolveId(rec.id); setResolveNotes(''); }}
-                              className="p-1.5 rounded-lg bg-emerald-500/10 text-emerald-400 hover:bg-emerald-500/20 transition-all"
-                              title="Mark as resolved"
-                            >
-                              <CheckCircle2 size={12} />
-                            </button>
-                          )}
-                          {/* Delete (OPS_ADMIN+) */}
                           {isOpsOrAbove && (
-                            <button
-                              onClick={() => handleDelete(rec.id)}
-                              disabled={deleting === rec.id}
-                              className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-30"
-                              title="Delete record"
-                            >
+                            <button onClick={() => handleDelete(rec.id)} disabled={deleting === rec.id} className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-30" title="Delete record">
                               <Trash2 size={12} />
                             </button>
                           )}
@@ -353,12 +366,10 @@ export default function FailedBookingsPage() {
                       </td>
                     </tr>
 
-                    {/* Expanded detail row */}
                     {isExpanded && (
                       <tr key={`${rec.id}-detail`} className="bg-slate-900/50">
-                        <td colSpan={8} className="px-6 py-5">
+                        <td colSpan={9} className="px-6 py-5">
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-                            {/* Error details */}
                             <div>
                               <h4 className="text-[10px] font-black text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                 <AlertTriangle size={12} /> Root Cause (Internal)
@@ -375,76 +386,32 @@ export default function FailedBookingsPage() {
                               <p className="text-slate-400 text-xs leading-relaxed">{rec.customerMessage}</p>
 
                               <div className="flex flex-wrap gap-4 mt-4 text-xs">
-                                <div>
-                                  <span className="text-slate-500">Failure Stage:</span>{' '}
-                                  <span className="text-slate-300 font-semibold">{rec.failureStage}</span>
-                                </div>
-                                {rec.stripePaymentIntentId && (
-                                  <div>
-                                    <span className="text-slate-500">Stripe PI:</span>{' '}
-                                    <span className="text-slate-300 font-mono text-[11px]">{rec.stripePaymentIntentId}</span>
-                                  </div>
-                                )}
-                                {rec.offerId && (
-                                  <div>
-                                    <span className="text-slate-500">Offer ID:</span>{' '}
-                                    <span className="text-slate-300 font-mono text-[11px]">{rec.offerId.slice(0, 24)}…</span>
-                                  </div>
-                                )}
-                                {rec.sessionId && (
-                                  <div>
-                                    <span className="text-slate-500">Session:</span>{' '}
-                                    <span className="text-slate-300 font-mono text-[11px]">{rec.sessionId.slice(0, 16)}…</span>
-                                  </div>
-                                )}
+                                <div><span className="text-slate-500">Failure Stage:</span> <span className="text-slate-300 font-semibold">{rec.failureStage}</span></div>
+                                {rec.stripePaymentIntentId && <div><span className="text-slate-500">Stripe PI:</span> <span className="text-slate-300 font-mono text-[11px]">{rec.stripePaymentIntentId}</span></div>}
+                                {rec.offerId && <div><span className="text-slate-500">Offer ID:</span> <span className="text-slate-300 font-mono text-[11px]">{rec.offerId.slice(0, 24)}…</span></div>}
+                                {rec.sessionId && <div><span className="text-slate-500">Session:</span> <span className="text-slate-300 font-mono text-[11px]">{rec.sessionId.slice(0, 16)}…</span></div>}
+                                <div><span className="text-slate-500">Provider:</span> <span className="text-slate-300 font-semibold capitalize">{rec.provider || '—'}</span></div>
                               </div>
 
-                              {/* Offer lifecycle timestamps */}
                               {(rec.offerProvidedAt || rec.offerExpiresAt) && (
                                 <div className="mt-4 p-3 bg-slate-800/60 rounded-xl border border-slate-700/30">
-                                  <h4 className="text-[10px] font-black text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
-                                    <Clock size={12} /> Offer Lifecycle
-                                  </h4>
+                                  <h4 className="text-[10px] font-black text-amber-400 uppercase tracking-wider mb-2 flex items-center gap-1.5"><Clock size={12} /> Offer Lifecycle</h4>
                                   <div className="grid grid-cols-2 gap-3 text-xs">
-                                    <div>
-                                      <span className="text-slate-500">Offer Created:</span>{' '}
-                                      <span className="text-slate-300 font-semibold">
-                                        {rec.offerProvidedAt ? format(new Date(rec.offerProvidedAt), 'dd MMM yyyy hh:mm:ss a') : '—'}
-                                      </span>
-                                    </div>
-                                    <div>
-                                      <span className="text-slate-500">Offer Expires:</span>{' '}
-                                      <span className="text-slate-300 font-semibold">
-                                        {rec.offerExpiresAt ? format(new Date(rec.offerExpiresAt), 'dd MMM yyyy hh:mm:ss a') : '—'}
-                                      </span>
-                                    </div>
+                                    <div><span className="text-slate-500">Created:</span> <span className="text-slate-300 font-semibold">{rec.offerProvidedAt ? format(new Date(rec.offerProvidedAt), 'dd MMM hh:mm:ss a') : '—'}</span></div>
+                                    <div><span className="text-slate-500">Expires:</span> <span className="text-slate-300 font-semibold">{rec.offerExpiresAt ? format(new Date(rec.offerExpiresAt), 'dd MMM hh:mm:ss a') : '—'}</span></div>
                                   </div>
-                                  {rec.offerExpiresAt && (
-                                    <p className="text-[10px] mt-2 text-slate-500">
-                                      Failure occurred at {format(new Date(rec.createdAt), 'hh:mm:ss a')} —{' '}
-                                      {new Date(rec.offerExpiresAt) > new Date(rec.createdAt)
-                                        ? `${Math.round((new Date(rec.offerExpiresAt).getTime() - new Date(rec.createdAt).getTime()) / 60000)} min before expiry`
-                                        : 'after offer had already expired'}
-                                    </p>
-                                  )}
                                 </div>
                               )}
 
-                              {/* Resolution info */}
                               {rec.resolvedAt && rec.resolutionNotes && (
                                 <div className="mt-4">
-                                  <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-wider mb-1.5">
-                                    Resolution Notes
-                                  </h4>
+                                  <h4 className="text-[10px] font-black text-emerald-400 uppercase tracking-wider mb-1.5">Resolution Notes</h4>
                                   <p className="text-slate-300 text-xs leading-relaxed">{rec.resolutionNotes}</p>
-                                  <p className="text-slate-500 text-[10px] mt-1">
-                                    Resolved by {rec.resolvedBy} on {format(new Date(rec.resolvedAt), 'dd MMM yyyy hh:mm a')}
-                                  </p>
+                                  <p className="text-slate-500 text-[10px] mt-1">Resolved by {rec.resolvedBy} on {format(new Date(rec.resolvedAt), 'dd MMM yyyy hh:mm a')}</p>
                                 </div>
                               )}
                             </div>
 
-                            {/* Passenger + booking details */}
                             <div>
                               <h4 className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2 flex items-center gap-1.5">
                                 <Users size={12} /> Passengers ({rec.passengerCount})
@@ -452,9 +419,7 @@ export default function FailedBookingsPage() {
                               <div className="space-y-2">
                                 {passengers.map((pax: any, i: number) => (
                                   <div key={i} className="flex items-center gap-3 p-3 bg-slate-800/60 rounded-xl border border-slate-700/30">
-                                    <div className="w-7 h-7 rounded-lg bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-300">
-                                      {i + 1}
-                                    </div>
+                                    <div className="w-7 h-7 rounded-lg bg-slate-700 flex items-center justify-center text-[10px] font-bold text-slate-300">{i + 1}</div>
                                     <div className="flex-1 min-w-0">
                                       <p className="text-white text-sm font-semibold truncate">{pax.name || 'Unknown'}</p>
                                       <div className="flex items-center gap-3 text-[10px] text-slate-500 mt-0.5">
@@ -499,7 +464,6 @@ export default function FailedBookingsPage() {
           </table>
         </div>
 
-        {/* Pagination */}
         <div className="flex items-center justify-between px-5 py-4 border-t border-slate-700/50">
           <p className="text-slate-400 text-xs">
             {total.toLocaleString()} records · page {page} of {pages}
@@ -523,7 +487,6 @@ export default function FailedBookingsPage() {
         </div>
       </div>
 
-      {/* ── Resolve Modal ─────────────────────────────────────────────────────── */}
       {resolveId && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl w-full max-w-md p-6">

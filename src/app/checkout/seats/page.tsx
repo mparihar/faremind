@@ -5,6 +5,7 @@ import { useRouter } from 'next/navigation';
 import {
   ChevronRight, Check, Info, AlertCircle, Lock,
   Plane, Shield, Users, LayoutGrid, ArrowLeftRight, AlignJustify, Shuffle,
+  Accessibility, ChevronDown as ChevronDownIcon,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
 import { useOfferGuard } from '@/hooks/useOfferGuard';
@@ -13,7 +14,7 @@ import { cn, formatPrice, formatTime, formatDate } from '@/lib/utils';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
 import SeatGrid from '@/components/checkout/SeatGrid';
 import type { SegmentSeatMap } from '@/lib/seat-map-types';
-import type { PassengerInfo } from '@/store/useCheckoutStore';
+import type { PassengerInfo, WheelchairCode } from '@/store/useCheckoutStore';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
 import { useFeeLoader } from '@/hooks/useFeeLoader';
@@ -243,6 +244,167 @@ function PreferencePicker({
   );
 }
 
+// ── Wheelchair assistance options (IATA SSR codes) ────────────────────────────
+
+const WHEELCHAIR_OPTIONS: Array<{
+  code: WheelchairCode;
+  label: string;
+  desc: string;
+  detail: string;
+}> = [
+  { code: 'NONE',  label: 'No Assistance',    desc: 'No wheelchair needed',                           detail: 'Standard boarding' },
+  { code: 'WCHR',  label: 'Ramp Wheelchair',   desc: 'Can walk short distances & stairs',              detail: 'Wheelchair to/from aircraft door' },
+  { code: 'WCHS',  label: 'Stair Wheelchair',  desc: 'Can walk short distances, cannot manage stairs', detail: 'Wheelchair to/from seat row, carried on stairs' },
+  { code: 'WCHC',  label: 'Full Wheelchair',   desc: 'Immobile, requires aisle chair',                 detail: 'Full assistance, carried to seat' },
+  { code: 'WCOB',  label: 'On-board Chair',    desc: 'Needs wheelchair on aircraft',                   detail: 'On-board wheelchair provided during flight' },
+];
+
+function WheelchairAssistancePanel({
+  segment,
+  passengers,
+  wheelchairSelections,
+  onSelect,
+}: {
+  segment: DisplaySegment;
+  passengers: PassengerInfo[];
+  wheelchairSelections: import('@/store/useCheckoutStore').WheelchairSelection[];
+  onSelect: (paxId: string, segKey: string, code: WheelchairCode, label: string) => void;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const hasSelections = wheelchairSelections.some(
+    w => w.segmentKey === segment.key && w.code !== 'NONE',
+  );
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm overflow-hidden">
+      {/* Header — always visible */}
+      <button
+        onClick={() => setExpanded(!expanded)}
+        className="w-full flex items-center gap-3 px-5 py-4 text-left hover:bg-slate-50/50 transition-colors"
+      >
+        <div className={cn(
+          'w-9 h-9 rounded-xl flex items-center justify-center shrink-0 transition-colors',
+          hasSelections ? 'bg-[#1ABC9C]/15 text-[#1ABC9C]' : 'bg-slate-100 text-slate-400',
+        )}>
+          <Accessibility className="w-5 h-5" strokeWidth={2} />
+        </div>
+        <div className="flex-1 min-w-0">
+          <p className="text-sm font-bold text-slate-900">Wheelchair Assistance</p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            {hasSelections
+              ? `${wheelchairSelections.filter(w => w.segmentKey === segment.key && w.code !== 'NONE').length} passenger(s) assisted`
+              : 'Request wheelchair assistance for elderly or mobility-impaired travelers'}
+          </p>
+        </div>
+        {hasSelections && (
+          <span className="px-2 py-0.5 rounded-full bg-[#1ABC9C]/15 text-[#1ABC9C] text-[10px] font-bold uppercase tracking-wider shrink-0">
+            Active
+          </span>
+        )}
+        <ChevronDownIcon className={cn(
+          'w-4 h-4 text-slate-400 transition-transform duration-200 shrink-0',
+          expanded && 'rotate-180',
+        )} />
+      </button>
+
+      {/* Body — collapsible */}
+      <AnimatePresence>
+        {expanded && (
+          <motion.div
+            initial={{ height: 0, opacity: 0 }}
+            animate={{ height: 'auto', opacity: 1 }}
+            exit={{ height: 0, opacity: 0 }}
+            transition={{ duration: 0.2 }}
+            className="overflow-hidden"
+          >
+            <div className="px-5 pb-5 space-y-5 border-t border-slate-100 pt-4">
+              {/* Free notice */}
+              <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-[#1ABC9C]/8 border border-[#1ABC9C]/15">
+                <Shield className="w-3.5 h-3.5 text-[#1ABC9C] shrink-0" strokeWidth={2} />
+                <p className="text-xs text-[#1ABC9C] font-medium">
+                  Wheelchair assistance is provided free of charge by the airline.
+                </p>
+              </div>
+
+              {/* Per-passenger selection */}
+              {passengers.map((pax, paxIdx) => {
+                const existing = wheelchairSelections.find(
+                  w => w.passengerId === pax.id && w.segmentKey === segment.key,
+                );
+                const activeCode = existing?.code ?? 'NONE';
+
+                return (
+                  <div key={pax.id}>
+                    <div className="flex items-center gap-2 mb-3">
+                      <div
+                        className="w-6 h-6 rounded-full flex items-center justify-center text-xs font-bold text-white"
+                        style={{ backgroundColor: PAX_HEX[paxIdx % PAX_HEX.length] }}
+                      >
+                        {paxIdx + 1}
+                      </div>
+                      <p className="text-sm font-semibold text-slate-700">{paxLabel(pax, paxIdx)}</p>
+                      {activeCode !== 'NONE' && (
+                        <span className="ml-auto text-[10px] font-bold text-[#1ABC9C] bg-[#1ABC9C]/10 px-2 py-0.5 rounded-full">
+                          ♿ {activeCode}
+                        </span>
+                      )}
+                    </div>
+
+                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                      {WHEELCHAIR_OPTIONS.map(opt => {
+                        const isActive = activeCode === opt.code;
+                        const isNone = opt.code === 'NONE';
+                        return (
+                          <button
+                            key={opt.code}
+                            onClick={() => onSelect(pax.id, segment.key, opt.code, opt.label)}
+                            className={cn(
+                              'flex items-start gap-3 px-3.5 py-3 rounded-xl border text-left transition-all',
+                              isActive
+                                ? isNone
+                                  ? 'bg-slate-50 border-slate-300 ring-1 ring-slate-300'
+                                  : 'bg-[#1ABC9C]/8 border-[#1ABC9C] ring-1 ring-[#1ABC9C]/30'
+                                : 'bg-white border-slate-200 hover:border-slate-300 hover:bg-slate-50/50',
+                            )}
+                          >
+                            <div className={cn(
+                              'w-4 h-4 rounded-full border-2 flex items-center justify-center shrink-0 mt-0.5 transition-colors',
+                              isActive
+                                ? isNone ? 'border-slate-400 bg-slate-400' : 'border-[#1ABC9C] bg-[#1ABC9C]'
+                                : 'border-slate-300',
+                            )}>
+                              {isActive && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                            </div>
+                            <div className="min-w-0">
+                              <p className={cn(
+                                'text-xs font-bold',
+                                isActive && !isNone ? 'text-[#1ABC9C]' : 'text-slate-700',
+                              )}>
+                                {!isNone && '♿ '}{opt.label}
+                              </p>
+                              <p className="text-[11px] text-slate-400 leading-snug mt-0.5">{opt.desc}</p>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  </div>
+                );
+              })}
+
+              {/* Disclaimer */}
+              <p className="text-[10px] text-slate-400 leading-relaxed">
+                Wheelchair assistance availability is subject to airline confirmation. Your request will be
+                communicated to the carrier using IATA standard codes (WCHR/WCHS/WCHC/WCOB).
+              </p>
+            </div>
+          </motion.div>
+        )}
+      </AnimatePresence>
+    </div>
+  );
+}
+
 // ── Right panel: live itinerary ───────────────────────────────────────────────
 
 function ItineraryPanel({
@@ -417,6 +579,7 @@ export default function SeatsPage() {
   const {
     selectedFare, sessionId, sourceFlight, sourceRoundTrip,
     passengers, seatSelections, updateSeatSelection,
+    wheelchairSelections, updateWheelchairSelection,
   } = store;
 
   // Lap infants (under 2) sit on parent's lap — exclude from seat selection
@@ -803,6 +966,16 @@ export default function SeatsPage() {
                 </AnimatePresence>
               )}
             </div>
+
+            {/* Wheelchair Assistance — per segment */}
+            {activeSeg && !loadingMap && (
+              <WheelchairAssistancePanel
+                segment={activeSeg}
+                passengers={seatEligiblePax}
+                wheelchairSelections={wheelchairSelections}
+                onSelect={updateWheelchairSelection}
+              />
+            )}
 
             {/* Info banner */}
             <div className="flex items-start gap-3 p-4 rounded-xl bg-[#1ABC9C]/8 border border-[#1ABC9C]/20 text-slate-700 text-xs">

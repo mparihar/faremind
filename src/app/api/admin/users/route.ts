@@ -42,6 +42,10 @@ export const POST = withAdmin(async (req: NextRequest, { admin }) => {
     select: { id: true, email: true, fullName: true, role: true, isActive: true },
   });
 
+  if (role === 'SUPPORT') {
+    import('@/lib/email').then(m => m.sendSupportRoleGrantedEmail(user.email, user.fullName)).catch(e => console.error(e));
+  }
+
   await auditLog({
     adminUserId: admin.sub,
     action: 'CREATE_ADMIN_USER',

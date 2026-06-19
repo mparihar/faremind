@@ -187,21 +187,8 @@ export default function FareCard({
         {/* Divider */}
         <div className="border-t border-slate-100" />
 
-        {/* AI score bar */}
-        <div>
-          <div className="flex items-center justify-between mb-1.5">
-            <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider">
-              AI Score&nbsp;<span className="text-slate-700 text-[13px]">{Math.round(fare.aiScore)}</span>
-            </span>
-            <span className="text-[11px] text-slate-400">/100</span>
-          </div>
-          <div className="h-1.5 rounded-full bg-slate-100 overflow-hidden">
-            <div
-              className="h-full rounded-full bg-gradient-to-r from-[#1ABC9C] to-emerald-400 transition-all duration-700"
-              style={{ width: `${fare.aiScore}%` }}
-            />
-          </div>
-        </div>
+
+
 
         {/* Why this fare */}
         <div>

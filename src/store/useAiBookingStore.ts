@@ -449,7 +449,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     set({
       passengerCount: count,
       passengers,
-      passengerTypes: Array.from({ length: count }, () => 'adult' as const),
+      passengerTypes: Array.from({ length: count }, (_, i) => get().passengerTypes?.[i] ?? 'adult'),
       passengerProtections: protections,
       priceSummary,
     });
@@ -765,7 +765,8 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
 
     // Set all passengers
     const paxInfos = passengers.map((p, i) => {
-      const pax = makePassenger(i);
+      const paxType = paxTypes[i] ?? 'adult';
+      const pax = makePassenger(i, paxType);
       pax.firstName = p.firstName;
       pax.lastName = p.lastName;
       pax.email = i === 0 ? p.email : passengers[0].email;

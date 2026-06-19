@@ -2,7 +2,7 @@
 
 import { useState, useRef, useEffect, useCallback } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Sparkles, Send, X, Minus, ChevronRight, Check, Bot, Plane, ArrowRight, ArrowLeft, Mic, MicOff } from 'lucide-react';
+import { Sparkles, Send, X, Minus, ChevronRight, Check, Bot, Plane, ArrowRight, ArrowLeft, Mic, MicOff, MessageCircleQuestion } from 'lucide-react';
 import { cn, formatDuration, formatPrice, getStopsLabel } from '@/lib/utils';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
@@ -10,6 +10,8 @@ import type { DnaSearchResult, DnaRankedCard } from '@/lib/services/dna-search-s
 import { trackDnaEvent } from '@/lib/analytics/dna-search-analytics';
 import AiBookFlightFlow from './ai-booking/AiBookFlightFlow';
 import AiManageBookingFlow from './ai-booking/AiManageBookingFlow';
+import AiContactSupportFlow from './ai-booking/AiContactSupportFlow';
+import AiGeneralQueryFlow from './ai-booking/AiGeneralQueryFlow';
 import { useAiBookingStore } from '@/store/useAiBookingStore';
 import { useOfferSessionStore } from '@/store/useOfferSessionStore';
 import { detectManageBookingIntent } from '@/lib/ai-manage-booking-utils';
@@ -132,12 +134,20 @@ export default function FloatingAIAssistant({
   const [bookingMode, setBookingMode] = useState(false);
   const [manageBookingMode, setManageBookingMode] = useState(false);
   const [manageBookingIntent, setManageBookingIntent] = useState<'cancel' | 'update_passenger' | 'manage' | null>(null);
+  const [supportMode, setSupportMode] = useState(false);
+  const [generalQueryMode, setGeneralQueryMode] = useState(false);
   const [isRecording, setIsRecording] = useState(false);
   const [voiceSupported] = useState(() => typeof window !== 'undefined' && isSpeechRecognitionSupported());
   const scrollRef   = useRef<HTMLDivElement>(null);
   const inputRef    = useRef<HTMLInputElement>(null);
   const aiBookingReset = useAiBookingStore((s) => s.reset);
   const offerSessionClear = useOfferSessionStore((s) => s.clearSession);
+
+  // Detect agent mode for positioning
+  const [isAgentMode, setIsAgentMode] = useState(false);
+  useEffect(() => {
+    try { setIsAgentMode(!!sessionStorage.getItem('agentBookingContext')); } catch {}
+  }, []);
 
   /** Reset the AI booking flow — clears stale flight/fare/timer state */
   const resetBookingFlow = useCallback(() => {
@@ -178,6 +188,22 @@ export default function FloatingAIAssistant({
 
   const submit = useCallback(async (q: string) => {
     if (!q.trim() || !flights.length || loading) return;
+
+    // 🎧 Contact Support intent detection
+    const supportPhrases = ['contact support', 'i need help', 'help me', 'support request', 'speak to support', 'talk to support', 'customer support', 'raise a ticket', 'create a ticket', '__CONTACT_SUPPORT__'];
+    const isSupportIntent = supportPhrases.some(p => q.toLowerCase().includes(p)) || q === '__CONTACT_SUPPORT__';
+    if (isSupportIntent) {
+      setSupportMode(true);
+      return;
+    }
+
+    // ❓ General Queries intent detection
+    const queryPhrases = ['general query', 'general question', 'i have a question', 'ask a question', 'travel question', 'baggage question', 'visa question', 'transit question', 'what is', 'how does', 'can i', 'do i need', '__GENERAL_QUERY__'];
+    const isQueryIntent = queryPhrases.some(p => q.toLowerCase().includes(p)) || q === '__GENERAL_QUERY__';
+    if (isQueryIntent && !flights.length) {
+      setGeneralQueryMode(true);
+      return;
+    }
 
     // ✈️ Manage Booking intent detection
     const mbIntent = detectManageBookingIntent(q);
@@ -338,6 +364,14 @@ export default function FloatingAIAssistant({
       setManageBookingMode(false);
       setManageBookingIntent(null);
     }
+    // Reset support flow if it was active
+    if (supportMode) {
+      setSupportMode(false);
+    }
+    // Reset general query flow if it was active
+    if (generalQueryMode) {
+      setGeneralQueryMode(false);
+    }
   }
 
   /** User selects a flight from the top 5 AI recommendations → enter booking mode */
@@ -387,7 +421,7 @@ export default function FloatingAIAssistant({
 
   return (
     // Fixed bottom-left container
-    <div className="fixed bottom-4 sm:bottom-6 left-4 sm:left-56 z-50 flex flex-col items-start gap-3">
+    <div className={`fixed z-50 flex flex-col items-start gap-3 ${isAgentMode ? 'bottom-3 left-[320px]' : 'bottom-4 sm:bottom-6 left-4 sm:left-56'}`}>
 
       {/* ── Expanded Chat Panel ──────────────────────────────────────────── */}
       <AnimatePresence>
@@ -405,8 +439,8 @@ export default function FloatingAIAssistant({
             {/* Co-Pilot accent bar */}
             <div className="h-1 w-full shrink-0" style={{ background: 'linear-gradient(90deg, #007a7c 0%, #009A9C 50%, #00b5b7 100%)' }} />
 
-            {/* Header — hidden in booking/manage-booking mode (they have their own) */}
-            {!bookingMode && !manageBookingMode && (
+            {/* Header — hidden in booking/manage-booking/support mode (they have their own) */}
+            {!bookingMode && !manageBookingMode && !supportMode && !generalQueryMode && (
             <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 shrink-0 bg-white">
               <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm shrink-0 relative overflow-hidden"
                 style={{ background: 'linear-gradient(135deg, #007a7c 0%, #009A9C 55%, #00b5b7 100%)' }}>
@@ -445,6 +479,12 @@ export default function FloatingAIAssistant({
                       setManageBookingMode(false);
                       setManageBookingIntent(null);
                     }
+                    if (supportMode) {
+                      setSupportMode(false);
+                    }
+                    if (generalQueryMode) {
+                      setGeneralQueryMode(false);
+                    }
                     setIsOpen(false);
                   }}
                   title="Close"
@@ -479,6 +519,22 @@ export default function FloatingAIAssistant({
                   onExit={() => {
                     setManageBookingMode(false);
                     setManageBookingIntent(null);
+                  }}
+                />
+              </div>
+            ) : supportMode ? (
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden" style={{ background: 'linear-gradient(180deg, #f0fdfb 0%, #f8fffe 100%)' }}>
+                <AiContactSupportFlow
+                  onExit={() => setSupportMode(false)}
+                />
+              </div>
+            ) : generalQueryMode ? (
+              <div className="flex-1 min-h-0 flex flex-col overflow-hidden">
+                <AiGeneralQueryFlow
+                  onExit={() => setGeneralQueryMode(false)}
+                  onContactSupport={() => {
+                    setGeneralQueryMode(false);
+                    setSupportMode(true);
                   }}
                 />
               </div>
@@ -603,6 +659,26 @@ export default function FloatingAIAssistant({
                       {chip.label}
                     </motion.button>
                   ))}
+
+                  {/* 🎧 Contact Support */}
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setSupportMode(true)}
+                    className="px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all bg-gradient-to-r from-[#009CA6] to-[#007a7c] border-[#009CA6]/40 text-white shadow-md shadow-[#009CA6]/20 hover:shadow-lg hover:shadow-[#009CA6]/30"
+                  >
+                    🎧 Contact Support
+                  </motion.button>
+
+                  {/* ❓ General Queries — at the end of all options */}
+                  <motion.button
+                    whileHover={{ scale: 1.03 }}
+                    whileTap={{ scale: 0.97 }}
+                    onClick={() => setGeneralQueryMode(true)}
+                    className="px-3 py-1.5 rounded-full text-[11px] font-bold border transition-all bg-gradient-to-r from-violet-500 to-indigo-600 border-violet-400/40 text-white shadow-md shadow-violet-500/20 hover:shadow-lg hover:shadow-violet-500/30"
+                  >
+                    <MessageCircleQuestion className="w-3.5 h-3.5 inline-block -mt-px" /> General Queries
+                  </motion.button>
                 </motion.div>
               )}
 
@@ -792,7 +868,7 @@ export default function FloatingAIAssistant({
                                           ? 'bg-teal-500/15 text-teal-600 border border-teal-400/20'
                                           : 'bg-slate-100 text-slate-500 border border-slate-200'
                                     )}>
-                                      🧬 {dr.dnaScore}%
+                                      🧬 {dr.dnaScore >= 90 ? 'Excellent Match' : dr.dnaScore >= 80 ? 'Strong Match' : 'Match'}
                                     </span>
                                   </div>
                                   <p className="text-[12px] font-black text-[#F97316] shrink-0">
@@ -1000,6 +1076,9 @@ export default function FloatingAIAssistant({
             if (willClose && manageBookingMode) {
               setManageBookingMode(false);
               setManageBookingIntent(null);
+            }
+            if (willClose && supportMode) {
+              setSupportMode(false);
             }
             setIsOpen(v => !v);
           }}

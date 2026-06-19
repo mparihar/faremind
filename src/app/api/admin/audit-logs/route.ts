@@ -39,4 +39,36 @@ export const GET = withAdmin(async (req: NextRequest) => {
   ]);
 
   return NextResponse.json({ logs, total, page, limit, pages: Math.ceil(total / limit) });
-}, 'OPS_ADMIN');
+}, 'SUPPORT');
+
+// DELETE — Bulk delete audit logs within a date range
+export const DELETE = withAdmin(async (req: NextRequest) => {
+  try {
+    const { from, to } = await req.json();
+    if (!from || !to) {
+      return NextResponse.json({ error: 'Missing "from" and "to" date range' }, { status: 400 });
+    }
+
+    const fromDate = new Date(from);
+    const toDate = new Date(to);
+    toDate.setHours(23, 59, 59, 999);
+
+    if (isNaN(fromDate.getTime()) || isNaN(toDate.getTime())) {
+      return NextResponse.json({ error: 'Invalid date format' }, { status: 400 });
+    }
+
+    const result = await prisma.auditLog.deleteMany({
+      where: {
+        createdAt: {
+          gte: fromDate,
+          lte: toDate,
+        },
+      },
+    });
+
+    return NextResponse.json({ success: true, deletedCount: result.count });
+  } catch (err: any) {
+    console.error('[audit-logs] DELETE error:', err);
+    return NextResponse.json({ error: 'Failed to delete audit logs' }, { status: 500 });
+  }
+}, 'SUPER_ADMIN');

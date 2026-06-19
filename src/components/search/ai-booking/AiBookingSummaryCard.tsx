@@ -108,10 +108,6 @@ export default function AiBookingSummaryCard({
             {formatDuration(flight.totalDuration)}
           </span>
           <span>{getStopsLabel(flight.stops)}</span>
-          <span className="flex items-center gap-0.5 ml-auto text-[#1ABC9C] font-bold">
-            <Sparkles className="w-2.5 h-2.5" />
-            AI {fareDetails.aiScore}
-          </span>
         </div>
       </div>
 

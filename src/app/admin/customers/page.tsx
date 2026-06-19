@@ -12,6 +12,7 @@ import {
   ChevronLeft, ChevronRight, RefreshCw, Trash2,
   Users, Mail, Phone, Calendar, Shield, ShieldOff,
   BookOpen, Clock, AlertTriangle, UserCheck, UserX,
+  Briefcase,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -56,6 +57,7 @@ interface CustomerDetail {
     destinationAirport: string;
     totalAmount: number;
     currency: string;
+    provider: string;
     createdAt: string;
   }>;
   sessions: Array<{
@@ -85,11 +87,13 @@ function CustomerDetailModal({
   onClose,
   onDelete,
   onToggle,
+  onToggleAgent,
 }: {
   userId: string;
   onClose: () => void;
   onDelete: (id: string, email: string) => void;
   onToggle: (id: string, active: boolean) => void;
+  onToggleAgent?: (id: string, currentRole: string) => void;
 }) {
   const [detail, setDetail] = useState<CustomerDetail | null>(null);
   const [loading, setLoading] = useState(true);
@@ -211,6 +215,13 @@ function CustomerDetailModal({
                           <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${STATUS_COLORS[b.bookingStatus] ?? 'bg-slate-400/15 text-slate-400'}`}>
                             {b.bookingStatus}
                           </span>
+                          <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold capitalize ${
+                            b.provider === 'duffel' ? 'bg-blue-400/15 text-blue-400'
+                            : b.provider === 'mystifly' ? 'bg-purple-400/15 text-purple-400'
+                            : 'bg-slate-400/15 text-slate-400'
+                          }`}>
+                            {b.provider || '—'}
+                          </span>
                         </div>
                         <p className="text-white text-sm font-semibold mt-0.5">
                           {b.originAirport} → {b.destinationAirport}
@@ -276,6 +287,20 @@ function CustomerDetailModal({
 
             {/* Actions */}
             <div className="border-t border-slate-700/50 pt-4 space-y-2">
+              {/* Agent role toggle */}
+              {onToggleAgent && (
+                <button
+                  onClick={() => onToggleAgent(detail.id, detail.role)}
+                  className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+                    detail.role === 'FAREMIND_AGENT'
+                      ? 'bg-orange-500/10 border border-orange-500/20 text-orange-400 hover:bg-orange-500/20'
+                      : 'bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 text-[#1ABC9C] hover:bg-[#1ABC9C]/20'
+                  }`}
+                >
+                  <Briefcase size={14} />
+                  {detail.role === 'FAREMIND_AGENT' ? 'Remove Agent Role' : 'Assign as Agent'}
+                </button>
+              )}
               <button
                 onClick={() => onToggle(detail.id, !detail.isActive)}
                 className={`w-full flex items-center justify-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
@@ -318,6 +343,20 @@ const DATA_COLUMNS = [
   col.accessor('phone', {
     header: 'Phone',
     cell: i => <span className="text-slate-400 text-sm">{i.getValue() || '—'}</span>,
+  }),
+  col.accessor('role', {
+    header: 'Role',
+    cell: i => {
+      const role = i.getValue();
+      if (role === 'FAREMIND_AGENT') {
+        return (
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold bg-[#1ABC9C]/15 text-[#1ABC9C]">
+            <Briefcase size={10} /> Agent
+          </span>
+        );
+      }
+      return <span className="text-slate-500 text-xs">Customer</span>;
+    },
   }),
   col.accessor('isActive', {
     header: 'Status',
@@ -383,6 +422,12 @@ export default function AdminCustomersPage() {
     if (status) params.set('status', status);
     const res = await adminFetch(`/api/admin/customers?${params}`);
     if (res.status === 401) { router.replace('/admin/login'); return; }
+    if (!res.ok) {
+      const errBody = await res.json().catch(() => ({}));
+      console.error('Customers fetch failed:', res.status, errBody);
+      setLoading(false);
+      return;
+    }
     const json = await res.json();
     setData(json.users ?? []);
     setTotal(json.total ?? 0);
@@ -418,6 +463,24 @@ export default function AdminCustomersPage() {
     if (res.ok) {
       setSelectedId(null);
       await load();
+    }
+  }
+
+  async function handleToggleAgent(id: string, currentRole: string) {
+    const newRole = currentRole === 'FAREMIND_AGENT' ? 'USER' : 'FAREMIND_AGENT';
+    const action = newRole === 'FAREMIND_AGENT' ? 'assign as FareMind Agent' : 'remove Agent role from';
+    if (!window.confirm(`Are you sure you want to ${action} this user?`)) return;
+    const res = await adminFetch(`/api/admin/customers/${id}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ role: newRole }),
+    });
+    if (res.ok) {
+      setSelectedId(null);
+      await load();
+    } else {
+      const err = await res.json().catch(() => ({}));
+      alert(err.error || 'Failed to update role');
     }
   }
 
@@ -598,6 +661,7 @@ export default function AdminCustomersPage() {
           onClose={() => setSelectedId(null)}
           onDelete={handleDelete}
           onToggle={handleToggle}
+          onToggleAgent={handleToggleAgent}
         />
       )}
     </div>

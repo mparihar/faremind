@@ -134,15 +134,19 @@ async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
       nationality: p.nationality ?? '',
     }));
 
-    await (prisma as any).bookingFailureAudit.create({
+    const customerName = `${primaryPax.firstName || ''} ${primaryPax.lastName || ''}`.trim() || 'Unknown';
+    const customerEmail = primaryPax.email?.trim()?.toLowerCase() || 'unknown@unknown.com';
+    const routeDisplay = `${originAirport || 'N/A'} → ${destinationAirport || 'N/A'}`;
+
+    const auditRecord = await (prisma as any).bookingFailureAudit.create({
       data: {
-        customerEmail: primaryPax.email?.trim()?.toLowerCase() || 'unknown@unknown.com',
-        customerName: `${primaryPax.firstName || ''} ${primaryPax.lastName || ''}`.trim() || 'Unknown',
+        customerEmail,
+        customerName,
         customerPhone: primaryPax.phone || null,
         userId: ctx.userId || null,
         originAirport: originAirport || 'N/A',
         destinationAirport: destinationAirport || 'N/A',
-        routeLabel: ctx.routeLabel || `${originAirport} → ${destinationAirport}`,
+        routeLabel: ctx.routeLabel || routeDisplay,
         tripType: isRoundTrip ? 'ROUND_TRIP' : 'ONE_WAY',
         departureDate: departureDate ? new Date(departureDate).toISOString().split('T')[0] : null,
         returnDate: returnDate ? new Date(returnDate).toISOString().split('T')[0] : null,
@@ -165,12 +169,44 @@ async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
       },
     });
 
+    // Auto-create a Support Ticket linked to the audit record
+    // This feeds failed bookings into the unified Support Queue
+    try {
+      const ERROR_LABELS: Record<string, string> = {
+        PROVIDER_ORDER_FAILED: 'Provider Failed',
+        PASSENGER_COUNT_MISMATCH: 'Pax Mismatch',
+        UNEXPECTED_ERROR: 'Unexpected Error',
+        MISSING_PAYMENT: 'Missing Payment',
+        MISSING_OFFER_ID: 'Missing Offer',
+        PROVIDER_NOT_CONFIGURED: 'Not Configured',
+      };
+      const errorLabel = ERROR_LABELS[ctx.errorCode] || ctx.errorCode;
+
+      await prisma.supportTicket.create({
+        data: {
+          subject: `Failed Booking: ${routeDisplay} — ${customerName}`,
+          description: `[${errorLabel}] ${ctx.errorMessage}\n\nRoute: ${routeDisplay}\nAmount: $${(ctx.pricing?.total ?? ctx.selectedFare?.totalPrice ?? 0).toLocaleString()}\nPassengers: ${ctx.passengers.length}\nFailure Stage: ${ctx.failureStage}`,
+          priority: ctx.errorCode === 'PROVIDER_ORDER_FAILED' ? 'URGENT' : 'HIGH',
+          status: 'OPEN',
+          category: 'Failed Booking',
+          customerName,
+          customerEmail,
+          failureAuditId: auditRecord.id,
+        },
+      });
+      console.log(`[BookingAudit] ✅ Support ticket created for failure — ${auditRecord.id}`);
+    } catch (ticketErr) {
+      // Don't let ticket creation failure affect the audit log
+      console.error('[BookingAudit] ⚠️ Failed to create support ticket:', ticketErr instanceof Error ? ticketErr.message : ticketErr);
+    }
+
     console.log(`[BookingAudit] ✅ Failure recorded — ${ctx.errorCode} for ${primaryPax.email || 'unknown'}`);
   } catch (auditErr) {
     // Never let audit logging failure affect the customer response
     console.error('[BookingAudit] ❌ Failed to record audit:', auditErr instanceof Error ? auditErr.message : auditErr);
   }
 }
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -185,11 +221,17 @@ export async function POST(req: NextRequest) {
       travelInsurance,
       seatSelections,
       mealSelections,
+      wheelchairSelections,
       sourceFlight,
       sourceRoundTrip,
       routeLabel,
       userId,
       currency = 'USD',
+      // Agent booking fields (optional)
+      agentUserId,
+      agentName,
+      agentEmail,
+      createdByRole,
     } = body;
 
     if (!Array.isArray(passengers) || passengers.length === 0) {
@@ -650,6 +692,15 @@ export async function POST(req: NextRequest) {
           born_on: (dp as any).born_on, infant_passenger_id: (dp as any).infant_passenger_id ?? null,
         })), null, 2));
 
+        // Parse wheelchair assistance selections
+        const wcSelections = Array.isArray(wheelchairSelections)
+          ? wheelchairSelections.filter((w: any) => w.code && w.code !== 'NONE')
+          : [];
+        if (wcSelections.length > 0) {
+          console.log(`[Checkout] ♿ Wheelchair assistance requested for ${wcSelections.length} passenger-segment(s):`,
+            wcSelections.map((w: any) => `${w.passengerId}/${w.segmentKey}→${w.code}`).join(', '));
+        }
+
         // Build the provider order request payload
         const duffelOrderRequest = {
           selected_offers: [offerId],
@@ -661,7 +712,13 @@ export async function POST(req: NextRequest) {
             currency: totalCurrency,
           }],
           ...(seatServices.length > 0 ? { services: seatServices } : {}),
-          metadata: { booked_via: 'faremind', session_id: sessionId || '' },
+          metadata: {
+            booked_via: 'faremind',
+            session_id: sessionId || '',
+            ...(wcSelections.length > 0 ? {
+              wheelchair_ssr: wcSelections.map((w: any) => `${w.code}`).join(','),
+            } : {}),
+          },
         };
 
         // Create the order (booking) — payment via Duffel balance
@@ -969,6 +1026,14 @@ export async function POST(req: NextRequest) {
           providerCapabilities: {
             addBaggageAllowed: offer?.available_services?.some((s: any) => s.type === 'baggage') ?? false,
           },
+
+          // Agent booking attribution
+          ...(agentUserId ? {
+            agentUserId,
+            agentName: agentName || null,
+            agentEmail: agentEmail || null,
+            createdByRole: createdByRole || 'AGENT',
+          } : {}),
         },
       });
 

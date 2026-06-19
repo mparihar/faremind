@@ -150,9 +150,11 @@ interface RoundTripCardProps {
   dnaMatchLabel?: string;
   dnaMatchReasons?: string[];
   dnaMismatchReasons?: string[];
+  /** Admin/Support viewers see internal scores */
+  showScores?: boolean;
 }
 
-export default function RoundTripCard({ option, index, onSelect, onHover, isHovered, aiEnabled, isTopAiPick, isBestAiPick, scoreOverride, isAiHighlighted, aiReasons, dnaScore, dnaMatchLabel, dnaMatchReasons, dnaMismatchReasons }: RoundTripCardProps) {
+export default function RoundTripCard({ option, index, onSelect, onHover, isHovered, aiEnabled, isTopAiPick, isBestAiPick, scoreOverride, isAiHighlighted, aiReasons, dnaScore, dnaMatchLabel, dnaMatchReasons, dnaMismatchReasons, showScores }: RoundTripCardProps) {
   const aiRecLimit = useAiRecommendationLimit();
   const [viewing, setViewing] = useState(false);
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -288,15 +290,16 @@ export default function RoundTripCard({ option, index, onSelect, onHover, isHove
             <Armchair className="w-3.5 h-3.5 text-slate-400" />
             {option.cabinClass.replace('_', ' ')}
           </div>
-          {index < 51 && (scoreOverride ?? option.score) !== undefined && (
+          </div>
+
+          {showScores && index < 51 && (scoreOverride ?? option.score) !== undefined && (
             <span className="text-xs text-slate-400 font-medium">Score {scoreOverride ?? option.score}</span>
           )}
-          {dnaScore !== undefined && dnaScore >= 0 && (
+          {showScores && dnaScore !== undefined && dnaScore >= 0 && (
             <span className="text-xs font-semibold text-emerald-600" title="DNA Match Score">
               <span className="font-black">DNA</span> {dnaScore}%
             </span>
           )}
-        </div>
 
         <div className="ml-auto flex items-center gap-3 shrink-0">
           <div className="text-right">

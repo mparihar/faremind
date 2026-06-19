@@ -44,6 +44,15 @@ export interface MealSelection {
   priceUsd: number;  // 0 = included in fare
 }
 
+export type WheelchairCode = 'NONE' | 'WCHR' | 'WCHS' | 'WCHC' | 'WCOB';
+
+export interface WheelchairSelection {
+  passengerId: string;
+  segmentKey: string;
+  code: WheelchairCode;
+  label: string;  // Display label e.g. 'Ramp Wheelchair'
+}
+
 export interface PerPassengerPrice {
   passengerId: string;
   type: 'adult' | 'child' | 'infant';
@@ -111,6 +120,9 @@ interface CheckoutStore {
   // Step 2 — Seats
   seatSelections: SeatSelection[];
 
+  // Step 2b — Wheelchair Assistance
+  wheelchairSelections: WheelchairSelection[];
+
   // Step 3 — Meals
   mealSelections: MealSelection[];
 
@@ -161,6 +173,8 @@ interface CheckoutStore {
   setSeatSelections: (selections: SeatSelection[]) => void;
   updateSeatSelection: (passengerId: string, segmentKey: string, updates: Partial<SeatSelection>) => void;
 
+  updateWheelchairSelection: (passengerId: string, segmentKey: string, code: WheelchairCode, label: string) => void;
+
   setMealSelections: (selections: MealSelection[]) => void;
   updateMealSelection: (passengerId: string, segmentKey: string, mealType: string, mealLabel?: string, priceUsd?: number) => void;
 
@@ -202,7 +216,7 @@ export function makePassenger(index: number, type: 'adult' | 'child' | 'infant' 
 
 const INITIAL: Omit<CheckoutStore,
   'initFromStores' | 'setSessionId' | 'setPassengers' | 'updatePassenger' |
-  'setSeatSelections' | 'updateSeatSelection' |
+  'setSeatSelections' | 'updateSeatSelection' | 'updateWheelchairSelection' |
   'setMealSelections' | 'updateMealSelection' |
   'setExtraBags' | 'toggleProtection' | 'toggleInsurance' | 'setComputedFees' |
   'setAcceptedTerms' | 'setPricing' | 'setPaymentIntent' |
@@ -218,6 +232,7 @@ const INITIAL: Omit<CheckoutStore,
   currency: 'USD',
   passengers: [makePassenger(0)],
   seatSelections: [],
+  wheelchairSelections: [],
   mealSelections: [],
   extraBags: 0,
   priceProtection: false,
@@ -298,6 +313,12 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
     return { seatSelections: [...s.seatSelections, {
       passengerId, segmentKey, preference: 'no_preference', seatNumber: null, priceUsd: 0, serviceId: null, serviceIds: [], ...updates
     }]};
+  }),
+
+  updateWheelchairSelection: (passengerId, segmentKey, code, label) => set((s) => {
+    const filtered = s.wheelchairSelections.filter(x => !(x.passengerId === passengerId && x.segmentKey === segmentKey));
+    if (code === 'NONE') return { wheelchairSelections: filtered };
+    return { wheelchairSelections: [...filtered, { passengerId, segmentKey, code, label }] };
   }),
 
   setMealSelections:   (mealSelections) => set({ mealSelections }),

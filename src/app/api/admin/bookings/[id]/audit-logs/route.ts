@@ -60,4 +60,4 @@ export const GET = withAdmin(async (req: NextRequest, { params }: any) => {
     console.error('[admin/bookings/[id]/audit-logs] GET error:', err);
     return NextResponse.json({ error: err.message ?? 'Internal server error' }, { status: 500 });
   }
-}, 'OPS_ADMIN');
+}, 'SUPPORT');

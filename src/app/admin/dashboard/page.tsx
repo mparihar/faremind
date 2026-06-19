@@ -126,17 +126,17 @@ export default function AdminDashboardPage() {
         <StatCard label="Confirmed Today"  value={stats?.confirmedToday ?? 0}      icon={TrendingUp}    color="bg-emerald-400/10 text-emerald-400" sub="bookings confirmed today" href="/admin/bookings" />
         <StatCard label="Cancelled Today"  value={stats?.cancelledToday ?? 0}      icon={XCircle}       color="bg-red-400/10 text-red-400" href="/admin/bookings" />
         <StatCard label="Pending Work"     value={stats?.pendingWork ?? 0}          icon={AlertTriangle} color="bg-amber-400/10 text-amber-400"
-          sub={`${stats?.pendingChanges ?? 0} changes · ${stats?.pendingCancellations ?? 0} cancellations`} href="/admin/work-queues" />
+          sub={`${stats?.pendingChanges ?? 0} changes · ${stats?.pendingCancellations ?? 0} cancellations`} href="/admin/support-queue" />
         <StatCard label="Week Revenue"     value={fmt(stats?.weekRevenue ?? 0)}     icon={DollarSign}    color="bg-[#1ABC9C]/10 text-[#1ABC9C]" sub="last 7 days" />
         <StatCard label="Month Revenue"    value={fmt(stats?.monthRevenue ?? 0)}    icon={DollarSign}    color="bg-purple-400/10 text-purple-400" sub="this month" />
         <StatCard label="Price Alerts"     value={stats?.openAlerts ?? 0}           icon={Bell}          color="bg-orange-400/10 text-orange-400" sub="open alerts" />
-        <StatCard label="Work Queue Items" value={(stats?.pendingChanges ?? 0) + (stats?.pendingCancellations ?? 0)} icon={GitMerge} color="bg-sky-400/10 text-sky-400" href="/admin/work-queues" />
+        <StatCard label="Support Tickets" value={(stats?.pendingChanges ?? 0) + (stats?.pendingCancellations ?? 0)} icon={GitMerge} color="bg-sky-400/10 text-sky-400" href="/admin/support-queue" />
       </div>
 
       {/* Quick actions */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-8">
         <button
-          onClick={() => router.push('/admin/work-queues')}
+          onClick={() => router.push('/admin/support-queue')}
           className="flex items-center justify-between p-5 bg-amber-400/5 border border-amber-400/20 rounded-2xl hover:bg-amber-400/10 transition-all group"
         >
           <div className="flex items-center gap-4">
@@ -144,7 +144,7 @@ export default function AdminDashboardPage() {
               <GitMerge size={20} className="text-amber-400" />
             </div>
             <div className="text-left">
-              <p className="text-white font-bold text-sm">Open Work Queue</p>
+              <p className="text-white font-bold text-sm">Open Support Queue</p>
               <p className="text-amber-400 text-xs">{stats?.pendingWork ?? 0} items need attention</p>
             </div>
           </div>

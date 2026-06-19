@@ -148,6 +148,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         total, currency, routeLabel,
         airline, fareClass, last4,
         pricing: pricingInput,
+        agentEmail, agentName,
       } = request.body as any;
       // Only pnr is required — customer email can be absent and admin still gets notified
       if (!pnr) return reply.code(400).send({ error: 'pnr is required' });
@@ -218,6 +219,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           has_price_breakdown:   hasPriceBreakdown,
           price_per_passenger:   pricePerPassenger,
           price_add_ons:         addOns,
+          // Agent attribution — notify.ts sends CC to agent if present
+          ...(agentEmail ? { agent_email: agentEmail, agent_name: agentName ?? 'Agent' } : {}),
         },
       });
 

@@ -11,6 +11,7 @@ import {
   ChevronRight,
   Shield,
   Luggage,
+  Accessibility,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
 import { useOfferGuard } from '@/hooks/useOfferGuard';
@@ -209,6 +210,7 @@ export default function ReviewPage() {
     passengers,
     seatSelections,
     mealSelections,
+    wheelchairSelections,
     extraBags,
     priceProtection,
     travelInsurance,
@@ -521,6 +523,35 @@ export default function ReviewPage() {
                     })
                   )}
                 </div>
+              </div>
+            )}
+
+            {/* Wheelchair Assistance */}
+            {wheelchairSelections.length > 0 && (
+              <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+                <div className="flex items-center gap-2 mb-4">
+                  <Accessibility className="w-4 h-4 text-[#1ABC9C]" />
+                  <h2 className="text-base font-bold text-slate-900">Wheelchair Assistance</h2>
+                  <span className="text-[10px] font-bold text-[#1ABC9C] bg-[#1ABC9C]/10 px-2 py-0.5 rounded-full uppercase tracking-wider">Free</span>
+                </div>
+                <div className="space-y-2">
+                  {wheelchairSelections.map((w) => {
+                    const pax = passengers.find(p => p.id === w.passengerId);
+                    const paxIdx = passengers.findIndex(p => p.id === w.passengerId);
+                    const paxName = pax ? [pax.firstName, pax.lastName].filter(Boolean).join(' ') || `Traveler ${paxIdx + 1}` : 'Unknown';
+                    return (
+                      <ReviewRow
+                        key={`${w.passengerId}_${w.segmentKey}`}
+                        label={`♿ ${paxName}`}
+                        value={`${w.code} — ${w.label}`}
+                        accent
+                      />
+                    );
+                  })}
+                </div>
+                <p className="text-[10px] text-slate-400 mt-3">
+                  Wheelchair requests are communicated to the airline using IATA standard codes.
+                </p>
               </div>
             )}
 

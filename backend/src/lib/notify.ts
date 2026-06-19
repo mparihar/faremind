@@ -43,12 +43,14 @@ interface NotifyPayload {
 // Brevo email sender
 // ═══════════════════════════════════════════════════════════
 
-async function sendBrevo(to: string, subject: string, html: string, text: string): Promise<void> {
+async function sendBrevo(to: string, subject: string, html: string, text: string, meta?: { recipientName?: string; template?: string; bookingRef?: string | null }): Promise<void> {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) {
     console.warn(`[notify] BREVO_API_KEY not set — skipping email to ${to}`);
     return;
   }
+  let status: 'SENT' | 'FAILED' = 'SENT';
+  let errorMsg: string | null = null;
   try {
     const res = await fetch(BREVO_API_URL, {
       method: 'POST',
@@ -64,9 +66,31 @@ async function sendBrevo(to: string, subject: string, html: string, text: string
     if (!res.ok) {
       const body = await res.text();
       console.error(`[notify] Brevo ${res.status}: ${body}`);
+      status = 'FAILED';
+      errorMsg = `HTTP ${res.status}: ${body.slice(0, 200)}`;
     }
-  } catch (err) {
+  } catch (err: any) {
     console.error(`[notify] Send failed to ${to}:`, err);
+    status = 'FAILED';
+    errorMsg = err.message || 'Unknown error';
+  }
+
+  // Log to email_logs table (non-blocking)
+  try {
+    await prisma.emailLog.create({
+      data: {
+        recipient: to,
+        recipientName: meta?.recipientName || to.split('@')[0],
+        subject,
+        template: meta?.template || 'Notification',
+        status,
+        provider: 'Brevo',
+        bookingRef: meta?.bookingRef ?? null,
+        errorMessage: errorMsg,
+      },
+    });
+  } catch (logErr) {
+    console.error('[email-log] Failed to log notification email:', logErr instanceof Error ? logErr.message : logErr);
   }
 }
 
@@ -567,6 +591,192 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
   }
 }
 
+// ═══════════════════════════════════════════════════════════
+// Agent email builder — rich customer-grade emails for agents
+// ═══════════════════════════════════════════════════════════
+
+function buildAgentEmail(eventType: string, d: Record<string, unknown>, agentName: string): EmailSpec | null {
+  const ref = String(d.booking_reference ?? d.pnr ?? '');
+  const route = String(d.route ?? `${d.origin ?? ''} – ${d.destination ?? ''}`);
+  const name = String(d.customer_name ?? 'Traveler');
+  const email = String(d.customer_email ?? '');
+  const amount = String(d.total_amount ?? '');
+  const appUrl = process.env.APP_URL || 'https://faremind.ai';
+
+  switch (eventType) {
+    case 'BOOKING_CONFIRMED': {
+      const airlinePnr = String(d.airline_pnr || d.pnr || '');
+      const airline = String(d.airline ?? '');
+      const fareClass = String(d.fare_class ?? '');
+      const confirmedAt = d.confirmed_at ? new Date(String(d.confirmed_at)).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+      const cardLast4 = String(d.card_last4 ?? '');
+      const totalCharged = String(d.total_charged ?? amount);
+      const currency = String(d.currency ?? 'USD');
+
+      // Passenger rows
+      const passengers = Array.isArray(d.passengers) ? d.passengers : [];
+      let paxHtml = '';
+      for (let i = 0; i < passengers.length; i++) {
+        const p = passengers[i] as Record<string, unknown>;
+        const pName = String(p.name ?? `Passenger ${i + 1}`);
+        const pType = String(p.type ?? 'Adult');
+        const pGender = p.gender ? String(p.gender) : '';
+        paxHtml += `<tr>
+          <td style="padding:6px 0;color:#0f172a;font-size:13px;">${pName}</td>
+          <td style="padding:6px 0;text-align:center;color:#64748b;font-size:12px;">${pType}</td>
+          <td style="padding:6px 0;text-align:right;color:#64748b;font-size:12px;">${pGender}</td>
+        </tr>`;
+      }
+
+      // Price per passenger
+      const pricePerPax = Array.isArray(d.price_per_passenger) ? d.price_per_passenger : [];
+      let pricePaxHtml = '';
+      for (const pp of pricePerPax) {
+        const ppObj = pp as Record<string, unknown>;
+        pricePaxHtml += `<tr>
+          <td style="padding:5px 0;color:#64748b;font-size:13px;">${String(ppObj.label ?? '')}</td>
+          <td style="padding:5px 0;text-align:right;font-weight:600;color:#0f172a;font-size:13px;">${String(ppObj.amount ?? '')}</td>
+        </tr>`;
+      }
+
+      // Add-ons
+      const addOns = Array.isArray(d.price_add_ons) ? d.price_add_ons : [];
+      let addOnsHtml = '';
+      for (const ao of addOns) {
+        const aoObj = ao as Record<string, unknown>;
+        const isHighlight = aoObj.highlight === true;
+        addOnsHtml += `<tr>
+          <td style="padding:5px 0;color:${isHighlight ? '#1abc9c' : '#64748b'};font-size:13px;">${String(aoObj.label ?? '')}</td>
+          <td style="padding:5px 0;text-align:right;font-weight:600;color:${isHighlight ? '#1abc9c' : '#0f172a'};font-size:13px;">${String(aoObj.amount ?? '')}</td>
+        </tr>`;
+      }
+
+      const paxText = passengers.map((p: any, i: number) => `  ${i + 1}. ${p.name || 'Passenger'} (${p.type || 'Adult'})`).join('\n');
+
+      return {
+        subject: `[FAREMIND Agent] Booking Confirmed – ${ref}`,
+        html: wrap('[Agent] Booking Confirmed', `
+          <!-- Agent Attribution Banner -->
+          <div style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 100%);border-radius:10px;padding:12px 16px;margin-bottom:20px;display:flex;align-items:center;">
+            <table cellpadding="0" cellspacing="0"><tr>
+              <td style="width:32px;height:32px;background:rgba(26,188,156,0.15);border-radius:8px;text-align:center;line-height:32px;border:1px solid rgba(26,188,156,0.3);">
+                <span style="color:#1abc9c;font-size:14px;font-weight:900;">A</span>
+              </td>
+              <td style="padding-left:10px;">
+                <span style="font-size:11px;color:#94a3b8;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;">Agent Booking by</span>
+                <span style="display:block;font-size:13px;color:#fff;font-weight:700;">${agentName}</span>
+              </td>
+            </tr></table>
+          </div>
+
+          <!-- Hero Booking Reference -->
+          <div style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f3460 100%);border-radius:12px;padding:28px 32px;text-align:center;margin-bottom:24px;">
+            <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:4px 14px;margin-bottom:12px;">
+              <div style="width:6px;height:6px;border-radius:50%;background:#10b981;"></div>
+              <span style="font-size:11px;font-weight:700;color:#10b981;letter-spacing:0.5px;">Booking Confirmed</span>
+            </div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:8px;"><span style="color:#fff;">FARE</span><span style="color:#009CA6;">MIND</span> <span style="color:#64748b;">BOOKING REFERENCE</span></div>
+            <div style="font-family:'Courier New',monospace;font-size:30px;font-weight:900;letter-spacing:6px;color:#fff;">${ref}</div>
+            ${airlinePnr ? `<div style="margin-top:12px;"><span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span> <span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;margin-left:8px;">${airlinePnr}</span></div>` : ''}
+          </div>
+
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking Confirmed ✈️</h2>
+          <p style="margin:0 0 20px;color:#64748b;font-size:14px;line-height:1.6;">
+            Booking for <strong style="color:#0f172a">${name}</strong> (<a href="mailto:${email}" style="color:#1abc9c;text-decoration:none;">${email}</a>) has been booked successfully!
+          </p>
+
+          <!-- Flight Details -->
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin-bottom:20px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+              <tr><td style="padding:6px 0;color:#64748b;">Route</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${route}</td></tr>
+              ${airline ? `<tr><td style="padding:6px 0;color:#64748b;">Airline</td><td style="padding:6px 0;text-align:right;font-weight:600;color:#0f172a;">${airline}</td></tr>` : ''}
+              ${fareClass ? `<tr><td style="padding:6px 0;color:#64748b;">Fare Class</td><td style="padding:6px 0;text-align:right;font-weight:600;color:#0f172a;">${fareClass}</td></tr>` : ''}
+              <tr><td style="padding:6px 0;color:#64748b;">Confirmed At</td><td style="padding:6px 0;text-align:right;font-weight:600;color:#0f172a;">${confirmedAt}</td></tr>
+            </table>
+          </div>
+
+          <!-- Passengers -->
+          ${passengers.length > 0 ? `
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:15px;font-weight:700;">Passengers (${passengers.length})</h3>
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr>
+                <td style="padding:4px 0;color:#94a3b8;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Name</td>
+                <td style="padding:4px 0;text-align:center;color:#94a3b8;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Type</td>
+                <td style="padding:4px 0;text-align:right;color:#94a3b8;font-size:11px;font-weight:700;text-transform:uppercase;letter-spacing:0.5px;">Gender</td>
+              </tr>
+              <tr><td colspan="3" style="padding:0;"><div style="height:1px;background:#e2e8f0;margin:4px 0;"></div></td></tr>
+              ${paxHtml}
+            </table>
+          </div>
+          ` : ''}
+
+          <!-- Price Breakdown -->
+          ${pricePaxHtml || addOnsHtml ? `
+          <h3 style="margin:0 0 8px;color:#0f172a;font-size:15px;font-weight:700;">Price Breakdown</h3>
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              ${pricePaxHtml}
+              ${addOnsHtml ? `<tr><td colspan="2" style="padding:0;"><div style="height:1px;background:#e2e8f0;margin:8px 0;"></div></td></tr>${addOnsHtml}` : ''}
+              <tr><td colspan="2" style="padding:0;"><div style="height:2px;background:#e2e8f0;margin:8px 0;"></div></td></tr>
+              <tr>
+                <td style="padding:6px 0;color:#0f172a;font-size:15px;font-weight:800;">Total Charged</td>
+                <td style="padding:6px 0;text-align:right;font-weight:900;font-size:20px;color:#1abc9c;">${totalCharged}</td>
+              </tr>
+            </table>
+          </div>
+          ` : (amount ? `
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:16px 20px;margin-bottom:20px;">
+            <table width="100%" cellpadding="0" cellspacing="0">
+              <tr><td style="padding:6px 0;color:#64748b;font-size:14px;">Total Charged</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:20px;color:#1abc9c;">${amount}</td></tr>
+            </table>
+          </div>
+          ` : '')}
+
+          <!-- Payment Info -->
+          ${cardLast4 ? `
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:10px;padding:12px 16px;margin-bottom:20px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+              <tr><td style="padding:4px 0;color:#64748b;">Payment Method</td><td style="padding:4px 0;text-align:right;font-weight:600;color:#0f172a;">${cardLast4}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;">Currency</td><td style="padding:4px 0;text-align:right;font-weight:600;color:#0f172a;">${currency}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;">Status</td><td style="padding:4px 0;text-align:right;font-weight:700;color:#10b981;">✓ Confirmed</td></tr>
+            </table>
+          </div>
+          ` : ''}
+
+          <!-- Action Buttons -->
+          <div style="text-align:center;margin:24px 0 16px;">
+            <a href="${appUrl}/manage-booking/${ref}" style="display:inline-block;background:linear-gradient(135deg,#009CA6 0%,#1abc9c 100%);color:#fff;font-size:13px;font-weight:700;padding:12px 28px;border-radius:10px;text-decoration:none;letter-spacing:0.3px;">View & Manage Booking</a>
+          </div>
+          <div style="text-align:center;margin-bottom:24px;">
+            <a href="${appUrl}/manage-booking/${ref}" style="color:#1abc9c;font-size:12px;text-decoration:none;font-weight:600;">Download Itinerary</a>
+            <span style="color:#e2e8f0;margin:0 8px;">|</span>
+            <a href="mailto:support@faremind.ai" style="color:#1abc9c;font-size:12px;text-decoration:none;font-weight:600;">Contact Support</a>
+          </div>
+
+          <!-- Footer -->
+          <p style="margin:0;color:#0f172a;font-size:14px;font-weight:600;">FAREMIND</p>
+          <p style="margin:4px 0;color:#1abc9c;font-size:12px;font-weight:600;">Your Personal Travel Consultant</p>
+          <p style="margin:4px 0 0;font-size:12px;"><a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a></p>
+          <p style="margin:4px 0 0;font-size:12px;"><a href="${appUrl}" style="color:#1abc9c;text-decoration:none;">www.faremind.ai</a></p>
+        `),
+        text: `[FAREMIND Agent] Booking Confirmed – ${ref}\n\nAgent: ${agentName}\nCustomer: ${name} (${email})\nRoute: ${route}\n${airline ? `Airline: ${airline}\n` : ''}${fareClass ? `Fare Class: ${fareClass}\n` : ''}Total: ${totalCharged}\nConfirmed: ${confirmedAt}\n\nPassengers:\n${paxText}\n\nManage: ${appUrl}/manage-booking/${ref}`,
+      };
+    }
+
+    // For non-BOOKING_CONFIRMED events, use the customer template with agent subject prefix
+    default: {
+      const customerSpec = buildCustomerEmail(eventType, d);
+      if (!customerSpec) return null;
+      return {
+        subject: customerSpec.subject.replace('Your FAREMIND', '[FAREMIND Agent]').replace('Your booking', `[Agent] Booking (${name})`).replace('Your flight', `[Agent] Flight (${name})`).replace('Your passenger', `[Agent] Passenger (${name})`).replace('Your seat', `[Agent] Seat (${name})`),
+        html: customerSpec.html,
+        text: `[Agent Copy] ${customerSpec.text}`,
+      };
+    }
+  }
+}
+
 // Which events send to customer vs support
 const CUSTOMER_EVENTS = new Set<string>([
   'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
@@ -621,12 +831,37 @@ async function getAdminRecipients(eventType: string): Promise<string[]> {
 export async function fireNotification(payload: NotifyPayload): Promise<void> {
   try {
     const { event_type, customer_email, data } = payload;
+    const ref = String(data.booking_reference ?? data.pnr ?? '') || null;
+    const customerName = String(data.customer_name ?? 'Customer');
+
+    // Derive a human-readable template name from the event type
+    const templateMap: Record<string, string> = {
+      BOOKING_CONFIRMED: 'Booking Confirmation',
+      BOOKING_PENDING: 'Booking Pending',
+      BOOKING_FAILED: 'Booking Failed',
+      BOOKING_CANCELLED: 'Cancellation Notice',
+      BOOKING_UPDATED: 'Booking Updated',
+      PASSENGER_INFO_UPDATED: 'Passenger Updated',
+      DATE_CHANGE_SUBMITTED: 'Date Change Requested',
+      DATE_CHANGE_APPROVED: 'Date Change Approved',
+      DATE_CHANGE_REJECTED: 'Date Change Rejected',
+      FLIGHT_CHANGE_CONFIRMED: 'Flight Changed',
+      SEAT_SELECTION_UPDATED: 'Seat Updated',
+      PAYMENT_SUCCESS: 'Payment Receipt',
+      PAYMENT_FAILED: 'Payment Failed',
+      PRICE_DROP_ALERT: 'Price Alert',
+      PRICE_DROP_REFUND: 'Price Drop Refund',
+      CHECKIN_REMINDER: 'Check-in Reminder',
+      UPCOMING_TRIP: 'Trip Reminder',
+      SUPPORT_MANUAL: 'Support Request',
+    };
+    const template = templateMap[event_type] || event_type;
 
     // Customer email
     if (CUSTOMER_EVENTS.has(event_type) && customer_email) {
       const spec = buildCustomerEmail(event_type, data);
       if (spec) {
-        sendBrevo(customer_email, spec.subject, spec.html, spec.text).catch(() => {});
+        sendBrevo(customer_email, spec.subject, spec.html, spec.text, { recipientName: customerName, template, bookingRef: ref }).catch(() => {});
       }
     }
 
@@ -636,8 +871,28 @@ export async function fireNotification(payload: NotifyPayload): Promise<void> {
       if (spec) {
         const adminEmails = await getAdminRecipients(event_type);
         for (const adminEmail of adminEmails) {
-          sendBrevo(adminEmail, spec.subject, spec.html, spec.text).catch(() => {});
+          sendBrevo(adminEmail, spec.subject, spec.html, spec.text, { recipientName: 'Admin', template: `[Admin] ${template}`, bookingRef: ref }).catch(() => {});
         }
+      }
+    }
+
+    // Agent email — if booking was created by an agent, CC them with FULL booking details
+    const AGENT_NOTIFY_EVENTS = new Set<string>([
+      'BOOKING_CONFIRMED', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
+      'PASSENGER_INFO_UPDATED', 'FLIGHT_CHANGE_CONFIRMED', 'SEAT_SELECTION_UPDATED',
+      'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
+      'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
+    ]);
+    const agentEmail = data.agent_email ? String(data.agent_email) : null;
+    const agentName = data.agent_name ? String(data.agent_name) : 'Agent';
+    if (agentEmail && AGENT_NOTIFY_EVENTS.has(event_type)) {
+      const agentSpec = buildAgentEmail(event_type, data, agentName);
+      if (agentSpec) {
+        sendBrevo(agentEmail, agentSpec.subject, agentSpec.html, agentSpec.text, {
+          recipientName: agentName,
+          template: `[Agent] ${template}`,
+          bookingRef: ref,
+        }).catch(() => {});
       }
     }
   } catch (err) {

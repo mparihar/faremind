@@ -47,6 +47,7 @@ model User {
 enum UserRole {
   USER
   ADMIN
+  FAREMIND_AGENT
 }
 
 model Session {
@@ -600,12 +601,19 @@ model MasterBooking {
   providerSyncs          ProviderSync[]
   commercialCharges      BookingCommercialCharge[]
 
+  // Agent booking ownership
+  createdByRole          String?            @map("created_by_role")       // 'AGENT' | 'CUSTOMER' | null
+  agentUserId            String?            @map("agent_user_id")
+  agentName              String?            @map("agent_name")
+  agentEmail             String?            @map("agent_email")
+
   @@index([masterBookingReference])
   @@index([masterPnr])
   @@index([customerEmail])
   @@index([userId])
   @@index([departureDate])
   @@index([bookingStatus])
+  @@index([agentUserId])
   @@map("master_bookings")
 }
 
@@ -1059,6 +1067,9 @@ model AdminUser {
   sessions     AdminSession[]
   auditLogs    AuditLog[]
   bookingNotes BookingNote[]
+  supportTickets SupportTicket[]
+  supportMessages SupportTicketMessage[]
+  failedBookings BookingFailureAudit[]
 
   // Commercial fee management relations
   createdPlatformFees        PlatformFeeRule[]        @relation("PlatformFeeCreatedBy")
@@ -1104,6 +1115,82 @@ model AdminSession {
   @@index([adminUserId])
   @@index([token])
   @@map("admin_sessions")
+}
+
+// ═══════════════════════════════════════════════
+// SUPPORT SYSTEM
+// ═══════════════════════════════════════════════
+
+model SupportTicket {
+  id              String    @id @default(cuid())
+  ticketNumber    String?   @unique @map("ticket_number")  // e.g. FM-TKT-0001 or FS-URG-10001
+  sequenceNumber  Int?      @unique @map("sequence_number") @default(autoincrement())
+  subject         String
+  description     String    @db.Text
+  priority        String    // LOW, MEDIUM, HIGH, URGENT
+  status          String    // OPEN, IN_PROGRESS, WAITING_CUSTOMER, ESCALATED, RESOLVED, CLOSED
+  category        String
+  channel         String    @default("WEB")  // WEB, WHATSAPP
+  urgency         String?   // NORMAL, URGENT
+  customerName    String    @map("customer_name")
+  customerEmail   String    @map("customer_email")
+  customerPhone   String?   @map("customer_phone")
+  bookingRef      String?   @map("booking_ref")
+  airlinePnr      String?   @map("airline_pnr")
+  assignedToId    String?   @map("assigned_to_id")
+  failureAuditId  String?   @unique @map("failure_audit_id")
+  whatsappNumberUsed  String?  @map("whatsapp_number_used")
+  whatsappMessageText String? @db.Text @map("whatsapp_message_text")
+  whatsappOpenedAt    DateTime? @map("whatsapp_opened_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  assignedTo      AdminUser?             @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
+  failureAudit    BookingFailureAudit?   @relation(fields: [failureAuditId], references: [id], onDelete: SetNull)
+  messages        SupportTicketMessage[]
+
+  @@index([assignedToId])
+  @@index([status])
+  @@index([category])
+  @@index([channel])
+  @@index([urgency])
+  @@map("support_tickets")
+}
+
+model WhatsAppSupportNumber {
+  id                  String   @id @default(cuid())
+  displayName         String   @map("display_name")
+  countryCode         String   @map("country_code")       // e.g. "+1"
+  phoneNumber         String   @map("phone_number")       // e.g. "9726971532"
+  fullWhatsAppNumber  String   @map("full_whatsapp_number") // e.g. "19726971532"
+  roleType            String   @map("role_type")           // SUPPORT, ADMIN, SUPER_ADMIN, GENERAL_SUPPORT
+  isPrimary           Boolean  @default(false) @map("is_primary")
+  isActive            Boolean  @default(true) @map("is_active")
+  priority            Int      @default(1)
+  notes               String?
+  createdById         String?  @map("created_by_id")
+  updatedById         String?  @map("updated_by_id")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@index([isPrimary, isActive])
+  @@map("whatsapp_support_numbers")
+}
+
+model SupportTicketMessage {
+  id        String   @id @default(cuid())
+  ticketId  String   @map("ticket_id")
+  senderId  String?  @map("sender_id") // null if sent by customer, AdminUser ID if sent by staff
+  content   String
+  isInternal Boolean @default(false) @map("is_internal")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  ticket    SupportTicket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  sender    AdminUser?    @relation(fields: [senderId], references: [id], onDelete: SetNull)
+
+  @@index([ticketId])
+  @@index([senderId])
+  @@map("support_ticket_messages")
 }
 
 // ═══════════════════════════════════════════════
@@ -2206,6 +2293,9 @@ model BookingFailureAudit {
   sessionId             String?   @map("session_id")
 
   // Admin resolution tracking
+  status                String    @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
+  assignedToId          String?   @map("assigned_to_id")
+  assignedTo            AdminUser? @relation(fields: [assignedToId], references: [id], onDelete: SetNull)
   resolvedAt            DateTime? @map("resolved_at")
   resolvedBy            String?   @map("resolved_by")
   resolutionNotes       String?   @map("resolution_notes") @db.Text
@@ -2216,9 +2306,37 @@ model BookingFailureAudit {
   offerProvidedAt       DateTime? @map("offer_provided_at")
   offerExpiresAt        DateTime? @map("offer_expires_at")
 
+  // Linked support ticket (auto-created when failure is logged)
+  supportTicket         SupportTicket?
+
   @@index([customerEmail])
   @@index([createdAt])
   @@index([errorCode])
   @@index([resolvedAt])
   @@map("booking_failure_audits")
 }
+
+// ═══════════════════════════════════════════════
+// EMAIL NOTIFICATION LOG
+// ═══════════════════════════════════════════════
+
+model EmailLog {
+  id            String    @id @default(cuid())
+  recipient     String                          // email address
+  recipientName String    @map("recipient_name")
+  subject       String
+  template      String                          // e.g. 'OTP Verification', 'Booking Confirmation'
+  status        String    @default("SENT")      // SENT, DELIVERED, OPENED, FAILED, BOUNCED
+  provider      String    @default("Brevo")
+  bookingRef    String?   @map("booking_ref")
+  errorMessage  String?   @map("error_message") @db.Text
+  sentAt        DateTime  @default(now()) @map("sent_at")
+  openedAt      DateTime? @map("opened_at")
+
+  @@index([recipient])
+  @@index([sentAt])
+  @@index([status])
+  @@index([template])
+  @@map("email_logs")
+}
+

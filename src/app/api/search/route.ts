@@ -8,7 +8,7 @@ import type { RoundTripUserPrefs } from '@/lib/round-trip-types';
 import { prisma } from '@/lib/db';
 import { getTravelDnaForRecommendation } from '@/lib/services/travel-dna-service';
 import type { TravelDnaRecommendationContext } from '@/lib/services/travel-dna-service';
-import { flexCacheKey, flexCacheSet } from '@/lib/flex-search-cache';
+import { flexCacheKey, flexCacheGet, flexCacheSet, flexCacheClearRoute } from '@/lib/flex-search-cache';
 
 export const maxDuration = 120; // Allow up to 2 minutes for search
 
@@ -58,19 +58,41 @@ export async function GET(request: NextRequest) {
 
     // ── Round-trip path ──────────────────────────────────────────────────────
     if (trip === 'round_trip' && returnDate) {
-      // Always perform a fresh search — no cache reuse
-      const rtResult = await searchRoundTripFlights({
-            origin: origin!, destination: destination!,
-            date: date!, returnDate, adults, children, infants, cabin,
-          });
+      const fKey = flexCacheKey(origin!, destination!, date!, returnDate, adults, cabin);
 
-      // ── Apply internal markup before AI ranking ──────────────────────────
-      await applyMarkupToRoundTripOptions(rtResult.options);
+      // Fresh search from hero / modify → clear stale flex cache for this route
+      // so the flex-date strip re-fetches live prices.
+      const fromFlex = searchParams.get('fromFlex') === '1';
+      if (!fromFlex) {
+        flexCacheClearRoute(origin!, destination!);
+      }
 
-      // Cache round-trip results so the flex date strip gets an instant hit
-      // for the center tile instead of making a redundant search.
+      let rtResult: { options: any[]; searchId?: string; totalTimeMs: number; usedMockData: boolean; providers: any[] };
+
+      // When the user clicks a flex-date tile (fromFlex=1), prefer the cached
+      // results from the flex-prices API so the cheapest price on the tile
+      // exactly matches the cheapest card in the results.
+      const flexCached = fromFlex ? flexCacheGet(fKey) : null;
+      if (flexCached && flexCached.length > 0) {
+        rtResult = {
+          options: flexCached,
+          totalTimeMs: 0,
+          usedMockData: false,
+          providers: [{ provider: 'flex-cache', flights: [], responseTimeMs: 0, isMock: false }],
+        };
+      } else {
+        // Fresh search from provider
+        rtResult = await searchRoundTripFlights({
+          origin: origin!, destination: destination!,
+          date: date!, returnDate, adults, children, infants, cabin,
+        });
+
+        // Apply internal markup before AI ranking
+        await applyMarkupToRoundTripOptions(rtResult.options);
+      }
+
+      // Cache results so flex-date strip gets an instant hit for the center tile
       if (rtResult.options.length > 0) {
-        const fKey = flexCacheKey(origin!, destination!, date!, returnDate, adults, cabin);
         flexCacheSet(fKey, rtResult.options);
       }
 

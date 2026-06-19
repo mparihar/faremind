@@ -385,6 +385,26 @@ async function main() {
 
   console.log(`   ✅ 2 demo bookings created with price history\n`);
 
+  // Seed WhatsApp Support Number
+  console.log('📱 Seeding WhatsApp support number...');
+  await prisma.whatsAppSupportNumber.upsert({
+    where: { id: 'default-whatsapp-support' },
+    update: {},
+    create: {
+      id: 'default-whatsapp-support',
+      displayName: 'FareMind Super Admin Support',
+      countryCode: '+1',
+      phoneNumber: '9726971532',
+      fullWhatsAppNumber: '19726971532',
+      roleType: 'SUPER_ADMIN',
+      isPrimary: true,
+      isActive: true,
+      priority: 1,
+      notes: 'Default FareMind support WhatsApp number',
+    },
+  });
+  console.log('   ✅ WhatsApp support number seeded\n');
+
   // Summary
   const counts = {
     users: await prisma.user.count(),

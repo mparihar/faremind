@@ -116,6 +116,19 @@ export interface UnifiedFlight {
   providerTotalFare?: number;    // Original provider fare before markup
   fareMindMarkupAmount?: number; // Markup amount applied
   markupRuleId?: string;         // Which PlatformFeeRule was applied
+
+  // ── Provider aggregation metadata (admin/debug only) ──
+  aggregationMeta?: AggregationMeta;
+}
+
+export interface AggregationMeta {
+  duplicateKey: string;
+  selectedProvider: string;
+  duplicateProviders: string[];
+  selectionReason: string;
+  duplicateOfferIds: string[];
+  selectedProviderFare: number;
+  duplicateProviderFares: Record<string, number>;
 }
 
 // ─── Booking ───

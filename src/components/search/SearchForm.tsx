@@ -125,6 +125,10 @@ interface SearchFormProps {
   initialReturnDate?: string;
   initialTripType?: TripType;
   initialCabin?: CabinClass;
+  /** Called just before navigating to /search — use for agent context injection */
+  onBeforeSearch?: (params: URLSearchParams) => void;
+  /** Extra query params to merge into the search URL (e.g. agentMode=1) */
+  additionalSearchParams?: Record<string, string>;
 }
 
 const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function SearchForm({
@@ -138,6 +142,8 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
   initialReturnDate,
   initialTripType,
   initialCabin,
+  onBeforeSearch,
+  additionalSearchParams,
 }, ref) {
   const router = useRouter();
   const { setQuery, setLoading, loading } = useSearchStore();
@@ -310,6 +316,16 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
       params.set('sort', 'value');
       prefs.setSort('value');
     }
+
+    // Merge any additional params (e.g. agentMode)
+    if (additionalSearchParams) {
+      Object.entries(additionalSearchParams).forEach(([key, val]) => {
+        if (val) params.set(key, val);
+      });
+    }
+
+    // Fire pre-navigation callback (e.g. agent context injection)
+    onBeforeSearch?.(params);
 
     router.push(`/search?${params.toString()}`);
   };

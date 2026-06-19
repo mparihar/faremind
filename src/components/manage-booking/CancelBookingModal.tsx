@@ -321,7 +321,7 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                   Download Receipt
                 </button>
                 <button
-                  onClick={() => { onClose(); router.push('/account/support'); }}
+                  onClick={() => { onClose(); router.push('/support'); }}
                   className="flex items-center justify-center gap-1.5 py-2.5 rounded-xl border border-white/10 text-slate-400 hover:text-white text-xs font-semibold hover:bg-white/[0.04] transition-all"
                 >
                   <Mail size={12} />
@@ -359,7 +359,7 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                   <ArrowLeft size={13} /> Try Again
                 </button>
                 <button
-                  onClick={() => { onClose(); router.push('/account/support'); }}
+                  onClick={() => { onClose(); router.push('/support'); }}
                   className="flex items-center justify-center gap-1.5 py-3 rounded-xl bg-[#1ABC9C] hover:bg-[#16a085] text-white font-bold text-sm transition-all"
                 >
                   <Mail size={13} /> Contact Support

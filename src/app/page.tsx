@@ -125,6 +125,9 @@ export default function HomePage() {
     resetAll();
     clearResults();
     setFormKey(Date.now()); // Force remount with fresh defaults
+
+    // Clear flex-date cache on the server so next search gets fresh prices
+    fetch('/api/flex-prices/clear', { method: 'POST' }).catch(() => {});
   }, []);  // eslint-disable-line react-hooks/exhaustive-deps
 
   // Check for pending voice search from sessionStorage (cross-page navigation)

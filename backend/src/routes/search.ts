@@ -120,6 +120,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           filters: {
             classes: classCounts,
           },
+          aggregation: result.aggregationStats || null,
         },
       };
 

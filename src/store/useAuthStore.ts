@@ -8,6 +8,8 @@ interface AuthUser {
   email: string;
   name: string;
   avatar?: string | null;
+  isAdminViewer?: boolean;
+  role?: string;
 }
 
 interface AuthStore {
@@ -131,6 +133,15 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
                 // Session expired on server — clear everything
                 localStorage.removeItem('faremind_session');
                 set({ user: null, sessionToken: null });
+              } else if (data.user) {
+                // Sync latest user data (including role) from server
+                const current = get().user;
+                const merged = { ...current, ...data.user };
+                set({ user: merged });
+                localStorage.setItem('faremind_session', JSON.stringify({
+                  user: merged,
+                  token,
+                }));
               }
             })
             .catch(() => {

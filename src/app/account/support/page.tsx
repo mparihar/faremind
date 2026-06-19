@@ -2,8 +2,9 @@
 
 import { useState } from 'react';
 import { useAuthStore } from '@/store/useAuthStore';
-import { Mail, MessageSquare, Clock, Check, ChevronDown, ChevronUp, Headphones } from 'lucide-react';
+import { Mail, MessageSquare, Clock, Check, ChevronDown, ChevronUp, Headphones, Phone } from 'lucide-react';
 import { motion, AnimatePresence } from 'framer-motion';
+import WhatsAppUrgentSupport from '@/components/support/WhatsAppUrgentSupport';
 
 const FAQ = [
   {
@@ -61,15 +62,39 @@ export default function SupportPage() {
   const [category, setCategory] = useState('');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
+  const [ticketNumber, setTicketNumber] = useState('');
+  const [error, setError] = useState('');
 
   const iCls = 'w-full px-4 py-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white text-[15px] focus:outline-none focus:border-[#1ABC9C] transition-all placeholder:text-slate-600';
 
   async function handleSend() {
     if (!message.trim()) return;
     setSending(true);
-    await new Promise(r => setTimeout(r, 900));
+    setError('');
+    try {
+      const res = await fetch('/api/support-tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: user?.name || 'Customer',
+          email: user?.email || '',
+          subject: subject.trim(),
+          message: message.trim(),
+          category: category || 'other',
+          bookingRef: bookingRef.trim() || null,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTicketNumber(data.ticketNumber || '');
+        setSent(true);
+      } else {
+        setError(data.error || 'Something went wrong. Please try again.');
+      }
+    } catch (err) {
+      setError('Network error. Please check your connection and try again.');
+    }
     setSending(false);
-    setSent(true);
   }
 
   return (
@@ -90,15 +115,27 @@ export default function SupportPage() {
                 <div className="w-14 h-14 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 flex items-center justify-center mx-auto mb-3">
                   <Check size={26} className="text-[#1ABC9C]" />
                 </div>
-                <p className="text-white font-bold mb-1">Message Received</p>
-                <p className="text-slate-400 text-sm">Our team will reply to <strong className="text-white">{user?.email}</strong> within 24 hours.</p>
-                <button onClick={() => { setSent(false); setSubject(''); setMessage(''); setBookingRef(''); setCategory(''); }}
+                <p className="text-white font-bold text-lg mb-1">Ticket Created</p>
+                {ticketNumber && (
+                  <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 rounded-xl mb-3">
+                    <span className="text-slate-400 text-sm">Your Ticket #</span>
+                    <span className="text-[#1ABC9C] font-black text-lg font-mono">{ticketNumber}</span>
+                  </div>
+                )}
+                <p className="text-slate-400 text-sm">Our support team will review your request and respond to <strong className="text-white">{user?.email}</strong> within 24 hours.</p>
+                <p className="text-slate-500 text-xs mt-2">Please save your ticket number for future reference.</p>
+                <button onClick={() => { setSent(false); setSubject(''); setMessage(''); setBookingRef(''); setCategory(''); setTicketNumber(''); }}
                   className="mt-5 px-5 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm font-semibold hover:bg-white/[0.04] transition-all">
-                  Send Another
+                  Submit Another Request
                 </button>
               </div>
             ) : (
               <div className="space-y-3">
+                {error && (
+                  <div className="px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm font-medium">
+                    {error}
+                  </div>
+                )}
                 <div>
                   <label className="text-xs text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Category</label>
                   <select value={category} onChange={e => setCategory(e.target.value)}
@@ -163,14 +200,25 @@ export default function SupportPage() {
             </div>
           </div>
 
-          {/* Email direct */}
+          {/* WhatsApp Urgent Support */}
+          <WhatsAppUrgentSupport defaultName={user?.name || undefined} defaultEmail={user?.email || undefined} />
+
+          {/* Direct Contact */}
           <div className="bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 rounded-2xl p-5">
-            <Headphones size={20} className="text-[#1ABC9C] mb-2" />
-            <p className="text-white font-bold text-base mb-1">Direct Contact</p>
-            <p className="text-slate-400 text-sm mb-3">For urgent issues, email us directly at:</p>
-            <a href="mailto:support@faremind.ai" className="text-[#1ABC9C] font-bold text-sm hover:underline">
-              support@faremind.ai
-            </a>
+            <div className="flex items-center gap-2 mb-3">
+              <Headphones size={18} className="text-[#1ABC9C]" />
+              <p className="text-white font-bold text-base">Direct Contact</p>
+            </div>
+            <div className="space-y-2">
+              <a href="tel:+19726971532" className="flex items-center gap-2 text-[#1ABC9C] font-bold text-sm hover:underline">
+                <Phone size={14} />
+                +1 (972) 697-1532
+              </a>
+              <a href="mailto:support@faremind.ai" className="flex items-center gap-2 text-[#1ABC9C] font-bold text-sm hover:underline">
+                <Mail size={14} />
+                support@faremind.ai
+              </a>
+            </div>
           </div>
         </div>
       </div>

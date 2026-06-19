@@ -70,7 +70,7 @@ function QuickActions({ nextTrip }: { nextTrip: any }) {
     { icon: Armchair, label: 'Change\nSeat', href: '/account/manage-booking' },
     { icon: Luggage, label: 'Add\nBaggage', href: '/account/manage-booking', hidden: nextTrip && !canAddBaggage(nextTrip) },
     { icon: Ticket, label: 'Check-\nin', href: '/account/manage-booking' },
-    { icon: PhoneCall, label: 'Contact\nSupport', href: '/account/support' },
+    { icon: PhoneCall, label: 'Contact\nSupport', href: '/support' },
   ].filter(a => !a.hidden);
   const processedActions = actions.map(a => {
     const isDisabled = a.label === 'Change\nSeat' && nextTrip && (nextTrip.primaryProvider || '').toLowerCase() === 'duffel';
@@ -475,7 +475,7 @@ export default function AccountDashboard() {
                 <div className="flex-1">
                   <p className="text-white text-sm font-bold mb-1">We&apos;re here for you 24/7</p>
                   <p className="text-slate-400 text-[11px] leading-relaxed mb-3">Get quick support for your travel needs.</p>
-                  <Link href="/account/support"
+                  <Link href="/support"
                     className="inline-flex items-center gap-2 px-4 py-2 rounded-xl bg-[#1ABC9C]/15 border border-[#1ABC9C]/25 text-[#1ABC9C] text-xs font-bold hover:bg-[#1ABC9C]/25 transition-all">
                     Contact Support
                   </Link>

@@ -79,4 +79,17 @@ export interface UnifiedFlight {
   providerTotalFare?: number;
   fareMindMarkupAmount?: number;
   markupRuleId?: string;
+
+  // ── Provider aggregation metadata (admin/debug only) ──
+  aggregationMeta?: AggregationMeta;
+}
+
+export interface AggregationMeta {
+  duplicateKey: string;
+  selectedProvider: string;
+  duplicateProviders: string[];
+  selectionReason: string;
+  duplicateOfferIds: string[];
+  selectedProviderFare: number;
+  duplicateProviderFares: Record<string, number>;
 }

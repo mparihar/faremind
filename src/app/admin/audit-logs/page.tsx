@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/store/useAdminStore';
-import { RefreshCw, Search, ChevronLeft, ChevronRight } from 'lucide-react';
+import { RefreshCw, Search, ChevronLeft, ChevronRight, CalendarDays, Trash2, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
 
 export default function AuditLogsPage() {
@@ -14,6 +14,9 @@ export default function AuditLogsPage() {
   const [page, setPage]     = useState(1);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const [rangeFrom, setRangeFrom] = useState('');
+  const [rangeTo, setRangeTo] = useState('');
+  const [bulkDeleting, setBulkDeleting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -29,6 +32,33 @@ export default function AuditLogsPage() {
   }, [page, search, router]);
 
   useEffect(() => { load(); }, [load]);
+
+  const handleBulkDelete = async () => {
+    if (!rangeFrom || !rangeTo) return;
+    const from = new Date(rangeFrom);
+    const to = new Date(rangeTo);
+    if (from > to) { alert('"From" date must be before "To" date'); return; }
+    if (!window.confirm(`Delete all audit logs from ${rangeFrom} to ${rangeTo}?`)) return;
+    setBulkDeleting(true);
+    try {
+      const res = await adminFetch('/api/admin/audit-logs', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ from: rangeFrom, to: rangeTo }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Deleted ${data.deletedCount} audit log(s)`);
+        setRangeFrom(''); setRangeTo('');
+        setPage(1);
+        await load();
+      } else {
+        const err = await res.json().catch(() => ({}));
+        alert(err.error || 'Failed to delete');
+      }
+    } catch { alert('Network error'); }
+    setBulkDeleting(false);
+  };
 
   return (
     <div className="p-8">
@@ -51,6 +81,33 @@ export default function AuditLogsPage() {
           placeholder="Filter by action…"
           className="w-full pl-9 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:border-[#1ABC9C] transition-all"
         />
+      </div>
+
+      {/* Date Range Bulk Delete */}
+      <div className="flex items-center gap-3 mb-5 p-4 bg-slate-800/50 border border-slate-700/50 rounded-2xl flex-wrap">
+        <CalendarDays size={14} className="text-slate-400 shrink-0" />
+        <span className="text-xs text-slate-400 font-semibold shrink-0">Delete Range:</span>
+        <input
+          type="date"
+          value={rangeFrom}
+          onChange={e => setRangeFrom(e.target.value)}
+          className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-300 text-xs focus:outline-none focus:border-[#1ABC9C] transition-all [color-scheme:dark]"
+        />
+        <span className="text-slate-600 text-xs">to</span>
+        <input
+          type="date"
+          value={rangeTo}
+          onChange={e => setRangeTo(e.target.value)}
+          className="px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-slate-300 text-xs focus:outline-none focus:border-[#1ABC9C] transition-all [color-scheme:dark]"
+        />
+        <button
+          onClick={handleBulkDelete}
+          disabled={!rangeFrom || !rangeTo || bulkDeleting}
+          className="flex items-center gap-1.5 px-4 py-2 rounded-xl text-xs font-bold bg-red-500/10 border border-red-500/20 text-red-400 hover:bg-red-500/20 transition-all disabled:opacity-30 disabled:cursor-not-allowed"
+        >
+          {bulkDeleting ? <Loader2 size={12} className="animate-spin" /> : <Trash2 size={12} />}
+          Delete Range
+        </button>
       </div>
 
       <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">

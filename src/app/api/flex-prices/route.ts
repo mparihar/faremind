@@ -9,10 +9,12 @@ function isFutureDate(dateStr: string): boolean {
   return new Date(dateStr + 'T00:00:00Z') > today;
 }
 
-function pickCheapest(options: any[], cabin: string) {
+function pickCheapest(options: any[], cabin: string): any | null {
   const cabinSet = new Set(cabin.split(',').map(c => c.trim()).filter(Boolean));
   const cabinMatches = options.filter(o => cabinSet.has(o.cabinClass));
-  const pool = cabinMatches.length > 0 ? cabinMatches : options;
+  // Strictly match cabin — never fall back to a different cabin's price
+  const pool = cabinMatches.length > 0 ? cabinMatches : null;
+  if (!pool) return null;
   return pool.reduce((min, o) => o.totalPrice < min.totalPrice ? o : min);
 }
 
@@ -25,6 +27,8 @@ export async function GET(request: NextRequest) {
   const dep         = searchParams.get('dep');
   const ret         = searchParams.get('ret');
   const adults      = parseInt(searchParams.get('adults') || '1');
+  const children    = parseInt(searchParams.get('children') || '0');
+  const infants     = parseInt(searchParams.get('infants') || '0');
   const cabin       = searchParams.get('cabin') || 'economy';
 
   if (!origin || !destination || !dep || !ret) {
@@ -40,6 +44,9 @@ export async function GET(request: NextRequest) {
   const cached = flexCacheGet(cKey);
   if (cached && cached.length > 0) {
     const cheapest = pickCheapest(cached, cabin);
+    if (!cheapest) {
+      return NextResponse.json({ dep, ret, minPrice: null, currency: 'USD', offerId: null, airline: null });
+    }
     return NextResponse.json({
       dep, ret,
       minPrice: cheapest.totalPrice,
@@ -51,23 +58,22 @@ export async function GET(request: NextRequest) {
 
   try {
     const res = await searchRoundTripFlights({
-      origin, destination, date: dep, returnDate: ret, adults, cabin,
+      origin, destination, date: dep, returnDate: ret, adults, children, infants, cabin,
     });
     const allOptions = res.options;
 
     // Apply FareMind markup so tile prices match what /api/search shows
     await applyMarkupToRoundTripOptions(allOptions);
 
-    // Cache for future re-use (e.g. user clicks tile → search reuses)
+    // Cache for future re-use
     if (allOptions.length > 0) {
       flexCacheSet(cKey, allOptions);
     }
 
-    if (allOptions.length === 0) {
+    const cheapest = pickCheapest(allOptions, cabin);
+    if (!cheapest) {
       return NextResponse.json({ dep, ret, minPrice: null, currency: 'USD', offerId: null, airline: null });
     }
-
-    const cheapest = pickCheapest(allOptions, cabin);
 
     return NextResponse.json({
       dep, ret,

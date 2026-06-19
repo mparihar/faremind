@@ -40,7 +40,7 @@ export function normalizeDuffelOffer(offer: DuffelOffer): UnifiedFlight {
         name: seg.marketing_carrier.name,
         logo: seg.marketing_carrier.logo_symbol_url || getAirlineLogo(seg.marketing_carrier.iata_code),
       },
-      flightNumber: `${seg.marketing_carrier.iata_code}${seg.marketing_carrier_flight_number}`,
+      flightNumber: `${seg.marketing_carrier.iata_code}${seg.marketing_carrier_flight_number}`.replace(/\s+/g, ''),
       duration: parseDuration(seg.duration),
       aircraft: seg.aircraft?.name,
       operatingCarrier: seg.operating_carrier.iata_code !== seg.marketing_carrier.iata_code
@@ -241,7 +241,7 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
           name: getAirlineName(marketingCode),
           logo: getAirlineLogo(marketingCode),
         },
-        flightNumber: `${marketingCode} ${flightNum}`,
+        flightNumber: `${marketingCode}${flightNum}`.replace(/\s+/g, ''),
         duration: parseMystiflyDuration(seg.JourneyDuration || seg.journeyDuration),
         aircraft: seg.Equipment || seg.equipment || undefined,
         operatingCarrier: operatingCode !== marketingCode

@@ -130,7 +130,7 @@ export default function FinancePage() {
         <table className="w-full text-sm">
           <thead>
             <tr className="border-b border-slate-700/50">
-              {['Booking', 'Passenger', 'Type', 'Amount', 'Status', 'Date'].map(h => (
+              {['Booking', 'Passenger', 'Provider', 'Type', 'Amount', 'Status', 'Date'].map(h => (
                 <th key={h} className="px-5 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
               ))}
             </tr>
@@ -141,6 +141,15 @@ export default function FinancePage() {
                 <td className="px-5 py-3 font-mono text-[#1ABC9C] text-sm font-bold">{p.booking?.pnr ?? p.bookingId?.slice(0, 8)}</td>
                 <td className="px-5 py-3 text-slate-300 text-sm">
                   {p.booking?.user ? `${p.booking.user.firstName} ${p.booking.user.lastName}` : '—'}
+                </td>
+                <td className="px-5 py-3">
+                  <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold capitalize ${
+                    p.booking?.provider === 'duffel' ? 'bg-blue-400/15 text-blue-400'
+                    : p.booking?.provider === 'mystifly' ? 'bg-purple-400/15 text-purple-400'
+                    : 'bg-slate-400/15 text-slate-400'
+                  }`}>
+                    {p.booking?.provider || '—'}
+                  </span>
                 </td>
                 <td className="px-5 py-3 text-slate-400 text-sm">{p.type}</td>
                 <td className="px-5 py-3 text-white font-bold text-sm">{fmtMoney(Number(p.amount))}</td>
@@ -153,7 +162,7 @@ export default function FinancePage() {
               </tr>
             ))}
             {(data?.recentPayments ?? []).length === 0 && (
-              <tr><td colSpan={6} className="px-5 py-8 text-center text-slate-500">No payments</td></tr>
+              <tr><td colSpan={7} className="px-5 py-8 text-center text-slate-500">No payments</td></tr>
             )}
           </tbody>
         </table>

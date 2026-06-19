@@ -9,6 +9,7 @@ import * as duffel from './duffel';
 import * as amadeus from './amadeus';
 import * as mystifly from './mystifly';
 import { normalizeDuffelOffer, normalizeAmadeusOffer, normalizeMystiflyOffer, mergeAndRankFlights } from './normalizer';
+import { aggregateProviderOffers, type AggregationStats } from './provider-aggregation';
 import type { UnifiedFlight } from '../lib/types';
 
 
@@ -51,6 +52,7 @@ export interface SearchResult {
   searchId: string;
   totalTimeMs: number;
   usedMockData: boolean;
+  aggregationStats?: AggregationStats;
 }
 
 async function searchDuffel(params: {
@@ -158,11 +160,12 @@ export async function searchFlights(params: {
   }
 
   const allFlights = providerResults.flatMap((r) => r.flights);
-  const rankedFlights = mergeAndRankFlights(allFlights);
+  const { flights: aggregatedFlights, stats: aggregationStats } = aggregateProviderOffers(allFlights);
+  const rankedFlights = mergeAndRankFlights(aggregatedFlights);
 
   console.log(`[Search ${searchId}] Complete: ${rankedFlights.length} flights in ${Date.now() - overallStart}ms`);
 
-  return { flights: rankedFlights, providers: providerResults, searchId, totalTimeMs: Date.now() - overallStart, usedMockData: false };
+  return { flights: rankedFlights, providers: providerResults, searchId, totalTimeMs: Date.now() - overallStart, usedMockData: false, aggregationStats };
 }
 
 export function getProviderStatus() {

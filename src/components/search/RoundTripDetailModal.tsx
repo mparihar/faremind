@@ -48,7 +48,6 @@ function generateInsights(opt: RoundTripOption): string[] {
     opt.baggage.checked ? `${opt.baggage.checked} checked bag${opt.baggage.checked !== 1 ? 's' : ''}` : '',
   ].filter(Boolean);
   if (bags.length) ins.push(`${bags.join(' & ')} included — no surprise fees at check-in`);
-  if (opt.score) ins.push(`Airfare score ${opt.score}/100 — exceptional price-to-quality ratio`);
   return ins;
 }
 
@@ -215,9 +214,11 @@ interface Props {
   isTopAiPick?: boolean;
   aiScoreOverride?: number;
   aiReasonsOverride?: string[];
+  /** Admin/Support viewers see internal scores */
+  showScores?: boolean;
 }
 
-export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBook, isBestAiPick, isTopAiPick, aiScoreOverride, aiReasonsOverride }: Props) {
+export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBook, isBestAiPick, isTopAiPick, aiScoreOverride, aiReasonsOverride, showScores }: Props) {
   const [activeDetailJourney, setActiveDetailJourney] = useState<JourneySegment | null>(null);
   const [tab, setTab] = useState<'glance' | 'ai'>('glance');
 
@@ -389,7 +390,7 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                         <div className="space-y-3">
                           <InfoStat label="Total Duration" value={fmtDur(option.totalDurationMinutes)} />
                           <InfoStat label="Connections" value={String(option.totalStops)} />
-                          {displayScore != null && (
+                          {showScores && displayScore != null && (
                             <InfoStat
                               label="Airfare Score"
                               value={`${displayScore}/100`}
@@ -428,13 +429,6 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                               </div>
                             </div>
                             <p className="text-[8px] text-slate-400 uppercase tracking-tight">Seat pitch: 31 in · 3-3-3</p>
-                            {displayScore != null && (
-                              <div className="mt-2.5">
-                                <span className="px-2.5 py-0.5 rounded-full bg-[#1ABC9C]/10 text-[#1ABC9C] text-[8px] font-bold uppercase tracking-widest border border-[#1ABC9C]/20">
-                                  AI Score {displayScore}/100
-                                </span>
-                              </div>
-                            )}
                           </div>
                         </div>
                       </PanelSection>
@@ -475,54 +469,6 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                   ) : (
                     /* ── AI Choice Analysis tab ── */
                     <>
-                      {option.score != null && (
-                        <div className="p-4 rounded-2xl bg-[#1ABC9C]/10 border border-[#1ABC9C]/20">
-                          <div className="flex items-center gap-2 mb-3">
-                            <Sparkles className="w-4 h-4 text-[#1ABC9C]" />
-                            <p className="text-[10px] font-bold text-slate-900 uppercase tracking-widest">AI Recommendation</p>
-                          </div>
-                          <div className="flex items-end gap-2 mb-2">
-                            <p className="text-3xl font-bold text-[#1ABC9C] leading-none">{displayScore ?? option.score}</p>
-                            <p className="text-[10px] text-slate-400 mb-1">/100</p>
-                          </div>
-                          <p className="text-[10px] text-slate-500 leading-relaxed">
-                            {(displayScore ?? 0) >= 85
-                              ? 'Excellent choice — scores in the top tier for this route.'
-                              : (displayScore ?? 0) >= 70
-                                ? 'Strong value — well-balanced across price, comfort, and flexibility.'
-                                : 'Decent option — consider trade-offs before booking.'
-                            }
-                          </p>
-                        </div>
-                      )}
-
-                      {scoreBreakdown && (
-                        <PanelSection title="Score Breakdown">
-                          <div className="space-y-2.5">
-                            {([
-                              { label: 'Price',         val: scoreBreakdown.priceScore         },
-                              { label: 'Duration',      val: scoreBreakdown.durationScore      },
-                              { label: 'Stops',         val: scoreBreakdown.stopsScore         },
-                              { label: 'Layover',       val: scoreBreakdown.layoverScore       },
-                              { label: 'Schedule',      val: scoreBreakdown.scheduleScore      },
-                              { label: 'Baggage',       val: scoreBreakdown.baggageScore       },
-                              { label: 'Flexibility',   val: scoreBreakdown.fareFlexibilityScore },
-                              { label: 'Provider',      val: scoreBreakdown.providerReliabilityScore },
-                            ] as const).map(({ label, val }) => (
-                              <div key={label} className="flex items-center gap-3">
-                                <p className="text-[9px] font-semibold text-slate-500 uppercase tracking-wider w-20 shrink-0">{label}</p>
-                                <div className="flex-1 h-1.5 rounded-full bg-slate-100 overflow-hidden">
-                                  <div
-                                    className="h-full rounded-full bg-[#1ABC9C] transition-all"
-                                    style={{ width: `${Math.round(val)}%` }}
-                                  />
-                                </div>
-                                <p className="text-[9px] font-bold text-slate-700 w-6 text-right shrink-0">{Math.round(val)}</p>
-                              </div>
-                            ))}
-                          </div>
-                        </PanelSection>
-                      )}
 
                       <PanelSection title="Why This Option">
                         <ul className="space-y-2.5">
@@ -546,6 +492,24 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                                 <Star className="w-2.5 h-2.5" />
                                 {b.replace('_', ' ')}
                               </span>
+                            ))}
+                          </div>
+                        </PanelSection>
+                      )}
+
+                      {showScores && scoreBreakdown && (
+                        <PanelSection title="Score Breakdown (Admin)">
+                          <div className="space-y-2">
+                            {Object.entries(scoreBreakdown).map(([key, val]) => (
+                              <div key={key} className="flex items-center justify-between">
+                                <span className="text-[10px] font-semibold text-slate-500 capitalize">{key.replace(/([A-Z])/g, ' $1')}</span>
+                                <div className="flex items-center gap-2">
+                                  <div className="w-20 h-1.5 bg-slate-100 rounded-full overflow-hidden">
+                                    <div className="h-full bg-[#1ABC9C] rounded-full" style={{ width: `${Math.round(Number(val) * 100)}%` }} />
+                                  </div>
+                                  <span className="text-[10px] font-bold text-slate-700 w-8 text-right">{Math.round(Number(val) * 100)}</span>
+                                </div>
+                              </div>
                             ))}
                           </div>
                         </PanelSection>

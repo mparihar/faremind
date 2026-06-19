@@ -1,6 +1,7 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
+import { useState, useEffect } from 'react';
 import { ArrowLeft, Lock, Check } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { OfferExpiryTimer } from './OfferExpiryTimer';
@@ -82,8 +83,18 @@ export function CheckoutHeader({ stepIndex }: { stepIndex: number }) {
   const router = useRouter();
   const progressPct = Math.round(((stepIndex + 1) / TOTAL_STEPS) * 100);
 
+  // Detect agent booking mode: agents have no navbar → top-0; public users have navbar → top-16
+  const [isAgentMode, setIsAgentMode] = useState(false);
+  useEffect(() => {
+    try { setIsAgentMode(!!sessionStorage.getItem('agentBookingContext')); } catch {}
+  }, []);
+
   return (
-    <div className="sticky top-16 z-10 bg-[#1a1a2e]/95 backdrop-blur-xl border-b border-white/[0.06] shadow-lg flex flex-col">
+    <>
+    <div className={cn(
+      'sticky z-10 bg-[#1a1a2e]/95 backdrop-blur-xl border-b border-white/[0.06] shadow-lg flex flex-col',
+      isAgentMode ? 'top-0' : 'top-16'
+    )}>
       <div className="max-w-7xl mx-auto w-full px-4 sm:px-6 lg:px-8 py-4 flex items-start justify-start gap-4 sm:gap-6">
         <button
           onClick={() => router.back()}
@@ -112,5 +123,6 @@ export function CheckoutHeader({ stepIndex }: { stepIndex: number }) {
         <div className="h-full bg-[#1ABC9C] transition-all duration-500" style={{ width: `${progressPct}%` }} />
       </div>
     </div>
+    </>
   );
 }

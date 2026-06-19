@@ -21,9 +21,11 @@ interface FlightCardProps {
   dnaMatchReasons?: string[];
   dnaMismatchReasons?: string[];
   finalDnaScore?: number;
+  /** Admin/Support viewers see internal scores */
+  showScores?: boolean;
 }
 
-export default function FlightCard({ flight, index, isCompact, onSelect, scoreOverride, aiReasons, isAiHighlighted, aiBadge, dnaScore, dnaMatchLabel, dnaMatchReasons, dnaMismatchReasons, finalDnaScore }: FlightCardProps) {
+export default function FlightCard({ flight, index, isCompact, onSelect, scoreOverride, aiReasons, isAiHighlighted, aiBadge, dnaScore, dnaMatchLabel, dnaMatchReasons, dnaMismatchReasons, finalDnaScore, showScores }: FlightCardProps) {
   const aiRecLimit = useAiRecommendationLimit();
   const firstSeg = flight.segments[0];
   const lastSeg  = flight.segments[flight.segments.length - 1];
@@ -236,7 +238,8 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
               <Armchair className="w-3.5 h-3.5 text-slate-400" />
               {flight.cabinClass.replace('_', ' ')}
             </span>
-            {index < 51 && (scoreOverride !== undefined || flight.valueScore > 0) && (
+
+            {showScores && index < 51 && (scoreOverride !== undefined || flight.valueScore > 0) && (
               <span
                 className="text-xs text-slate-400"
                 title={flight.breakdown ? `Price ${(flight.breakdown.priceScore * 100).toFixed(0)}  Duration ${(flight.breakdown.durationScore * 100).toFixed(0)}  Stops ${(flight.breakdown.stopsScore * 100).toFixed(0)}` : undefined}
@@ -244,11 +247,12 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
                 Score {scoreOverride ?? flight.valueScore}
               </span>
             )}
-            {dnaScore !== undefined && dnaScore >= 0 && (
+            {showScores && dnaScore !== undefined && dnaScore >= 0 && (
               <span className="text-xs font-semibold text-emerald-600" title="DNA Match Score">
                 <span className="font-black">DNA</span> {dnaScore}%
               </span>
             )}
+
             <span className={cn(
               'ml-auto text-[10px] font-black uppercase tracking-wider px-2.5 py-1 rounded-lg border',
               isNDC ? 'text-[#1ABC9C] bg-[#1ABC9C]/10 border-[#1ABC9C]/20'
