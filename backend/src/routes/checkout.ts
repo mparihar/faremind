@@ -107,7 +107,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const perPersonBase: number = selectedFare.basePrice ?? 0;
 
       const perPassenger = (passengers as PassengerPricing[]).map((pax, idx) => {
-        const effectiveBase = pax.type === 'child' ? perPersonBase * 0.75 : perPersonBase;
+        // Equal per-person split — perPersonBase is already per-person from fare-options API
+        const effectiveBase = perPersonBase;
         return {
           passengerId: pax.id ?? `pax_${idx}`,
           type: pax.type ?? 'adult',

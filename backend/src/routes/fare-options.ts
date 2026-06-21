@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { computeAiScores, type FareInput, type FlightContext } from '../services/ai-fare-scorer';
 import { cacheGet, cacheSet, fareOptionsKey } from '../services/cache';
+import { prisma } from '../lib/db';
 
 interface FareTemplate {
   name: string; cabin: string; priceMultiplier: number;
@@ -13,15 +14,35 @@ interface FareTemplate {
   milesEarning: 'full' | 'reduced' | 'none';
 }
 
-const FARE_TEMPLATES: FareTemplate[] = [
-  { name: 'Economy Basic', cabin: 'economy', priceMultiplier: 1.0, carryOn: true, carryOnPieces: 1, carryOnWeightKg: 7, checked: 0, checkedWeightKg: null, extraBagFeeUsd: 35, refundable: false, refundFeeUsd: null, changeable: false, changeFeeUsd: null, seatSelection: 'fee', seatSelectionFeeUsd: 15, upgradeable: false, loungeAccess: false, priorityBoarding: false, milesEarning: 'reduced' },
-  { name: 'Economy Standard', cabin: 'economy', priceMultiplier: 1.18, carryOn: true, carryOnPieces: 1, carryOnWeightKg: 10, checked: 1, checkedWeightKg: 23, extraBagFeeUsd: 35, refundable: false, refundFeeUsd: null, changeable: true, changeFeeUsd: 50, seatSelection: 'fee', seatSelectionFeeUsd: 10, upgradeable: true, loungeAccess: false, priorityBoarding: false, milesEarning: 'full' },
-  { name: 'Economy Flex', cabin: 'economy', priceMultiplier: 1.38, carryOn: true, carryOnPieces: 1, carryOnWeightKg: 10, checked: 1, checkedWeightKg: 23, extraBagFeeUsd: 35, refundable: true, refundFeeUsd: 0, changeable: true, changeFeeUsd: 0, seatSelection: 'free', seatSelectionFeeUsd: null, upgradeable: true, loungeAccess: false, priorityBoarding: true, milesEarning: 'full' },
-  { name: 'Premium Economy Classic', cabin: 'premium_economy', priceMultiplier: 2.1, carryOn: true, carryOnPieces: 2, carryOnWeightKg: 12, checked: 2, checkedWeightKg: 23, extraBagFeeUsd: 50, refundable: false, refundFeeUsd: null, changeable: true, changeFeeUsd: 75, seatSelection: 'free', seatSelectionFeeUsd: null, upgradeable: true, loungeAccess: false, priorityBoarding: true, milesEarning: 'full' },
-  { name: 'Premium Economy Flex', cabin: 'premium_economy', priceMultiplier: 2.55, carryOn: true, carryOnPieces: 2, carryOnWeightKg: 12, checked: 2, checkedWeightKg: 32, extraBagFeeUsd: 50, refundable: true, refundFeeUsd: 0, changeable: true, changeFeeUsd: 0, seatSelection: 'free', seatSelectionFeeUsd: null, upgradeable: true, loungeAccess: true, priorityBoarding: true, milesEarning: 'full' },
-  { name: 'Business Classic', cabin: 'business', priceMultiplier: 4.2, carryOn: true, carryOnPieces: 2, carryOnWeightKg: 18, checked: 2, checkedWeightKg: 32, extraBagFeeUsd: null, refundable: true, refundFeeUsd: 0, changeable: true, changeFeeUsd: 0, seatSelection: 'free', seatSelectionFeeUsd: null, upgradeable: true, loungeAccess: true, priorityBoarding: true, milesEarning: 'full' },
-  { name: 'Business Extra', cabin: 'business', priceMultiplier: 5.0, carryOn: true, carryOnPieces: 2, carryOnWeightKg: 18, checked: 3, checkedWeightKg: 32, extraBagFeeUsd: null, refundable: true, refundFeeUsd: 0, changeable: true, changeFeeUsd: 0, seatSelection: 'free', seatSelectionFeeUsd: null, upgradeable: true, loungeAccess: true, priorityBoarding: true, milesEarning: 'full' },
-];
+/** Load fare tier templates from DB, converting Decimal fields to numbers. */
+async function loadFareTemplates(): Promise<FareTemplate[]> {
+  const rows = await prisma.fareTierTemplate.findMany({
+    where: { active: true },
+    orderBy: { displayOrder: 'asc' },
+  });
+
+  return rows.map(r => ({
+    name: r.name,
+    cabin: r.cabin,
+    priceMultiplier: Number(r.priceMultiplier),
+    carryOn: r.carryOn,
+    carryOnPieces: r.carryOnPieces,
+    carryOnWeightKg: r.carryOnWeightKg !== null ? Number(r.carryOnWeightKg) : null,
+    checked: r.checkedBags,
+    checkedWeightKg: r.checkedWeightKg !== null ? Number(r.checkedWeightKg) : null,
+    extraBagFeeUsd: r.extraBagFeeUsd !== null ? Number(r.extraBagFeeUsd) : null,
+    refundable: r.refundable,
+    refundFeeUsd: r.refundFeeUsd !== null ? Number(r.refundFeeUsd) : null,
+    changeable: r.changeable,
+    changeFeeUsd: r.changeFeeUsd !== null ? Number(r.changeFeeUsd) : null,
+    seatSelection: r.seatSelection as 'free' | 'fee' | 'not_available',
+    seatSelectionFeeUsd: r.seatSelectionFeeUsd !== null ? Number(r.seatSelectionFeeUsd) : null,
+    upgradeable: r.upgradeable,
+    loungeAccess: r.loungeAccess,
+    priorityBoarding: r.priorityBoarding,
+    milesEarning: r.milesEarning as 'full' | 'reduced' | 'none',
+  }));
+}
 
 type AiBadge = 'cheapest' | 'best_value' | 'most_flexible' | 'premium_upgrade' | 'ai_pick' | 'best_comfort';
 
@@ -50,6 +71,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const basePriceNum = parseFloat(base_price);
       const travelers    = parseInt(traveler_count, 10) || 1;
+      // base_price is the all-passenger total (with markup)
+      // Derive per-person for display, but compute tier totals from the original total
+      // to avoid rounding loss (e.g. $2176 / 3 = $725.33 → $725 × 3 = $2175 ≠ $2176)
+      const perPersonBase = Math.round(basePriceNum / travelers);
       const stopsNum     = parseInt(stops, 10) || 0;
       const durationMins = parseInt(duration_minutes, 10) || 0;
       const layoverMins  = layover_minutes
@@ -63,9 +88,15 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const ctx: FlightContext = { durationMinutes: durationMins, stops: stopsNum, layoverMinutes: layoverMins };
 
+      // Load fare tier templates from DB
+      const FARE_TEMPLATES = await loadFareTemplates();
+      if (FARE_TEMPLATES.length === 0) {
+        return reply.code(500).send({ error: 'No fare tier templates configured. Please configure them in Admin > Commercial Settings > Fare Tiers.' });
+      }
+
       const fareInputs: FareInput[] = FARE_TEMPLATES.map((t, i) => ({
         id: `fare_${i}_${offer_id || 'mock'}`,
-        totalPrice: Math.round(basePriceNum * t.priceMultiplier),
+        totalPrice: Math.round(basePriceNum * t.priceMultiplier / travelers),
         checked: t.checked, refundable: t.refundable, refundFeeUsd: t.refundFeeUsd,
         changeable: t.changeable, changeFeeUsd: t.changeFeeUsd,
         seatSelection: t.seatSelection, cabin: t.cabin, name: t.name,
@@ -77,11 +108,13 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const fareOptions = FARE_TEMPLATES.map((t, i) => {
         const id    = `fare_${i}_${offer_id || 'mock'}`;
-        const total = Math.round(basePriceNum * t.priceMultiplier);
+        // Compute total from original all-passenger price to avoid rounding loss
+        const allPaxTotal = Math.round(basePriceNum * t.priceMultiplier);
+        const perPerson   = Math.round(allPaxTotal / travelers);
         const s     = scoreMap.get(id)!;
         return {
           id, offerId: offer_id, cabin: t.cabin, name: t.name,
-          basePrice: Math.round(basePriceNum * t.priceMultiplier), totalPrice: total, currency,
+          basePrice: perPerson, totalPrice: allPaxTotal, currency,
           baggage: { carryOn: t.carryOn, carryOnPieces: t.carryOnPieces, carryOnWeightKg: t.carryOnWeightKg, checked: t.checked, checkedWeightKg: t.checkedWeightKg, extraBagFeeUsd: t.extraBagFeeUsd },
           policy: { refundable: t.refundable, refundFeeUsd: t.refundFeeUsd, changeable: t.changeable, changeFeeUsd: t.changeFeeUsd, seatSelection: t.seatSelection, seatSelectionFeeUsd: t.seatSelectionFeeUsd, upgradeable: t.upgradeable, loungeAccess: t.loungeAccess, priorityBoarding: t.priorityBoarding, milesEarning: t.milesEarning },
           aiScore: s.breakdown.finalScore, aiBadges: s.badges as AiBadge[], aiExplanation: s.explanation,

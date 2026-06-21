@@ -16,7 +16,7 @@ interface FareCardProps {
 }
 
 const BADGE_CONFIG = {
-  cheapest:        { label: 'Cheapest',         color: 'bg-orange-100 text-[#F97316]',    icon: DollarSign },
+  cheapest:        { label: 'Lowest Price',     color: 'bg-orange-100 text-[#F97316]',    icon: DollarSign },
   best_value:      { label: 'AI Best Choice',   color: 'bg-[#1ABC9C]/15 text-[#1ABC9C]',  icon: Zap },
   ai_pick:         { label: 'AI Best Choice',   color: 'bg-[#1ABC9C]/15 text-[#1ABC9C]',  icon: Zap },
   most_flexible:   { label: 'Best Flexibility', color: 'bg-purple-100 text-purple-700',   icon: Repeat2 },
@@ -74,21 +74,9 @@ export default function FareCard({
   const border     = CABIN_BORDER[fare.cabin] || 'border-slate-200';
   const ring       = CABIN_RING[fare.cabin]   || 'ring-[#1ABC9C]/40';
 
-  // Compute the correct total for all passengers
-  // Children get 75% of the adult fare (matching buildLocalPricing)
-  const perPersonBase = fare.basePrice;
-  let allPassengerFareTotal: number;
-  if (passengerBreakdown && travelerCount > 1) {
-    const { adults, children: childCount, infants } = passengerBreakdown;
-    const adultTotal = adults * perPersonBase;
-    const childTotal = childCount * Math.round(perPersonBase * 0.75);
-    const infantTotal = infants * perPersonBase; // infants priced same as adults in buildLocalPricing
-    const subtotal = adultTotal + childTotal + infantTotal;
-    const serviceFee = Math.round(perPersonBase * travelerCount * 0.015);
-    allPassengerFareTotal = subtotal + serviceFee;
-  } else {
-    allPassengerFareTotal = fare.totalPrice;
-  }
+  // fare.totalPrice is the all-passenger total from the API (no rounding loss)
+  // fare.basePrice is per-person (for display)
+  const allPassengerFareTotal = fare.totalPrice;
   const totalProtectionFee = protectionFee * travelerCount;
   const grandTotal = allPassengerFareTotal + (selected && priceProtection ? totalProtectionFee : 0);
 

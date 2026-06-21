@@ -23,6 +23,7 @@ import type { FlightSegment } from '@/lib/types';
 import { formatTime, formatDuration, formatDate, cn, formatPrice } from '@/lib/utils';
 import { apiFetch } from '@/lib/api-client';
 import { useFeeLoader } from '@/hooks/useFeeLoader';
+import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -241,6 +242,7 @@ export default function CheckoutItineraryPage() {
 
   // Load DB-driven fees — populates computedFees in checkout store
   const { loading: feesLoading } = useFeeLoader();
+  const pricingCfg = useBuildPricingConfig();
 
   const handleNextCheckout = async () => {
     const fare = checkoutStore.selectedFare;
@@ -306,7 +308,7 @@ export default function CheckoutItineraryPage() {
           expectedCount, breakdown,
         );
       }
-      setPricing(buildLocalPricing(useCheckoutStore.getState()));
+      setPricing(buildLocalPricing(useCheckoutStore.getState(), pricingCfg));
       setReady(true);
       return;
     }
@@ -379,14 +381,14 @@ export default function CheckoutItineraryPage() {
     }
 
     const snapshot = useCheckoutStore.getState();
-    setPricing(buildLocalPricing(snapshot));
+    setPricing(buildLocalPricing(snapshot, pricingCfg));
     setReady(true);
   }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Rebuild pricing when DB fees arrive
   useEffect(() => {
     if (!feesLoading && checkoutStore.selectedFare) {
-      setPricing(buildLocalPricing(useCheckoutStore.getState()));
+      setPricing(buildLocalPricing(useCheckoutStore.getState(), pricingCfg));
     }
   }, [feesLoading, checkoutStore.computedFees]); // eslint-disable-line react-hooks/exhaustive-deps
 
@@ -582,83 +584,89 @@ export default function CheckoutItineraryPage() {
 
               {/* Price Summary card */}
               <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-                <h2 className="text-base font-bold text-slate-900 mb-4">Price Details</h2>
+                <h2 className="text-xs font-bold text-slate-900 uppercase tracking-wider mb-1">Price Details</h2>
+                <div className="border-b border-slate-200 mb-4" />
 
-                <div className="space-y-4">
-                  {pricing?.perPassenger.map((pax, i) => (
-                    <div key={pax.passengerId} className="space-y-1.5">
-                      <p className="text-xs font-bold text-slate-500 uppercase tracking-wide">
-                        Passenger {i + 1}
-                        <span className="ml-1.5 px-1.5 py-0.5 rounded bg-slate-100 text-slate-500 normal-case text-[10px]">
-                          {pax.type === 'adult' ? 'Adult' : pax.type === 'child' ? 'Child' : 'Infant (Lap)'}
-                        </span>
-                      </p>
-                      {pax.type === 'infant' ? (
-                        <div className="flex items-center gap-1.5 text-xs rounded-lg px-2.5 py-1.5 bg-[#FFFBEB] border border-[#FBBF24]/30" style={{ color: '#B45309' }}>
-                          Seated on parent&apos;s lap · No seat or meal selection required
+                {pricing && pricing.perPassenger.length > 0 && (() => {
+                  const paxCount = pricing.perPassenger.length;
+                  const fareAndTaxes = pricing.fareTotal;
+
+                  // Count passenger types
+                  const typeCounts: Record<string, number> = {};
+                  for (const p of checkoutStore.passengers) {
+                    const label = p.type.charAt(0).toUpperCase() + p.type.slice(1);
+                    typeCounts[label] = (typeCounts[label] || 0) + 1;
+                  }
+
+                  return (
+                    <div className="space-y-5">
+                      {/* Traveler Breakdown */}
+                      <div>
+                        <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Traveler Breakdown</p>
+                        <div className="space-y-1">
+                          {Object.entries(typeCounts).map(([type, count]) => (
+                            <div key={type} className="flex justify-between text-sm">
+                              <span className="text-slate-600">{type} ({count})</span>
+                              <span className="text-slate-400 font-medium">Included</span>
+                            </div>
+                          ))}
                         </div>
-                      ) : (
-                      <>
-                      {/* Show the all-in fare as a single line — taxes are already included in the
-                          Duffel total_amount and we do not have a real per-component split. */}
-                      <div className="flex justify-between items-center">
-                        <span className="text-sm text-slate-600">Fare (incl. taxes &amp; carrier fees)</span>
-                        <span className="text-sm font-semibold text-slate-800">
-                          {formatPrice(pax.subtotal, currency)}
-                        </span>
                       </div>
-                      </>
+
+                      {/* Fare & Taxes */}
+                      <div>
+                        <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Total Fare</p>
+                        <p className="text-lg font-bold text-slate-900">{formatPrice(fareAndTaxes, currency)}</p>
+                      </div>
+
+                      {/* Service Fee */}
+                      {pricing.serviceFee > 0 && (
+                        <div className="flex justify-between items-center text-sm">
+                          <span className="text-slate-500">Service Fee</span>
+                          <span className="text-slate-500">{formatPrice(pricing.serviceFee, currency)}</span>
+                        </div>
+                      )}
+
+                      {/* Optional Services */}
+                      {(pricing.protectionFee > 0 || pricing.insuranceFee > 0) && (
+                        <div>
+                          <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Optional Services</p>
+                          <div className="space-y-1.5">
+                            {pricing.protectionFee > 0 && (
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-500 flex items-center gap-1.5">
+                                  <Shield size={11} className="text-[#1ABC9C]" strokeWidth={2} />
+                                  Price Drop Protection
+                                </span>
+                                <span className="text-slate-500">{formatPrice(pricing.protectionFee, currency)}</span>
+                              </div>
+                            )}
+                            {pricing.insuranceFee > 0 && (
+                              <div className="flex justify-between items-center text-sm">
+                                <span className="text-slate-500">Travel Insurance</span>
+                                <span className="text-slate-500">{formatPrice(pricing.insuranceFee, currency)}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
                       )}
                     </div>
-                  ))}
-
-                  {/* Service fee line */}
-                  {pricing && pricing.serviceFee > 0 && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-500">Service fee</span>
-                      <span className="text-sm text-slate-500">
-                        {formatPrice(pricing.serviceFee, currency)}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Price Drop Protection line */}
-                  {pricing && pricing.protectionFee > 0 && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-500 flex items-center gap-1.5">
-                        <Shield size={11} className="text-[#1ABC9C]" strokeWidth={2} />
-                        Price Drop Protection
-                      </span>
-                      <span className="text-sm text-slate-500">
-                        {formatPrice(pricing.protectionFee, currency)}
-                      </span>
-                    </div>
-                  )}
-
-                  {/* Travel insurance line */}
-                  {pricing && pricing.insuranceFee > 0 && (
-                    <div className="flex justify-between items-center">
-                      <span className="text-sm text-slate-500">Travel insurance</span>
-                      <span className="text-sm text-slate-500">
-                        {formatPrice(pricing.insuranceFee, currency)}
-                      </span>
-                    </div>
-                  )}
-                </div>
+                  );
+                })()}
 
                 {/* Divider */}
                 <div className="border-t border-slate-200 my-4" />
 
-                {/* Trip total */}
+                {/* Total Payable */}
+                <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-2">Total Payable</p>
                 <div className="flex items-baseline justify-between gap-2">
-                  <span className="text-sm font-bold text-slate-700">Trip total</span>
                   <span className="text-2xl font-extrabold text-[#F97316]">
                     {formatPrice(grandTotal, currency)}
                   </span>
                 </div>
 
                 {checkoutStore.travelerCount > 1 && (
-                  <p className="text-xs text-slate-400 mt-1 text-right">
+                  <p className="text-xs text-slate-400 mt-1">
                     for {checkoutStore.travelerCount} traveler{checkoutStore.travelerCount > 1 ? 's' : ''}
                   </p>
                 )}

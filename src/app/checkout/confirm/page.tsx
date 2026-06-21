@@ -23,6 +23,7 @@ import {
 import type { FlightSegment } from '@/lib/types';
 import type { PassengerInfo } from '@/store/useCheckoutStore';
 import type { Layover } from '@/lib/round-trip-types';
+import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -329,7 +330,8 @@ export default function ConfirmPage() {
   }, []);
 
   const { confirmation, selectedFare, sourceFlight, sourceRoundTrip, passengers, priceProtection, pricing } = store;
-  const effectivePricing = pricing ?? buildLocalPricing(store);
+  const pricingCfg = useBuildPricingConfig();
+  const effectivePricing = pricing ?? buildLocalPricing(store, pricingCfg);
   const breakdown = buildFareBreakdown(effectivePricing);
 
   useEffect(() => {

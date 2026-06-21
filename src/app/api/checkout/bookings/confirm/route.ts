@@ -222,6 +222,7 @@ export async function POST(req: NextRequest) {
       seatSelections,
       mealSelections,
       wheelchairSelections,
+      selectedAncillaries,
       sourceFlight,
       sourceRoundTrip,
       routeLabel,
@@ -431,6 +432,7 @@ export async function POST(req: NextRequest) {
     let offer: any = null;
     let offerProvidedAt: string | null = null;
     let offerExpiresAt: string | null = null;
+    const ancillaryList: any[] = Array.isArray(selectedAncillaries) ? selectedAncillaries : [];
 
     // Helper: cancel Stripe authorization — customer is never charged
     const cancelStripeAuth = async (reason: string) => {
@@ -673,10 +675,27 @@ export async function POST(req: NextRequest) {
           console.log(`[Duffel] Including ${seatServices.length} seat service(s) in order (extra cost: ${seatServiceTotal.toFixed(2)} ${totalCurrency}): ${seatServices.map(s => s.id).join(', ')}`);
         }
 
+        // ── Build ancillary services from selected provider add-ons ────
+        // Includes baggage, lounge access, priority boarding — all provider services.
+        const ancillaryServices: { id: string; quantity: number }[] = [];
+        let ancillaryServiceTotal = 0;
+        for (const anc of ancillaryList) {
+          if (anc.providerServiceId && !anc.included && anc.provider === 'DUFFEL') {
+            ancillaryServices.push({ id: anc.providerServiceId, quantity: anc.quantity ?? 1 });
+            ancillaryServiceTotal += (anc.amount ?? 0) * (anc.quantity ?? 1);
+          }
+        }
+        if (ancillaryServices.length > 0) {
+          console.log(`[Duffel] Including ${ancillaryServices.length} ancillary service(s) in order (extra cost: ${ancillaryServiceTotal.toFixed(2)} ${totalCurrency})`);
+        }
+
+        // Combine all services (seats + ancillary add-ons)
+        const allServices = [...seatServices, ...ancillaryServices];
+
         // ── PROVIDER PAYABLE AMOUNT ──────────────────────────────────────
-        // This is the ONLY amount sent to Duffel: provider fare + seat services.
+        // This is the ONLY amount sent to Duffel: provider fare + seat services + ancillary services.
         // Markup, service fee, insurance, protection are NEVER sent to provider.
-        providerPayableAmount = revalidatedProviderFare + seatServiceTotal;
+        providerPayableAmount = revalidatedProviderFare + seatServiceTotal + ancillaryServiceTotal;
         const providerPaymentStr = providerPayableAmount.toFixed(2);
 
         console.log(
@@ -711,7 +730,7 @@ export async function POST(req: NextRequest) {
             amount: providerPaymentStr,
             currency: totalCurrency,
           }],
-          ...(seatServices.length > 0 ? { services: seatServices } : {}),
+          ...(allServices.length > 0 ? { services: allServices } : {}),
           metadata: {
             booked_via: 'faremind',
             session_id: sessionId || '',
@@ -1316,10 +1335,38 @@ export async function POST(req: NextRequest) {
             bookingId: mb.id,
             baggageType: 'checked',
             quantity: extraBags,
-            baggagePrice: extraBags * 35,
+            baggagePrice: ancillaryList.filter((a: any) => a.ancillaryType === 'EXTRA_CHECKED_BAG' || a.ancillaryType === 'CHECKED_BAG')
+              .reduce((s: number, a: any) => s + (a.amount ?? 0) * (a.quantity ?? 1), 0) || extraBags * 35,
             currency,
           },
         }).catch(() => null);
+      }
+
+      // 9b. Provider ancillary records (bags, seats, meals from provider APIs)
+      if (ancillaryList.length > 0) {
+        for (const anc of ancillaryList) {
+          if (anc.included) continue; // Don't store included items
+          await tx.bookingAncillary.create({
+            data: {
+              bookingId: mb.id,
+              provider: anc.provider ?? 'DUFFEL',
+              providerOfferId: anc.providerOfferId ?? offerId ?? '',
+              providerServiceId: anc.providerServiceId ?? '',
+              ancillaryType: anc.ancillaryType ?? 'OTHER',
+              passengerId: anc.passengerId ?? null,
+              segmentId: anc.segmentId ?? null,
+              journeyId: anc.journeyId ?? null,
+              airportCode: anc.airportCode ?? null,
+              label: anc.label ?? '',
+              included: false,
+              amount: anc.amount ?? 0,
+              currency: anc.currency ?? currency,
+              quantity: anc.quantity ?? 1,
+              rawProviderData: anc.rawProviderData ?? null,
+            },
+          }).catch(() => null);
+        }
+        console.log(`[Checkout] Stored ${ancillaryList.filter((a: any) => !a.included).length} provider ancillary record(s)`);
       }
 
       // 10. Price protection add-on

@@ -197,17 +197,9 @@ export default function FareSelectionModal({ onClose }: Props) {
   const totalProtectionFee = protectionFee * travelerCount;
   const grandTotal = useMemo(() => {
     if (!selectedFare) return 0;
-    const base = selectedFare.basePrice;
-    let fareTotal: number;
-    if (passengerBreakdown && travelerCount > 1) {
-      const { adults, children: childCount, infants } = passengerBreakdown;
-      fareTotal = adults * base + childCount * Math.round(base * 0.75) + infants * base;
-      fareTotal += Math.round(base * travelerCount * 0.015);
-    } else {
-      fareTotal = selectedFare.totalPrice;
-    }
-    return fareTotal + (store.priceProtection ? totalProtectionFee : 0);
-  }, [selectedFare, passengerBreakdown, travelerCount, store.priceProtection, totalProtectionFee]);
+    // Use totalPrice directly (all-passenger total from API, no rounding loss)
+    return selectedFare.totalPrice + (store.priceProtection ? totalProtectionFee : 0);
+  }, [selectedFare, store.priceProtection, totalProtectionFee]);
 
   const activeFares = useMemo(
     () => store.payload?.fareGroups.find(g => g.cabin === activeCabin)?.fares ?? [],

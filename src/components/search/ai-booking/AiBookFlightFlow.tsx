@@ -667,6 +667,8 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
       sessionStorage.setItem('fm_fare_context', JSON.stringify({
         offerId: flight.providerOfferId,
         basePrice: flight.totalPrice,
+        providerTotalFare: (flight as any).providerTotalFare ?? flight.totalPrice,
+        fareMindMarkupAmount: (flight as any).fareMindMarkupAmount ?? 0,
         travelers: store.passengerCount,
         adults: adultCount,
         children: childCount,

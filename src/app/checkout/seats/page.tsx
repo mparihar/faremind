@@ -18,6 +18,7 @@ import type { PassengerInfo, WheelchairCode } from '@/store/useCheckoutStore';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
 import { useFeeLoader } from '@/hooks/useFeeLoader';
+import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
@@ -415,9 +416,10 @@ function ItineraryPanel({
   onContinue: () => void;
 }) {
   const store = useCheckoutStore();
-  const pricing = useMemo(() => buildLocalPricing(store), [
+  const pricingCfg = useBuildPricingConfig();
+  const pricing = useMemo(() => buildLocalPricing(store, pricingCfg), [
     store.seatSelections, store.extraBags, store.priceProtection, store.travelInsurance, // eslint-disable-line react-hooks/exhaustive-deps
-    store.passengers, store.selectedFare, // eslint-disable-line react-hooks/exhaustive-deps
+    store.passengers, store.selectedFare, pricingCfg, // eslint-disable-line react-hooks/exhaustive-deps
   ]);
 
   const seatTotal = pricing.seatFees;

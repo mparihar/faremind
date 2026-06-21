@@ -17,8 +17,11 @@ import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
 import { useOfferGuard } from '@/hooks/useOfferGuard';
 import { cn, formatTime, formatDuration } from '@/lib/utils';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
+import { isPremiumService } from '@/lib/providers/providerAncillaryNormalizer';
+import type { NormalizedAncillary } from '@/lib/providers/providerAncillaryNormalizer';
 import { apiFetch } from '@/lib/api-client';
 import { useFeeLoader } from '@/hooks/useFeeLoader';
+import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -101,12 +104,14 @@ function PriceBreakdownCard({
   pricing,
   acceptedTerms,
   onProceed,
+  selectedAncillaries,
 }: {
   pricing: ReturnType<typeof buildLocalPricing>;
   acceptedTerms: boolean;
   onProceed: () => void;
+  selectedAncillaries: NormalizedAncillary[];
 }) {
-  const passengerTotal = pricing.perPassenger.reduce((s, p) => s + p.subtotal, 0);
+  const passengerTotal = pricing.fareTotal;
 
   return (
     <div className="sticky top-36 bg-white rounded-2xl border border-slate-200 shadow-sm p-6 space-y-4">
@@ -137,10 +142,20 @@ function PriceBreakdownCard({
       <div className="border-t border-slate-100 pt-3 space-y-2">
         {pricing.baggageFees > 0 && (
           <div className="flex justify-between text-sm">
-            <span className="text-slate-500">Extra bags</span>
+            <span className="text-slate-500">Extra baggage</span>
             <span className="text-slate-700">+{fmt(pricing.baggageFees)}</span>
           </div>
         )}
+        {/* Premium service line items */}
+        {selectedAncillaries
+          .filter(a => isPremiumService(a.ancillaryType) && !a.included)
+          .map(svc => (
+            <div key={svc.providerServiceId} className="flex justify-between text-sm">
+              <span className="text-slate-500">{svc.label}</span>
+              <span className="text-slate-700">+{fmt(svc.amount * svc.quantity)}</span>
+            </div>
+          ))
+        }
         {pricing.seatFees > 0 && (
           <div className="flex justify-between text-sm">
             <span className="text-slate-500">Seat fees</span>
@@ -217,7 +232,8 @@ export default function ReviewPage() {
     currency,
   } = store;
 
-  const pricing = buildLocalPricing(store);
+  const pricingCfg = useBuildPricingConfig();
+  const pricing = buildLocalPricing(store, pricingCfg);
 
   // Load DB-driven fees — populates computedFees in checkout store
   useFeeLoader();
@@ -656,6 +672,7 @@ export default function ReviewPage() {
               pricing={pricing}
               acceptedTerms={acceptedTerms}
               onProceed={handleProceed}
+              selectedAncillaries={store.selectedAncillaries ?? []}
             />
           </div>
         </div>

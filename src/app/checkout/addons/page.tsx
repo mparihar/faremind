@@ -5,14 +5,19 @@ import { useRouter } from 'next/navigation';
 import { useState, useEffect } from 'react';
 import {
   Luggage,
-  Minus,
-  Plus,
   Shield,
   ShieldCheck,
   AlertTriangle,
   Check,
   ChevronRight,
   Info,
+  Loader2,
+  AlertCircle,
+  Plus,
+  X,
+  Crown,
+  Armchair,
+  Zap,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
 import { useOfferGuard } from '@/hooks/useOfferGuard';
@@ -20,12 +25,13 @@ import { cn } from '@/lib/utils';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
 import { apiFetch } from '@/lib/api-client';
 import { useFeeLoader } from '@/hooks/useFeeLoader';
+import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
+import type { NormalizedAncillary } from '@/lib/providers/providerAncillaryNormalizer';
+import { isPremiumService } from '@/lib/providers/providerAncillaryNormalizer';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
-const STEP_INDEX = 4; // "Add-ons" is step index 4 (0-based), displayed as "Step 5 of 7"
-const EXTRA_BAG_PRICE = 35;
-const MAX_EXTRA_BAGS = 3;
+const STEP_INDEX = 4;
 
 const fmt = (amount: number) =>
   new Intl.NumberFormat('en-US', {
@@ -35,80 +41,258 @@ const fmt = (amount: number) =>
   }).format(amount);
 
 
+// ─── Provider Baggage Section ─────────────────────────────────────────────────
 
-// ─── Extra Bags Stepper ───────────────────────────────────────────────────────
-
-function ExtraBagsSection({
+function ProviderBaggageSection({
   includedBags,
-  extraBags,
-  onSet,
+  providerBaggage,
+  selectedAncillaries,
+  onAdd,
+  onRemove,
+  loading,
+  error,
 }: {
   includedBags: number;
-  extraBags: number;
-  onSet: (n: number) => void;
+  providerBaggage: NormalizedAncillary[];
+  selectedAncillaries: NormalizedAncillary[];
+  onAdd: (ancillary: NormalizedAncillary) => void;
+  onRemove: (serviceId: string) => void;
+  loading: boolean;
+  error: string | null;
 }) {
+  const includedItems = providerBaggage.filter(a => a.included);
+  const purchasableItems = providerBaggage.filter(a => !a.included && a.chargeable);
+
+  const isSelected = (serviceId: string) =>
+    selectedAncillaries.some(a => a.providerServiceId === serviceId);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
       <div className="flex items-center gap-2 mb-1">
         <Luggage className="w-5 h-5 text-slate-500" />
-        <h2 className="text-base font-bold text-slate-900">Extra Checked Bags</h2>
+        <h2 className="text-base font-bold text-slate-900">Baggage</h2>
       </div>
-      <p className="text-sm text-slate-500 mb-5">
-        {includedBags > 0
-          ? `${includedBags} bag${includedBags > 1 ? 's' : ''} included with your fare.`
-          : 'No checked bags included with your fare.'}
-        {' '}Additional bags are {fmt(EXTRA_BAG_PRICE)} each.
+      <p className="text-xs text-slate-400 mb-4">
+        Prices are provided by the airline.
       </p>
 
-      {/* Included bags display */}
-      {includedBags > 0 && (
-        <div className="flex gap-2 mb-4">
-          {Array.from({ length: includedBags }).map((_, i) => (
-            <div
-              key={i}
-              className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-700"
-            >
-              <Check className="w-3 h-3" strokeWidth={2.5} />
-              Included
+      {/* Loading state */}
+      {loading && (
+        <div className="flex items-center justify-center gap-2 py-8 text-slate-400">
+          <Loader2 className="w-5 h-5 animate-spin" />
+          <span className="text-sm">Loading baggage options…</span>
+        </div>
+      )}
+
+      {/* Error state */}
+      {error && !loading && (
+        <div className="flex items-start gap-2.5 p-4 rounded-xl bg-amber-50 border border-amber-200">
+          <AlertCircle className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+          <p className="text-xs text-amber-700 leading-relaxed">{error}</p>
+        </div>
+      )}
+
+      {!loading && !error && (
+        <div className="space-y-3">
+          {/* Included bags from fare */}
+          {(includedItems.length > 0 || includedBags > 0) && (
+            <div className="flex flex-wrap gap-2 mb-2">
+              {includedItems.map((item, i) => (
+                <div
+                  key={`inc-${i}`}
+                  className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-700"
+                >
+                  <Check className="w-3 h-3" strokeWidth={2.5} />
+                  {item.label}
+                </div>
+              ))}
+              {/* Fallback: if no provider included items but fare says bags included */}
+              {includedItems.length === 0 && includedBags > 0 && (
+                <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200 text-xs font-medium text-emerald-700">
+                  <Check className="w-3 h-3" strokeWidth={2.5} />
+                  {includedBags} checked bag{includedBags > 1 ? 's' : ''} included
+                </div>
+              )}
             </div>
-          ))}
+          )}
+
+          {/* Purchasable bags from provider */}
+          {purchasableItems.length > 0 ? (
+            purchasableItems.map((item) => {
+              const selected = isSelected(item.providerServiceId);
+              return (
+                <div
+                  key={item.providerServiceId}
+                  className={cn(
+                    'flex items-center justify-between p-4 rounded-xl border-2 transition-all',
+                    selected
+                      ? 'border-[#1ABC9C] bg-[#1ABC9C]/5 shadow-sm'
+                      : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                  )}
+                >
+                  <div>
+                    <p className="text-sm font-semibold text-slate-900">{item.label}</p>
+                    <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>
+                  </div>
+                  <div className="flex items-center gap-3 flex-shrink-0 ml-3">
+                    <span className="text-sm font-bold text-[#F97316]">
+                      {item.amount === 0 ? 'Free' : fmt(item.amount)}
+                    </span>
+                    {selected ? (
+                      <button
+                        onClick={() => onRemove(item.providerServiceId)}
+                        className="w-8 h-8 rounded-full bg-[#1ABC9C] text-white flex items-center justify-center hover:bg-emerald-600 transition-colors shadow-sm"
+                        aria-label={`Remove ${item.label}`}
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    ) : (
+                      <button
+                        onClick={() => onAdd(item)}
+                        className="w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-100 transition-colors shadow-sm"
+                        aria-label={`Add ${item.label}`}
+                      >
+                        <Plus className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            !loading && includedItems.length === 0 && includedBags === 0 && (
+              <div className="text-center py-6 text-slate-400">
+                <Luggage className="w-8 h-8 mx-auto mb-2 opacity-40" />
+                <p className="text-sm font-medium">Checked baggage not available for online purchase</p>
+                <p className="text-xs mt-1">Check airline baggage policy for options at the airport.</p>
+              </div>
+            )
+          )}
+
+          {/* Selected bag summary */}
+          {selectedAncillaries.filter(a => a.ancillaryType === 'EXTRA_CHECKED_BAG' || a.ancillaryType === 'CHECKED_BAG').length > 0 && (
+            <p className="text-sm text-[#1ABC9C] font-semibold mt-1">
+              +{fmt(selectedAncillaries
+                .filter(a => a.ancillaryType === 'EXTRA_CHECKED_BAG' || a.ancillaryType === 'CHECKED_BAG')
+                .reduce((s, a) => s + a.amount * a.quantity, 0)
+              )} for extra baggage
+            </p>
+          )}
         </div>
       )}
+    </div>
+  );
+}
+// ─── Premium Airport Services (Lounge Access, Priority Boarding) ──────────────
 
-      {/* Stepper */}
-      <div className="flex items-center justify-between p-4 rounded-xl bg-slate-50 border border-slate-200">
-        <div>
-          <p className="text-sm font-semibold text-slate-900">Extra bags</p>
-          <p className="text-xs text-slate-500 mt-0.5">
-            {fmt(EXTRA_BAG_PRICE)} per bag · 23 kg (50 lbs) max
-          </p>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => onSet(Math.max(0, extraBags - 1))}
-            disabled={extraBags === 0}
-            className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm"
-            aria-label="Remove bag"
-          >
-            <Minus className="w-3.5 h-3.5" />
-          </button>
-          <span className="w-6 text-center text-base font-bold text-slate-900">{extraBags}</span>
-          <button
-            onClick={() => onSet(Math.min(MAX_EXTRA_BAGS, extraBags + 1))}
-            disabled={extraBags === MAX_EXTRA_BAGS}
-            className="w-8 h-8 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 disabled:opacity-30 disabled:cursor-not-allowed transition-all shadow-sm"
-            aria-label="Add bag"
-          >
-            <Plus className="w-3.5 h-3.5" />
-          </button>
-        </div>
+const PREMIUM_SERVICE_META: Record<string, { icon: typeof Crown; gradient: string; bg: string }> = {
+  LOUNGE_ACCESS: { icon: Armchair, gradient: 'from-amber-500 to-orange-500', bg: 'bg-amber-50' },
+  PRIORITY_BOARDING: { icon: Zap, gradient: 'from-violet-500 to-purple-600', bg: 'bg-violet-50' },
+};
+
+function PremiumAirportServicesSection({
+  services,
+  selectedAncillaries,
+  onAdd,
+  onRemove,
+}: {
+  services: NormalizedAncillary[];
+  selectedAncillaries: NormalizedAncillary[];
+  onAdd: (ancillary: NormalizedAncillary) => void;
+  onRemove: (serviceId: string) => void;
+}) {
+  const isSelected = (serviceId: string) =>
+    selectedAncillaries.some(a => a.providerServiceId === serviceId);
+
+  return (
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
+      <div className="flex items-center gap-2 mb-1">
+        <Crown className="w-5 h-5 text-amber-500" />
+        <h2 className="text-base font-bold text-slate-900">Premium Airport Services</h2>
       </div>
+      <p className="text-xs text-slate-400 mb-4">
+        Prices are provided by the airline. Available for this itinerary only.
+      </p>
 
-      {extraBags > 0 && (
-        <p className="text-sm text-[#1ABC9C] font-semibold mt-3">
-          +{fmt(extraBags * EXTRA_BAG_PRICE)} for {extraBags} extra bag{extraBags > 1 ? 's' : ''}
-        </p>
-      )}
+      <div className="space-y-3">
+        {services.map((svc) => {
+          const selected = isSelected(svc.providerServiceId);
+          const meta = PREMIUM_SERVICE_META[svc.ancillaryType] ?? PREMIUM_SERVICE_META.PRIORITY_BOARDING;
+          const IconComponent = meta.icon;
+          const isIncluded = svc.included;
+
+          return (
+            <div
+              key={svc.providerServiceId}
+              className={cn(
+                'relative overflow-hidden rounded-xl border-2 transition-all',
+                selected
+                  ? 'border-[#1ABC9C] bg-[#1ABC9C]/5 shadow-sm'
+                  : isIncluded
+                  ? 'border-emerald-200 bg-emerald-50/50'
+                  : 'border-slate-200 bg-white hover:border-slate-300'
+              )}
+            >
+              <div className="flex items-center justify-between p-4">
+                <div className="flex items-start gap-3">
+                  <div className={cn(
+                    'w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0',
+                    selected
+                      ? `bg-gradient-to-br ${meta.gradient} text-white shadow-md`
+                      : isIncluded
+                      ? 'bg-emerald-100 text-emerald-600'
+                      : `${meta.bg} text-slate-500`
+                  )}>
+                    <IconComponent className="w-5 h-5" />
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">{svc.label}</p>
+                    <p className="text-xs text-slate-500 leading-relaxed mt-0.5">{svc.description}</p>
+                    {svc.airportCode && (
+                      <p className="text-[10px] text-slate-400 mt-1 font-medium uppercase tracking-wide">
+                        at {svc.airportCode}
+                      </p>
+                    )}
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-3 flex-shrink-0 ml-3">
+                  {isIncluded ? (
+                    <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200">
+                      <Check className="w-3 h-3 text-emerald-600" strokeWidth={2.5} />
+                      <span className="text-xs font-semibold text-emerald-700">Included</span>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="text-right">
+                        <p className="text-sm font-bold text-[#F97316]">{fmt(svc.amount)}</p>
+                        <p className="text-[10px] text-slate-400">per traveler</p>
+                      </div>
+                      {selected ? (
+                        <button
+                          onClick={() => onRemove(svc.providerServiceId)}
+                          className="w-8 h-8 rounded-full bg-[#1ABC9C] text-white flex items-center justify-center hover:bg-emerald-600 transition-colors shadow-sm"
+                          aria-label={`Remove ${svc.label}`}
+                        >
+                          <X className="w-3.5 h-3.5" />
+                        </button>
+                      ) : (
+                        <button
+                          onClick={() => onAdd(svc)}
+                          className="w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-100 transition-colors shadow-sm"
+                          aria-label={`Add ${svc.label}`}
+                        >
+                          <Plus className="w-3.5 h-3.5" />
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              </div>
+            </div>
+          );
+        })}
+      </div>
     </div>
   );
 }
@@ -295,7 +479,7 @@ function TravelInsuranceSection({
               {isSelected && (
                 <div className="mt-2 flex justify-end">
                   <div className="flex items-center gap-1.5 text-[11px] font-semibold text-[#1ABC9C]">
-                    <Check className="w-3 h-3" strokeWidth={3} />
+                    <Check className="w-3 h-3" />
                     Selected
                   </div>
                 </div>
@@ -311,33 +495,44 @@ function TravelInsuranceSection({
 // ─── Price Summary ────────────────────────────────────────────────────────────
 
 function PriceSummary({
-  extraBags,
   protection,
   insurance,
   pricing,
+  selectedAncillaries,
 }: {
-  extraBags: number;
   protection: boolean;
   insurance: boolean;
   pricing: ReturnType<typeof buildLocalPricing>;
+  selectedAncillaries: NormalizedAncillary[];
 }) {
+  // Premium service totals (not included in baggage or standard pricing)
+  const premiumSelected = selectedAncillaries.filter(
+    a => isPremiumService(a.ancillaryType) && !a.included
+  );
+  const premiumTotal = premiumSelected.reduce((s, a) => s + a.amount * a.quantity, 0);
+  const displayTotal = pricing.total + premiumTotal;
+
   return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-4">
-      <div className="flex items-center justify-between text-xs text-slate-400 mb-3">
-        <span className="font-medium uppercase tracking-wider">Price Summary</span>
-        <span className="text-slate-300">Add-ons included</span>
-      </div>
+    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-5">
+      <h3 className="text-sm font-bold text-slate-900 mb-3">Price Summary</h3>
       <div className="space-y-1.5 text-sm">
         <div className="flex justify-between text-slate-600">
           <span>Base fare</span>
-          <span>{fmt(pricing.perPassenger.reduce((s, p) => s + p.subtotal, 0))}</span>
+          <span>{fmt(pricing.fareTotal)}</span>
         </div>
-        {extraBags > 0 && (
+        {pricing.baggageFees > 0 && (
           <div className="flex justify-between text-slate-600">
-            <span>Extra bags ({extraBags})</span>
+            <span>Extra baggage</span>
             <span>+{fmt(pricing.baggageFees)}</span>
           </div>
         )}
+        {/* Premium service line items */}
+        {premiumSelected.map(svc => (
+          <div key={svc.providerServiceId} className="flex justify-between text-slate-600">
+            <span>{svc.label}</span>
+            <span>+{fmt(svc.amount * svc.quantity)}</span>
+          </div>
+        ))}
         {protection && pricing.protectionFee > 0 && (
           <div className="flex justify-between text-[#1ABC9C]">
             <span>Price protection</span>
@@ -357,7 +552,7 @@ function PriceSummary({
       </div>
       <div className="border-t border-slate-100 mt-3 pt-3 flex items-center justify-between">
         <span className="text-sm font-bold text-slate-900">Your total</span>
-        <span className="text-xl font-black text-[#F97316] leading-none">{fmt(pricing.total)}</span>
+        <span className="text-xl font-black text-[#F97316] leading-none">{fmt(displayTotal)}</span>
       </div>
     </div>
   );
@@ -373,6 +568,13 @@ export default function AddonsPage() {
 
   // Load DB-driven fees — populates computedFees in checkout store
   useFeeLoader();
+  const pricingCfg = useBuildPricingConfig();
+
+  // Provider state
+  const [providerBaggage, setProviderBaggage] = useState<NormalizedAncillary[]>([]);
+  const [premiumServices, setPremiumServices] = useState<NormalizedAncillary[]>([]);
+  const [baggageLoading, setBaggageLoading] = useState(true);
+  const [baggageError, setBaggageError] = useState<string | null>(null);
 
   const {
     fareOption,
@@ -383,12 +585,38 @@ export default function AddonsPage() {
     travelInsurance,
     passengers,
     seatSelections,
+    selectedAncillaries,
     currency,
   } = store;
 
   useEffect(() => {
     if (!selectedFare || !sessionId) router.replace('/');
   }, [selectedFare, sessionId, router]);
+
+  // Fetch provider ancillaries on mount
+  useEffect(() => {
+    if (!selectedFare?.offerId) {
+      setBaggageLoading(false);
+      return;
+    }
+
+    const provider = (store.sourceFlight?.provider ?? store.sourceRoundTrip?.provider ?? 'duffel').toLowerCase();
+    setBaggageLoading(true);
+    setBaggageError(null);
+
+    fetch(`/api/ancillaries?offer_id=${encodeURIComponent(selectedFare.offerId)}&provider=${provider}`)
+      .then(r => r.json())
+      .then((data: { baggage: NormalizedAncillary[]; meals: NormalizedAncillary[]; premiumServices?: NormalizedAncillary[]; error?: string; info?: string }) => {
+        setProviderBaggage(data.baggage ?? []);
+        setPremiumServices(data.premiumServices ?? []);
+        if (data.error) setBaggageError(data.error);
+        else if (data.info) setBaggageError(data.info);
+      })
+      .catch(() => {
+        setBaggageError('Add-ons are temporarily unavailable. You can continue booking or manage add-ons with the airline after ticketing.');
+      })
+      .finally(() => setBaggageLoading(false));
+  }, [selectedFare?.offerId]);
 
   if (!selectedFare || !sessionId) return null;
 
@@ -408,8 +636,9 @@ export default function AddonsPage() {
     priceProtection,
     travelInsurance,
     seatSelections,
+    selectedAncillaries,
     currency: currency ?? 'USD',
-  } as Parameters<typeof buildLocalPricing>[0]);
+  } as Parameters<typeof buildLocalPricing>[0], pricingCfg);
 
   const handleContinue = async () => {
     if (!sessionId) { router.replace('/'); return; }
@@ -424,6 +653,7 @@ export default function AddonsPage() {
           extraBags,
           protectionFee: priceProtection ? protectionFee : 0,
           insuranceFee: travelInsurance ? pricing.insuranceFee : 0,
+          selectedAncillaries: selectedAncillaries.filter(a => !a.included),
         }),
       }).catch(() => {
         // Non-blocking — continue regardless
@@ -443,11 +673,25 @@ export default function AddonsPage() {
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
           {/* Left: add-on cards */}
           <div className="lg:col-span-2 space-y-5">
-            <ExtraBagsSection
+            <ProviderBaggageSection
               includedBags={includedBags}
-              extraBags={extraBags}
-              onSet={store.setExtraBags}
+              providerBaggage={providerBaggage}
+              selectedAncillaries={selectedAncillaries}
+              onAdd={store.addAncillary}
+              onRemove={store.removeAncillary}
+              loading={baggageLoading}
+              error={baggageError}
             />
+
+            {/* Premium Airport Services — only shown if provider returns them */}
+            {premiumServices.length > 0 && (
+              <PremiumAirportServicesSection
+                services={premiumServices}
+                selectedAncillaries={selectedAncillaries}
+                onAdd={store.addAncillary}
+                onRemove={store.removeAncillary}
+              />
+            )}
 
             <PriceDropProtectionSection
               enabled={priceProtection}
@@ -482,10 +726,10 @@ export default function AddonsPage() {
           <div className="lg:col-span-1">
             <div className="sticky top-36 space-y-4">
               <PriceSummary
-                extraBags={extraBags}
                 protection={priceProtection}
                 insurance={travelInsurance}
                 pricing={pricing}
+                selectedAncillaries={selectedAncillaries}
               />
 
               {priceProtection && (

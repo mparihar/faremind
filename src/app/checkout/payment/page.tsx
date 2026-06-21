@@ -30,6 +30,7 @@ import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { apiFetch } from '@/lib/api-client';
 import { useFeeLoader } from '@/hooks/useFeeLoader';
+import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -115,7 +116,7 @@ function OrderSummaryCard({
       <div className="space-y-2 text-sm">
         <div className="flex justify-between text-slate-600">
           <span>Base fares ({passengerCount}× pax)</span>
-          <span>{fmt(pricing.perPassenger.reduce((s, p) => s + p.subtotal, 0))}</span>
+          <span>{fmt(pricing.fareTotal)}</span>
         </div>
         {pricing.baggageFees > 0 && (
           <div className="flex justify-between text-slate-600">
@@ -214,7 +215,8 @@ function PaymentFormInner() {
     mealSelections,
   } = store;
 
-  const pricing = buildLocalPricing(store);
+  const pricingCfg = useBuildPricingConfig();
+  const pricing = buildLocalPricing(store, pricingCfg);
 
   // Load DB-driven fees — populates computedFees in checkout store
   useFeeLoader();
@@ -386,6 +388,7 @@ function PaymentFormInner() {
           seatSelections,
           mealSelections,
           wheelchairSelections: store.wheelchairSelections,
+          selectedAncillaries: (store.selectedAncillaries ?? []).filter(a => !a.included),
           sourceFlight,
           sourceRoundTrip,
           currency: currency ?? 'USD',

@@ -8,6 +8,7 @@ import { useFareStore, getSelectedFareOption } from '@/store/useFareStore';
 import { useBookingStore } from '@/store/useBookingStore';
 import type { FareSelectionPayload, FareOption, PriceProtectionQuote } from '@/lib/fare-types';
 import { apiFetch } from '@/lib/api-client';
+import { usePricingConfig, computeServiceFee } from '@/hooks/usePricingConfig';
 
 // ─── Cabin tab labels ────────────────────────────────────────────────────────
 
@@ -139,19 +140,19 @@ export default function FareSelectionPage() {
 
   const selectedFare = getSelectedFareOption(store);
   const protectionFee = store.protectionQuote?.protectionFeeUsd ?? 0;
+  const { serviceFee: serviceFeeConfig } = usePricingConfig();
   const grandTotal = useMemo(() => {
     if (!selectedFare) return 0;
     const base = selectedFare.basePrice;
     let fareTotal: number;
-    if (passengerBreakdown && travelerCount > 1) {
-      const { adults, children: childCount, infants } = passengerBreakdown;
-      fareTotal = adults * base + childCount * Math.round(base * 0.75) + infants * base;
-      fareTotal += Math.round(base * travelerCount * 0.015); // service fee
+    if (travelerCount > 1) {
+      fareTotal = base * travelerCount;
+      fareTotal += computeServiceFee(fareTotal, travelerCount, serviceFeeConfig);
     } else {
       fareTotal = selectedFare.totalPrice;
     }
     return fareTotal + (store.priceProtection ? protectionFee : 0);
-  }, [selectedFare, passengerBreakdown, travelerCount, store.priceProtection, protectionFee]);
+  }, [selectedFare, travelerCount, store.priceProtection, protectionFee, serviceFeeConfig]);
 
   // Fares in the active cabin
   const activeFares = useMemo(

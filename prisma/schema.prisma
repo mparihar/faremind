@@ -600,6 +600,7 @@ model MasterBooking {
   passengerUpdates       BookingPassengerUpdate[]
   providerSyncs          ProviderSync[]
   commercialCharges      BookingCommercialCharge[]
+  ancillaries            BookingAncillary[]
 
   // Agent booking ownership
   createdByRole          String?            @map("created_by_role")       // 'AGENT' | 'CUSTOMER' | null
@@ -937,6 +938,33 @@ model BookingBaggage {
 
   @@index([bookingId])
   @@map("booking_baggage")
+}
+
+// ── Provider Ancillaries (baggage/seat/meal from provider APIs) ──
+
+model BookingAncillary {
+  id                String   @id @default(cuid())
+  bookingId         String   @map("booking_id")
+  provider          String   // DUFFEL, MYSTIFLY
+  providerOfferId   String   @map("provider_offer_id")
+  providerServiceId String   @map("provider_service_id")
+  ancillaryType     String   @map("ancillary_type") // CHECKED_BAG, EXTRA_CHECKED_BAG, CARRY_ON, SEAT, MEAL, LOUNGE_ACCESS, PRIORITY_BOARDING
+  passengerId       String?  @map("passenger_id")
+  segmentId         String?  @map("segment_id")
+  journeyId         String?  @map("journey_id")
+  airportCode       String?  @map("airport_code")
+  label             String
+  included          Boolean  @default(false)
+  amount            Decimal  @default(0) @db.Decimal(10, 2)
+  currency          String   @default("USD")
+  quantity          Int      @default(1)
+  rawProviderData   Json?    @map("raw_provider_data")
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  booking MasterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@map("booking_ancillaries")
 }
 
 // ── Add-ons (insurance, price protection, etc.) ──
@@ -2047,6 +2075,45 @@ model TravelInsuranceRule {
   @@index([cabinScope])
   @@index([priority])
   @@map("travel_insurance_rules")
+}
+
+// ── Fare Tier Templates (replaces hardcoded FARE_TEMPLATES) ───
+
+model FareTierTemplate {
+  id                  String   @id @default(cuid())
+  name                String                                    // "Economy Basic", "Economy Standard", etc.
+  cabin               String                                    // "economy", "premium_economy", "business", "first"
+  priceMultiplier     Decimal  @map("price_multiplier") @db.Decimal(6, 4)
+  displayOrder        Int      @default(0)  @map("display_order")
+
+  // Baggage
+  carryOn             Boolean  @default(true)  @map("carry_on")
+  carryOnPieces       Int      @default(1)     @map("carry_on_pieces")
+  carryOnWeightKg     Decimal? @map("carry_on_weight_kg") @db.Decimal(5, 1)
+  checkedBags         Int      @default(0)     @map("checked_bags")
+  checkedWeightKg     Decimal? @map("checked_weight_kg") @db.Decimal(5, 1)
+  extraBagFeeUsd      Decimal? @map("extra_bag_fee_usd") @db.Decimal(10, 2)
+
+  // Policies
+  refundable          Boolean  @default(false)
+  refundFeeUsd        Decimal? @map("refund_fee_usd") @db.Decimal(10, 2)
+  changeable          Boolean  @default(false)
+  changeFeeUsd        Decimal? @map("change_fee_usd") @db.Decimal(10, 2)
+  seatSelection       String   @default("fee") @map("seat_selection")          // "free" | "fee" | "not_available"
+  seatSelectionFeeUsd Decimal? @map("seat_selection_fee_usd") @db.Decimal(10, 2)
+  upgradeable         Boolean  @default(false)
+  loungeAccess        Boolean  @default(false) @map("lounge_access")
+  priorityBoarding    Boolean  @default(false) @map("priority_boarding")
+  milesEarning        String   @default("reduced") @map("miles_earning")       // "full" | "reduced" | "none"
+
+  active              Boolean  @default(true)
+  updatedBy           String?  @map("updated_by")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@index([cabin, active])
+  @@index([displayOrder])
+  @@map("fare_tier_templates")
 }
 
 // ── Booking Commercial Charges (Snapshot) ─────────

@@ -122,6 +122,20 @@ export interface DuffelService {
   total_amount: string;
   total_currency: string;
   maximum_quantity: number;
+  /** Which passengers this service applies to */
+  passenger_ids?: string[];
+  /** Which segments this service applies to */
+  segment_ids?: string[];
+  /** Provider-specific metadata (e.g. bag type, weight) */
+  metadata?: {
+    type?: string;           // "checked", "carry_on"
+    designation?: string;    // "first", "second", "third"
+    maximum_weight_kg?: number;
+    maximum_height_cm?: number;
+    maximum_length_cm?: number;
+    maximum_depth_cm?: number;
+    [key: string]: any;
+  };
 }
 
 export interface DuffelOrder {
@@ -411,6 +425,11 @@ export interface DuffelBookingParams {
   paymentAmount: number;
   paymentCurrency: string;
   metadata?: Record<string, string>;
+  /** Provider ancillary service IDs to attach (bags, seats, etc.) */
+  selectedServices?: {
+    id: string;       // Duffel service ID
+    quantity: number;
+  }[];
 }
 
 /**
@@ -436,22 +455,33 @@ export async function createBooking(params: DuffelBookingParams): Promise<Duffel
     throw error;
   }
 
+  const orderBody: Record<string, unknown> = {
+    selected_offers: [params.offerId],
+    passengers: params.passengers,
+    type: 'instant',
+    payments: [
+      {
+        type: 'balance',
+        amount: params.paymentAmount.toFixed(2),
+        currency: params.paymentCurrency,
+      },
+    ],
+    metadata: params.metadata || { booked_via: 'faremind' },
+  };
+
+  // Attach selected ancillary services (bags, seats, etc.)
+  if (params.selectedServices && params.selectedServices.length > 0) {
+    orderBody.services = params.selectedServices.map(s => ({
+      id: s.id,
+      quantity: s.quantity,
+    }));
+    console.log(`[Duffel] 🧳 Attaching ${params.selectedServices.length} ancillary service(s)`);
+  }
+
   const order = await duffelRequest<DuffelOrder>({
     method: 'POST',
     path: '/air/orders',
-    body: {
-      selected_offers: [params.offerId],
-      passengers: params.passengers,
-      type: 'instant',
-      payments: [
-        {
-          type: 'balance',
-          amount: params.paymentAmount.toFixed(2),
-          currency: params.paymentCurrency,
-        },
-      ],
-      metadata: params.metadata || { booked_via: 'faremind' },
-    } as Record<string, unknown>,
+    body: orderBody,
     retries: 0, // Never retry a payment
   });
 

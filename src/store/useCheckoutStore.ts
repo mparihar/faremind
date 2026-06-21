@@ -4,6 +4,7 @@ import { create } from 'zustand';
 import type { SelectedFare, FareOption } from '@/lib/fare-types';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
+import type { NormalizedAncillary } from '@/lib/providers/providerAncillaryNormalizer';
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -63,6 +64,7 @@ export interface PerPassengerPrice {
 
 export interface PricingBreakdown {
   perPassenger: PerPassengerPrice[];
+  fareTotal: number;
   seatFees: number;
   mealFees: number;
   baggageFees: number;
@@ -130,6 +132,7 @@ interface CheckoutStore {
   extraBags: number;
   priceProtection: boolean;
   travelInsurance: boolean;
+  selectedAncillaries: NormalizedAncillary[];
 
   // Computed fees from fee engine (cached from /api/fees/compute)
   computedFees: { serviceFee: number; markupFee: number; protectionFee: number; protectionFeeTotal: number; insuranceFee: number; insuranceFeeTotal: number } | null;
@@ -182,6 +185,9 @@ interface CheckoutStore {
   toggleProtection: () => void;
   toggleInsurance: () => void;
   setComputedFees: (fees: CheckoutStore['computedFees']) => void;
+  setSelectedAncillaries: (ancillaries: NormalizedAncillary[]) => void;
+  addAncillary: (ancillary: NormalizedAncillary) => void;
+  removeAncillary: (serviceId: string) => void;
 
   setAcceptedTerms: (v: boolean) => void;
   setPricing: (p: PricingBreakdown) => void;
@@ -219,6 +225,7 @@ const INITIAL: Omit<CheckoutStore,
   'setSeatSelections' | 'updateSeatSelection' | 'updateWheelchairSelection' |
   'setMealSelections' | 'updateMealSelection' |
   'setExtraBags' | 'toggleProtection' | 'toggleInsurance' | 'setComputedFees' |
+  'setSelectedAncillaries' | 'addAncillary' | 'removeAncillary' |
   'setAcceptedTerms' | 'setPricing' | 'setPaymentIntent' |
   'setPaymentStatus' | 'setPaymentError' | 'setConfirmation' |
   'setError' | 'reset'
@@ -237,6 +244,7 @@ const INITIAL: Omit<CheckoutStore,
   extraBags: 0,
   priceProtection: false,
   travelInsurance: false,
+  selectedAncillaries: [],
   computedFees: null,
   acceptedTerms: false,
   pricing: null,
@@ -331,6 +339,16 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
   toggleProtection: ()              => set((s) => ({ priceProtection: !s.priceProtection })),
   toggleInsurance:  ()              => set((s) => ({ travelInsurance: !s.travelInsurance })),
   setComputedFees:  (computedFees)  => set({ computedFees }),
+  setSelectedAncillaries: (selectedAncillaries) => set({ selectedAncillaries }),
+  addAncillary: (ancillary) => set((s) => ({
+    selectedAncillaries: [
+      ...s.selectedAncillaries.filter(a => a.providerServiceId !== ancillary.providerServiceId),
+      ancillary,
+    ],
+  })),
+  removeAncillary: (serviceId) => set((s) => ({
+    selectedAncillaries: s.selectedAncillaries.filter(a => a.providerServiceId !== serviceId),
+  })),
 
   setAcceptedTerms:  (acceptedTerms)  => set({ acceptedTerms }),
   setPricing:        (pricing)        => set({ pricing }),
@@ -345,30 +363,73 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
 
 // ─── Computed helpers ─────────────────────────────────────────────────────────
 
-export function buildLocalPricing(store: CheckoutStore): PricingBreakdown {
-  const { selectedFare, passengers, extraBags, priceProtection, travelInsurance, seatSelections, mealSelections, currency, computedFees } = store;
-  const perPersonBase = selectedFare?.basePrice ?? 0;
-  const taxRate = 0.156; // ~15.6% taxes estimate
+/** Optional pricing config from /api/pricing-config (DB-driven values) */
+export interface PricingConfigParam {
+  serviceFee?: { model: string; fixedAmount: number | null; percentageValue: number | null } | null;
+  taxRate?: number | null;
+  extraBagFeeUsd?: number | null;
+}
 
+export function buildLocalPricing(store: CheckoutStore, pricingConfig?: PricingConfigParam): PricingBreakdown {
+  const { selectedFare, passengers, extraBags, priceProtection, travelInsurance, seatSelections, mealSelections, currency, computedFees } = store;
+  // Use the exact all-passenger total from the fare-options API to avoid rounding loss.
+  // selectedFare.totalPrice is the all-passenger total; basePrice is per-person (display only).
+  const allPaxFareTotal = selectedFare?.totalPrice ?? 0;
+  const perPersonBase = selectedFare?.basePrice ?? 0;
+  const taxRate = pricingConfig?.taxRate ?? 0.156;
+
+  // Build per-passenger breakdown for display (cosmetic split of taxes from base)
   const perPassenger: PerPassengerPrice[] = passengers.map(p => {
-    // Infants (lap) are typically free or same as adult on Duffel; children get 25% discount
-    const base = p.type === 'child' ? Math.round(perPersonBase * 0.75) : perPersonBase;
+    const base = perPersonBase;
     const taxes = Math.round(base * taxRate);
     return { passengerId: p.id, type: p.type, baseFare: base - taxes, taxes, subtotal: base };
   });
 
   const seatFees = seatSelections.reduce((s, x) => s + (x.priceUsd ?? 0), 0);
   const mealFees = mealSelections.reduce((s, x) => s + (x.priceUsd ?? 0), 0);
-  const baggageFees = extraBags * 35;
 
-  // Use admin-configured fees from the fee engine if available, otherwise fallback
+  // Baggage fees: sum of selected provider ancillary amounts (no markup)
+  const selectedBags = (store.selectedAncillaries ?? []).filter(
+    a => a.ancillaryType === 'CHECKED_BAG' || a.ancillaryType === 'EXTRA_CHECKED_BAG',
+  );
+  const baggageFees = selectedBags.reduce((s, a) => s + a.amount * a.quantity, 0);
+
+  // Service fee: computed from the exact all-passenger total (no rounding drift)
+  const fareTotal = allPaxFareTotal;
   let serviceFee: number;
+  const sfCfg = pricingConfig?.serviceFee;
+  if (sfCfg) {
+    switch (sfCfg.model) {
+      case 'FIXED_PER_BOOKING':
+        serviceFee = Math.round(sfCfg.fixedAmount ?? 0);
+        break;
+      case 'FIXED_PER_TRAVELER':
+        serviceFee = Math.round((sfCfg.fixedAmount ?? 0) * passengers.length);
+        break;
+      case 'PERCENTAGE_OF_FARE':
+      case 'PERCENTAGE_OF_BOOKING_TOTAL':
+        serviceFee = Math.round(fareTotal * ((sfCfg.percentageValue ?? 0) / 100));
+        break;
+      case 'HYBRID':
+        serviceFee = Math.round(
+          (sfCfg.fixedAmount ?? 0) * passengers.length +
+          fareTotal * ((sfCfg.percentageValue ?? 0) / 100),
+        );
+        break;
+      default:
+        serviceFee = 0;
+    }
+  } else if (computedFees) {
+    serviceFee = computedFees.serviceFee;
+  } else {
+    serviceFee = Math.round(fareTotal * 0.015); // last-resort fallback
+  }
+
   let protectionFee: number;
   let insuranceFee: number;
 
   if (computedFees) {
-    // DB-driven fees from /api/fees/compute
-    serviceFee = computedFees.serviceFee;
+    // DB-driven fees for protection and insurance
     protectionFee = priceProtection ? computedFees.protectionFeeTotal : 0;
     insuranceFee = travelInsurance ? computedFees.insuranceFeeTotal : 0;
   } else {
@@ -376,7 +437,6 @@ export function buildLocalPricing(store: CheckoutStore): PricingBreakdown {
     if (typeof window !== 'undefined' && process.env.NODE_ENV === 'development') {
       console.warn('[buildLocalPricing] ⚠️ Using hardcoded fee fallback — computedFees is null. Call useFeeLoader() or /api/fees/compute.');
     }
-    serviceFee = Math.round(perPersonBase * passengers.length * 0.015);
     const perPersonProtection = selectedFare?.protectionFee && selectedFare.protectionFee > 0
       ? selectedFare.protectionFee
       : Math.min(Math.max(Math.round((selectedFare?.basePrice ?? 0) * 0.06), 49), 399);
@@ -384,11 +444,12 @@ export function buildLocalPricing(store: CheckoutStore): PricingBreakdown {
     insuranceFee = travelInsurance ? Math.round(perPersonBase * passengers.length * 0.04) : 0;
   }
 
-  const subtotal = perPassenger.reduce((s, p) => s + p.subtotal, 0)
+  const subtotal = allPaxFareTotal
     + seatFees + mealFees + baggageFees + protectionFee + insuranceFee + serviceFee;
 
   return {
-    perPassenger, seatFees, mealFees, baggageFees,
+    perPassenger, fareTotal: allPaxFareTotal,
+    seatFees, mealFees, baggageFees,
     protectionFee, insuranceFee, serviceFee,
     subtotal, total: subtotal,
     currency: currency ?? 'USD',

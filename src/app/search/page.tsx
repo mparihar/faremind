@@ -633,6 +633,8 @@ function SearchContent() {
     sessionStorage.setItem('fm_fare_context', JSON.stringify({
       offerId: flight.providerOfferId,
       basePrice: flight.totalPrice,
+      providerTotalFare: (flight as any).providerTotalFare ?? flight.totalPrice,
+      fareMindMarkupAmount: (flight as any).fareMindMarkupAmount ?? 0,
       travelers: parseInt(adults, 10) + parseInt(childrenParam, 10) + parseInt(infantsParam, 10),
       adults: parseInt(adults, 10),
       children: parseInt(childrenParam, 10),
@@ -1165,6 +1167,8 @@ function SearchContent() {
                     fareStore.setSourceRoundTrip(rt);
                     sessionStorage.setItem('fm_fare_context', JSON.stringify({
                       offerId: rt.providerOfferId, basePrice: rt.totalPrice,
+                      providerTotalFare: (rt as any).providerTotalFare ?? rt.totalPrice,
+                      fareMindMarkupAmount: (rt as any).fareMindMarkupAmount ?? 0,
                       travelers: parseInt(adults, 10) + parseInt(childrenParam, 10) + parseInt(infantsParam, 10),
                       adults: parseInt(adults, 10),
                       children: parseInt(childrenParam, 10),
@@ -1705,6 +1709,8 @@ function SearchContent() {
             sessionStorage.setItem('fm_fare_context', JSON.stringify({
               offerId: selectedRoundTrip.providerOfferId,
               basePrice: selectedRoundTrip.totalPrice,
+              providerTotalFare: (selectedRoundTrip as any).providerTotalFare ?? selectedRoundTrip.totalPrice,
+              fareMindMarkupAmount: (selectedRoundTrip as any).fareMindMarkupAmount ?? 0,
               travelers: parseInt(adults, 10) + parseInt(childrenParam, 10) + parseInt(infantsParam, 10),
               adults: parseInt(adults, 10),
               children: parseInt(childrenParam, 10),

@@ -16,6 +16,7 @@ import type { PassengerInfo } from '@/store/useCheckoutStore';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
 import { useFeeLoader } from '@/hooks/useFeeLoader';
+import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
 
 const STEP_INDEX = 3;
 
@@ -331,9 +332,10 @@ function ItineraryPanel({
   onContinue: () => void;
 }) {
   const store = useCheckoutStore();
-  const pricing = useMemo(() => buildLocalPricing(store), [
+  const pricingCfg = useBuildPricingConfig();
+  const pricing = useMemo(() => buildLocalPricing(store, pricingCfg), [
     store.mealSelections, store.seatSelections, store.extraBags, // eslint-disable-line react-hooks/exhaustive-deps
-    store.priceProtection, store.travelInsurance, store.passengers, store.selectedFare, // eslint-disable-line react-hooks/exhaustive-deps
+    store.priceProtection, store.travelInsurance, store.passengers, store.selectedFare, pricingCfg, // eslint-disable-line react-hooks/exhaustive-deps
   ]);
 
   const mealTotal = pricing.mealFees;
@@ -535,6 +537,9 @@ export default function MealsPage() {
           <p className="text-sm text-slate-400 mt-1 flex items-center gap-1.5">
             <Sparkles className="w-3.5 h-3.5 text-amber-400" />
             Per traveler · Per journey · AI-recommended highlighted
+          </p>
+          <p className="text-xs text-slate-400 mt-0.5">
+            Meal selections are included with your fare. Prices, if any, are provided by the airline.
           </p>
         </div>
 
