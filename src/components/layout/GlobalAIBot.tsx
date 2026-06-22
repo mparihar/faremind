@@ -31,11 +31,9 @@ export default function GlobalAIBot() {
     setIsAgentMode(isAgentPath || hasAgentCtx);
   }, [pathname]);
 
-  // Hide on home, admin, auth pages, and /search (full bot renders there)
-  const hiddenPaths = ['/', '/admin', '/auth'];
-  const shouldHide = hiddenPaths.some(p =>
-    p === '/' ? pathname === '/' : pathname.startsWith(p)
-  ) || pathname === '/search';
+  // Hide on admin, auth pages, and /search (full bot renders there)
+  const hiddenPaths = ['/admin', '/auth'];
+  const shouldHide = hiddenPaths.some(p => pathname.startsWith(p)) || pathname === '/search';
 
   if (shouldHide) return null;
 
@@ -45,7 +43,7 @@ export default function GlobalAIBot() {
   };
 
   return (
-    <div className="fixed z-50 flex flex-col items-start gap-3 bottom-16 sm:bottom-16 left-4 sm:left-6">
+    <div className="fixed z-50 flex flex-col items-start gap-3 bottom-4 sm:bottom-6 left-4 sm:left-6">
 
       {/* Chat panel */}
       <AnimatePresence>
