@@ -45,7 +45,7 @@ export default function GlobalAIBot() {
   };
 
   return (
-    <div className="fixed z-50 flex flex-col items-start gap-3 bottom-4 sm:bottom-6 left-4 sm:left-6">
+    <div className="fixed z-50 flex flex-col items-start gap-3 bottom-16 sm:bottom-16 left-4 sm:left-6">
 
       {/* Chat panel */}
       <AnimatePresence>
