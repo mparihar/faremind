@@ -160,7 +160,15 @@ function ProviderBaggageSection({
               );
             })
           ) : (
-            !loading && includedItems.length === 0 && includedBags === 0 && (
+            /* No purchasable bags — show appropriate message */
+            (includedItems.length > 0 || includedBags > 0) ? (
+              <div className="flex items-start gap-2.5 p-4 rounded-xl bg-amber-50 border border-amber-200">
+                <Info className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                <p className="text-xs text-amber-700 leading-relaxed">
+                  Your fare already includes checked baggage. Extra bag purchases are not available for this fare through the provider. You can add additional bags directly with the airline at the airport or through their website.
+                </p>
+              </div>
+            ) : (
               <div className="text-center py-6 text-slate-400">
                 <Luggage className="w-8 h-8 mx-auto mb-2 opacity-40" />
                 <p className="text-sm font-medium">Checked baggage not available for online purchase</p>
@@ -610,7 +618,8 @@ export default function AddonsPage() {
         setProviderBaggage(data.baggage ?? []);
         setPremiumServices(data.premiumServices ?? []);
         if (data.error) setBaggageError(data.error);
-        else if (data.info) setBaggageError(data.info);
+        // Only show info message if no baggage data was returned
+        else if (data.info && (!data.baggage || data.baggage.length === 0)) setBaggageError(data.info);
       })
       .catch(() => {
         setBaggageError('Add-ons are temporarily unavailable. You can continue booking or manage add-ons with the airline after ticketing.');

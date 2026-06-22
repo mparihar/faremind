@@ -281,16 +281,26 @@ function validatePassenger(pax: PassengerInfo, departureDate?: string): Passenge
   // Date of birth + age validation
   if (!pax.dateOfBirth) {
     errors.dateOfBirth = 'Date of birth is required';
-  } else if (departureDate) {
-    const age = calculateAgeOnDate(pax.dateOfBirth, departureDate);
-    if (age < 0) {
+  } else {
+    // Future date check — DOB cannot be in the future
+    const dobDate = new Date(pax.dateOfBirth + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    if (isNaN(dobDate.getTime())) {
       errors.dateOfBirth = 'Invalid date of birth';
-    } else {
-      const computedType = getPassengerTypeByAge(age);
-      if (computedType !== pax.type) {
-        const expected = typeLabel(pax.type);
-        const actual = typeLabel(computedType);
-        errors.dateOfBirth = `Age mismatch: This traveler is ${age} years old on the travel date, which is categorized as "${actual}", but this slot is for "${expected}". Please correct the date of birth.`;
+    } else if (dobDate > today) {
+      errors.dateOfBirth = 'Date of birth cannot be a future date';
+    } else if (departureDate) {
+      const age = calculateAgeOnDate(pax.dateOfBirth, departureDate);
+      if (age < 0) {
+        errors.dateOfBirth = 'Invalid date of birth';
+      } else {
+        const computedType = getPassengerTypeByAge(age);
+        if (computedType !== pax.type) {
+          const expected = typeLabel(pax.type);
+          const actual = typeLabel(computedType);
+          errors.dateOfBirth = `Age mismatch: This traveler is ${age} years old on the travel date, which is categorized as "${actual}", but this slot is for "${expected}". Please correct the date of birth.`;
+        }
       }
     }
   }
@@ -553,8 +563,17 @@ interface PassengerCardProps {
 function PassengerCard({ pax, index, errors, touched, onChange, departureDate }: PassengerCardProps) {
   const expectedTypeLabel = pax.type === 'adult' ? 'Adult' : pax.type === 'child' ? 'Child' : 'Infant';
 
+  // Check if DOB is a future date (show error immediately, no need for touched)
+  const isFutureDob = (() => {
+    if (!pax.dateOfBirth) return false;
+    const dobDate = new Date(pax.dateOfBirth + 'T00:00:00');
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    return !isNaN(dobDate.getTime()) && dobDate > today;
+  })();
+
   // Compute age-based type
-  const ageInfo = pax.dateOfBirth && departureDate
+  const ageInfo = pax.dateOfBirth && departureDate && !isFutureDob
     ? (() => {
         const age = calculateAgeOnDate(pax.dateOfBirth, departureDate);
         if (age < 0) return null;
@@ -573,7 +592,13 @@ function PassengerCard({ pax, index, errors, touched, onChange, departureDate }:
           Traveler {index + 1}{' '}
           <span className="text-slate-400 font-normal">({expectedTypeLabel})</span>
         </h3>
-        {ageInfo && (
+        {isFutureDob && (
+          <span className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-700">
+            <AlertCircle className="w-3 h-3" />
+            Future DOB
+          </span>
+        )}
+        {!isFutureDob && ageInfo && (
           <span className={`ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
             ageInfo.matches
               ? 'bg-emerald-100 text-emerald-700'
@@ -639,11 +664,20 @@ function PassengerCard({ pax, index, errors, touched, onChange, departureDate }:
             type="date"
             value={pax.dateOfBirth}
             onChange={e => onChange('dateOfBirth', e.target.value)}
-            hasError={(touched && !!errors.dateOfBirth) || (ageInfo ? !ageInfo.matches : false)}
+            hasError={isFutureDob || (touched && !!errors.dateOfBirth) || (ageInfo ? !ageInfo.matches : false)}
             max={new Date().toISOString().split('T')[0]}
           />
+          {/* Show future date error immediately — no need to wait for touched */}
+          {isFutureDob && (
+            <div className="mt-1.5 flex items-start gap-1.5 p-2 rounded-lg bg-red-50 border border-red-200">
+              <AlertCircle className="w-3.5 h-3.5 text-red-600 flex-shrink-0 mt-0.5" />
+              <p className="text-xs text-red-800">
+                <strong>Invalid date:</strong> Date of birth cannot be a future date. Please enter a valid past date.
+              </p>
+            </div>
+          )}
           {/* Show mismatch warning immediately (no need to wait for touched) */}
-          {ageInfo && !ageInfo.matches && (
+          {!isFutureDob && ageInfo && !ageInfo.matches && (
             <div className="mt-1.5 flex items-start gap-1.5 p-2 rounded-lg bg-amber-50 border border-amber-200">
               <AlertCircle className="w-3.5 h-3.5 text-amber-600 flex-shrink-0 mt-0.5" />
               <p className="text-xs text-amber-800">
@@ -655,13 +689,13 @@ function PassengerCard({ pax, index, errors, touched, onChange, departureDate }:
             </div>
           )}
           {/* Show age confirmation when correct */}
-          {ageInfo && ageInfo.matches && (
+          {!isFutureDob && ageInfo && ageInfo.matches && (
             <p className="mt-1 text-xs text-emerald-600 font-medium flex items-center gap-1">
               <Check className="w-3 h-3" />
               Age {ageInfo.age} on travel date — {typeLabel(ageInfo.computedType)} ✓
             </p>
           )}
-          {touched && !ageInfo && <FieldError message={errors.dateOfBirth} />}
+          {touched && !ageInfo && !isFutureDob && <FieldError message={errors.dateOfBirth} />}
         </div>
         <div>
           <FieldLabel required>Nationality</FieldLabel>

@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import * as duffelClient from '../services/duffel';
 import * as amadeusClient from '../services/amadeus';
+import * as mystiflyClient from '../services/mystifly';
 import { getBookingById, updateBookingStatus, createNotification, addLedgerEntry } from '../lib/db-queries';
 import { prisma } from '../lib/db';
 import { fireNotification } from '../lib/notify';
@@ -26,6 +27,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             refundAmount = parseFloat(result.cancellation.refund_amount || '0');
           } else if (booking.provider === 'AMADEUS') {
             await amadeusClient.cancelBooking(booking.providerBookingId);
+            providerCancelled = true;
+            refundAmount = Number(booking.totalPrice) - Number(booking.cancellationFee || 0);
+          } else if (booking.provider === 'MYSTIFLY') {
+            await mystiflyClient.cancelBooking(booking.providerBookingId);
             providerCancelled = true;
             refundAmount = Number(booking.totalPrice) - Number(booking.cancellationFee || 0);
           }

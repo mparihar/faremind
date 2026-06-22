@@ -416,6 +416,31 @@ function ItineraryPanel({
           )}
         </AnimatePresence>
 
+        {/* Add-ons (protection, insurance, bags) */}
+        {(pricing.protectionFee > 0 || pricing.insuranceFee > 0 || pricing.baggageFees > 0) && (
+          <div className="mt-3 pt-3 border-t border-slate-100 space-y-1.5 text-sm">
+            <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">Add-ons</p>
+            {pricing.protectionFee > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Price protection</span>
+                <span className="text-slate-600">{formatPrice(pricing.protectionFee, currency)}</span>
+              </div>
+            )}
+            {pricing.insuranceFee > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Insurance</span>
+                <span className="text-slate-600">{formatPrice(pricing.insuranceFee, currency)}</span>
+              </div>
+            )}
+            {pricing.baggageFees > 0 && (
+              <div className="flex justify-between">
+                <span className="text-slate-500">Extra bags</span>
+                <span className="text-slate-600">{formatPrice(pricing.baggageFees, currency)}</span>
+              </div>
+            )}
+          </div>
+        )}
+
         {/* Grand total */}
         <div className="flex items-baseline justify-between mt-auto pt-4 border-t border-slate-200">
           <span className="text-sm font-bold text-slate-700">Trip total</span>

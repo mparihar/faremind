@@ -2,7 +2,8 @@
  * Flight Search Orchestrator (Backend)
  *
  * Calls Duffel (NDC) + Amadeus (GDS) + Mystifly (Aggregator) in parallel,
- * normalizes, merges, deduplicates, and ranks results.
+ * normalizes, and merges all results using APPEND-ONLY aggregation.
+ * No offers are removed or deduplicated at the aggregation layer.
  */
 
 import * as duffel from './duffel';

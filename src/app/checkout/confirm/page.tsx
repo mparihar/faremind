@@ -323,8 +323,8 @@ export default function ConfirmPage() {
       if (raw) {
         const ctx = JSON.parse(raw);
         setAgentCtx(ctx);
-        // Clear after reading (booking complete)
-        sessionStorage.removeItem('agentBookingContext');
+        // Don't clear here — keep agent navbar visible on confirm page.
+        // Context is cleared when agent navigates back to the portal.
       }
     } catch {}
   }, []);
@@ -715,9 +715,15 @@ export default function ConfirmPage() {
         <motion.div variants={itemV}>
           <div className="flex flex-col sm:flex-row items-stretch gap-3">
             {agentCtx ? (
-              <Link href="/agent/bookings" className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#1ABC9C] to-emerald-500 hover:from-emerald-500 hover:to-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 transition-all hover:scale-[1.02] active:scale-[0.98] flex-1">
+              <button
+                onClick={() => {
+                  try { sessionStorage.removeItem('agentBookingContext'); } catch {}
+                  router.push('/agent/bookings');
+                }}
+                className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#1ABC9C] to-emerald-500 hover:from-emerald-500 hover:to-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 transition-all hover:scale-[1.02] active:scale-[0.98] flex-1"
+              >
                 <Briefcase className="w-4 h-4" />Back to Agent Portal
-              </Link>
+              </button>
             ) : (
               <Link href="/account" className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold text-white bg-gradient-to-r from-[#1ABC9C] to-emerald-500 hover:from-emerald-500 hover:to-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 transition-all hover:scale-[1.02] active:scale-[0.98] flex-1">
                 <LayoutDashboard className="w-4 h-4" />View Dashboard
@@ -742,9 +748,21 @@ export default function ConfirmPage() {
               {downloadState === 'preparing' ? 'Preparing…' : downloadState === 'done' ? 'Downloaded!' : downloadState === 'error' ? 'Try Again' : 'Download Itinerary'}
             </button>
 
-            <Link href={agentCtx ? '/agent/new-booking' : '/'} className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all flex-1 hover:scale-[1.02] active:scale-[0.98]">
-              <Search className="w-4 h-4" />{agentCtx ? 'New Booking' : 'Search Flights'}
-            </Link>
+            {agentCtx ? (
+              <button
+                onClick={() => {
+                  try { sessionStorage.removeItem('agentBookingContext'); } catch {}
+                  router.push('/agent/new-booking');
+                }}
+                className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all flex-1 hover:scale-[1.02] active:scale-[0.98]"
+              >
+                <Search className="w-4 h-4" />New Booking
+              </button>
+            ) : (
+              <Link href="/" className="flex items-center justify-center gap-2 px-5 py-3 rounded-xl text-sm font-bold bg-slate-100 hover:bg-slate-200 text-slate-600 transition-all flex-1 hover:scale-[1.02] active:scale-[0.98]">
+                <Search className="w-4 h-4" />Search Flights
+              </Link>
+            )}
           </div>
         </motion.div>
 

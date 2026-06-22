@@ -131,6 +131,54 @@ export async function POST(request: NextRequest) {
         pnr = generateMockPNR();
         bookingStatus = 'PENDING';
       }
+    } else if (provider === 'mystifly' && providerOfferId) {
+      // Mystifly booking via backend proxy (Revalidate → Book)
+      const backendUrl = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
+      try {
+        // Step 1: Revalidate
+        const revalRes = await fetch(`${backendUrl}/api/mystifly/revalidate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fareSourceCode: providerOfferId }),
+        });
+        if (!revalRes.ok) {
+          throw new Error('Fare revalidation failed — price may have changed');
+        }
+
+        // Step 2: Book
+        const firstPax = passengers[0];
+        const bookRes = await fetch(`${backendUrl}/api/mystifly/book`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fareSourceCode: providerOfferId,
+            passengers: passengers.map((p: any) => ({
+              firstName: p.firstName,
+              lastName: p.lastName,
+              gender: p.gender,
+              dateOfBirth: p.dateOfBirth,
+              type: p.type,
+              nationality: p.nationality,
+              passportNumber: p.passportNumber,
+            })),
+            email: firstPax.email,
+            phone: firstPax.phone || '0000000000',
+          }),
+        });
+        const bookData = await bookRes.json();
+
+        if (bookRes.ok && bookData.success && bookData.uniqueId) {
+          providerBookingId = bookData.uniqueId;
+          pnr = bookData.uniqueId; // MFRef is the PNR for Mystifly
+          console.log(`[Booking] Mystifly order created: ${pnr}`);
+        } else {
+          throw new Error(bookData.error || 'Mystifly booking failed');
+        }
+      } catch (error) {
+        console.error('[Booking] Mystifly booking failed:', error);
+        pnr = generateMockPNR();
+        bookingStatus = 'PENDING';
+      }
     } else {
       // Mock booking (no provider configured or mock flight)
       pnr = generateMockPNR();
@@ -149,7 +197,7 @@ export async function POST(request: NextRequest) {
     try {
       booking = await dbCreateBooking({
         userId: resolvedUserId,
-        provider: provider.toUpperCase() as 'DUFFEL' | 'AMADEUS',
+        provider: provider.toUpperCase() as 'DUFFEL' | 'AMADEUS' | 'MYSTIFLY',
         providerBookingId,
         providerOfferId,
         pnr,

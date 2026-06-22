@@ -1,14 +1,13 @@
 /**
- * Provider Aggregation Tests
+ * Provider Aggregation Tests — APPEND_ALL Mode
  *
- * Tests for duplicate itinerary detection and best-provider selection.
+ * Tests that all provider offers are retained without dedup or winner selection.
  * Run with: npx tsx backend/src/services/provider-aggregation.test.ts
  */
 
 import {
   buildDuplicateKey,
   normalizeFlightNumber,
-  selectBestOffer,
   aggregateProviderOffers,
 } from './provider-aggregation';
 import type { UnifiedFlight } from '../lib/types';
@@ -105,133 +104,144 @@ function makeFlight(overrides: Partial<UnifiedFlight> & {
 // Tests
 // ═══════════════════════════════════════════════
 
-console.log('\n🧪 Provider Aggregation Tests\n');
+console.log('\n🧪 Provider Aggregation Tests — APPEND_ALL Mode\n');
 
-// ── Test 1: Same itinerary, Mystifly cheaper → Mystifly selected ──
-console.log('Test 1: Same itinerary, Mystifly cheaper');
+// ── Test 1: Duffel returns 100, Mystifly returns 80 → 180 total ──
+console.log('Test 1: Duffel 100 + Mystifly 80 = 180 total offers');
+{
+  const duffelFlights = Array.from({ length: 100 }, (_, i) =>
+    makeFlight({ provider: 'duffel', price: 500 + i, flightNumber: `DL${1000 + i}`, origin: 'JFK', destination: 'LAX', departureTime: `2026-07-15T${String(6 + (i % 12)).padStart(2, '0')}:00:00` })
+  );
+  const mystiflyFlights = Array.from({ length: 80 }, (_, i) =>
+    makeFlight({ provider: 'mystifly', price: 520 + i, flightNumber: `AA${2000 + i}`, origin: 'JFK', destination: 'LAX', departureTime: `2026-07-15T${String(6 + (i % 12)).padStart(2, '0')}:30:00` })
+  );
+  const { flights, stats } = aggregateProviderOffers([...duffelFlights, ...mystiflyFlights]);
+  assertEqual(flights.length, 180, 'Should return 180 total offers');
+  assertEqual(stats.totalOffersAfterAggregation, 180, 'Stats should show 180');
+  assertEqual(stats.aggregationMode, 'APPEND_ALL', 'Mode should be APPEND_ALL');
+  assertEqual(stats.providerCounts['duffel'], 100, 'Duffel count should be 100');
+  assertEqual(stats.providerCounts['mystifly'], 80, 'Mystifly count should be 80');
+}
+
+// ── Test 2: Same itinerary from both providers → BOTH retained ──
+console.log('\nTest 2: Same itinerary from Duffel and Mystifly — both retained');
 {
   const duffel = makeFlight({ provider: 'duffel', price: 850 });
   const mystifly = makeFlight({ provider: 'mystifly', price: 820 });
   const { flights } = aggregateProviderOffers([duffel, mystifly]);
-  assertEqual(flights.length, 1, 'Should return 1 flight');
-  assertEqual(flights[0].provider, 'mystifly', 'Mystifly should be selected');
-  assertEqual(flights[0].totalPrice, 820, 'Price should be $820');
-  assert(flights[0].aggregationMeta !== undefined, 'Should have aggregation metadata');
-  assert(flights[0].aggregationMeta!.selectionReason.includes('lower provider fare'), 'Reason should mention lower fare');
+  assertEqual(flights.length, 2, 'Should return 2 offers (no dedup)');
+  const providers = flights.map(f => f.provider);
+  assert(providers.includes('duffel'), 'Duffel offer should be present');
+  assert(providers.includes('mystifly'), 'Mystifly offer should be present');
 }
 
-// ── Test 2: Same itinerary, Duffel cheaper → Duffel selected ──
-console.log('\nTest 2: Same itinerary, Duffel cheaper');
+// ── Test 3: Same route, same flight number, different providers → both retained ──
+console.log('\nTest 3: Same flight number from different providers — both retained');
 {
-  const duffel = makeFlight({ provider: 'duffel', price: 800 });
-  const mystifly = makeFlight({ provider: 'mystifly', price: 850 });
+  const duffel = makeFlight({ provider: 'duffel', price: 800, flightNumber: 'AA1087' });
+  const mystifly = makeFlight({ provider: 'mystifly', price: 850, flightNumber: 'AA1087' });
   const { flights } = aggregateProviderOffers([duffel, mystifly]);
-  assertEqual(flights.length, 1, 'Should return 1 flight');
-  assertEqual(flights[0].provider, 'duffel', 'Duffel should be selected');
-  assertEqual(flights[0].totalPrice, 800, 'Price should be $800');
+  assertEqual(flights.length, 2, 'Should return 2 offers (same flight, different providers)');
 }
 
-// ── Test 3: Same fare, Duffel has checked bag → Duffel selected ──
-console.log('\nTest 3: Same fare, Duffel has checked bag');
-{
-  const duffel = makeFlight({ provider: 'duffel', price: 820, checked: 1, carryOn: 1 });
-  const mystifly = makeFlight({ provider: 'mystifly', price: 820, checked: 0, carryOn: 1 });
-  const { flights } = aggregateProviderOffers([duffel, mystifly]);
-  assertEqual(flights.length, 1, 'Should return 1 flight');
-  assertEqual(flights[0].provider, 'duffel', 'Duffel should be selected (better baggage)');
-  assert(flights[0].aggregationMeta!.selectionReason.includes('baggage'), 'Reason should mention baggage');
-}
-
-// ── Test 4: Same fare+baggage, Mystifly better cancellation → Mystifly selected ──
-console.log('\nTest 4: Same fare and baggage, Mystifly has better cancellation');
-{
-  const duffel = makeFlight({
-    provider: 'duffel', price: 820, checked: 1, carryOn: 1,
-    refundable: false, changeable: false,
-  });
-  const mystifly = makeFlight({
-    provider: 'mystifly', price: 820, checked: 1, carryOn: 1,
-    refundable: true, changeable: true,
-  });
-  const { flights } = aggregateProviderOffers([duffel, mystifly]);
-  assertEqual(flights.length, 1, 'Should return 1 flight');
-  assertEqual(flights[0].provider, 'mystifly', 'Mystifly should be selected (better rules)');
-  assert(flights[0].aggregationMeta!.selectionReason.includes('rules'), 'Reason should mention rules');
-}
-
-// ── Test 5: Everything equal → deterministic priority (Duffel) ──
-console.log('\nTest 5: Everything equal — deterministic priority');
-{
-  const duffel = makeFlight({
-    provider: 'duffel', price: 820, checked: 1, carryOn: 1,
-    refundable: false, changeable: false,
-  });
-  const mystifly = makeFlight({
-    provider: 'mystifly', price: 820, checked: 1, carryOn: 1,
-    refundable: false, changeable: false,
-  });
-  const { flights } = aggregateProviderOffers([duffel, mystifly]);
-  assertEqual(flights.length, 1, 'Should return 1 flight');
-  assertEqual(flights[0].provider, 'duffel', 'Duffel should be selected (higher priority)');
-  assert(flights[0].aggregationMeta!.selectionReason.includes('deterministic'), 'Reason should mention deterministic priority');
-}
-
-// ── Test 6: Different flight numbers → both shown ──
-console.log('\nTest 6: Different flight numbers — both shown');
-{
-  const duffel = makeFlight({ provider: 'duffel', price: 820, flightNumber: 'AA1087' });
-  const mystifly = makeFlight({ provider: 'mystifly', price: 820, flightNumber: 'BA456' });
-  const { flights } = aggregateProviderOffers([duffel, mystifly]);
-  assertEqual(flights.length, 2, 'Should return 2 flights (different itineraries)');
-}
-
-// ── Test 7: Same route, different departure time → both shown ──
-console.log('\nTest 7: Same route but different departure time');
-{
-  const duffel = makeFlight({ provider: 'duffel', price: 820, departureTime: '2026-07-15T08:30:00' });
-  const mystifly = makeFlight({ provider: 'mystifly', price: 820, departureTime: '2026-07-15T14:30:00' });
-  const { flights } = aggregateProviderOffers([duffel, mystifly]);
-  assertEqual(flights.length, 2, 'Should return 2 flights (different departure times)');
-}
-
-// ── Test 8: Same flight, different cabin → both shown ──
-console.log('\nTest 8: Same flight but different cabin');
-{
-  const duffel = makeFlight({ provider: 'duffel', price: 820, cabin: 'economy' });
-  const mystifly = makeFlight({ provider: 'mystifly', price: 1200, cabin: 'business' });
-  const { flights } = aggregateProviderOffers([duffel, mystifly]);
-  assertEqual(flights.length, 2, 'Should return 2 flights (different cabins)');
-}
-
-// ── Test 9: Provider failure — one returns empty → other provider shown ──
-console.log('\nTest 9: Provider failure — only one provider returns offers');
+// ── Test 4: One provider fails → other provider offers still shown ──
+console.log('\nTest 4: Provider failure — only one provider returns offers');
 {
   const duffel = makeFlight({ provider: 'duffel', price: 820 });
   // Mystifly failed — no offers
   const { flights, stats } = aggregateProviderOffers([duffel]);
   assertEqual(flights.length, 1, 'Should return 1 flight from successful provider');
   assertEqual(flights[0].provider, 'duffel', 'Duffel offer should be present');
-  assertEqual(stats.duplicateGroupsFound, 0, 'No duplicate groups (only one provider)');
+  assertEqual(stats.duplicateGroupsFound, 0, 'No duplicate groups (APPEND_ALL never groups)');
 }
 
-// ── Test 10: Aggregated card booking uses correct provider offer ID ──
-console.log('\nTest 10: Booking uses selected provider offer ID');
+// ── Test 5: Booking Duffel offer uses Duffel providerOfferId ──
+console.log('\nTest 5: Duffel offer preserves providerOfferId');
 {
   const duffelOfferId = 'off_duffel_abc123';
-  const mystiflyOfferId = 'off_mystifly_xyz789';
   const duffel = makeFlight({ provider: 'duffel', price: 850, providerOfferId: duffelOfferId });
-  const mystifly = makeFlight({ provider: 'mystifly', price: 820, providerOfferId: mystiflyOfferId });
-  const { flights } = aggregateProviderOffers([duffel, mystifly]);
-  assertEqual(flights.length, 1, 'Should return 1 flight');
-  assertEqual(flights[0].providerOfferId, mystiflyOfferId, 'Should use Mystifly offer ID (cheaper)');
-  assertEqual(flights[0].provider, 'mystifly', 'Provider should be mystifly');
-  // Simulate what booking flow would do:
-  const selectedOffer = flights[0];
-  assert(selectedOffer.providerOfferId === mystiflyOfferId, 'Booking should use selected provider offer ID');
+  const { flights } = aggregateProviderOffers([duffel]);
+  assertEqual(flights[0].providerOfferId, duffelOfferId, 'Duffel providerOfferId preserved');
+  assertEqual(flights[0].provider, 'duffel', 'Provider identity preserved');
 }
 
-// ── Bonus: Duplicate key builder tests ──
-console.log('\nBonus: Duplicate key builder');
+// ── Test 6: Booking Mystifly offer uses Mystifly providerOfferId ──
+console.log('\nTest 6: Mystifly offer preserves providerOfferId');
+{
+  const mystiflyOfferId = 'V1~mystifly_xyz789';
+  const mystifly = makeFlight({ provider: 'mystifly', price: 820, providerOfferId: mystiflyOfferId });
+  const { flights } = aggregateProviderOffers([mystifly]);
+  assertEqual(flights[0].providerOfferId, mystiflyOfferId, 'Mystifly providerOfferId preserved');
+  assertEqual(flights[0].provider, 'mystifly', 'Provider identity preserved');
+}
+
+// ── Test 7: Existing scoring pipeline still runs (offers pass through) ──
+console.log('\nTest 7: All offers pass through to scoring pipeline');
+{
+  const offers = [
+    makeFlight({ provider: 'duffel', price: 800, flightNumber: 'AA100' }),
+    makeFlight({ provider: 'mystifly', price: 820, flightNumber: 'AA100' }),
+    makeFlight({ provider: 'duffel', price: 900, flightNumber: 'UA200' }),
+  ];
+  const { flights } = aggregateProviderOffers(offers);
+  assertEqual(flights.length, 3, 'All 3 offers should pass through');
+}
+
+// ── Test 8: Existing labels still apply (provider data preserved) ──
+console.log('\nTest 8: Flight data preserved for labeling/scoring');
+{
+  const flight = makeFlight({
+    provider: 'duffel', price: 800,
+    checked: 2, carryOn: 1,
+    refundable: true, changeable: true,
+  });
+  const { flights } = aggregateProviderOffers([flight]);
+  assertEqual(flights[0].baggage.checked, 2, 'Baggage data preserved');
+  assertEqual(flights[0].fareRules.refundable, true, 'Fare rules preserved');
+  assertEqual(flights[0].fareRules.changeable, true, 'Changeability preserved');
+}
+
+// ── Test 9: No lowest-fare aggregation filter runs ──
+console.log('\nTest 9: No fare-based filtering');
+{
+  const cheap = makeFlight({ provider: 'duffel', price: 300 });
+  const expensive = makeFlight({ provider: 'mystifly', price: 3000 });
+  const { flights } = aggregateProviderOffers([cheap, expensive]);
+  assertEqual(flights.length, 2, 'Both cheap and expensive offers retained');
+}
+
+// ── Test 10: No baggage/rules winner selection runs ──
+console.log('\nTest 10: No winner selection based on baggage or rules');
+{
+  const goodBaggage = makeFlight({ provider: 'duffel', price: 820, checked: 2, carryOn: 1 });
+  const noBaggage = makeFlight({ provider: 'mystifly', price: 820, checked: 0, carryOn: 0 });
+  const refundable = makeFlight({ provider: 'duffel', price: 900, refundable: true, changeable: true });
+  const nonRefundable = makeFlight({ provider: 'mystifly', price: 900, refundable: false, changeable: false });
+  const { flights } = aggregateProviderOffers([goodBaggage, noBaggage, refundable, nonRefundable]);
+  assertEqual(flights.length, 4, 'All 4 offers retained regardless of baggage/rules');
+}
+
+// ── Test 11: No aggregationMeta attached (no winner selection) ──
+console.log('\nTest 11: No aggregationMeta attached to any offer');
+{
+  const duffel = makeFlight({ provider: 'duffel', price: 850 });
+  const mystifly = makeFlight({ provider: 'mystifly', price: 820 });
+  const { flights } = aggregateProviderOffers([duffel, mystifly]);
+  assert(flights[0].aggregationMeta === undefined, 'First offer should have no aggregationMeta');
+  assert(flights[1].aggregationMeta === undefined, 'Second offer should have no aggregationMeta');
+}
+
+// ── Test 12: Empty input ──
+console.log('\nTest 12: Empty input returns empty output');
+{
+  const { flights, stats } = aggregateProviderOffers([]);
+  assertEqual(flights.length, 0, 'Should return 0 flights');
+  assertEqual(stats.totalOffersBeforeAggregation, 0, 'Before: 0');
+  assertEqual(stats.totalOffersAfterAggregation, 0, 'After: 0');
+}
+
+// ── Bonus: Duplicate key builder still works ──
+console.log('\nBonus: Duplicate key builder (utility)');
 {
   const flight = makeFlight({ provider: 'duffel', price: 820 });
   const key = buildDuplicateKey(flight);
@@ -240,11 +250,6 @@ console.log('\nBonus: Duplicate key builder');
   assert(key.includes('DFW'), 'Key should include origin');
   assert(key.includes('LHR'), 'Key should include destination');
   assert(key.includes('economy'), 'Key should include cabin');
-
-  // Same flight from different providers should produce same key
-  const duffelFlight = makeFlight({ provider: 'duffel', price: 850 });
-  const mystiflyFlight = makeFlight({ provider: 'mystifly', price: 820 });
-  assertEqual(buildDuplicateKey(duffelFlight), buildDuplicateKey(mystiflyFlight), 'Same itinerary should produce same key');
 }
 
 // ── Bonus: Flight number normalization ──
@@ -264,8 +269,10 @@ console.log('\nBonus: Aggregation stats');
   const unique = makeFlight({ provider: 'duffel', price: 900, flightNumber: 'UA456', origin: 'JFK', destination: 'CDG' });
   const { stats } = aggregateProviderOffers([duffel, mystifly, unique]);
   assertEqual(stats.totalOffersBeforeAggregation, 3, 'Before: 3 offers');
-  assertEqual(stats.totalOffersAfterAggregation, 2, 'After: 2 offers');
-  assertEqual(stats.duplicateGroupsFound, 1, '1 duplicate group');
+  assertEqual(stats.totalOffersAfterAggregation, 3, 'After: 3 offers (no dedup)');
+  assertEqual(stats.duplicateGroupsFound, 0, 'No duplicate groups (APPEND_ALL)');
+  assertEqual(stats.providerCounts['duffel'], 2, 'Duffel: 2 offers');
+  assertEqual(stats.providerCounts['mystifly'], 1, 'Mystifly: 1 offer');
 }
 
 // ═══════════════════════════════════════════════

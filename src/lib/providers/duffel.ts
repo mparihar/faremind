@@ -401,7 +401,7 @@ export async function listOffers(
 export async function getOffer(offerId: string): Promise<DuffelOffer> {
   return duffelRequest<DuffelOffer>({
     method: 'GET',
-    path: `/air/offers/${offerId}`,
+    path: `/air/offers/${offerId}?return_available_services=true`,
   });
 }
 

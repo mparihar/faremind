@@ -505,10 +505,8 @@ function PaymentFormInner() {
       store.setPaymentStatus('succeeded');
       useOfferSessionStore.getState().markBooked();
 
-      // Clear agent context after successful booking
-      if (agentCtx) {
-        sessionStorage.removeItem('agentBookingContext');
-      }
+      // Don't clear agent context here — keep it so agent navbar stays
+      // visible on the confirm page. Cleared when navigating back to portal.
 
       router.push('/checkout/confirm');
     } catch (err) {

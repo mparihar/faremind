@@ -3,7 +3,7 @@
 import { useState, useEffect, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import { apiUrl } from '@/lib/api-client';
+
 import {
   Search,
   Filter,
@@ -70,7 +70,7 @@ export default function AgentBookingsPage() {
       if (search) params.set('search', search);
       if (status) params.set('status', status);
 
-      const res = await fetch(apiUrl(`/api/agent/bookings?${params}`), {
+      const res = await fetch(`/api/agent/bookings?${params}`, {
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
       if (res.ok) {

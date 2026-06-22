@@ -395,7 +395,7 @@ export default function AgentNewBookingPage() {
               </p>
             </div>
           )}
-          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-xl">
+          <div className="bg-white rounded-2xl border border-slate-200/60 shadow-xl overflow-visible">
             <SearchForm
               variant="hero"
               onBeforeSearch={handleBeforeSearch}

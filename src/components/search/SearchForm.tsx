@@ -457,9 +457,9 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
       : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-[1fr_auto_1fr_1fr_auto_auto]';
 
   return (
-    <div className={cn('w-full', isCompact ? '' : 'max-w-7xl mx-auto')}>
+    <div className={cn('w-full overflow-visible', isCompact ? '' : 'max-w-7xl mx-auto')}>
       <div className={cn(
-        'bg-white/80 backdrop-blur-xl shadow-2xl shadow-black/5 border border-white/60',
+        'bg-white/80 backdrop-blur-xl shadow-2xl shadow-black/5 border border-white/60 overflow-visible',
         isCompact ? 'p-2 rounded-xl' : 'px-4 py-3 rounded-2xl'
       )}>
 
@@ -570,7 +570,7 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
                 <motion.div
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="absolute top-full mt-2 left-0 w-[calc(100vw-2rem)] sm:min-w-[360px] sm:w-auto bg-white rounded-2xl border border-gray-200/80 p-2 z-[200] shadow-2xl shadow-black/15 ring-1 ring-black/5 max-h-80 overflow-y-auto"
+                  className="absolute top-full mt-2 left-0 w-[calc(100vw-2rem)] sm:min-w-[360px] sm:w-auto bg-white rounded-2xl border border-gray-200/80 p-2 z-[200] shadow-2xl shadow-black/15 ring-1 ring-black/5 max-h-48 overflow-y-auto"
                 >
                   {results.map((airport) => {
                     const location = [airport.city, airport.state, airport.country].filter(Boolean).join(', ');
@@ -634,7 +634,7 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
                 <motion.div
                   initial={{ opacity: 0, y: -8 }}
                   animate={{ opacity: 1, y: 0 }}
-                  className="absolute top-full mt-2 left-0 w-[calc(100vw-2rem)] sm:min-w-[360px] sm:w-auto bg-white rounded-2xl border border-gray-200/80 p-2 z-[200] shadow-2xl shadow-black/15 ring-1 ring-black/5 max-h-80 overflow-y-auto"
+                  className="absolute top-full mt-2 left-0 w-[calc(100vw-2rem)] sm:min-w-[360px] sm:w-auto bg-white rounded-2xl border border-gray-200/80 p-2 z-[200] shadow-2xl shadow-black/15 ring-1 ring-black/5 max-h-48 overflow-y-auto"
                 >
                   {results.map((airport) => {
                     const location = [airport.city, airport.state, airport.country].filter(Boolean).join(', ');

@@ -264,6 +264,53 @@ export async function POST(req: NextRequest) {
 
     const isRoundTrip = !!sourceRoundTrip;
 
+    // ── Provider Detection ──────────────────────────────────────────────────
+    // sourceProvider = the provider who sourced this flight (for business/support).
+    //   → This is stored in the DB, shown in admin console, used for support tickets.
+    //   → If Mystifly sourced the data, support goes to Mystifly — even if the
+    //     underlying offer happens to be a Duffel ID (sandbox behavior).
+    //
+    // routingProvider = which API to call for technical operations (booking, ancillaries).
+    //   → Determined by the offer ID format (off_ = Duffel API, V1~ = Mystifly API).
+    //   → This is used ONLY for API routing, never stored as the business provider.
+    const sourceProvider: string = (
+      sourceFlight?.provider ?? sourceRoundTrip?.provider ?? 'duffel'
+    ).toLowerCase();
+
+    // Technical routing: which API handles this offer ID?
+    let routingProvider: string = sourceProvider;
+
+    // ── Provider / OfferId Mismatch Safety Check ─────────────────────────
+    // Duffel offer IDs always start with 'off_'. Mystifly FareSourceCodes
+    // never start with 'off_' (they look like 'V1~...' or similar encoded strings).
+    // If the source provider is 'mystifly' but the offerId is a Duffel ID,
+    // route to Duffel API — but keep sourceProvider as 'mystifly' for business records.
+    if (routingProvider === 'mystifly' && offerId?.startsWith('off_')) {
+      console.warn(
+        `[Checkout] ⚠️ Routing mismatch: sourceProvider=${sourceProvider} but offerId=${offerId?.slice(0, 30)} is a Duffel ID. Routing to Duffel API (business provider remains: ${sourceProvider}).`
+      );
+      routingProvider = 'duffel';
+    }
+    // Reverse check: Duffel provider with non-Duffel offer ID → route to Mystifly
+    if (routingProvider === 'duffel' && offerId && !offerId.startsWith('off_')) {
+      console.warn(
+        `[Checkout] ⚠️ Routing mismatch: sourceProvider=${sourceProvider} but offerId=${offerId?.slice(0, 30)} is NOT a Duffel ID. Routing to Mystifly API (business provider remains: ${sourceProvider}).`
+      );
+      routingProvider = 'mystifly';
+    }
+
+    const isMystifly = routingProvider === 'mystifly';
+    const isDuffel = !isMystifly; // Default to Duffel for unknown providers
+
+    console.log(`[Checkout] Source Provider: ${sourceProvider} | Routing Provider: ${routingProvider} | Round-trip: ${isRoundTrip} | Offer: ${offerId?.slice(0, 30)}...`);
+
+    // Mystifly uses FareSourceCode (stored as providerOfferId) instead of Duffel offer IDs.
+    // The FareSourceCode is passed through selectedFare.offerId or the providerOfferId field.
+    const fareSourceCode = isMystifly ? offerId : null;
+
+    // Backend URL for Mystifly proxy calls
+    const BACKEND_URL = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
+
     // ══════════════════════════════════════════════════════════════════════════
     // PHASE 1 — Financial Breakdown & Pricing Validation
     // ══════════════════════════════════════════════════════════════════════════
@@ -294,14 +341,18 @@ export async function POST(req: NextRequest) {
     const frontendBaggageFees = pricing?.baggageFees ?? 0;
     const frontendTotal = pricing?.total ?? selectedFare?.totalPrice ?? 0;
 
-    // ── Compute base fare from frontend per-passenger breakdown ────────────
-    // The frontend rounds per-passenger fares individually (selectedFare.basePrice
-    // × passenger count), while providerTotalFare + markup is a single sum.
-    // Using the frontend's per-passenger subtotals ensures the backend grand total
-    // matches the frontend's display total exactly (no rounding drift).
-    const frontendFareBase: number = Array.isArray(pricing?.perPassenger)
-      ? pricing.perPassenger.reduce((s: number, p: any) => s + (p.subtotal ?? 0), 0)
-      : (selectedFare?.basePrice ?? 0) * passengers.length;
+    // ── Compute base fare from frontend pricing breakdown ──────────────
+    // Prefer pricing.fareTotal which uses the exact all-passenger total
+    // from the provider API (selectedFare.totalPrice). Avoid summing
+    // per-passenger subtotals because each is individually rounded from
+    // basePrice, which can drift by $1+ on multi-pax bookings where
+    // totalPrice ≠ basePrice × passengerCount (e.g., child discounts).
+    const frontendFareBase: number =
+      (typeof pricing?.fareTotal === 'number' && pricing.fareTotal > 0)
+        ? pricing.fareTotal
+        : Array.isArray(pricing?.perPassenger)
+          ? pricing.perPassenger.reduce((s: number, p: any) => s + (p.subtotal ?? 0), 0)
+          : (selectedFare?.basePrice ?? 0) * passengers.length;
 
     // For the PROVIDER payment, we still use the raw providerTotalFare.
     // This is the true amount Duffel expects — independent of our markup/rounding.
@@ -427,6 +478,7 @@ export async function POST(req: NextRequest) {
 
     let duffelOrder: DuffelOrder | null = null;
     let duffelPassengerMap: Record<string, string> = {};
+    let mystiflyBookingResult: { uniqueId: string; status: string } | null = null;
     let providerPayableAmount = financials.providerPayableTotal;
     let providerCurrency = currency;
     let offer: any = null;
@@ -446,6 +498,11 @@ export async function POST(req: NextRequest) {
       }
     };
 
+
+    // ══════════════════════════════════════════════════════════════════════════
+    // PHASE 2a — DUFFEL Order Creation
+    // ══════════════════════════════════════════════════════════════════════════
+    if (isDuffel) {
     try {
         // Normalize phone to E.164 format for Duffel
         // Duffel requires: +{country_code}{number}, no spaces/dashes, max 15 digits after +
@@ -908,10 +965,192 @@ export async function POST(req: NextRequest) {
           { status: 502 }
         );
       }
+    } // end if (isDuffel)
 
-    // Use real Duffel PNR if available, otherwise generate local reference
+    // ══════════════════════════════════════════════════════════════════════════
+    // PHASE 2b — MYSTIFLY Order Creation
+    // ══════════════════════════════════════════════════════════════════════════
+    // Mystifly uses a 3-step flow: Revalidate → Book → OrderTicket
+    // FareSourceCode is the offer identifier (stored as providerOfferId).
+    else if (isMystifly) {
+      try {
+        if (!fareSourceCode) {
+          await cancelStripeAuth('missing Mystifly FareSourceCode');
+          return NextResponse.json(
+            { error: 'No fare source code found for Mystifly booking.', errorCode: 'MISSING_FARE_SOURCE_CODE' },
+            { status: 400 }
+          );
+        }
+
+        const primaryPaxForMystifly = passengers[0] ?? {};
+
+        // ── Step 1: Revalidate fare ──────────────────────────────────────
+        console.log(`[Mystifly] Step 1/3: Revalidating fare...`);
+        const revalRes = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fareSourceCode }),
+        });
+        const revalData = await revalRes.json();
+
+        if (!revalRes.ok || !revalData.success) {
+          await cancelStripeAuth('Mystifly revalidation failed');
+          const customerMessage = 'This fare is no longer available. Please search again for updated pricing. Your card was not charged.';
+          await logBookingFailure({
+            passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
+            paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
+            currency, errorCode: 'MYSTIFLY_REVALIDATION_FAILED',
+            errorMessage: revalData.error || 'Revalidation failed',
+            customerMessage, failureStage: 'MYSTIFLY_REVALIDATION',
+          });
+          return NextResponse.json(
+            { error: revalData.error || 'Fare revalidation failed', errorCode: 'REVALIDATION_FAILED', customerMessage },
+            { status: 422 }
+          );
+        }
+
+        // Price-change guard: compare revalidated fare with stored fare
+        if (revalData.totalFare != null) {
+          const revalidatedFare = revalData.totalFare;
+          const priceCheck = checkProviderPriceChange(
+            sourceFlight?.providerTotalFare ?? sourceRoundTrip?.providerTotalFare ?? null,
+            revalidatedFare
+          );
+          if (!priceCheck.valid) {
+            console.warn(`[Mystifly] ❌ ${priceCheck.error}`);
+            await cancelStripeAuth('Mystifly price changed');
+            return NextResponse.json(
+              {
+                error: 'The flight price has changed since you selected it. Please search again for updated pricing.',
+                errorCode: priceCheck.errorCode,
+              },
+              { status: 409 }
+            );
+          }
+          providerPayableAmount = revalidatedFare;
+          providerCurrency = revalData.currency || currency;
+        }
+
+        console.log(`[Mystifly] ✅ Revalidation passed — fare: $${providerPayableAmount}`);
+
+        // ── Step 2: Create booking (PNR) ─────────────────────────────────
+        console.log(`[Mystifly] Step 2/3: Creating booking...`);
+        const bookRes = await fetch(`${BACKEND_URL}/api/mystifly/book`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            fareSourceCode,
+            passengers: passengers.map((p: any) => ({
+              firstName: p.firstName,
+              lastName: p.lastName,
+              gender: p.gender,
+              dateOfBirth: p.dateOfBirth,
+              type: p.type,
+              nationality: p.nationality,
+              passportNumber: p.passportNumber,
+              passportExpiry: p.passportExpiry,
+              passportCountry: p.passportCountry,
+            })),
+            email: primaryPaxForMystifly.email || 'guest@faremind.ai',
+            phone: primaryPaxForMystifly.phone || '0000000000',
+            clientReferenceNo: sessionId || undefined,
+          }),
+        });
+        const bookData = await bookRes.json();
+
+        if (!bookRes.ok || !bookData.success || !bookData.uniqueId) {
+          await cancelStripeAuth('Mystifly booking failed');
+          const errMsg = bookData.error || 'Booking creation failed';
+          const customerMessage = `${errMsg}. Booking could not be completed at this time. Your card was not charged. Please try again.`;
+          await logBookingFailure({
+            passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
+            paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
+            currency, errorCode: 'MYSTIFLY_BOOKING_FAILED',
+            errorMessage: errMsg, customerMessage,
+            failureStage: 'MYSTIFLY_BOOKING',
+          });
+          return NextResponse.json(
+            { error: errMsg, errorCode: 'PROVIDER_ORDER_FAILED', customerMessage },
+            { status: 502 }
+          );
+        }
+
+        mystiflyBookingResult = {
+          uniqueId: bookData.uniqueId,
+          status: bookData.status,
+        };
+
+        console.log(`[Mystifly] ✅ Booking created — MFRef: ${mystiflyBookingResult.uniqueId}`);
+
+        // ── Stripe Capture ───────────────────────────────────────────────
+        // PNR is created — now charge the card.
+        if (stripeVerified && paymentIntentId) {
+          try {
+            const captured = await stripe.paymentIntents.capture(paymentIntentId);
+            console.log(
+              `[Stripe] ✅ Payment captured: ${captured.id} — $${(captured.amount / 100).toFixed(2)} ${captured.currency}`
+            );
+          } catch (captureErr: any) {
+            console.error(
+              `[Stripe] ❌ CRITICAL: Capture failed for ${paymentIntentId} after Mystifly booking ${mystiflyBookingResult.uniqueId}: ${captureErr.message}`
+            );
+            // Continue — the booking exists. A background job should retry capture.
+          }
+        }
+
+        // ── Step 3: Issue ticket ─────────────────────────────────────────
+        // Ticket issuance after payment. Non-blocking — if it fails,
+        // the booking still exists and ticketing can be retried by admin.
+        console.log(`[Mystifly] Step 3/3: Issuing ticket...`);
+        try {
+          const ticketRes = await fetch(`${BACKEND_URL}/api/mystifly/order-ticket`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              uniqueId: mystiflyBookingResult.uniqueId,
+              fareSourceCode,
+              clientReferenceNo: sessionId || undefined,
+            }),
+          });
+          const ticketData = await ticketRes.json();
+
+          if (ticketRes.ok && ticketData.success) {
+            console.log(`[Mystifly] ✅ Ticket issued for MFRef: ${mystiflyBookingResult.uniqueId}`);
+          } else {
+            console.warn(`[Mystifly] ⚠️ Ticketing failed (non-blocking): ${ticketData.error || 'unknown'}`);
+            // Don't fail the booking — ticketing can be retried by admin
+          }
+        } catch (ticketErr: any) {
+          console.warn(`[Mystifly] ⚠️ Ticketing error (non-blocking): ${ticketErr.message}`);
+        }
+
+      } catch (mystiflyErr: any) {
+        console.error('[Mystifly] ❌ Order creation failed:', mystiflyErr.message);
+        await cancelStripeAuth(`Mystifly order failed: ${mystiflyErr.message}`);
+
+        const customerMessage = `The airline was unable to process this booking. Your card was not charged. Please try again.`;
+        await logBookingFailure({
+          passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
+          paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
+          currency, errorCode: 'PROVIDER_ORDER_FAILED',
+          errorMessage: mystiflyErr.message || 'Unknown Mystifly error',
+          customerMessage, failureStage: 'MYSTIFLY_ORDER_CREATION',
+        });
+
+        return NextResponse.json(
+          {
+            error: `Booking failed: ${mystiflyErr.message}`,
+            errorCode: 'PROVIDER_ORDER_FAILED',
+            customerMessage,
+          },
+          { status: 502 }
+        );
+      }
+    } // end else if (isMystifly)
+
+    // Use real provider PNR if available, otherwise generate local reference
     const masterBookingReference = generateRef();
-    const masterPnr = duffelOrder?.booking_reference || generateRef();
+    const masterPnr = duffelOrder?.booking_reference || mystiflyBookingResult?.uniqueId || generateRef();
 
     // ── Derive journey source data ───────────────────────────────────────────
     const outSegs: any[] = isRoundTrip
@@ -1019,7 +1258,7 @@ export async function POST(req: NextRequest) {
           providerPayableTotal: providerPayableAmount,
           providerCurrency: providerCurrency,
           providerOfferId: offerId ?? null,
-          providerOrderId: duffelOrder?.id ?? null,
+          providerOrderId: duffelOrder?.id ?? mystiflyBookingResult?.uniqueId ?? null,
 
           // Offer lifecycle timestamps
           offerProvidedAt: offerProvidedAt ? new Date(offerProvidedAt) : null,
@@ -1038,8 +1277,8 @@ export async function POST(req: NextRequest) {
           // Financial — Seat/Ancillary
           seatServiceTotal: financials.seatServiceTotal,
 
-          primaryProvider: 'duffel',
-          rawProviderPayload: { sourceFlight: sourceFlight ?? null, sourceRoundTrip: sourceRoundTrip ?? null },
+          primaryProvider: sourceProvider,
+          rawProviderPayload: { sourceFlight: sourceFlight ?? null, sourceRoundTrip: sourceRoundTrip ?? null, routingProvider },
 
           // Capabilities
           providerCapabilities: {
@@ -1175,7 +1414,7 @@ export async function POST(req: NextRequest) {
           isRoundTrip,
           origin: originAirport,
           destination: destinationAirport,
-          provider: 'duffel',
+          provider: sourceProvider,
           outboundJourneyId: outJourney.id,
           returnJourneyId: retJourney?.id ?? null,
         },
@@ -1192,7 +1431,7 @@ export async function POST(req: NextRequest) {
             status: entry.status,
             provider: entry.provider,
             // Store real Duffel order ID so post-booking operations work
-            providerOrderId: duffelOrder?.id ?? entry.providerOrderId ?? null,
+            providerOrderId: duffelOrder?.id ?? mystiflyBookingResult?.uniqueId ?? entry.providerOrderId ?? null,
             airlineCode: entry.airlineCode ?? null,
             airlineName: entry.airlineName ?? null,
             displayLabel: entry.displayLabel,
@@ -1492,7 +1731,7 @@ export async function POST(req: NextRequest) {
           baseFare: (pricing?.perPassenger?.[i]?.baseFare ?? 0) + (pricing?.perPassenger?.[i]?.taxes ?? 0),
         }));
         const feeCtx = {
-          provider: 'duffel',
+          provider: sourceProvider,
           tripType: isRoundTrip ? 'ROUND_TRIP' : 'ONE_WAY',
           cabin: (selectedFare?.cabin ?? 'economy').toLowerCase(),
           fareClass: selectedFare?.name ?? undefined,

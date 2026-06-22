@@ -3,7 +3,7 @@
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import { apiUrl } from '@/lib/api-client';
+
 import {
   LayoutDashboard,
   PlaneTakeoff,
@@ -70,7 +70,7 @@ export default function AgentDashboardPage() {
   async function fetchDashboard() {
     setLoading(true);
     try {
-      const res = await fetch(apiUrl('/api/agent/dashboard'), {
+      const res = await fetch('/api/agent/dashboard', {
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
       if (res.ok) {

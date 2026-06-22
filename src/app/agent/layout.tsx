@@ -4,18 +4,16 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { RefreshCw } from 'lucide-react';
-import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
 import SessionExpiryWarning from '@/components/session/SessionExpiryWarning';
-import AgentSidebar from '@/components/agent/AgentSidebar';
+import AgentTopNavbar from '@/components/agent/AgentTopNavbar';
 
 export default function AgentLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
   const pathname = usePathname();
   const { user, loadSession, logoutWithServerRevoke } = useAuthStore();
   const [checking, setChecking] = useState(true);
-  const [collapsed, setCollapsed] = useState(false);
   const [showExpiryWarning, setShowExpiryWarning] = useState(false);
 
   const isLoginPage = pathname === '/agent/login';
@@ -102,17 +100,11 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   if (!user || user.role !== 'FAREMIND_AGENT') return null;
 
   return (
-    <div className="flex min-h-screen bg-slate-950">
-      <AgentSidebar
-        collapsed={collapsed}
-        onToggleCollapse={() => setCollapsed(!collapsed)}
-      />
+    <div className="min-h-screen bg-slate-950">
+      <AgentTopNavbar />
 
-      {/* Main content */}
-      <main className={cn(
-        'flex-1 overflow-auto transition-all duration-300',
-        collapsed ? 'ml-[68px]' : 'ml-[240px]'
-      )}>
+      {/* Main content — full width, below the fixed navbar (h-16 = 64px) */}
+      <main className="pt-16">
         {children}
       </main>
 

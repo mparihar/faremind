@@ -172,6 +172,18 @@ export function normalizeDuffelBagServices(offer: DuffelOffer): NormalizedAncill
   const services = offer.available_services;
   if (!services || services.length === 0) return [];
 
+  // Build a lookup: segmentId → "ORD → DEL" route label
+  const segmentRouteMap = new Map<string, string>();
+  for (const slice of offer.slices ?? []) {
+    for (const seg of slice.segments ?? []) {
+      const origin = seg.origin?.iata_code ?? '';
+      const dest = seg.destination?.iata_code ?? '';
+      if (origin && dest) {
+        segmentRouteMap.set(seg.id, `${origin} → ${dest}`);
+      }
+    }
+  }
+
   const result: NormalizedAncillary[] = [];
 
   for (const svc of services) {
@@ -185,6 +197,12 @@ export function normalizeDuffelBagServices(offer: DuffelOffer): NormalizedAncill
     const metadata = raw.metadata ?? {};
     const bagType = metadata.type ?? 'checked';
     const designation = metadata.designation; // "first", "second", etc.
+
+    const passengerId = raw.passenger_ids?.[0] ?? null;
+    const segmentId = raw.segment_ids?.[0] ?? null;
+
+    // Resolve segment to route label (e.g., "ORD → DEL")
+    const routeLabel = segmentId ? segmentRouteMap.get(segmentId) : null;
 
     // Determine label
     let label = 'Add checked bag';
@@ -200,13 +218,16 @@ export function normalizeDuffelBagServices(offer: DuffelOffer): NormalizedAncill
       description = '3rd checked bag · 23 kg (50 lbs)';
     }
 
-    // Weight info from metadata if available
-    if (metadata.maximum_weight_kg) {
-      description = `${description.split('·')[0]}· ${metadata.maximum_weight_kg} kg`;
+    // Append route label to distinguish outbound vs return
+    if (routeLabel) {
+      label = `${label} · ${routeLabel}`;
+      description = `${description} · ${routeLabel}`;
     }
 
-    const passengerId = raw.passenger_ids?.[0] ?? null;
-    const segmentId = raw.segment_ids?.[0] ?? null;
+    // Weight info from metadata if available
+    if (metadata.maximum_weight_kg) {
+      description = `${description.split('·')[0]}· ${metadata.maximum_weight_kg} kg${routeLabel ? ` · ${routeLabel}` : ''}`;
+    }
 
     result.push({
       provider: 'DUFFEL',

@@ -59,6 +59,22 @@ export async function POST(request: NextRequest) {
           // Amadeus doesn't return refund in DELETE response
           const cancellationFee = Number(booking.cancellationFee || 0);
           refundAmount = Number(booking.totalPrice) - cancellationFee;
+        } else if (booking.provider === 'MYSTIFLY') {
+          const backendUrl = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
+          const res = await fetch(`${backendUrl}/api/mystifly/cancel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uniqueId: booking.providerBookingId }),
+          });
+          if (res.ok) {
+            providerCancelled = true;
+            // Mystifly cancellation refund amount depends on airline fare rules
+            const cancellationFee = Number(booking.cancellationFee || 0);
+            refundAmount = Number(booking.totalPrice) - cancellationFee;
+          } else {
+            const errData = await res.json().catch(() => ({}));
+            console.error(`[Cancel] Mystifly cancellation failed:`, errData.error || res.status);
+          }
         }
       } catch (error) {
         console.error(`[Cancel] Provider cancellation failed:`, error);

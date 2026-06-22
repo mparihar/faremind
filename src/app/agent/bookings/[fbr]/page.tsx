@@ -3,7 +3,7 @@
 import { useState, useEffect, use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
-import { apiUrl } from '@/lib/api-client';
+
 import {
   ArrowLeft,
   Plane,
@@ -67,7 +67,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
   async function fetchBooking() {
     setLoading(true);
     try {
-      const res = await fetch(apiUrl(`/api/agent/bookings/${fbr}`), {
+      const res = await fetch(`/api/agent/bookings/${fbr}`, {
         headers: { Authorization: `Bearer ${sessionToken}` },
       });
       if (res.ok) {
@@ -87,7 +87,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
     setSaving(true);
     setActionMsg(null);
     try {
-      const res = await fetch(apiUrl('/api/agent/passenger-update'), {
+      const res = await fetch('/api/agent/passenger-update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
         body: JSON.stringify({ bookingReference: fbr, passengerId, updates: editValues }),
@@ -111,7 +111,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
     setSaving(true);
     setActionMsg(null);
     try {
-      const res = await fetch(apiUrl('/api/agent/cancellation-request'), {
+      const res = await fetch('/api/agent/cancellation-request', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
         body: JSON.stringify({ bookingReference: fbr, reason: cancelReason }),
@@ -135,7 +135,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
     setSaving(true);
     setActionMsg(null);
     try {
-      const res = await fetch(apiUrl('/api/agent/resend-itinerary'), {
+      const res = await fetch('/api/agent/resend-itinerary', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
         body: JSON.stringify({ bookingReference: fbr }),

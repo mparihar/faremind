@@ -70,7 +70,7 @@ export async function GET(request: NextRequest) {
     }
 
     if (provider === 'mystifly') {
-      return handleMystifly(offerId, cacheKey);
+      return await handleMystifly(offerId, cacheKey);
     }
 
     return NextResponse.json(
@@ -122,10 +122,17 @@ async function handleDuffel(offerId: string, cacheKey: string) {
   });
 }
 
-// ── Mystifly Handler (Stub) ───────────────────────────────────────────────────
+// ── Mystifly Handler ──────────────────────────────────────────────────────────
 
-function handleMystifly(offerId: string, cacheKey: string) {
-  // Mystifly ancillary API support is limited in demo mode.
+async function handleMystifly(offerId: string, cacheKey: string) {
+  // Mystifly sandbox returns Duffel-format offers (off_...).
+  // Route those through the Duffel ancillary handler to get real extra baggage pricing.
+  if (offerId.startsWith('off_')) {
+    console.log(`[Ancillaries] Mystifly offer ${offerId} is a Duffel-format ID — routing to Duffel handler`);
+    return handleDuffel(offerId, cacheKey);
+  }
+
+  // Real Mystifly offers — ancillary API not yet integrated.
   // Return empty arrays — UI shows "unavailable" message.
   const baggage: NormalizedAncillary[] = [];
   const meals: NormalizedAncillary[] = [];
