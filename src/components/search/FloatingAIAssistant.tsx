@@ -421,7 +421,7 @@ export default function FloatingAIAssistant({
 
   return (
     // Fixed bottom-left container
-    <div className={`fixed z-50 flex flex-col items-start gap-3 ${isAgentMode ? 'bottom-3 left-[320px]' : 'bottom-4 sm:bottom-6 left-4 sm:left-56'}`}>
+    <div className="fixed z-50 flex flex-col items-start gap-3 bottom-4 sm:bottom-6 left-4 sm:left-6">
 
       {/* ── Expanded Chat Panel ──────────────────────────────────────────── */}
       <AnimatePresence>
@@ -1045,119 +1045,97 @@ export default function FloatingAIAssistant({
         )}
       </AnimatePresence>
 
-      {/* ── Trigger Button ───────────────────────────────────────────────── */}
+      {/* ── Trigger Button — unified teal style ───────────────────────── */}
       <div className="relative">
-
-        {/* Outer glow pulse rings */}
-        {!isOpen && (
-          <>
-            <motion.span
-              animate={{ scale: [1, 1.55], opacity: [0.22, 0] }}
-              transition={{ duration: 2.2, repeat: Infinity, ease: 'easeOut' }}
-              className="absolute inset-0 rounded-2xl pointer-events-none"
-              style={{ background: 'linear-gradient(135deg, #111111, #222222)' }}
-            />
-            <motion.span
-              animate={{ scale: [1, 1.25], opacity: [0.15, 0] }}
-              transition={{ duration: 2.2, repeat: Infinity, ease: 'easeOut', delay: 0.6 }}
-              className="absolute inset-0 rounded-2xl pointer-events-none"
-              style={{ background: 'linear-gradient(135deg, #111111, #222222)' }}
-            />
-          </>
-        )}
-
-        <motion.button
-          onClick={() => {
-            const willClose = isOpen;
-            if (willClose && bookingMode) {
-              setBookingMode(false);
-              resetBookingFlow();
-            }
-            if (willClose && manageBookingMode) {
-              setManageBookingMode(false);
-              setManageBookingIntent(null);
-            }
-            if (willClose && supportMode) {
-              setSupportMode(false);
-            }
-            setIsOpen(v => !v);
-          }}
-          title="FAREMIND Co-Pilot"
-          whileHover={{ scale: 1.05, y: -2 }}
-          whileTap={{ scale: 0.96 }}
-          className="relative flex items-center gap-0 h-12 rounded-2xl text-white overflow-hidden cursor-pointer select-none"
-          style={isOpen
-            ? { background: '#111111', boxShadow: 'none', border: '1px solid rgba(255,255,255,0.1)' }
-            : { background: '#000000', boxShadow: '0 6px 32px rgba(0,0,0,0.50), 0 2px 8px rgba(0,0,0,0.25), 0 0 0 1px rgba(255,255,255,0.06)' }
-          }
-        >
-          {/* Shimmer sweep */}
+        <AnimatePresence>
           {!isOpen && (
-            <motion.span
-              animate={{ x: ['-130%', '230%'] }}
-              transition={{ duration: 3, repeat: Infinity, ease: 'easeInOut', repeatDelay: 1.8 }}
-              className="absolute inset-0 bg-gradient-to-r from-transparent via-white/20 to-transparent skew-x-[-20deg] pointer-events-none"
-            />
-          )}
+            <motion.button
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => setIsOpen(true)}
+              className="relative flex items-center gap-2.5 h-11 pl-3 pr-4 rounded-2xl text-white overflow-visible cursor-pointer select-none backdrop-blur-xl"
+              style={{
+                background: 'linear-gradient(135deg, rgba(10,20,35,0.85) 0%, rgba(15,25,45,0.90) 100%)',
+                border: '1px solid rgba(0,180,190,0.35)',
+                boxShadow: '0 0 24px rgba(0,180,190,0.20), 0 4px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08)',
+              }}
+              title="FareMind AI Assistant"
+            >
+              {/* Outer glow pulse */}
+              <span className="absolute -inset-[2px] rounded-2xl pointer-events-none"
+                style={{ animation: 'aiGlowPulse 3s ease-in-out infinite', boxShadow: '0 0 18px rgba(0,180,190,0.30), 0 0 36px rgba(0,180,190,0.12)' }} />
 
-          {/* Orb icon area */}
-          <span className="relative flex items-center justify-center w-12 h-12 shrink-0">
-            {/* Inner orb glow */}
-            {!isOpen && (
-              <span className="absolute w-8 h-8 rounded-full opacity-40 blur-md"
-                style={{ background: 'radial-gradient(circle, #555555, #222222)' }} />
-            )}
-            <AnimatePresence mode="wait">
-              {isOpen ? (
-                <motion.span key="x"
-                  initial={{ rotate: -90, opacity: 0, scale: 0.7 }}
-                  animate={{ rotate: 0, opacity: 1, scale: 1 }}
-                  exit={{ rotate: 90, opacity: 0, scale: 0.7 }}
-                  transition={{ duration: 0.2 }}
-                  className="relative flex"
-                >
-                  <X className="w-4 h-4 text-violet-200" />
-                </motion.span>
-              ) : (
-                <motion.span key="bot"
-                  initial={{ scale: 0.5, opacity: 0 }}
-                  animate={{ scale: 1, opacity: 1 }}
-                  exit={{ scale: 0.5, opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="relative flex"
-                >
-                  <motion.span
-                    animate={{ y: [0, -1.5, 0] }}
-                    transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
-                  >
-                    <Bot className="w-5 h-5 text-white drop-shadow-sm" />
-                  </motion.span>
-                </motion.span>
-              )}
-            </AnimatePresence>
-          </span>
-
-          {/* Divider */}
-          <span className="w-px h-6 bg-white/20 shrink-0 -ml-2" />
-
-          {/* Label */}
-          <span className="px-4">
-            <span className="text-[13px] font-black tracking-tight text-white whitespace-nowrap">
-              {isOpen ? 'Close' : <><span>FARE</span><span style={{ color: '#009CA6' }}>MIND</span> AI</>}
-            </span>
-          </span>
-
-          {/* Active result live dot */}
-          {result && !isOpen && (
-            <span className="pr-3 pl-0 flex items-center">
+              {/* Shimmer sweep */}
               <motion.span
-                animate={{ scale: [1, 1.5, 1], opacity: [0.7, 1, 0.7] }}
-                transition={{ duration: 1.6, repeat: Infinity }}
-                className="w-2 h-2 rounded-full bg-white shrink-0 shadow-lg"
+                animate={{ x: ['-130%', '230%'] }}
+                transition={{ duration: 3.5, repeat: Infinity, ease: 'easeInOut', repeatDelay: 2.5 }}
+                className="absolute inset-0 rounded-2xl bg-gradient-to-r from-transparent via-white/10 to-transparent skew-x-[-20deg] pointer-events-none"
               />
-            </span>
+
+              {/* Icon with teal glow */}
+              <span className="relative flex items-center justify-center w-7 h-7 rounded-lg shrink-0"
+                style={{ background: 'linear-gradient(135deg, #009CA6 0%, #00b8b8 100%)' }}>
+                <motion.span
+                  animate={{ y: [0, -1, 0] }}
+                  transition={{ duration: 2.5, repeat: Infinity, ease: 'easeInOut' }}
+                  className="relative flex"
+                >
+                  <Bot className="w-3.5 h-3.5 text-white" />
+                </motion.span>
+              </span>
+
+              {/* Label */}
+              <span className="text-[12px] font-extrabold tracking-wide whitespace-nowrap">
+                <span className="text-white">FARE</span><span style={{ color: '#2ee8d6' }}>MIND</span>
+                <span className="text-white/50 ml-1 font-semibold text-[10px]">AI</span>
+              </span>
+
+              {/* Active result live dot */}
+              {result && (
+                <motion.span
+                  animate={{ scale: [1, 1.5, 1], opacity: [0.7, 1, 0.7] }}
+                  transition={{ duration: 1.6, repeat: Infinity }}
+                  className="w-2 h-2 rounded-full bg-[#2ee8d6] shrink-0 ml-1"
+                />
+              )}
+            </motion.button>
           )}
-        </motion.button>
+        </AnimatePresence>
+
+        {/* Close button when panel is open */}
+        <AnimatePresence>
+          {isOpen && (
+            <motion.button
+              initial={{ scale: 0.8, opacity: 0 }}
+              animate={{ scale: 1, opacity: 1 }}
+              exit={{ scale: 0.8, opacity: 0 }}
+              whileHover={{ scale: 1.05, y: -2 }}
+              whileTap={{ scale: 0.96 }}
+              onClick={() => {
+                if (bookingMode) { setBookingMode(false); resetBookingFlow(); }
+                if (manageBookingMode) { setManageBookingMode(false); setManageBookingIntent(null); }
+                if (supportMode) { setSupportMode(false); }
+                setIsOpen(false);
+              }}
+              className="relative flex items-center gap-2.5 h-11 pl-3 pr-4 rounded-2xl text-white overflow-visible cursor-pointer select-none backdrop-blur-xl"
+              style={{
+                background: 'linear-gradient(135deg, rgba(10,20,35,0.85) 0%, rgba(15,25,45,0.90) 100%)',
+                border: '1px solid rgba(0,180,190,0.35)',
+                boxShadow: '0 0 24px rgba(0,180,190,0.20), 0 4px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08)',
+              }}
+              title="Close AI Assistant"
+            >
+              <span className="relative flex items-center justify-center w-7 h-7 rounded-lg shrink-0"
+                style={{ background: 'linear-gradient(135deg, #009CA6 0%, #00b8b8 100%)' }}>
+                <X className="w-3.5 h-3.5 text-white" />
+              </span>
+              <span className="text-[12px] font-extrabold tracking-wide whitespace-nowrap text-white/70">Close</span>
+            </motion.button>
+          )}
+        </AnimatePresence>
       </div>
 
     </div>
