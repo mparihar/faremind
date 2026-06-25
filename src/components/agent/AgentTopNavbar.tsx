@@ -76,23 +76,32 @@ export default function AgentTopNavbar() {
         <div className="flex items-center h-16 gap-4">
 
           {/* ── Left: Logo + Brand ──────────────────────────────────────── */}
-          <Link href="/agent/dashboard" className="relative flex items-center justify-center group h-16 overflow-hidden w-fit shrink-0">
-            <img
-              src="/logo.png"
-              alt="FareMind"
-              className="h-[90px] w-auto object-contain flex-shrink-0"
-            />
-            <div className="absolute bottom-[2px] flex flex-col items-center w-full px-1">
-              <div className="relative w-full h-[1px] mb-[1px]">
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent"></div>
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent blur-[1px]"></div>
-              </div>
-              <span className="text-[8px] sm:text-[9px] font-medium uppercase tracking-[0.9em] text-[#009CA6] font-bold pl-[0.9em] translate-x-4">
-                Agent Portal
-              </span>
-              <div className="relative w-full h-[1px] mt-[1px]">
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent"></div>
-                <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent blur-[1px]"></div>
+          <Link href="/agent/dashboard" className="flex items-center group h-16 w-fit shrink-0">
+            <div className="flex items-end">
+              <img
+                src="/FM_IMG_LOGO_TEAL.png"
+                alt=""
+                className="max-h-[54px] w-auto object-contain mb-[-8px]"
+              />
+              <div className="flex flex-col items-center -ml-2">
+                <img
+                  src="/FM_TXT_LOGO.png"
+                  alt="FareMind"
+                  className="h-[42px] w-auto object-contain flex-shrink-0"
+                />
+                <div className="flex flex-col items-center w-full -mt-[8px]">
+                  <div className="relative w-full h-[1px] mb-[1px]">
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent"></div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent blur-[1px]"></div>
+                  </div>
+                  <span className="text-[7px] sm:text-[8px] font-bold uppercase tracking-[0.7em] text-[#009CA6] pl-[0.7em]">
+                    Agent Portal
+                  </span>
+                  <div className="relative w-full h-[1px] mt-[1px]">
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent"></div>
+                    <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent blur-[1px]"></div>
+                  </div>
+                </div>
               </div>
             </div>
           </Link>

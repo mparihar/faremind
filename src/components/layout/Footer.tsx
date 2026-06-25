@@ -23,28 +23,37 @@ export default function Footer() {
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-16">
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-12">
           {/* Brand */}
-          <div className="lg:col-span-1 -mt-6">
+          <div className="lg:col-span-1">
             <div className="mb-6 flex flex-col w-fit">
               <Link href="/" className="flex items-center group">
-                <img
-                  src="/logo.png"
-                  alt="FareMind"
-                  className="h-[88px] w-auto object-contain mix-blend-screen"
-                />
+                <div className="flex items-end">
+                  <img
+                    src="/FM_IMG_LOGO_TEAL.png"
+                    alt=""
+                    className="max-h-[54px] w-auto object-contain mb-[-8px] mix-blend-screen"
+                  />
+                  <div className="flex flex-col items-center -ml-2">
+                    <img
+                      src="/FM_TXT_LOGO.png"
+                      alt="FareMind"
+                      className="h-[42px] w-auto object-contain mix-blend-screen"
+                    />
+                    <div className="flex flex-col items-center w-full -mt-[8px]">
+                      <div className="relative w-full h-[1px] mb-[1px]">
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent"></div>
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent blur-[1px]"></div>
+                      </div>
+                      <span className="text-[7px] sm:text-[8px] font-medium uppercase tracking-[0.7em] text-white/90 pl-[0.7em]">
+                        FREE YOUR <span className="text-[#009CA6] font-bold">MIND</span>
+                      </span>
+                      <div className="relative w-full h-[1px] mt-[1px]">
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent"></div>
+                        <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent blur-[1px]"></div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </Link>
-              <div className="flex flex-col items-center w-full px-2 -mt-8">
-                <div className="relative w-full h-[1px] mb-[1px]">
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent"></div>
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent blur-[1px]"></div>
-                </div>
-                <span className="text-[8px] sm:text-[9px] font-medium uppercase tracking-[0.7em] text-white/90 pl-[0.7em] translate-x-4">
-                  FREE YOUR <span className="text-[#009CA6] font-bold">MIND</span>
-                </span>
-                <div className="relative w-full h-[1px] mt-[1px]">
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent"></div>
-                  <div className="absolute inset-0 bg-gradient-to-r from-transparent via-[#009CA6] to-transparent blur-[1px]"></div>
-                </div>
-              </div>
             </div>
             <p className="text-sm text-slate-600 leading-relaxed mb-6 font-medium">
               AI-powered flight search, ranking, and personalization built around how <span className="text-[#009CA6]">you</span> travel.
