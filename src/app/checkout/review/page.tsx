@@ -22,6 +22,7 @@ import type { NormalizedAncillary } from '@/lib/providers/providerAncillaryNorma
 import { apiFetch } from '@/lib/api-client';
 import { useFeeLoader } from '@/hooks/useFeeLoader';
 import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -162,13 +163,13 @@ function PriceBreakdownCard({
             <span className="text-slate-700">+{fmt(pricing.seatFees)}</span>
           </div>
         )}
-        {pricing.protectionFee > 0 && (
+        {isBundleEnabled() && pricing.protectionFee > 0 && (
           <div className="flex justify-between text-sm">
             <span className="text-slate-500">Price protection</span>
             <span className="text-[#1ABC9C]">+{fmt(pricing.protectionFee)}</span>
           </div>
         )}
-        {pricing.insuranceFee > 0 && (
+        {isBundleEnabled() && pricing.insuranceFee > 0 && (
           <div className="flex justify-between text-sm">
             <span className="text-slate-500">Travel insurance</span>
             <span className="text-slate-700">+{fmt(pricing.insuranceFee)}</span>
@@ -370,16 +371,20 @@ export default function ReviewPage() {
         fareOption.baggage.checked > 0
           ? { ok: true, label: `${fareOption.baggage.checked}× checked bag included` }
           : { ok: false, label: 'No checked bags included' },
-        !fareOption.policy.refundable
-          ? { ok: false, label: 'Non-refundable fare' }
+        fareOption.policy.refundable === null || fareOption.policy.refundable === undefined
+          ? { ok: true, label: 'Refund: Contact airline' }
+          : !fareOption.policy.refundable
+          ? { ok: false, label: 'Non-refundable' }
           : fareOption.policy.refundFeeUsd === 0
-          ? { ok: true, label: 'Fully refundable' }
+          ? { ok: true, label: 'Refundable (Included)' }
           : { ok: true, label: 'Refundable (fee applies)' },
-        fareOption.policy.changeable
-          ? fareOption.policy.changeFeeUsd === 0
-            ? { ok: true, label: 'Free flight changes' }
-            : { ok: true, label: 'Changes allowed (fee applies)' }
-          : { ok: false, label: 'No changes allowed' },
+        fareOption.policy.changeable === null || fareOption.policy.changeable === undefined
+          ? { ok: true, label: 'Changes: Contact airline' }
+          : !fareOption.policy.changeable
+          ? { ok: false, label: 'No changes allowed' }
+          : fareOption.policy.changeFeeUsd === 0
+          ? { ok: true, label: 'Changeable (Included)' }
+          : { ok: true, label: 'Changes allowed (fee applies)' },
       ]
     : [];
 
@@ -460,7 +465,7 @@ export default function ReviewPage() {
                   </div>
                   <p className="text-xl font-black text-[#F97316] shrink-0">
                     {fmt(selectedFare.totalPrice)}
-                    <span className="text-xs font-normal text-slate-400 block text-right">per person</span>
+                    <span className="text-xs font-normal text-slate-400 block text-right">Total</span>
                   </p>
                 </div>
                 {fareFeatures.length > 0 && (
@@ -607,25 +612,29 @@ export default function ReviewPage() {
                       : 'None'
                   }
                 />
-                <ReviewRow
-                  label="Price protection"
-                  value={
-                    priceProtection
-                      ? pricing.protectionFee > 0
-                        ? `Yes (+${fmt(pricing.protectionFee)})`
-                        : 'Yes'
-                      : 'No'
-                  }
-                  accent={priceProtection}
-                />
-                <ReviewRow
-                  label="Travel insurance"
-                  value={
-                    travelInsurance && pricing.insuranceFee > 0
-                      ? `Yes (+${fmt(pricing.insuranceFee)})`
-                      : 'No'
-                  }
-                />
+                {isBundleEnabled() && (
+                  <ReviewRow
+                    label="Price protection"
+                    value={
+                      priceProtection
+                        ? pricing.protectionFee > 0
+                          ? `Yes (+${fmt(pricing.protectionFee)})`
+                          : 'Yes'
+                        : 'No'
+                    }
+                    accent={priceProtection}
+                  />
+                )}
+                {isBundleEnabled() && (
+                  <ReviewRow
+                    label="Travel insurance"
+                    value={
+                      travelInsurance && pricing.insuranceFee > 0
+                        ? `Yes (+${fmt(pricing.insuranceFee)})`
+                        : 'No'
+                    }
+                  />
+                )}
               </div>
             </div>
 

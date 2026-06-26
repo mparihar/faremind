@@ -28,6 +28,7 @@ import { useFeeLoader } from '@/hooks/useFeeLoader';
 import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
 import type { NormalizedAncillary } from '@/lib/providers/providerAncillaryNormalizer';
 import { isPremiumService } from '@/lib/providers/providerAncillaryNormalizer';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -702,19 +703,23 @@ export default function AddonsPage() {
               />
             )}
 
-            <PriceDropProtectionSection
-              enabled={priceProtection}
-              fee={protectionFee}
-              onToggle={store.toggleProtection}
-            />
+            {isBundleEnabled() && (
+              <PriceDropProtectionSection
+                enabled={priceProtection}
+                fee={protectionFee}
+                onToggle={store.toggleProtection}
+              />
+            )}
 
-            <TravelInsuranceSection
-              enabled={travelInsurance}
-              fee={store.computedFees
-                ? store.computedFees.insuranceFeeTotal
-                : pricing.insuranceFee > 0 ? pricing.insuranceFee : Math.round((selectedFare?.basePrice ?? 0) * passengers.length * 0.04)}
-              onToggle={store.toggleInsurance}
-            />
+            {isBundleEnabled() && (
+              <TravelInsuranceSection
+                enabled={travelInsurance}
+                fee={store.computedFees
+                  ? store.computedFees.insuranceFeeTotal
+                  : pricing.insuranceFee > 0 ? pricing.insuranceFee : Math.round((selectedFare?.basePrice ?? 0) * passengers.length * 0.04)}
+                onToggle={store.toggleInsurance}
+              />
+            )}
 
             <div className="flex items-center gap-2 text-xs text-[#0F766E] px-1">
               <Info className="w-3.5 h-3.5 shrink-0" />
@@ -741,7 +746,7 @@ export default function AddonsPage() {
                 selectedAncillaries={selectedAncillaries}
               />
 
-              {priceProtection && (
+              {isBundleEnabled() && priceProtection && (
                 <div className="flex items-start gap-3 p-4 rounded-xl bg-[#1ABC9C]/5 border border-[#1ABC9C]/20">
                   <ShieldCheck className="w-4 h-4 text-[#1ABC9C] mt-0.5 shrink-0" />
                   <p className="text-xs text-slate-600 leading-relaxed">

@@ -649,6 +649,7 @@ function SearchContent() {
       cabin,
       trip: tripParam,
       returnDate: returnDateParam,
+      fareRules: flight.fareRules,
     }));
     setShowFareModal(true);
   }, [fareStore, searchParams, adults, childrenParam, infantsParam, date, cabin, tripParam, returnDateParam]);
@@ -1183,6 +1184,7 @@ function SearchContent() {
                       cabin,
                       trip: tripParam,
                       returnDate: returnDateParam,
+                      fareRules: rt.fareRules,
                     }));
                     setShowFareModal(true);
                   }
@@ -1706,7 +1708,7 @@ function SearchContent() {
             fareStore.setSourceRoundTrip(selectedRoundTrip);
             const origin = selectedRoundTrip.outboundJourney.departureAirport;
             const destination = selectedRoundTrip.outboundJourney.arrivalAirport;
-            sessionStorage.setItem('fm_fare_context', JSON.stringify({
+             sessionStorage.setItem('fm_fare_context', JSON.stringify({
               offerId: selectedRoundTrip.providerOfferId,
               basePrice: selectedRoundTrip.totalPrice,
               providerTotalFare: (selectedRoundTrip as any).providerTotalFare ?? selectedRoundTrip.totalPrice,
@@ -1725,6 +1727,7 @@ function SearchContent() {
               cabin,
               trip: tripParam,
               returnDate: returnDateParam,
+              fareRules: selectedRoundTrip.fareRules,
             }));
             setSelectedRoundTrip(null);
             setShowFareModal(true);

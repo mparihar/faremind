@@ -443,42 +443,24 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const { bookingId, sliceId } = request.params as { bookingId: string; sliceId: string };
       const booking = await mbq.getMasterBookingFull(bookingId);
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
-      // Try to get seat map from provider; fall back to mock
+
+      // Only use real provider APIs — no mock fallback
       const providerPnr = booking.pnrs.find(p => p.providerOrderId);
       if (providerPnr?.providerOrderId) {
         try {
           const provider = getProvider(booking.primaryProvider);
           const seatMaps = await provider.getSeatMap(providerPnr.providerOrderId, sliceId);
           if (seatMaps.length > 0) return { seatMaps };
-        } catch { /* fall through to mock */ }
-      }
-      // ── Mock seat map fallback ──────────────────────────────────────────────
-      // Controlled by ENABLE_MOCK_SEATMAP env variable:
-      //   true  (default) = return demo seat map for development/testing
-      //   false           = return empty array, rely on real provider only
-      const enableMock = (process.env.ENABLE_MOCK_SEATMAP ?? 'true').toLowerCase() !== 'false';
-
-      if (!enableMock) {
-        fastify.log.info(`[manage-booking/seats] No provider seat map for booking ${bookingId} — mock disabled via ENABLE_MOCK_SEATMAP=false`);
-        return {
-          seatMaps: [],
-          isMock: false,
-          error: 'Seat map not available for this booking. Please manage seat selection at airline check-in or contact support.',
-        };
+        } catch (err) {
+          fastify.log.warn({ err }, `[manage-booking/seats] Provider seat map API failed for booking ${bookingId}`);
+        }
       }
 
-      // Mock seat map for demo/test — clearly labelled so frontend can show appropriate messaging
-      fastify.log.warn(`[manage-booking/seats] No provider seat map available for booking ${bookingId} — returning demo-only mock`);
-      const seatLetters = ['A','B','C','D','E','F'];
-      const types: Record<string,string> = { A:'window', B:'middle', C:'aisle', D:'aisle', E:'middle', F:'window' };
-      const rows = Array.from({ length: 30 }, (_, i) => ({
-        row: i + 1,
-        seats: seatLetters.map(l => ({ designator: `${i+1}${l}`, available: Math.random() > 0.3, type: types[l], price: i < 5 ? 45 : i < 12 ? 25 : i < 14 ? 15 : 0, currency: 'USD', cabinClass: i < 5 ? 'business' : 'economy', isExitRow: i === 13 || i === 14, hasExtraLegroom: i < 5 || i === 13 || i === 14, serviceId: null })),
-      }));
+      // Provider returned no seat map or doesn't support post-booking seat changes
+      fastify.log.info(`[manage-booking/seats] Seat map not available from provider for booking ${bookingId}`);
       return {
-        seatMaps: [{ sliceId, segmentId: '', cabin: 'economy', rows }],
-        isMock: true,
-        warning: 'This is a demo seat map. Actual seat availability may differ. Seat assignments are subject to airline confirmation.',
+        seatMaps: [],
+        error: 'Post-booking seat selection is not available for this provider. Please manage seat selection at airline check-in or contact the airline directly.',
       };
     } catch (e) { fastify.log.error(e, '[manage-booking/seats]'); reply.code(500).send({ error: 'Server error' }); }
   });

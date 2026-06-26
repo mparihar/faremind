@@ -18,6 +18,7 @@
  */
 
 import { prisma } from '@/lib/db';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 // ─── Types ────────────────────────────────────────
 
@@ -342,6 +343,18 @@ export async function calculateCommercialFees(ctx: BookingContext): Promise<FeeC
       displayToCustomer: true,
       ruleSnapshot: JSON.parse(JSON.stringify(insuranceRule)),
     });
+  }
+
+  // FAREMIND_BUNDLE gate: zero out protection & insurance when disabled
+  if (!isBundleEnabled()) {
+    protectionFee = 0;
+    protectionFeeTotal = 0;
+    insuranceFee = 0;
+    insuranceFeeTotal = 0;
+    // Remove protection/insurance charges from the array
+    const filtered = charges.filter(c => c.chargeType !== 'PRICE_DROP_PROTECTION' && c.chargeType !== 'TRAVEL_INSURANCE');
+    charges.length = 0;
+    charges.push(...filtered);
   }
 
   return {

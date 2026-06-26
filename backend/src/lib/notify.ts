@@ -140,28 +140,8 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
   const amount = String(d.total_amount ?? '');
 
   switch (eventType) {
-    case 'BOOKING_CONFIRMED':
-      return {
-        subject: `Your FAREMIND flight is confirmed – ${ref}`,
-        html: wrap('Booking Confirmed', `
-          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking Confirmed ✈️</h2>
-          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">
-            Hi ${name}, your flight has been booked successfully!
-          </p>
-          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin-bottom:24px;">
-            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
-              <tr><td style="padding:6px 0;color:#64748b;">FAREMIND Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${String(d.booking_reference || ref)}</td></tr>
-              ${(d.airline_pnr || d.pnr) ? `<tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#1abc9c;">${String(d.airline_pnr || d.pnr)}</td></tr>` : ''}
-              <tr><td style="padding:6px 0;color:#64748b;">Route</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${route}</td></tr>
-              ${amount ? `<tr><td style="padding:6px 0;color:#64748b;">Total Charged</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:18px;color:#1abc9c;">${amount}</td></tr>` : ''}
-            </table>
-          </div>
-          <p style="margin:0;color:#64748b;font-size:13px;">
-            You can view and manage your booking anytime at <a href="${process.env.APP_URL || 'https://faremind.ai'}/manage-booking" style="color:#1abc9c;text-decoration:none;">Manage Booking</a>.
-          </p>
-        `),
-        text: `Hi ${name}, your flight ${ref} (${route}) is confirmed. Total: ${amount}.`,
-      };
+    // NOTE: BOOKING_CONFIRMED customer email is handled by the frontend (src/lib/notify.ts)
+    // which sends a rich itinerary-based email. No duplicate from backend.
 
     case 'BOOKING_PENDING':
       return {
@@ -779,7 +759,7 @@ function buildAgentEmail(eventType: string, d: Record<string, unknown>, agentNam
 
 // Which events send to customer vs support
 const CUSTOMER_EVENTS = new Set<string>([
-  'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
+  'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
   'PASSENGER_INFO_UPDATED',
   'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
   'PAYMENT_SUCCESS', 'PAYMENT_FAILED',

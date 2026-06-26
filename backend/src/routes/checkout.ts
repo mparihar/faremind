@@ -1,6 +1,12 @@
 import { FastifyPluginAsync } from 'fastify';
 import { fireNotification } from '../lib/notify';
 
+// FAREMIND_BUNDLE gate — reads from env (loaded via env.ts preloader)
+function isBundleEnabled(): boolean {
+  const val = process.env.FAREMIND_BUNDLE ?? process.env.NEXT_PUBLIC_FAREMIND_BUNDLE ?? 'false';
+  return val.toLowerCase() === 'true';
+}
+
 interface PassengerInfo {
   id?: string; firstName: string; lastName: string; email?: string;
   dateOfBirth?: string; passportNumber?: string; nationality?: string;
@@ -90,6 +96,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     try {
       const { sessionId, travelInsurance, totalFare } = request.body as any;
       if (!sessionId) return reply.code(400).send({ error: 'sessionId is required' });
+      // FAREMIND_BUNDLE gate: zero out when disabled
+      if (!isBundleEnabled()) return { success: true, protectionFee: 0, insuranceFee: 0 };
       const insuranceFee = travelInsurance && totalFare ? Math.round(totalFare * 0.04) : 0;
       return { success: true, protectionFee: 0, insuranceFee };
     } catch (err) {
@@ -120,8 +128,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const seatFees: number = Array.isArray(seatSelections) ? (seatSelections as { priceUsd: number }[]).reduce((sum, s) => sum + (s.priceUsd ?? 0), 0) : 0;
       const baggageFees: number = typeof extraBags === 'number' && extraBags > 0 ? extraBags * 35 : 0;
-      const protectionFee: number = priceProtection ? (selectedFare.protectionFee ?? 0) : 0;
-      const insuranceFee: number = travelInsurance ? Math.round((selectedFare.totalPrice ?? 0) * 0.04) : 0;
+      // FAREMIND_BUNDLE gate: zero out protection/insurance when disabled
+      const protectionFee: number = !isBundleEnabled() ? 0 : priceProtection ? (selectedFare.protectionFee ?? 0) : 0;
+      const insuranceFee: number = !isBundleEnabled() ? 0 : travelInsurance ? Math.round((selectedFare.totalPrice ?? 0) * 0.04) : 0;
       const serviceFee: number = Math.round((selectedFare.totalPrice ?? 0) * 0.015);
       const passengerSubtotal = perPassenger.reduce((sum, p) => sum + p.subtotal, 0);
       const subtotal = passengerSubtotal + seatFees + baggageFees + protectionFee + insuranceFee + serviceFee;

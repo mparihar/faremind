@@ -229,7 +229,7 @@ export function normalizeAmadeusOffer(
     cabinClass,
     fareRules: {
       refundable,
-      changeable: true, // Most GDS fares are changeable with fee
+      changeable: undefined as unknown as boolean, // Amadeus GDS doesn't provide changeability in search
     },
     baggage: {
       carryOn: 1,

@@ -233,15 +233,19 @@ function ItineraryReviewStep({
                   fareOption.baggage.checked > 0
                     ? { ok: true,  label: `${fareOption.baggage.checked}× checked bag${fareOption.baggage.checked > 1 ? 's' : ''}${fareOption.baggage.checkedWeightKg ? ` · ${fareOption.baggage.checkedWeightKg} kg` : ''}` }
                     : { ok: false, label: 'No checked bag' },
-                  !fareOption.policy.refundable
+                  fareOption.policy.refundable === null || fareOption.policy.refundable === undefined
+                    ? { ok: true,  label: 'Refund: Contact airline' }
+                    : !fareOption.policy.refundable
                     ? { ok: false, label: 'Non-refundable' }
                     : fareOption.policy.refundFeeUsd === 0
-                    ? { ok: true,  label: 'Fully refundable' }
+                    ? { ok: true,  label: 'Refundable (Included)' }
                     : { ok: true,  label: 'Refundable (fee applies)' },
-                  !fareOption.policy.changeable
+                  fareOption.policy.changeable === null || fareOption.policy.changeable === undefined
+                    ? { ok: true,  label: 'Changes: Contact airline' }
+                    : !fareOption.policy.changeable
                     ? { ok: false, label: 'No changes allowed' }
                     : fareOption.policy.changeFeeUsd === 0
-                    ? { ok: true,  label: 'Free changes' }
+                    ? { ok: true,  label: 'Changeable (Included)' }
                     : { ok: true,  label: 'Changes allowed (fee applies)' },
                   fareOption.policy.seatSelection === 'free'
                     ? { ok: true,  label: 'Free seat selection' }

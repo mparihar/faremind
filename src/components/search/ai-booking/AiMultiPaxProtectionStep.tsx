@@ -6,9 +6,10 @@
 
 'use client';
 
-import { useState } from 'react';
+import { useState, useEffect } from 'react';
 import { Shield, Check, X } from 'lucide-react';
 import { useAiBookingStore } from '@/store/useAiBookingStore';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 interface Props {
   passengerCount: number;
@@ -25,6 +26,17 @@ export default function AiMultiPaxProtectionStep({
 }: Props) {
   const [mode, setMode] = useState<'menu' | 'per_pax'>('menu');
   const [perPax, setPerPax] = useState<boolean[]>(Array(passengerCount).fill(false));
+
+  // FAREMIND_BUNDLE gate: auto-skip when disabled
+  useEffect(() => {
+    if (!isBundleEnabled()) {
+      onComplete(Array(passengerCount).fill(false));
+    }
+  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+
+  // Don't render if bundle is disabled
+  if (!isBundleEnabled()) return null;
+
 
   const computedFees = useAiBookingStore(s => s.computedFees);
 

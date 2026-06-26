@@ -10,6 +10,7 @@ import { useState } from 'react';
 import { Package, Heart, ChevronRight, Check } from 'lucide-react';
 import { EXTRA_BAG_PRICE, INSURANCE_RATE } from '@/lib/ai-booking-types';
 import { useAiBookingStore } from '@/store/useAiBookingStore';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 interface Props {
   passengerCount: number;
@@ -130,7 +131,8 @@ export default function AiMultiPaxAddOnsStep({
           )}
         </button>
 
-        {/* Travel insurance */}
+        {/* Travel insurance — hidden when FAREMIND_BUNDLE is disabled */}
+        {isBundleEnabled() && (
         <button
           onClick={() => {
             const next = !travelInsurance;
@@ -162,6 +164,7 @@ export default function AiMultiPaxAddOnsStep({
             <span className="text-[13px] text-slate-300">—</span>
           )}
         </button>
+        )}
       </div>
 
       {/* Continue */}

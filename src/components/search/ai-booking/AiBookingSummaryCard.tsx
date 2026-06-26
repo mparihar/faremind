@@ -24,6 +24,7 @@ import type { UnifiedFlight } from '@/lib/types';
 import type { AiFareDetails, AiPassengerData, AiSeatPreference, AiPriceSummary } from '@/lib/ai-booking-types';
 import type { SelectedSeatData } from '@/lib/ai-seat/ai-seat-types';
 import { formatPrice, formatDuration, getStopsLabel } from '@/lib/utils';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
 
@@ -218,7 +219,7 @@ export default function AiBookingSummaryCard({
         </div>
 
         {/* Add-ons */}
-        {(extraBags > 0 || travelInsurance || priceProtection) && (
+        {(extraBags > 0 || (isBundleEnabled() && travelInsurance) || (isBundleEnabled() && priceProtection)) && (
           <div className="mt-2 pt-2 border-t border-slate-100">
             <div className="flex flex-wrap gap-1.5">
               {extraBags > 0 && (
@@ -226,12 +227,12 @@ export default function AiBookingSummaryCard({
                   <Package className="w-2 h-2" /> {extraBags} bag{extraBags > 1 ? 's' : ''}
                 </span>
               )}
-              {travelInsurance && (
+              {isBundleEnabled() && travelInsurance && (
                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-pink-50 text-pink-700 text-[10px] font-bold border border-pink-200/50">
                   <Heart className="w-2 h-2" /> Insurance
                 </span>
               )}
-              {priceProtection && (
+              {isBundleEnabled() && priceProtection && (
                 <span className="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-full bg-emerald-50 text-emerald-700 text-[10px] font-bold border border-emerald-200/50">
                   <Shield className="w-2 h-2" /> Protection
                 </span>
@@ -266,13 +267,13 @@ export default function AiBookingSummaryCard({
               <span className="text-white/80 font-medium">+{formatPrice(priceSummary.baggageFee, currency)}</span>
             </div>
           )}
-          {priceSummary.insuranceFee > 0 && (
+          {isBundleEnabled() && priceSummary.insuranceFee > 0 && (
             <div className="flex justify-between text-[12px]">
               <span className="text-white/60">Travel insurance</span>
               <span className="text-white/80 font-medium">+{formatPrice(priceSummary.insuranceFee, currency)}</span>
             </div>
           )}
-          {priceSummary.protectionFee > 0 && (
+          {isBundleEnabled() && priceSummary.protectionFee > 0 && (
             <div className="flex justify-between text-[12px]">
               <span className="text-[#1ABC9C]/80">Price protection</span>
               <span className="text-[#1ABC9C]/80 font-medium">+{formatPrice(priceSummary.protectionFee, currency)}</span>

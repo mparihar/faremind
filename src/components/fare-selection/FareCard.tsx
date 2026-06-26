@@ -2,6 +2,7 @@
 
 import type { FareOption } from '@/lib/fare-types';
 import { Shield, Check, X, Minus, Zap, DollarSign, Repeat2, Star, Armchair } from 'lucide-react';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 interface FareCardProps {
   fare: FareOption;
@@ -78,7 +79,7 @@ export default function FareCard({
   // fare.basePrice is per-person (for display)
   const allPassengerFareTotal = fare.totalPrice;
   const totalProtectionFee = protectionFee * travelerCount;
-  const grandTotal = allPassengerFareTotal + (selected && priceProtection ? totalProtectionFee : 0);
+  const grandTotal = allPassengerFareTotal + (isBundleEnabled() && selected && priceProtection ? totalProtectionFee : 0);
 
 
   const features: Feature[] = [
@@ -89,16 +90,24 @@ export default function FareCard({
     fare.baggage.checked > 0
       ? { status: 'yes', label: `${fare.baggage.checked}× checked bag${fare.baggage.checked > 1 ? 's' : ''}${fare.baggage.checkedWeightKg ? ` · ${fare.baggage.checkedWeightKg} kg` : ''}` }
       : { status: 'no',  label: 'No checked bag' },
-    !fare.policy.refundable
+    fare.policy.refundable === null || fare.policy.refundable === undefined
+      ? { status: 'partial', label: 'Refund: Contact airline' }
+      : !fare.policy.refundable
       ? { status: 'no',      label: 'Non-refundable' }
       : fare.policy.refundFeeUsd === 0
-      ? { status: 'yes',     label: 'Fully refundable' }
-      : { status: 'partial', label: `Refund fee: ${fmtPrice(fare.policy.refundFeeUsd!, currency)}` },
-    !fare.policy.changeable
+      ? { status: 'yes',     label: 'Refundable (Included)' }
+      : fare.policy.refundFeeUsd
+      ? { status: 'partial', label: `Refund fee: ${fmtPrice(fare.policy.refundFeeUsd, currency)}` }
+      : { status: 'yes',     label: 'Refundable' },
+    fare.policy.changeable === null || fare.policy.changeable === undefined
+      ? { status: 'partial', label: 'Changes: Contact airline' }
+      : !fare.policy.changeable
       ? { status: 'no',      label: 'No changes allowed' }
       : fare.policy.changeFeeUsd === 0
-      ? { status: 'yes',     label: 'Free changes' }
-      : { status: 'partial', label: `Change fee: ${fmtPrice(fare.policy.changeFeeUsd!, currency)}` },
+      ? { status: 'yes',     label: 'Changeable (Included)' }
+      : fare.policy.changeFeeUsd
+      ? { status: 'partial', label: `Change fee: ${fmtPrice(fare.policy.changeFeeUsd, currency)}` }
+      : { status: 'yes',     label: 'Changeable' },
     fare.policy.seatSelection === 'free'
       ? { status: 'yes',     label: 'Free seat selection' }
       : fare.policy.seatSelection === 'fee'
@@ -159,7 +168,7 @@ export default function FareCard({
               Total
             </span>
           </div>
-          {selected && priceProtection && (
+          {isBundleEnabled() && selected && priceProtection && (
             <p className="text-[11px] text-[#1ABC9C] font-semibold mt-0.5">incl. price protection</p>
           )}
         </div>
@@ -191,8 +200,8 @@ export default function FareCard({
           </p>
         )}
 
-        {/* Price Drop Protection (when selected) */}
-        {selected && (
+        {/* Price Drop Protection (when selected) — hidden when FAREMIND_BUNDLE is disabled */}
+        {isBundleEnabled() && selected && (
           <div
             className="p-3.5 rounded-xl border border-[#1ABC9C]/30 bg-[#1ABC9C]/5 cursor-default"
             onClick={(e) => e.stopPropagation()}

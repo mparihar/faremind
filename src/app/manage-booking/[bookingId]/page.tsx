@@ -202,8 +202,8 @@ function DateChangeModal({ bookingId, booking, onClose }: { bookingId: string; b
   const changeFeeMsg = fareRules
     ? fareRules.changeable
       ? fareRules.changeFee != null && fareRules.changeFee > 0
-        ? `Change fee: $${fareRules.changeFee} + any fare difference applies per your fare rules.`
-        : 'Free changes allowed per your fare rules. Only fare differences may apply.'
+        ? `Changeable (fee: $${fareRules.changeFee}). Fare differences may also apply.`
+        : 'Changeable (Included). Only fare differences may apply.'
       : 'Changes are not allowed under your fare rules. Our team will review your request.'
     : 'Date changes are subject to airline fare rules and availability. Change fees may apply.';
 

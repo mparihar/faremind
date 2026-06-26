@@ -67,6 +67,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const layover_minutes  = q.layover_minutes || '';
       const trip             = q.trip || 'one_way';
 
+      // Provider-sourced fare rules — these are the sole source of truth
+      // for changeable/changeFee/refundable/refundFee. DB templates are
+      // NEVER used for these 4 fields.
+      const providerChangeable  = q.provider_changeable;  // 'true' | 'false' | undefined
+      const providerChangeFee   = q.provider_change_fee;  // numeric string or undefined
+      const providerRefundable  = q.provider_refundable;  // 'true' | 'false' | undefined
+      const providerRefundFee   = q.provider_refund_fee;  // numeric string or undefined
+
       if (!base_price) return reply.code(400).send({ error: 'base_price is required' });
 
       const basePriceNum = parseFloat(base_price);
@@ -94,11 +102,21 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(500).send({ error: 'No fare tier templates configured. Please configure them in Admin > Commercial Settings > Fare Tiers.' });
       }
 
+      // Resolve provider-sourced fare rules (single source of truth)
+      const resolvedChangeable  = providerChangeable !== undefined ? providerChangeable === 'true'  : undefined;
+      const resolvedChangeFee   = providerChangeFee !== undefined && providerChangeFee !== '' ? parseFloat(providerChangeFee) : null;
+      const resolvedRefundable  = providerRefundable !== undefined ? providerRefundable === 'true'  : undefined;
+      const resolvedRefundFee   = providerRefundFee !== undefined && providerRefundFee !== '' ? parseFloat(providerRefundFee) : null;
+
       const fareInputs: FareInput[] = FARE_TEMPLATES.map((t, i) => ({
         id: `fare_${i}_${offer_id || 'mock'}`,
         totalPrice: Math.round(basePriceNum * t.priceMultiplier / travelers),
-        checked: t.checked, refundable: t.refundable, refundFeeUsd: t.refundFeeUsd,
-        changeable: t.changeable, changeFeeUsd: t.changeFeeUsd,
+        checked: t.checked,
+        // Use provider values for refundable/changeable (provider is sole source of truth)
+        refundable: resolvedRefundable ?? t.refundable,
+        refundFeeUsd: resolvedRefundFee !== null ? resolvedRefundFee : t.refundFeeUsd,
+        changeable: resolvedChangeable ?? t.changeable,
+        changeFeeUsd: resolvedChangeFee !== null ? resolvedChangeFee : t.changeFeeUsd,
         seatSelection: t.seatSelection, cabin: t.cabin, name: t.name,
         priorityBoarding: t.priorityBoarding, loungeAccess: t.loungeAccess, milesEarning: t.milesEarning,
       }));
@@ -112,11 +130,19 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         const allPaxTotal = Math.round(basePriceNum * t.priceMultiplier);
         const perPerson   = Math.round(allPaxTotal / travelers);
         const s     = scoreMap.get(id)!;
+
+        // Provider values are the sole source of truth for these 4 fields.
+        // If provider didn't supply them (undefined), leave as null to indicate "unknown".
+        const effectiveChangeable  = resolvedChangeable ?? null;
+        const effectiveChangeFee   = resolvedChangeFee;
+        const effectiveRefundable  = resolvedRefundable ?? null;
+        const effectiveRefundFee   = resolvedRefundFee;
+
         return {
           id, offerId: offer_id, cabin: t.cabin, name: t.name,
           basePrice: perPerson, totalPrice: allPaxTotal, currency,
           baggage: { carryOn: t.carryOn, carryOnPieces: t.carryOnPieces, carryOnWeightKg: t.carryOnWeightKg, checked: t.checked, checkedWeightKg: t.checkedWeightKg, extraBagFeeUsd: t.extraBagFeeUsd },
-          policy: { refundable: t.refundable, refundFeeUsd: t.refundFeeUsd, changeable: t.changeable, changeFeeUsd: t.changeFeeUsd, seatSelection: t.seatSelection, seatSelectionFeeUsd: t.seatSelectionFeeUsd, upgradeable: t.upgradeable, loungeAccess: t.loungeAccess, priorityBoarding: t.priorityBoarding, milesEarning: t.milesEarning },
+          policy: { refundable: effectiveRefundable, refundFeeUsd: effectiveRefundFee, changeable: effectiveChangeable, changeFeeUsd: effectiveChangeFee, seatSelection: t.seatSelection, seatSelectionFeeUsd: t.seatSelectionFeeUsd, upgradeable: t.upgradeable, loungeAccess: t.loungeAccess, priorityBoarding: t.priorityBoarding, milesEarning: t.milesEarning },
           aiScore: s.breakdown.finalScore, aiBadges: s.badges as AiBadge[], aiExplanation: s.explanation,
           aiScoreBreakdown: s.breakdown, seatsRemaining: Math.floor(Math.random() * 8) + 1,
           popular: s.badges.includes('best_value'),

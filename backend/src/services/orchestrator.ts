@@ -4,6 +4,11 @@
  * Calls Duffel (NDC) + Amadeus (GDS) + Mystifly (Aggregator) in parallel,
  * normalizes, and merges all results using APPEND-ONLY aggregation.
  * No offers are removed or deduplicated at the aggregation layer.
+ *
+ * Provider mode controlled by FLIGHT_PROVIDER_MODE env var:
+ *   DUFFEL  → Only Duffel
+ *   MYSTIFLY → Only Mystifly
+ *   BOTH    → Duffel + Mystifly in parallel (default)
  */
 
 import * as duffel from './duffel';
@@ -13,8 +18,19 @@ import { normalizeDuffelOffer, normalizeAmadeusOffer, normalizeMystiflyOffer, me
 import { aggregateProviderOffers, type AggregationStats } from './provider-aggregation';
 import type { UnifiedFlight } from '../lib/types';
 
+// ─── Provider Mode (controlled by FLIGHT_PROVIDER_MODE env var) ───
+// Values: 'DUFFEL' | 'MYSTIFLY' | 'BOTH' (default)
 
+type ProviderMode = 'DUFFEL' | 'MYSTIFLY' | 'BOTH';
 
+function getProviderMode(): ProviderMode {
+  const raw = process.env.FLIGHT_PROVIDER_MODE;
+  const mode = (raw || 'BOTH').toUpperCase().trim();
+  if (mode === 'DUFFEL' || mode === 'MYSTIFLY' || mode === 'BOTH') {
+    return mode;
+  }
+  return 'BOTH';
+}
 
 function isDuffelConfigured(): boolean {
   const token = process.env.DUFFEL_API_TOKEN || '';
@@ -37,6 +53,16 @@ function isMystiflyConfigured(): boolean {
   const pass = process.env.MYSTIFLY_PASSWORD || '';
   const acct = process.env.MYSTIFLY_ACCOUNT_NUMBER || '';
   return user.length > 0 && pass.length > 0 && acct.length > 0;
+}
+
+function shouldUseDuffel(): boolean {
+  const mode = getProviderMode();
+  return (mode === 'DUFFEL' || mode === 'BOTH') && isDuffelConfigured();
+}
+
+function shouldUseMystifly(): boolean {
+  const mode = getProviderMode();
+  return (mode === 'MYSTIFLY' || mode === 'BOTH') && isMystiflyConfigured();
 }
 
 export interface ProviderResult {
@@ -142,11 +168,12 @@ export async function searchFlights(params: {
 }): Promise<SearchResult> {
   const overallStart = Date.now();
   const searchId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
-  const hasDuffel = isDuffelConfigured();
+  const providerMode = getProviderMode();
+  const hasDuffel = shouldUseDuffel();
   const hasAmadeus = isAmadeusConfigured();
-  const hasMystifly = isMystiflyConfigured();
+  const hasMystifly = shouldUseMystifly();
 
-
+  console.log(`[Search ${searchId}] Provider mode: ${providerMode} → duffel=${hasDuffel} amadeus=${hasAmadeus} mystifly=${hasMystifly}`);
 
   let providerResults: ProviderResult[];
   if (hasDuffel || hasAmadeus || hasMystifly) {

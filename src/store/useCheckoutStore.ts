@@ -5,6 +5,7 @@ import type { SelectedFare, FareOption } from '@/lib/fare-types';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
 import type { NormalizedAncillary } from '@/lib/providers/providerAncillaryNormalizer';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 // ─── Domain types ─────────────────────────────────────────────────────────────
 
@@ -336,8 +337,8 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
   }),
 
   setExtraBags:     (extraBags)     => set({ extraBags }),
-  toggleProtection: ()              => set((s) => ({ priceProtection: !s.priceProtection })),
-  toggleInsurance:  ()              => set((s) => ({ travelInsurance: !s.travelInsurance })),
+  toggleProtection: ()              => { if (!isBundleEnabled()) return; set((s) => ({ priceProtection: !s.priceProtection })); },
+  toggleInsurance:  ()              => { if (!isBundleEnabled()) return; set((s) => ({ travelInsurance: !s.travelInsurance })); },
   setComputedFees:  (computedFees)  => set({ computedFees }),
   setSelectedAncillaries: (selectedAncillaries) => set({ selectedAncillaries }),
   addAncillary: (ancillary) => set((s) => ({
@@ -428,7 +429,11 @@ export function buildLocalPricing(store: CheckoutStore, pricingConfig?: PricingC
   let protectionFee: number;
   let insuranceFee: number;
 
-  if (computedFees) {
+  // FAREMIND_BUNDLE gate: when disabled, protection & insurance are always zero
+  if (!isBundleEnabled()) {
+    protectionFee = 0;
+    insuranceFee = 0;
+  } else if (computedFees) {
     // DB-driven fees for protection and insurance
     protectionFee = priceProtection ? computedFees.protectionFeeTotal : 0;
     insuranceFee = travelInsurance ? computedFees.insuranceFeeTotal : 0;

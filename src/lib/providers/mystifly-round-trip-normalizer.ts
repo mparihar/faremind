@@ -203,7 +203,7 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
     cabinClass,
     fareRules: {
       refundable: isRefundable,
-      changeable: true, // Mystifly doesn't state changeability in search
+      changeable: undefined as unknown as boolean, // Mystifly search API doesn't provide changeability
     },
     baggage: { carryOn: 1, checked },
   };

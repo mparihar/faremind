@@ -270,8 +270,17 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
     try {
       const origin = flight.segments[0]?.departure.airport ?? '';
       const destination = flight.segments[flight.segments.length - 1]?.arrival.airport ?? '';
+      // Pass provider-sourced fare rules so the backend uses real provider data (not DB templates)
+      let providerParams = '';
+      if (flight.fareRules) {
+        const fr = flight.fareRules;
+        if (fr.changeable !== undefined) providerParams += `&provider_changeable=${fr.changeable}`;
+        if (fr.changeFee !== undefined) providerParams += `&provider_change_fee=${fr.changeFee}`;
+        if (fr.refundable !== undefined) providerParams += `&provider_refundable=${fr.refundable}`;
+        if (fr.cancellationFee !== undefined) providerParams += `&provider_refund_fee=${fr.cancellationFee}`;
+      }
       const payload = await apiFetch<FareSelectionPayload>(
-        `/api/fares/options?offer_id=${encodeURIComponent(flight.providerOfferId)}&base_price=${flight.totalPrice}&traveler_count=1&currency=${flight.currency || 'USD'}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&stops=${flight.stops}&duration_minutes=${flight.totalDuration ?? 0}`
+        `/api/fares/options?offer_id=${encodeURIComponent(flight.providerOfferId)}&base_price=${flight.totalPrice}&traveler_count=1&currency=${flight.currency || 'USD'}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&stops=${flight.stops}&duration_minutes=${flight.totalDuration ?? 0}${providerParams}`
       );
       const allFares = payload.fareGroups.flatMap(g => g.fares);
       setFareOptions(allFares);
@@ -679,6 +688,7 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
         stops: flight.stops,
         durationMinutes: flight.totalDuration,
         layoverMinutes: [],
+        fareRules: flight.fareRules,
       }));
 
       store.setStatus('completed');

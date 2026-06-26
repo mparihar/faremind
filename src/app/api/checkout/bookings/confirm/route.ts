@@ -9,6 +9,7 @@ import {
   type FinancialBreakdown,
 } from '@/lib/checkout-validation';
 import { stripe } from '@/lib/stripe';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 // ── Duffel API client (direct import for Next.js API route) ──────────────────
 const DUFFEL_API_URL = process.env.DUFFEL_API_URL || 'https://api.duffel.com';
@@ -234,6 +235,13 @@ export async function POST(req: NextRequest) {
       agentEmail,
       createdByRole,
     } = body;
+
+    // FAREMIND_BUNDLE defense-in-depth: override protection/insurance to false
+    // when bundle is disabled, regardless of frontend payload
+    if (!isBundleEnabled()) {
+      body.priceProtection = false;
+      body.travelInsurance = false;
+    }
 
     if (!Array.isArray(passengers) || passengers.length === 0) {
       return NextResponse.json({ error: 'passengers required' }, { status: 400 });

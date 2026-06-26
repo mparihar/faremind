@@ -55,15 +55,17 @@ function buildFeatureLists(fare: FareOption): { included: string[]; excluded: st
   else excluded.push('No checked bag');
 
   // Refund
-  if (!fare.policy.refundable) excluded.push('Non-refundable');
-  else if (fare.policy.refundFeeUsd === 0) included.push('Fully refundable');
+  if (fare.policy.refundable === null || fare.policy.refundable === undefined) included.push('Refund: Contact airline');
+  else if (!fare.policy.refundable) excluded.push('Non-refundable');
+  else if (fare.policy.refundFeeUsd === 0) included.push('Refundable (Included)');
   else if (fare.policy.refundFeeUsd !== null)
-    included.push(`Refundable (up to $${fare.policy.refundFeeUsd})`);
+    included.push(`Refundable (fee: $${fare.policy.refundFeeUsd})`);
   else included.push('Refundable');
 
   // Changes
-  if (!fare.policy.changeable) excluded.push('No changes allowed');
-  else if (fare.policy.changeFeeUsd === 0) included.push('Free changes');
+  if (fare.policy.changeable === null || fare.policy.changeable === undefined) included.push('Changes: Contact airline');
+  else if (!fare.policy.changeable) excluded.push('No changes allowed');
+  else if (fare.policy.changeFeeUsd === 0) included.push('Changeable (Included)');
   else if (fare.policy.changeFeeUsd !== null)
     included.push(`Change fee: $${fare.policy.changeFeeUsd}`);
   else included.push('Changes allowed');

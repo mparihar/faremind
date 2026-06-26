@@ -156,6 +156,12 @@ export function normalizeDuffelRoundTripOffer(offer: DuffelOffer): RoundTripOpti
     fareRules: {
       refundable: offer.conditions?.refund_before_departure?.allowed ?? false,
       changeable: offer.conditions?.change_before_departure?.allowed ?? false,
+      cancellationFee: offer.conditions?.refund_before_departure?.penalty_amount
+        ? parseFloat(offer.conditions.refund_before_departure.penalty_amount)
+        : undefined,
+      changeFee: offer.conditions?.change_before_departure?.penalty_amount
+        ? parseFloat(offer.conditions.change_before_departure.penalty_amount)
+        : undefined,
     },
     baggage: { carryOn, checked },
     offerExpiresAt: offer.expires_at || undefined,

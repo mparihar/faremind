@@ -24,6 +24,7 @@ import { formatTime, formatDuration, formatDate, cn, formatPrice } from '@/lib/u
 import { apiFetch } from '@/lib/api-client';
 import { useFeeLoader } from '@/hooks/useFeeLoader';
 import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -430,17 +431,21 @@ export default function CheckoutItineraryPage() {
       ? `${baggage.checked} bag${baggage.checked > 1 ? 's' : ''} included`
       : 'Not included';
 
-    const cancelLabel = policy.refundable
-      ? policy.refundFeeUsd
-        ? `Refundable (fee: ${formatPrice(policy.refundFeeUsd, currency)})`
-        : 'Fully refundable'
-      : 'Non-refundable';
+    const cancelLabel = policy.refundable === null || policy.refundable === undefined
+      ? 'Contact airline'
+      : policy.refundable
+        ? policy.refundFeeUsd
+          ? `Refundable (fee: ${formatPrice(policy.refundFeeUsd, currency)})`
+          : 'Refundable (Included)'
+        : 'Non-refundable';
 
-    const changeLabel = policy.changeable
-      ? policy.changeFeeUsd
-        ? `Changeable (fee: ${formatPrice(policy.changeFeeUsd, currency)})`
-        : 'Free changes'
-      : 'Not changeable';
+    const changeLabel = policy.changeable === null || policy.changeable === undefined
+      ? 'Contact airline'
+      : policy.changeable
+        ? policy.changeFeeUsd
+          ? `Changeable (fee: ${formatPrice(policy.changeFeeUsd, currency)})`
+          : 'Changeable (Included)'
+        : 'Not changeable';
 
     const seatLabel =
       policy.seatSelection === 'free'
@@ -689,7 +694,7 @@ export default function CheckoutItineraryPage() {
               </div>
 
               {/* Price Drop Protection confirmation notice */}
-              {selectedFare.priceProtection && selectedFare.protectionFee > 0 && (
+              {isBundleEnabled() && selectedFare.priceProtection && selectedFare.protectionFee > 0 && (
                 <div className="bg-[#1ABC9C]/8 border border-[#1ABC9C]/20 rounded-2xl px-4 py-3 flex items-start gap-2.5">
                   <Shield size={15} className="text-[#1ABC9C] flex-none mt-0.5" strokeWidth={2} />
                   <div>

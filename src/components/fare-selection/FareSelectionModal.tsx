@@ -145,7 +145,7 @@ export default function FareSelectionModal({ onClose }: Props) {
     const raw = sessionStorage.getItem('fm_fare_context');
     if (!raw) { onClose(); return; }
 
-    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; durationMinutes?: number; layoverMinutes?: number[]; trip?: string };
+    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; durationMinutes?: number; layoverMinutes?: number[]; trip?: string; fareRules?: { changeable?: boolean; changeFee?: number; refundable?: boolean; cancellationFee?: number } };
     try { ctx = JSON.parse(raw); } catch { onClose(); return; }
     setFareContext({ origin: ctx.origin, destination: ctx.destination, trip: ctx.trip || 'one_way' });
 
@@ -155,8 +155,17 @@ export default function FareSelectionModal({ onClose }: Props) {
 
     const layoverParam = ctx.layoverMinutes?.length ? `&layover_minutes=${ctx.layoverMinutes.join(',')}` : '';
     const tripParam = ctx.trip ? `&trip=${encodeURIComponent(ctx.trip)}` : '';
+    // Pass provider-sourced fare rules so the backend uses real provider data (not DB templates)
+    let providerParams = '';
+    if (ctx.fareRules) {
+      const fr = ctx.fareRules;
+      if (fr.changeable !== undefined) providerParams += `&provider_changeable=${fr.changeable}`;
+      if (fr.changeFee !== undefined) providerParams += `&provider_change_fee=${fr.changeFee}`;
+      if (fr.refundable !== undefined) providerParams += `&provider_refundable=${fr.refundable}`;
+      if (fr.cancellationFee !== undefined) providerParams += `&provider_refund_fee=${fr.cancellationFee}`;
+    }
     apiFetch<FareSelectionPayload>(
-      `/api/fares/options?offer_id=${encodeURIComponent(ctx.offerId)}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${encodeURIComponent(ctx.origin)}&destination=${encodeURIComponent(ctx.destination)}&stops=${ctx.stops}&duration_minutes=${ctx.durationMinutes ?? 0}${layoverParam}${tripParam}`
+      `/api/fares/options?offer_id=${encodeURIComponent(ctx.offerId)}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${encodeURIComponent(ctx.origin)}&destination=${encodeURIComponent(ctx.destination)}&stops=${ctx.stops}&duration_minutes=${ctx.durationMinutes ?? 0}${layoverParam}${tripParam}${providerParams}`
     )
       .then(data => {
         s().setPayload(data);

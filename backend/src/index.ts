@@ -5,7 +5,10 @@
  * Frontend (Next.js :3000) → Gateway (:3001) → External APIs + DB + Cache
  */
 
-import 'dotenv/config';
+// ─── Env preloader — MUST be the first import ────────────────────────────────
+// Loads backend/.env then root .env (for shared vars like FLIGHT_PROVIDER_MODE)
+import './env';
+
 import Fastify, { type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import compress from '@fastify/compress';
