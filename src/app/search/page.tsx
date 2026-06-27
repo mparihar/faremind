@@ -979,7 +979,7 @@ function SearchContent() {
 
 
       {/* Header */}
-      <div ref={headerRef} className={`bg-[#1a1a2e]/95 backdrop-blur-xl border-b border-white/[0.06] shadow-lg ${viewMode === 'map' ? 'flex-none z-40' : 'sticky top-0 z-40'}`}>
+      <div ref={headerRef} className={`bg-[#1a1a2e]/95 backdrop-blur-xl border-b border-white/[0.06] shadow-lg ${viewMode === 'map' ? 'flex-none z-40' : 'sm:sticky sm:top-0 z-40'}`}>
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-4">
           <div className="flex items-center justify-between gap-2">
             <div className="flex items-center gap-2 sm:gap-3 min-w-0 flex-1 overflow-hidden">
@@ -1151,7 +1151,7 @@ function SearchContent() {
       ) : viewMode === 'map' ? (
         <div className="flex-1 flex flex-col md:flex-row z-10 bg-[#F8FAFC] min-h-0">
           {/* Left Side: Map (full height) with Filter Panel overlaid on top-left */}
-          <div className="flex-none h-[260px] sm:h-[340px] w-full md:w-[37%] lg:w-[40%] md:h-full relative z-30 shadow-xl border-b md:border-b-0 md:border-r border-slate-200">
+          <div className="flex-none h-[180px] sm:h-[340px] w-full md:w-[37%] lg:w-[40%] md:h-full relative z-30 shadow-xl border-b md:border-b-0 md:border-r border-slate-200">
             <MultiFlightMap
               flights={activeMapFlights}
               roundTrips={activeMapRoundTrips}
@@ -1228,7 +1228,7 @@ function SearchContent() {
           <div className="flex flex-col flex-1 min-h-0 w-full md:w-[63%] lg:w-[60%] md:h-full bg-[#F8FAFC]">
 
             {/* Sticky Preferences Bar */}
-            <div className="relative z-50 flex-none border-b border-slate-200 bg-white/95 backdrop-blur-sm px-3 sm:px-4 py-2">
+            <div className="relative z-50 flex-none border-b border-slate-200 bg-white/95 backdrop-blur-sm px-2 sm:px-4 py-1.5 sm:py-2">
               <SmartPreferencesBar
                 tripType={tripParam as 'one_way' | 'round_trip'}
                 rtSortMode={rtSortMode}

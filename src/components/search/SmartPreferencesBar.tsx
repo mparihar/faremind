@@ -684,14 +684,15 @@ export default function SmartPreferencesBar({
   }
 
   return (
-    <div className={cn("w-full max-w-7xl mx-auto mb-4", className)}>
+    <div className={cn("w-full max-w-7xl mx-auto sm:mb-4", className)}>
       {/* Preferences Row with Integrated Toggle */}
       <motion.div
         initial={{ opacity: 0, y: 10 }}
         animate={{ opacity: 1, y: 0 }}
         transition={{ delay: 0.6, duration: 0.5 }}
         className={cn(
-          'relative z-50 flex flex-wrap items-center gap-2 px-3 py-2 rounded-2xl transition-all duration-500',
+          'relative z-50 flex items-center gap-2 px-3 py-2 rounded-2xl transition-all duration-500',
+          'overflow-x-auto scrollbar-none flex-nowrap sm:flex-wrap sm:overflow-x-visible',
           'bg-white/80 backdrop-blur-xl border border-gray-200/80 shadow-xl shadow-black/5',
           prefs.aiIntelligence && 'border-[#1ABC9C]/30 ring-4 ring-[#1ABC9C]/5 shadow-[#1ABC9C]/10'
         )}
@@ -732,7 +733,7 @@ export default function SmartPreferencesBar({
 
         {/* Softened Filter Group when AI is active */}
         <div className={cn(
-          "flex flex-wrap items-center gap-2 transition-all duration-500",
+          "flex items-center gap-2 transition-all duration-500 flex-nowrap sm:flex-wrap",
           (prefs.aiIntelligence && !activeDropdown) ? "opacity-60" : "opacity-100"
         )}>
 
@@ -1110,12 +1111,12 @@ export default function SmartPreferencesBar({
 
 
 
-      {/* Journey Dates */}
+      {/* Journey Dates — hidden on mobile (header already shows route info) */}
       {departureDate && (
         <motion.div
           initial={{ opacity: 0, y: -4 }}
           animate={{ opacity: 1, y: 0 }}
-          className="flex items-center gap-2.5 px-3 mt-3"
+          className="hidden sm:flex items-center gap-2.5 px-3 mt-3"
         >
           <CalendarDays className="w-4 h-4 text-[#1ABC9C] shrink-0" />
           <div className="flex items-center gap-2 text-xs font-semibold text-slate-600">
