@@ -135,7 +135,7 @@ export async function POST(request: NextRequest) {
         refund_amount: refundAmount > 0 ? `$${refundAmount.toFixed(2)}` : 'Non-refundable',
         refund_policy: refundAmount > 0 ? 'Refund will be processed within 5–10 business days' : 'Non-refundable fare',
       },
-    });
+    }).catch(err => console.error('[Cancel] BOOKING_CANCELLED notification error:', err instanceof Error ? err.message : err));
 
     return NextResponse.json({
       success: true,

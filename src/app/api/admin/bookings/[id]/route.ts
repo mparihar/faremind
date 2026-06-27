@@ -390,7 +390,7 @@ export const PATCH = withAdmin(async (req: NextRequest, { admin, params }: any) 
           updated_fields: Object.keys(update).join(', '),
           new_status: newStatus,
         },
-      });
+      }).catch(err => console.error(`[admin/bookings] ${eventType} notification error:`, err instanceof Error ? err.message : err));
     }
 
     return NextResponse.json({ success: true, booking: updated });

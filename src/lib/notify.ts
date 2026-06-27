@@ -140,17 +140,22 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
 
   switch (eventType) {
     case 'BOOKING_CONFIRMED': {
-      // If full booking data is provided, embed the complete itinerary
+      // If full booking data is provided, try to embed the complete itinerary
       const fullBookingData = d.full_booking_data as Record<string, unknown> | undefined;
       if (fullBookingData) {
-        const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
-        return {
-          subject: `Your FAREMIND flight is confirmed – ${ref}`,
-          html: itineraryHtml,
-          text: `Hi ${name}, your flight ${ref} (${route}) is confirmed. Total: ${amount}. View your full itinerary at ${process.env.NEXT_PUBLIC_APP_URL || 'https://faremind.ai'}/manage-booking`,
-        };
+        try {
+          const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
+          return {
+            subject: `Your FAREMIND flight is confirmed – ${ref}`,
+            html: itineraryHtml,
+            text: `Hi ${name}, your flight ${ref} (${route}) is confirmed. Total: ${amount}. View your full itinerary at ${process.env.NEXT_PUBLIC_APP_URL || 'https://faremind.ai'}/manage-booking`,
+          };
+        } catch (itineraryErr) {
+          console.error('[notify] ⚠️ generateItineraryHtmlFromBooking failed for customer email, falling back to simple template:', itineraryErr instanceof Error ? itineraryErr.message : itineraryErr);
+          // Fall through to simple template below
+        }
       }
-      // Fallback: simple summary
+      // Fallback: simple summary (also used when itinerary generation fails)
       return {
         subject: `Your FAREMIND flight is confirmed – ${ref}`,
         html: wrap('Booking Confirmed', `
@@ -335,12 +340,17 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
       // If full booking data is provided, embed the same itinerary as customer
       const fullBookingData = d.full_booking_data as Record<string, unknown> | undefined;
       if (fullBookingData) {
-        const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
-        return {
-          subject: `[FAREMIND] New Booking Confirmed – ${ref}`,
-          html: itineraryHtml,
-          text: `New booking: ${ref} by ${name} (${email}), ${route}, ${amount}. Time: ${ts}`,
-        };
+        try {
+          const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
+          return {
+            subject: `[FAREMIND] New Booking Confirmed – ${ref}`,
+            html: itineraryHtml,
+            text: `New booking: ${ref} by ${name} (${email}), ${route}, ${amount}. Time: ${ts}`,
+          };
+        } catch (itineraryErr) {
+          console.error('[notify] ⚠️ generateItineraryHtmlFromBooking failed for admin email, falling back to simple template:', itineraryErr instanceof Error ? itineraryErr.message : itineraryErr);
+          // Fall through to simple template below
+        }
       }
       // Fallback
       return {
@@ -488,70 +498,88 @@ async function getAdminRecipients(eventType: string): Promise<string[]> {
 // ═══════════════════════════════════════════════════════════
 
 export async function fireNotification(payload: NotifyPayload): Promise<void> {
-  try {
-    const { event_type, customer_email, data } = payload;
-    const ref = String(data.booking_reference ?? data.pnr ?? '') || null;
-    const customerName = String(data.customer_name ?? 'Customer');
+  const { event_type, customer_email, data } = payload;
+  const ref = String(data.booking_reference ?? data.pnr ?? '') || null;
+  const customerName = String(data.customer_name ?? 'Customer');
 
-    // Derive a human-readable template name from the event type
-    const templateMap: Record<string, string> = {
-      BOOKING_CONFIRMED: 'Booking Confirmation',
-      BOOKING_PENDING: 'Booking Pending',
-      BOOKING_FAILED: 'Booking Failed',
-      BOOKING_CANCELLED: 'Cancellation Notice',
-      BOOKING_UPDATED: 'Booking Updated',
-      DATE_CHANGE_SUBMITTED: 'Date Change Requested',
-      DATE_CHANGE_APPROVED: 'Date Change Approved',
-      DATE_CHANGE_REJECTED: 'Date Change Rejected',
-      PAYMENT_SUCCESS: 'Payment Receipt',
-      PAYMENT_FAILED: 'Payment Failed',
-      PRICE_DROP_ALERT: 'Price Alert',
-      PRICE_DROP_REFUND: 'Price Drop Refund',
-      CHECKIN_REMINDER: 'Check-in Reminder',
-      UPCOMING_TRIP: 'Trip Reminder',
-      SUPPORT_MANUAL: 'Support Request',
-    };
-    const template = templateMap[event_type] || event_type;
+  // Diagnostic logging — visible in production logs
+  console.log(`[notify] 📨 fireNotification: event=${event_type} customer_email=${customer_email || '(none)'} ref=${ref || '(none)'}`);
 
-    // Customer email
-    if (CUSTOMER_EVENTS.has(event_type) && customer_email) {
+  // Derive a human-readable template name from the event type
+  const templateMap: Record<string, string> = {
+    BOOKING_CONFIRMED: 'Booking Confirmation',
+    BOOKING_PENDING: 'Booking Pending',
+    BOOKING_FAILED: 'Booking Failed',
+    BOOKING_CANCELLED: 'Cancellation Notice',
+    BOOKING_UPDATED: 'Booking Updated',
+    DATE_CHANGE_SUBMITTED: 'Date Change Requested',
+    DATE_CHANGE_APPROVED: 'Date Change Approved',
+    DATE_CHANGE_REJECTED: 'Date Change Rejected',
+    PAYMENT_SUCCESS: 'Payment Receipt',
+    PAYMENT_FAILED: 'Payment Failed',
+    PRICE_DROP_ALERT: 'Price Alert',
+    PRICE_DROP_REFUND: 'Price Drop Refund',
+    CHECKIN_REMINDER: 'Check-in Reminder',
+    UPCOMING_TRIP: 'Trip Reminder',
+    SUPPORT_MANUAL: 'Support Request',
+  };
+  const template = templateMap[event_type] || event_type;
+
+  // ── Customer email (independent try/catch — failure here must NOT block admin/agent) ──
+  if (CUSTOMER_EVENTS.has(event_type) && customer_email) {
+    try {
       const spec = buildCustomerEmail(event_type, data);
       if (spec) {
-        sendBrevo(customer_email, spec.subject, spec.html, spec.text, { recipientName: customerName, template, bookingRef: ref }).catch(() => {});
+        await sendBrevo(customer_email, spec.subject, spec.html, spec.text, { recipientName: customerName, template, bookingRef: ref });
+        console.log(`[notify] ✅ Customer email sent: ${event_type} → ${customer_email}`);
+      } else {
+        console.warn(`[notify] ⚠️ buildCustomerEmail returned null for ${event_type}`);
       }
+    } catch (custErr) {
+      console.error(`[notify] ❌ Customer email FAILED for ${event_type} → ${customer_email}:`, custErr instanceof Error ? custErr.message : custErr);
     }
+  } else if (CUSTOMER_EVENTS.has(event_type) && !customer_email) {
+    console.warn(`[notify] ⚠️ Skipping customer email for ${event_type}: no customer_email provided`);
+  }
 
-    // Support/admin emails — send to ALL configured recipients
-    if (SUPPORT_EVENTS.has(event_type)) {
+  // ── Support/admin emails (independent try/catch) ──
+  if (SUPPORT_EVENTS.has(event_type)) {
+    try {
       const spec = buildSupportEmail(event_type, data);
       if (spec) {
         const adminEmails = await getAdminRecipients(event_type);
         for (const adminEmail of adminEmails) {
-          sendBrevo(adminEmail, spec.subject, spec.html, spec.text, { recipientName: 'Admin', template: `[Admin] ${template}`, bookingRef: ref }).catch(() => {});
+          await sendBrevo(adminEmail, spec.subject, spec.html, spec.text, { recipientName: 'Admin', template: `[Admin] ${template}`, bookingRef: ref });
         }
+        console.log(`[notify] ✅ Admin emails sent: ${event_type} → ${adminEmails.join(', ')}`);
       }
+    } catch (adminErr) {
+      console.error(`[notify] ❌ Admin email FAILED for ${event_type}:`, adminErr instanceof Error ? adminErr.message : adminErr);
     }
+  }
 
-    // Agent email — if booking was created by an agent, CC them on key events
-    const AGENT_NOTIFY_EVENTS = new Set<string>([
-      'BOOKING_CONFIRMED', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
-      'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
-      'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
-    ]);
-    const agentEmail = data.agent_email ? String(data.agent_email) : null;
-    const agentName = data.agent_name ? String(data.agent_name) : 'Agent';
-    if (agentEmail && AGENT_NOTIFY_EVENTS.has(event_type)) {
+  // ── Agent email (independent try/catch) ──
+  const AGENT_NOTIFY_EVENTS = new Set<string>([
+    'BOOKING_CONFIRMED', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
+    'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
+    'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
+  ]);
+  const agentEmail = data.agent_email ? String(data.agent_email) : null;
+  const agentName = data.agent_name ? String(data.agent_name) : 'Agent';
+  if (agentEmail && AGENT_NOTIFY_EVENTS.has(event_type)) {
+    try {
       const spec = buildSupportEmail(event_type, data);
       if (spec) {
         const agentSubject = spec.subject.replace('[FAREMIND]', '[FAREMIND Agent]');
-        sendBrevo(agentEmail, agentSubject, spec.html, spec.text, {
+        await sendBrevo(agentEmail, agentSubject, spec.html, spec.text, {
           recipientName: agentName,
           template: `[Agent] ${template}`,
           bookingRef: ref,
-        }).catch(() => {});
+        });
+        console.log(`[notify] ✅ Agent email sent: ${event_type} → ${agentEmail}`);
       }
+    } catch (agentErr) {
+      console.error(`[notify] ❌ Agent email FAILED for ${event_type} → ${agentEmail}:`, agentErr instanceof Error ? agentErr.message : agentErr);
     }
-  } catch (err) {
-    console.error(`[notify] ${payload.event_type} failed:`, err);
   }
 }

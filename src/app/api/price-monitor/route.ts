@@ -130,7 +130,7 @@ export async function POST(request: NextRequest) {
                 percent_drop: `${percentDrop.toFixed(1)}%`,
                 currency: job.currency,
               },
-            });
+            }).catch(err => console.error('[PriceMonitor] PRICE_DROP_ALERT notification error:', err instanceof Error ? err.message : err));
           }
 
           results.push({

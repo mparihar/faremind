@@ -315,6 +315,7 @@ export async function POST(request: NextRequest) {
         data: {
           booking_reference: pnr,
           pnr,
+          airline_pnr: pnr,
           customer_name: customerName,
           customer_email: customerEmail,
           origin: firstSeg?.departure?.airport || '',
@@ -327,7 +328,7 @@ export async function POST(request: NextRequest) {
           total_charged: flight.totalPrice,
           currency: flight.currency || 'USD',
         },
-      });
+      }).catch(err => console.error(`[Booking] ${emailEventType} notification error:`, err instanceof Error ? err.message : err));
 
       if (bookingStatus === 'CONFIRMED') {
         fireNotification({
@@ -337,6 +338,7 @@ export async function POST(request: NextRequest) {
           data: {
             booking_reference: pnr,
             pnr,
+            airline_pnr: pnr,
             customer_name: customerName,
             customer_email: customerEmail,
             origin: firstSeg?.departure?.airport || '',
@@ -347,7 +349,7 @@ export async function POST(request: NextRequest) {
             total_charged: flight.totalPrice,
             currency: flight.currency || 'USD',
           },
-        });
+        }).catch(err => console.error('[Booking] PAYMENT_SUCCESS notification error:', err instanceof Error ? err.message : err));
       }
 
     } catch (dbError) {

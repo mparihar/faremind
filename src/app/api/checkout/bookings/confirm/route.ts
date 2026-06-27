@@ -1823,7 +1823,7 @@ export async function POST(req: NextRequest) {
       },
     }).catch(() => null);
 
-    // Fire email notifications (non-blocking)
+    // Fire email notifications (non-blocking, errors logged not swallowed)
     fireNotification({
       event_type: 'BOOKING_CONFIRMED',
       booking_id: masterBooking.id,
@@ -1831,6 +1831,7 @@ export async function POST(req: NextRequest) {
       data: {
         booking_reference: masterBookingReference,
         pnr: masterPnr,
+        airline_pnr: masterPnr,
         customer_name: customerName,
         customer_email: customerEmail,
         origin: originAirport,
@@ -1846,7 +1847,7 @@ export async function POST(req: NextRequest) {
         payment_intent_id: paymentIntentId ?? '',
         full_booking_data: fullBooking ?? undefined,
       },
-    });
+    }).catch(err => console.error('[Checkout] BOOKING_CONFIRMED notification error:', err instanceof Error ? err.message : err));
 
     fireNotification({
       event_type: 'PAYMENT_SUCCESS',
@@ -1855,6 +1856,7 @@ export async function POST(req: NextRequest) {
       data: {
         booking_reference: masterBookingReference,
         pnr: masterPnr,
+        airline_pnr: masterPnr,
         customer_name: customerName,
         customer_email: customerEmail,
         origin: originAirport,
@@ -1867,7 +1869,7 @@ export async function POST(req: NextRequest) {
         payment_intent_id: paymentIntentId ?? '',
         confirmed_at: new Date(confirmedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
       },
-    });
+    }).catch(err => console.error('[Checkout] PAYMENT_SUCCESS notification error:', err instanceof Error ? err.message : err));
 
     // ══════════════════════════════════════════════════════════════════════════
     // PHASE 3 — Customer-Safe Confirmation Response
