@@ -156,10 +156,10 @@ export default function Footer() {
         <div className="mt-12 pt-8 border-t border-white/[0.06] flex flex-col md:flex-row items-start md:items-center justify-between gap-6">
           <div className="space-y-2 max-w-xl">
             <p className="text-xs text-slate-500">
-              © {new Date().getFullYear()} FAREMIND. All rights reserved.
+              © {new Date().getFullYear()} FAREMIND.AI. All rights reserved.
             </p>
             <p className="text-xs text-slate-500/80 leading-relaxed">
-              FAREMIND is a travel technology brand operated by Chatore LLC, a Texas limited liability company.
+              FAREMIND.AI is a travel technology brand operated by Chatore LLC, a Texas limited liability company.
             </p>
           </div>
           <div className="flex items-center gap-6 mt-6">
