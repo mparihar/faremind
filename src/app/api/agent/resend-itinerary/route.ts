@@ -3,6 +3,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAgent } from '@/lib/agent-auth';
 import { prisma } from '@/lib/db';
 import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
+import { agentNotifyAll } from '@/lib/agent-notify';
 
 const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 const SENDER_EMAIL  = process.env.BREVO_SENDER_EMAIL ?? 'support@faremind.ai';
@@ -118,18 +119,41 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
     });
   } catch {}
 
-  // Log booking event
+  // Log booking event (correct Prisma field names)
   try {
     await prisma.bookingEvent.create({
       data: {
         bookingId: booking.id,
-        type: 'ITINERARY_RESENT',
-        title: 'Itinerary resent by agent',
-        description: `Agent ${agent.name} resent itinerary to ${targetEmail}`,
-        metadata: { agent: agent.email, recipientEmail: targetEmail },
+        eventType: 'ITINERARY_RESENT',
+        eventTitle: 'Itinerary resent by agent',
+        eventDescription: `Agent ${agent.name} resent itinerary to ${targetEmail}`,
+        actorType: 'agent',
+        actorId: agent.id,
+        actorName: agent.name,
+        payloadJson: { recipientEmail: targetEmail },
       },
     });
   } catch {}
+
+  // Notify agent + admin that itinerary was resent
+  const route = `${booking.originAirport} - ${booking.destinationAirport}`;
+  agentNotifyAll({
+    event: 'Itinerary Resent',
+    bookingRef: ref,
+    pnr: booking.masterPnr ?? ref,
+    customerName,
+    customerEmail: undefined, // Customer already received the itinerary above
+    route,
+    agentName: agent.name,
+    agentEmail: agent.email,
+    subject: `Itinerary resent – ${ref}`,
+    adminSubject: `[FAREMIND] Agent Resent Itinerary – ${ref}`,
+    bodyHtml: `
+      <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Itinerary Resent</h2>
+      <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Agent <strong>${agent.name}</strong> resent the itinerary for booking <strong>${ref}</strong> (${route}) to <strong>${targetEmail}</strong>.</p>
+    `,
+    bodyText: `Agent ${agent.name} resent itinerary for booking ${ref} (${route}) to ${targetEmail}.`,
+  }).catch(err => console.error('[resend-itinerary] Agent/admin notify failed:', err));
 
   return NextResponse.json({
     success: true,
