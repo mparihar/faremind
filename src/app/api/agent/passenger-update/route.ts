@@ -79,11 +79,23 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
     before[key] = (passenger as any)[key] ?? null;
   }
 
-  // Apply the updates — convert DateTime fields
-  const prismaData: Record<string, any> = { ...safeUpdates };
-  if (prismaData.passportExpiry) {
-    const parsed = new Date(prismaData.passportExpiry);
-    prismaData.passportExpiry = isNaN(parsed.getTime()) ? null : parsed;
+  // Apply the updates — convert DateTime fields & clean empty values
+  const prismaData: Record<string, any> = {};
+  for (const [key, value] of Object.entries(safeUpdates)) {
+    if (key === 'passportExpiry') {
+      if (!value || value.trim() === '') {
+        // Empty date — skip (don't overwrite with invalid value)
+        continue;
+      }
+      const parsed = new Date(value);
+      prismaData[key] = isNaN(parsed.getTime()) ? undefined : parsed;
+    } else {
+      prismaData[key] = value;
+    }
+  }
+
+  if (Object.keys(prismaData).length === 0) {
+    return NextResponse.json({ success: true, updatedFields: [], note: 'No changes to save.' });
   }
 
   try {
@@ -91,9 +103,10 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
       where: { id: passengerId },
       data: prismaData,
     });
-  } catch (err) {
-    console.error('[passenger-update] Prisma update failed:', err instanceof Error ? err.message : err);
-    return NextResponse.json({ error: 'Failed to update passenger details' }, { status: 500 });
+  } catch (err: any) {
+    const msg = err?.message ?? String(err);
+    console.error('[passenger-update] Prisma update failed:', msg);
+    return NextResponse.json({ error: `Update failed: ${msg.slice(0, 200)}` }, { status: 500 });
   }
 
   // ── Success — return immediately, then fire side-effects ──
