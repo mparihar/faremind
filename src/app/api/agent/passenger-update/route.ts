@@ -79,11 +79,22 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
     before[key] = (passenger as any)[key] ?? null;
   }
 
-  // Apply the updates
-  await prisma.bookingPassenger.update({
-    where: { id: passengerId },
-    data: safeUpdates,
-  });
+  // Apply the updates — convert DateTime fields
+  const prismaData: Record<string, any> = { ...safeUpdates };
+  if (prismaData.passportExpiry) {
+    const parsed = new Date(prismaData.passportExpiry);
+    prismaData.passportExpiry = isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  try {
+    await prisma.bookingPassenger.update({
+      where: { id: passengerId },
+      data: prismaData,
+    });
+  } catch (err) {
+    console.error('[passenger-update] Prisma update failed:', err instanceof Error ? err.message : err);
+    return NextResponse.json({ error: 'Failed to update passenger details' }, { status: 500 });
+  }
 
   // Log the update as a booking event (correct Prisma field names)
   try {
