@@ -2,7 +2,11 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAgent } from '@/lib/agent-auth';
 import { prisma } from '@/lib/db';
-import { fireNotification } from '@/lib/notify';
+import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
+
+const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
+const SENDER_EMAIL  = process.env.BREVO_SENDER_EMAIL ?? 'support@faremind.ai';
+const SENDER_NAME   = 'FAREMIND';
 
 export const POST = withAgent(async (req: NextRequest, { agent }) => {
   const body = await req.json();
@@ -18,6 +22,7 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
     include: {
       journeys: { include: { segments: true }, orderBy: { journeyOrder: 'asc' } },
       passengers: { orderBy: { passengerOrder: 'asc' } },
+      segments: { orderBy: { segmentOrder: 'asc' } },
       seats: true,
       meals: true,
       baggage: true,
@@ -33,41 +38,87 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
 
   const targetEmail = recipientEmail?.trim() || booking.customerEmail;
   const customerName = booking.customerName || 'Traveler';
+  const ref = booking.masterBookingReference;
 
-  // Re-send booking confirmation via the notification system
-  try {
-    await fireNotification({
-      event_type: 'BOOKING_CONFIRMED',
-      booking_id: booking.id,
-      customer_email: targetEmail || undefined,
-      data: {
-        booking_reference: booking.masterBookingReference,
-        pnr: booking.masterPnr || booking.masterBookingReference,
-        airline_pnr: booking.masterPnr || booking.masterBookingReference,
-        customer_name: customerName,
-        customer_email: targetEmail,
-        origin: booking.originAirport,
-        destination: booking.destinationAirport,
-        route: `${booking.originAirport} - ${booking.destinationAirport}`,
-        airline: booking.primaryProvider || 'Unknown',
-        total_amount: `$${Number(booking.totalAmount || 0).toLocaleString()}`,
-        total_charged: Number(booking.totalAmount || 0),
-        currency: booking.currency || 'USD',
-        confirmed_at: booking.createdAt
-          ? new Date(booking.createdAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' })
-          : '',
-        full_booking_data: booking,
-        agent_email: agent.email,
-        agent_name: agent.name,
-      },
-    });
-    console.log(`[Agent] ✅ Itinerary resent to ${targetEmail} for booking ${bookingReference}`);
-  } catch (err) {
-    console.error('[Agent] ❌ Resend itinerary failed:', err);
-    return NextResponse.json({ error: 'Failed to send itinerary' }, { status: 500 });
+  if (!targetEmail) {
+    return NextResponse.json({ error: 'No recipient email available' }, { status: 400 });
   }
 
-  // Log event
+  // Check Brevo key
+  const apiKey = process.env.BREVO_API_KEY;
+  if (!apiKey) {
+    console.error('[resend-itinerary] BREVO_API_KEY not set');
+    return NextResponse.json({ error: 'Email service not configured' }, { status: 500 });
+  }
+
+  // Generate the detailed itinerary HTML
+  let htmlContent: string;
+  try {
+    htmlContent = generateItineraryHtmlFromBooking(booking);
+    console.log(`[resend-itinerary] ✅ Generated itinerary HTML (${htmlContent.length} chars) for ${ref}`);
+  } catch (err) {
+    console.error('[resend-itinerary] ❌ generateItineraryHtmlFromBooking failed:', err);
+    // Fallback to simple confirmation
+    htmlContent = `
+      <html><body style="font-family:sans-serif;padding:20px;">
+        <h2>Booking Confirmation – ${ref}</h2>
+        <p>Hi ${customerName},</p>
+        <p>Your booking <strong>${ref}</strong> (${booking.originAirport} → ${booking.destinationAirport}) is <strong>${booking.bookingStatus}</strong>.</p>
+        <p>PNR: <strong>${booking.masterPnr || ref}</strong></p>
+        <p>Total: <strong>$${Number(booking.totalAmount || 0).toLocaleString()}</strong></p>
+        <p>Manage your booking at <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://faremind.ai'}/manage-booking">FAREMIND</a>.</p>
+      </body></html>
+    `;
+  }
+
+  // Send directly via Brevo
+  const subject = `Your FAREMIND Itinerary – ${ref}`;
+  try {
+    const res = await fetch(BREVO_API_URL, {
+      method: 'POST',
+      headers: { 'api-key': apiKey, 'Content-Type': 'application/json', accept: 'application/json' },
+      body: JSON.stringify({
+        sender: { name: SENDER_NAME, email: SENDER_EMAIL },
+        to: [{ email: targetEmail, name: customerName }],
+        subject,
+        htmlContent,
+        textContent: `Hi ${customerName}, your booking ${ref} (${booking.originAirport} → ${booking.destinationAirport}) is ${booking.bookingStatus}. PNR: ${booking.masterPnr || ref}. Total: $${Number(booking.totalAmount || 0).toLocaleString()}.`,
+      }),
+    });
+
+    const responseBody = await res.text();
+    console.log(`[resend-itinerary] Brevo response: ${res.status} ${responseBody}`);
+
+    if (!res.ok) {
+      console.error(`[resend-itinerary] ❌ Brevo rejected: ${res.status} ${responseBody}`);
+      return NextResponse.json({ 
+        error: `Email service returned error: ${res.status}`,
+        details: responseBody.slice(0, 200),
+      }, { status: 502 });
+    }
+
+    console.log(`[resend-itinerary] ✅ Email sent to ${targetEmail} for booking ${ref}`);
+  } catch (err) {
+    console.error('[resend-itinerary] ❌ Failed to send via Brevo:', err);
+    return NextResponse.json({ error: 'Failed to send email' }, { status: 500 });
+  }
+
+  // Log to email_logs (non-blocking)
+  try {
+    await prisma.emailLog.create({
+      data: {
+        recipient: targetEmail,
+        recipientName: customerName,
+        subject,
+        template: 'Resend Itinerary',
+        status: 'SENT',
+        provider: 'Brevo',
+        bookingRef: ref,
+      },
+    });
+  } catch {}
+
+  // Log booking event
   try {
     await prisma.bookingEvent.create({
       data: {
@@ -83,6 +134,6 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
   return NextResponse.json({
     success: true,
     sentTo: targetEmail,
-    message: `Itinerary confirmation resent to ${targetEmail}`,
+    message: `Itinerary sent to ${targetEmail}`,
   });
 });
