@@ -537,6 +537,31 @@ export function generateItineraryHtml(p: ItineraryParams): string {
 // confirmation and manage-booking "Download Full Itinerary" are identical.
 
 export function generateItineraryHtmlFromBooking(booking: any): string {
+  try {
+    return _generateItineraryHtmlFromBookingInner(booking);
+  } catch (err) {
+    // Top-level safety net: return a minimal but valid HTML so the email
+    // is ALWAYS sent, even if the detailed template generation crashes.
+    const ref = booking?.masterBookingReference || booking?.masterPnr || 'N/A';
+    const name = booking?.passengers?.[0]?.firstName || 'Traveler';
+    const route = `${booking?.originAirport || ''} → ${booking?.destinationAirport || ''}`;
+    console.error('[fare-utils] ❌ generateItineraryHtmlFromBooking crashed — returning minimal fallback:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
+    return `<!DOCTYPE html><html><head><meta charset="utf-8"></head><body style="font-family:sans-serif;padding:40px 20px;background:#f8fafc;">
+      <div style="max-width:560px;margin:0 auto;background:#fff;border-radius:12px;padding:32px;border:1px solid #e2e8f0;">
+        <h2 style="margin:0 0 8px;color:#0f172a;">Booking Confirmed ✈️</h2>
+        <p style="color:#64748b;margin:0 0 16px;">Hi ${name}, your flight has been booked successfully!</p>
+        <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:8px;padding:16px;margin-bottom:16px;">
+          <p style="margin:0;font-size:13px;color:#64748b;">Booking Reference: <strong style="color:#0f172a;">${ref}</strong></p>
+          <p style="margin:4px 0 0;font-size:13px;color:#64748b;">Route: <strong style="color:#0f172a;">${route}</strong></p>
+        </div>
+        <p style="color:#64748b;font-size:13px;">View and manage your booking at <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://faremind.ai'}/manage-booking" style="color:#1abc9c;">Manage Booking</a>.</p>
+        <p style="margin-top:24px;color:#94a3b8;font-size:11px;">© ${new Date().getFullYear()} FAREMIND · support@faremind.ai</p>
+      </div>
+    </body></html>`;
+  }
+}
+
+function _generateItineraryHtmlFromBookingInner(booking: any): string {
   const cur = booking.currency || 'USD';
   const fmtCur = (n: number) => formatCurrency(n, cur);
   const ref = booking.masterBookingReference || booking.masterPnr || 'N/A';

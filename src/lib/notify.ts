@@ -138,22 +138,28 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
   const name = String(d.customer_name ?? 'Traveler');
   const amount = String(d.total_amount ?? '');
 
+  console.log(`[notify] 🔍 buildCustomerEmail: event=${eventType} ref=${ref} name=${name} has_full_booking_data=${!!d.full_booking_data}`);
+
   switch (eventType) {
     case 'BOOKING_CONFIRMED': {
       // If full booking data is provided, try to embed the complete itinerary
       const fullBookingData = d.full_booking_data as Record<string, unknown> | undefined;
       if (fullBookingData) {
         try {
+          console.log(`[notify] 📄 Generating detailed itinerary HTML for customer email (ref=${ref})...`);
           const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
+          console.log(`[notify] ✅ Itinerary HTML generated successfully (${itineraryHtml.length} chars)`);
           return {
             subject: `Your FAREMIND flight is confirmed – ${ref}`,
             html: itineraryHtml,
             text: `Hi ${name}, your flight ${ref} (${route}) is confirmed. Total: ${amount}. View your full itinerary at ${process.env.NEXT_PUBLIC_APP_URL || 'https://faremind.ai'}/manage-booking`,
           };
         } catch (itineraryErr) {
-          console.error('[notify] ⚠️ generateItineraryHtmlFromBooking failed for customer email, falling back to simple template:', itineraryErr instanceof Error ? itineraryErr.message : itineraryErr);
+          console.error('[notify] ❌ generateItineraryHtmlFromBooking FAILED for customer email, falling back to simple template:', itineraryErr instanceof Error ? `${itineraryErr.message}\n${itineraryErr.stack}` : itineraryErr);
           // Fall through to simple template below
         }
+      } else {
+        console.warn(`[notify] ⚠️ No full_booking_data provided for BOOKING_CONFIRMED — using simple template`);
       }
       // Fallback: simple summary (also used when itinerary generation fails)
       return {
@@ -526,17 +532,20 @@ export async function fireNotification(payload: NotifyPayload): Promise<void> {
   const template = templateMap[event_type] || event_type;
 
   // ── Customer email (independent try/catch — failure here must NOT block admin/agent) ──
+  console.log(`[notify] 🔍 Customer email check: event=${event_type} customer_email="${customer_email || '(none)'}" isCustomerEvent=${CUSTOMER_EVENTS.has(event_type)}`);
   if (CUSTOMER_EVENTS.has(event_type) && customer_email) {
     try {
+      console.log(`[notify] 📧 Building customer email for ${event_type} → ${customer_email}`);
       const spec = buildCustomerEmail(event_type, data);
       if (spec) {
+        console.log(`[notify] 📤 Sending customer email: subject="${spec.subject}" htmlLength=${spec.html.length} to=${customer_email}`);
         await sendBrevo(customer_email, spec.subject, spec.html, spec.text, { recipientName: customerName, template, bookingRef: ref });
         console.log(`[notify] ✅ Customer email sent: ${event_type} → ${customer_email}`);
       } else {
         console.warn(`[notify] ⚠️ buildCustomerEmail returned null for ${event_type}`);
       }
     } catch (custErr) {
-      console.error(`[notify] ❌ Customer email FAILED for ${event_type} → ${customer_email}:`, custErr instanceof Error ? custErr.message : custErr);
+      console.error(`[notify] ❌ Customer email FAILED for ${event_type} → ${customer_email}:`, custErr instanceof Error ? `${custErr.message}\n${custErr.stack}` : custErr);
     }
   } else if (CUSTOMER_EVENTS.has(event_type) && !customer_email) {
     console.warn(`[notify] ⚠️ Skipping customer email for ${event_type}: no customer_email provided`);

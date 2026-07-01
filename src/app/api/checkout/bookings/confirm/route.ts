@@ -1828,6 +1828,7 @@ export async function POST(req: NextRequest) {
     // Previously these were unawaited promises that got killed when the
     // response was returned — causing customers to never receive emails.
     after(async () => {
+      console.log(`[Checkout] 📨 Firing post-booking notifications: customerEmail="${customerEmail}" agentEmail="${agentEmail || '(none)'}"`);
       try {
         await fireNotification({
           event_type: 'BOOKING_CONFIRMED',
@@ -1851,10 +1852,12 @@ export async function POST(req: NextRequest) {
             confirmed_at: new Date(confirmedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
             payment_intent_id: paymentIntentId ?? '',
             full_booking_data: fullBooking ?? undefined,
+            agent_email: agentEmail || undefined,
+            agent_name: agentName || undefined,
           },
         });
       } catch (err) {
-        console.error('[Checkout] BOOKING_CONFIRMED notification error:', err instanceof Error ? err.message : err);
+        console.error('[Checkout] BOOKING_CONFIRMED notification error:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
       }
 
       try {
@@ -1877,10 +1880,12 @@ export async function POST(req: NextRequest) {
             currency,
             payment_intent_id: paymentIntentId ?? '',
             confirmed_at: new Date(confirmedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+            agent_email: agentEmail || undefined,
+            agent_name: agentName || undefined,
           },
         });
       } catch (err) {
-        console.error('[Checkout] PAYMENT_SUCCESS notification error:', err instanceof Error ? err.message : err);
+        console.error('[Checkout] PAYMENT_SUCCESS notification error:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
       }
     });
 
