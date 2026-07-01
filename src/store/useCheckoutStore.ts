@@ -379,9 +379,15 @@ export function buildLocalPricing(store: CheckoutStore, pricingConfig?: PricingC
   const perPersonBase = selectedFare?.basePrice ?? 0;
   const taxRate = pricingConfig?.taxRate ?? 0.156;
 
-  // Build per-passenger breakdown for display (cosmetic split of taxes from base)
-  const perPassenger: PerPassengerPrice[] = passengers.map(p => {
-    const base = perPersonBase;
+  // Build per-passenger breakdown for display (cosmetic split of taxes from base).
+  // Distribute allPaxFareTotal exactly across passengers so line items sum to the
+  // total — avoids the ±$1 rounding drift when perPersonBase × count ≠ allPaxFareTotal.
+  const paxCount = passengers.length || 1;
+  const perPaxFloor = Math.floor(allPaxFareTotal / paxCount);
+  const remainder = allPaxFareTotal - perPaxFloor * paxCount; // 0 ≤ remainder < paxCount
+
+  const perPassenger: PerPassengerPrice[] = passengers.map((p, idx) => {
+    const base = perPaxFloor + (idx < remainder ? 1 : 0);
     const taxes = Math.round(base * taxRate);
     return { passengerId: p.id, type: p.type, baseFare: base - taxes, taxes, subtotal: base };
   });
