@@ -40,6 +40,7 @@ const STATUS_COLORS: Record<string, string> = {
   ISSUED:              'bg-[#1ABC9C]/15 text-[#1ABC9C] border-[#1ABC9C]/20',
   NOT_STARTED:         'bg-slate-400/15 text-slate-400 border-slate-400/20',
   IN_PROGRESS:         'bg-amber-400/15 text-amber-400 border-amber-400/20',
+  CANCEL_REQUESTED:    'bg-orange-500/15 text-orange-400 border-orange-500/25',
   CANCELLED:           'bg-red-400/15 text-red-400 border-red-400/20',
   FAILED:              'bg-red-500/15 text-red-500 border-red-500/20',
   COMPLETED:           'bg-slate-400/15 text-slate-400 border-slate-400/20',
@@ -265,6 +266,35 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const [auditLoading, setAuditLoading] = useState(false);
   const [deleteConfirmText, setDeleteConfirmText] = useState('');
 
+  // ── Cancellation action state ──
+  const [cancelAction, setCancelAction] = useState<'approve' | 'reject' | null>(null);
+  const [cancelReason, setCancelReason] = useState('');
+  const [cancelProcessing, setCancelProcessing] = useState(false);
+  const [cancelResult, setCancelResult] = useState<{ success: boolean; message: string } | null>(null);
+
+  async function handleCancelAction(act: 'approve' | 'reject') {
+    setCancelProcessing(true);
+    setCancelResult(null);
+    try {
+      const res = await adminFetch(`/api/admin/bookings/${id}/cancel-action`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ action: act, reason: cancelReason }),
+      });
+      const json = await res.json();
+      if (res.ok && json.success) {
+        setCancelResult({ success: true, message: json.message });
+        setTimeout(() => { setCancelAction(null); setCancelResult(null); setCancelReason(''); load(true); }, 2000);
+      } else {
+        setCancelResult({ success: false, message: json.error || 'Action failed' });
+      }
+    } catch {
+      setCancelResult({ success: false, message: 'Network error' });
+    } finally {
+      setCancelProcessing(false);
+    }
+  }
+
   // ── Data loading ──
   async function load(keepPnrSelection = false) {
     setLoading(true);
@@ -484,6 +514,25 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           </p>
         </div>
         <div className="flex items-center gap-2">
+          {/* ── Approve / Reject buttons for CANCEL_REQUESTED ── */}
+          {booking.status === 'CANCEL_REQUESTED' && (
+            <>
+              <button
+                onClick={() => { setCancelAction('approve'); setCancelResult(null); setCancelReason(''); }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-emerald-500/15 border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/25 text-xs font-bold transition-all"
+              >
+                <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round"><polyline points="20 6 9 17 4 12"/></svg>
+                Approve Cancellation
+              </button>
+              <button
+                onClick={() => { setCancelAction('reject'); setCancelResult(null); setCancelReason(''); }}
+                className="flex items-center gap-1.5 px-4 py-2 rounded-xl bg-red-500/15 border border-red-500/30 text-red-400 hover:bg-red-500/25 text-xs font-bold transition-all"
+              >
+                <X size={14} />
+                Reject
+              </button>
+            </>
+          )}
           <button onClick={() => load(true)} className="p-2 rounded-xl border border-slate-700 text-slate-400 hover:text-white transition-all">
             <RefreshCw size={16} />
           </button>
@@ -502,6 +551,56 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           )}
         </div>
       </div>
+
+      {/* ── Cancellation Action Modal ── */}
+      {cancelAction && (
+        <div className="fixed inset-0 bg-black/60 z-50 flex items-center justify-center p-4" onClick={() => !cancelProcessing && setCancelAction(null)}>
+          <div className="bg-slate-800 border border-slate-700 rounded-2xl p-6 max-w-md w-full shadow-2xl" onClick={e => e.stopPropagation()}>
+            <h3 className={`text-lg font-black mb-2 ${cancelAction === 'approve' ? 'text-emerald-400' : 'text-red-400'}`}>
+              {cancelAction === 'approve' ? '✅ Approve Cancellation' : '❌ Reject Cancellation'}
+            </h3>
+            <p className="text-slate-400 text-sm mb-4">
+              {cancelAction === 'approve'
+                ? 'This will cancel the booking with the airline, update all PNR statuses, and send cancellation + refund confirmation to the customer, agent, and admin.'
+                : 'This will restore the booking to CONFIRMED status and notify the customer and agent that the cancellation was declined.'}
+            </p>
+            <div className="mb-4">
+              <label className="text-slate-400 text-xs font-bold block mb-1">Reason (optional)</label>
+              <textarea
+                value={cancelReason}
+                onChange={e => setCancelReason(e.target.value)}
+                placeholder={cancelAction === 'approve' ? 'e.g., Customer requested, fare rules allow full refund' : 'e.g., Non-refundable fare, within 24hrs of departure'}
+                className="w-full px-3 py-2 bg-slate-700/50 border border-slate-600 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all resize-none h-20"
+              />
+            </div>
+            {cancelResult && (
+              <div className={`mb-4 px-4 py-3 rounded-xl text-sm font-semibold ${cancelResult.success ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/25' : 'bg-red-500/15 text-red-400 border border-red-500/25'}`}>
+                {cancelResult.message}
+              </div>
+            )}
+            <div className="flex items-center gap-3">
+              <button
+                onClick={() => handleCancelAction(cancelAction)}
+                disabled={cancelProcessing}
+                className={`flex-1 px-4 py-2.5 rounded-xl text-sm font-bold transition-all disabled:opacity-50 ${
+                  cancelAction === 'approve'
+                    ? 'bg-emerald-500 hover:bg-emerald-600 text-white'
+                    : 'bg-red-500 hover:bg-red-600 text-white'
+                }`}
+              >
+                {cancelProcessing ? 'Processing...' : cancelAction === 'approve' ? 'Confirm — Cancel Booking' : 'Confirm — Reject Request'}
+              </button>
+              <button
+                onClick={() => setCancelAction(null)}
+                disabled={cancelProcessing}
+                className="px-4 py-2.5 rounded-xl border border-slate-600 text-slate-400 hover:text-white text-sm transition-all disabled:opacity-50"
+              >
+                Close
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* ── Tab bar ── */}
       <div className="flex gap-0.5 mb-6 border-b border-slate-700/50 overflow-x-auto overflow-y-hidden max-w-full">
@@ -612,7 +711,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <div>
                     <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Booking Status</label>
                     <select className={sel} value={editBookingData.bookingStatus ?? ''} onChange={e => setEditBookingData(d => ({ ...d, bookingStatus: e.target.value }))}>
-                      {['CREATED','CONFIRMED','TICKETED','CANCELLED','COMPLETED','FAILED'].map(s => <option key={s} value={s} className="bg-slate-800">{s}</option>)}
+                      {['CREATED','CONFIRMED','TICKETED','CANCEL_REQUESTED','CANCELLED','COMPLETED','FAILED'].map(s => <option key={s} value={s} className="bg-slate-800">{s}</option>)}
                     </select>
                   </div>
                   <div>
