@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
 import SessionExpiryWarning from '@/components/session/SessionExpiryWarning';
 import AgentTopNavbar from '@/components/agent/AgentTopNavbar';
+import AgentSidebar from '@/components/agent/AgentSidebar';
 
 export default function AgentLayout({ children }: { children: React.ReactNode }) {
   const router = useRouter();
@@ -15,6 +16,7 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
   const { user, loadSession, logoutWithServerRevoke } = useAuthStore();
   const [checking, setChecking] = useState(true);
   const [showExpiryWarning, setShowExpiryWarning] = useState(false);
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   const isLoginPage = pathname === '/agent/login';
 
@@ -101,10 +103,17 @@ export default function AgentLayout({ children }: { children: React.ReactNode })
 
   return (
     <div className="min-h-screen bg-slate-950">
+      <AgentSidebar
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed(c => !c)}
+      />
       <AgentTopNavbar />
 
-      {/* Main content — full width, below the fixed navbar (h-16 = 64px) */}
-      <main className="pt-16">
+      {/* Main content — offset by sidebar width, below the fixed navbar (h-16 = 64px) */}
+      <main
+        className="pt-16 transition-all duration-300"
+        style={{ marginLeft: sidebarCollapsed ? 68 : 240 }}
+      >
         {children}
       </main>
 
