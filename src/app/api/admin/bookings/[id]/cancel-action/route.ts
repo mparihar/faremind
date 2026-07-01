@@ -70,7 +70,7 @@ export const POST = withAdmin(async (req: NextRequest, { admin, params }: any) =
         customerEmail: booking.customerEmail || undefined,
         route,
         agentName: booking.agentName ?? '',
-        agentEmail: '', // Will be fetched from agent session if available
+        agentEmail: booking.agentEmail ?? '',
         subject: `Cancellation request declined – ${ref}`,
         adminSubject: `[FAREMIND] Cancellation Rejected – ${ref}`,
         bodyHtml: `
@@ -187,7 +187,7 @@ export const POST = withAdmin(async (req: NextRequest, { admin, params }: any) =
       customerEmail: booking.customerEmail || undefined,
       route,
       agentName: booking.agentName ?? '',
-      agentEmail: '',
+      agentEmail: booking.agentEmail ?? '',
       subject: `Booking cancelled – ${ref}`,
       adminSubject: `[FAREMIND] Cancellation Confirmed – ${ref}`,
       bodyHtml: `
