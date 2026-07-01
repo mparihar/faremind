@@ -44,6 +44,45 @@ const fmt = (amount: number) =>
 
 // ─── Provider Baggage Section ─────────────────────────────────────────────────
 
+/**
+ * Extract the route label (e.g. "ORD → DEL") from an ancillary's label.
+ * Falls back to providerServiceId-based key if no route found.
+ */
+function extractRouteLabel(a: NormalizedAncillary): string {
+  const match = a.label.match(/·\s*([A-Z]{3}\s*→\s*[A-Z]{3})/);
+  return match ? match[1].trim() : a.description.match(/·\s*([A-Z]{3}\s*→\s*[A-Z]{3})/)?.[1]?.trim() ?? 'Checked bag';
+}
+
+/**
+ * Determine if a route label looks like the outbound direction
+ * by comparing against the first segment's route from included bags.
+ */
+function isOutbound(routeLabel: string, includedItems: NormalizedAncillary[]): boolean {
+  // If there are included bags with route info, compare against them
+  for (const item of includedItems) {
+    const m = item.label.match(/·\s*([A-Z]{3})\s*→\s*([A-Z]{3})/);
+    if (m) {
+      // The first included segment's origin determines outbound direction
+      return routeLabel.startsWith(m[1]);
+    }
+  }
+  // Fallback: alphabetical — first route is outbound
+  return true;
+}
+
+/** A group of bag services sharing the same route (journey direction). */
+interface BagJourneyGroup {
+  routeLabel: string;
+  /** Bag services in this group, ordered by designation (1st, 2nd, 3rd) */
+  bags: NormalizedAncillary[];
+  /** Unit price — taken from the first bag (all bags in same direction have same price) */
+  unitPrice: number;
+  /** Currently selected quantity in the store */
+  selectedQty: number;
+  /** Max selectable quantity (= number of bag services available) */
+  maxQty: number;
+}
+
 function ProviderBaggageSection({
   includedBags,
   providerBaggage,
@@ -64,8 +103,60 @@ function ProviderBaggageSection({
   const includedItems = providerBaggage.filter(a => a.included);
   const purchasableItems = providerBaggage.filter(a => !a.included && a.chargeable);
 
-  const isSelected = (serviceId: string) =>
-    selectedAncillaries.some(a => a.providerServiceId === serviceId);
+  // ── Group purchasable bags by journey direction ───────────────────────────
+  const groupMap = new Map<string, NormalizedAncillary[]>();
+  for (const item of purchasableItems) {
+    const route = extractRouteLabel(item);
+    const list = groupMap.get(route) ?? [];
+    list.push(item);
+    groupMap.set(route, list);
+  }
+
+  // Build journey groups and sort outbound first
+  const journeyGroups: BagJourneyGroup[] = Array.from(groupMap.entries()).map(
+    ([routeLabel, bags]) => {
+      const selectedQty = bags.filter(b =>
+        selectedAncillaries.some(a => a.providerServiceId === b.providerServiceId),
+      ).length;
+      return {
+        routeLabel,
+        bags,
+        unitPrice: bags[0]?.amount ?? 0,
+        selectedQty,
+        maxQty: bags.length,
+      };
+    },
+  );
+
+  // Sort: outbound direction first
+  journeyGroups.sort((a, b) => {
+    const aOut = isOutbound(a.routeLabel, includedItems);
+    const bOut = isOutbound(b.routeLabel, includedItems);
+    if (aOut && !bOut) return -1;
+    if (!aOut && bOut) return 1;
+    return a.routeLabel.localeCompare(b.routeLabel);
+  });
+
+  // ── Quantity change handler ──────────────────────────────────────────────
+  const handleQtyChange = (group: BagJourneyGroup, newQty: number) => {
+    const currentQty = group.selectedQty;
+    if (newQty > currentQty) {
+      // Add bags from currentQty to newQty-1
+      for (let i = currentQty; i < newQty; i++) {
+        onAdd(group.bags[i]);
+      }
+    } else if (newQty < currentQty) {
+      // Remove bags from newQty to currentQty-1 (remove from the end)
+      for (let i = currentQty - 1; i >= newQty; i--) {
+        onRemove(group.bags[i].providerServiceId);
+      }
+    }
+  };
+
+  // ── Total selected baggage cost ──────────────────────────────────────────
+  const totalBaggageCost = selectedAncillaries
+    .filter(a => a.ancillaryType === 'EXTRA_CHECKED_BAG' || a.ancillaryType === 'CHECKED_BAG')
+    .reduce((s, a) => s + a.amount * a.quantity, 0);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
@@ -117,49 +208,57 @@ function ProviderBaggageSection({
             </div>
           )}
 
-          {/* Purchasable bags from provider */}
-          {purchasableItems.length > 0 ? (
-            purchasableItems.map((item) => {
-              const selected = isSelected(item.providerServiceId);
-              return (
-                <div
-                  key={item.providerServiceId}
-                  className={cn(
-                    'flex items-center justify-between p-4 rounded-xl border-2 transition-all',
-                    selected
-                      ? 'border-[#1ABC9C] bg-[#1ABC9C]/5 shadow-sm'
-                      : 'border-slate-200 bg-slate-50 hover:border-slate-300'
-                  )}
-                >
-                  <div>
-                    <p className="text-sm font-semibold text-slate-900">{item.label}</p>
-                    <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>
-                  </div>
-                  <div className="flex items-center gap-3 flex-shrink-0 ml-3">
-                    <span className="text-sm font-bold text-[#F97316]">
-                      {item.amount === 0 ? 'Free' : fmt(item.amount)}
-                    </span>
-                    {selected ? (
-                      <button
-                        onClick={() => onRemove(item.providerServiceId)}
-                        className="w-8 h-8 rounded-full bg-[#1ABC9C] text-white flex items-center justify-center hover:bg-emerald-600 transition-colors shadow-sm"
-                        aria-label={`Remove ${item.label}`}
-                      >
-                        <X className="w-3.5 h-3.5" />
-                      </button>
-                    ) : (
-                      <button
-                        onClick={() => onAdd(item)}
-                        className="w-8 h-8 rounded-full bg-white border border-slate-200 text-slate-600 flex items-center justify-center hover:bg-slate-100 transition-colors shadow-sm"
-                        aria-label={`Add ${item.label}`}
-                      >
-                        <Plus className="w-3.5 h-3.5" />
-                      </button>
-                    )}
-                  </div>
+          {/* Purchasable bags — one row per journey direction with quantity dropdown */}
+          {journeyGroups.length > 0 ? (
+            journeyGroups.map((group) => (
+              <div
+                key={group.routeLabel}
+                className={cn(
+                  'flex items-center justify-between p-4 rounded-xl border-2 transition-all',
+                  group.selectedQty > 0
+                    ? 'border-[#1ABC9C] bg-[#1ABC9C]/5 shadow-sm'
+                    : 'border-slate-200 bg-slate-50 hover:border-slate-300'
+                )}
+              >
+                <div className="min-w-0">
+                  <p className="text-sm font-semibold text-slate-900">
+                    Add checked bag · {group.routeLabel}
+                  </p>
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Extra checked baggage · 23 kg · {group.routeLabel}
+                  </p>
                 </div>
-              );
-            })
+                <div className="flex items-center gap-3 flex-shrink-0 ml-3">
+                  <span className="text-sm font-bold text-[#F97316]">
+                    {fmt(group.unitPrice)}
+                  </span>
+                  <select
+                    value={group.selectedQty}
+                    onChange={(e) => handleQtyChange(group, parseInt(e.target.value, 10))}
+                    className={cn(
+                      'appearance-none rounded-lg border px-3 py-1.5 text-sm font-semibold cursor-pointer transition-colors',
+                      'bg-white focus:outline-none focus:ring-2 focus:ring-[#1ABC9C]/40',
+                      group.selectedQty > 0
+                        ? 'border-[#1ABC9C] text-[#1ABC9C]'
+                        : 'border-slate-200 text-slate-600'
+                    )}
+                    style={{
+                      backgroundImage: `url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%2394a3b8' d='M2.5 4.5l3.5 3.5 3.5-3.5'/%3E%3C/svg%3E")`,
+                      backgroundRepeat: 'no-repeat',
+                      backgroundPosition: 'right 8px center',
+                      paddingRight: '28px',
+                    }}
+                    aria-label={`Quantity for ${group.routeLabel}`}
+                  >
+                    {Array.from({ length: group.maxQty + 1 }, (_, i) => (
+                      <option key={i} value={i}>
+                        {i}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              </div>
+            ))
           ) : (
             /* No purchasable bags — show appropriate message */
             (includedItems.length > 0 || includedBags > 0) ? (
@@ -179,12 +278,9 @@ function ProviderBaggageSection({
           )}
 
           {/* Selected bag summary */}
-          {selectedAncillaries.filter(a => a.ancillaryType === 'EXTRA_CHECKED_BAG' || a.ancillaryType === 'CHECKED_BAG').length > 0 && (
+          {totalBaggageCost > 0 && (
             <p className="text-sm text-[#1ABC9C] font-semibold mt-1">
-              +{fmt(selectedAncillaries
-                .filter(a => a.ancillaryType === 'EXTRA_CHECKED_BAG' || a.ancillaryType === 'CHECKED_BAG')
-                .reduce((s, a) => s + a.amount * a.quantity, 0)
-              )} for extra baggage
+              +{fmt(totalBaggageCost)} for extra baggage
             </p>
           )}
         </div>
