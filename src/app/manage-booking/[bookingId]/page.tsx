@@ -224,7 +224,7 @@ function DateChangeModal({ bookingId, booking, onClose }: { bookingId: string; b
         ) : (
           <div className="space-y-4">
             <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-sm text-slate-400">
-              Current: <span className="text-white font-medium">{booking.originAirport} → {booking.destinationAirport}</span>
+              Current: <span className="text-white font-medium">{booking.originAirport} {(booking.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} {booking.destinationAirport}</span>
               {' · '}{new Date(booking.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </div>
             <div>

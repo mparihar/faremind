@@ -200,7 +200,7 @@ export default function AdminDashboardPage() {
                     <p className="text-white font-semibold text-sm">{b.user.firstName} {b.user.lastName}</p>
                     <p className="text-slate-500 text-xs">{b.user.email}</p>
                   </td>
-                  <td className="px-6 py-3.5 font-bold text-white text-sm">{b.originAirport} → {b.destinationAirport}</td>
+                  <td className="px-6 py-3.5 font-bold text-white text-sm">{b.originAirport} {(b.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} {b.destinationAirport}</td>
                   <td className="px-6 py-3.5 text-slate-300 text-sm">
                     {format(new Date(b.departureTime), 'dd MMM yyyy hh:mm a')}
                   </td>

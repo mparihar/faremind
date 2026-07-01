@@ -21,7 +21,7 @@ export const GET = withAgent(async (_req: NextRequest, { agent, params }) => {
       meals: true,
       baggage: true,
       addons: true,
-      payments: { select: { id: true, type: true, amount: true, currency: true, status: true, stripePaymentId: true, createdAt: true } },
+      payments: { select: { id: true, paymentMethodType: true, amount: true, currency: true, status: true, stripePaymentIntentId: true, cardLast4: true, createdAt: true } },
       events: { orderBy: { createdAt: 'desc' }, take: 20 },
       cancellations: true,
     },

@@ -197,7 +197,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
               </span>
             </div>
             <p className="text-sm text-slate-400">
-              {booking.originAirport} → {booking.destinationAirport} • {booking.customerName}
+              {booking.originAirport} {(booking.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} {booking.destinationAirport} • {booking.customerName}
             </p>
           </div>
 
@@ -261,7 +261,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
             <h3 className="text-sm font-bold text-white mb-4 flex items-center gap-2"><Plane className="w-4 h-4 text-[#1ABC9C]" /> Flight Details</h3>
             <div className="space-y-3">
               <div className="grid grid-cols-2 gap-3 text-sm">
-                <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Route</p><p className="text-white font-semibold">{booking.originAirport} → {booking.destinationAirport}</p></div>
+                <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Route</p><p className="text-white font-semibold">{booking.originAirport} {(booking.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} {booking.destinationAirport}</p></div>
                 <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Trip Type</p><p className="text-white">{booking.tripType?.replace(/_/g, ' ')}</p></div>
                 <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Departure</p><p className="text-white">{new Date(booking.departureDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p></div>
                 {booking.returnDate && <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Return</p><p className="text-white">{new Date(booking.returnDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p></div>}

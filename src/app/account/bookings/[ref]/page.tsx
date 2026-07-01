@@ -294,7 +294,7 @@ export default function BookingDetailPage() {
                   <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Itinerary Summary</p>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
                     {[
-                      ['Route', `${b.originAirport} → ${b.destinationAirport}`],
+                      ['Route', `${b.originAirport} ${(b.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} ${b.destinationAirport}`],
                       ['Trip type', (b.tripType || '').replace(/_/g, ' ')],
                       ['Departure', fmtDate(b.departureDate)],
                       ['Return', b.returnDate ? fmtDate(b.returnDate) : '—'],

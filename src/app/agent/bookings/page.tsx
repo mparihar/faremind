@@ -183,7 +183,7 @@ export default function AgentBookingsPage() {
                     </span>
                   </div>
                   <p className="text-sm font-semibold text-white">
-                    {b.originAirport} → {b.destinationAirport}
+                    {b.originAirport} {b.tripType?.toLowerCase().includes('round') ? '⇄' : '→'} {b.destinationAirport}
                   </p>
                   <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
                     <span>{b.customerName}</span>

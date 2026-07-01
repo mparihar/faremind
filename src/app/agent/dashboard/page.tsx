@@ -191,7 +191,7 @@ export default function AgentDashboardPage() {
                     )}
                   </div>
                   <p className="text-sm font-semibold text-white">
-                    {b.originAirport} → {b.destinationAirport}
+                    {b.originAirport} {b.tripType?.toLowerCase().includes('round') ? '⇄' : '→'} {b.destinationAirport}
                   </p>
                   <p className="text-xs text-slate-500 mt-0.5">{b.customerName}</p>
                 </div>
