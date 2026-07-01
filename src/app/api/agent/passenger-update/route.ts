@@ -79,18 +79,21 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
     before[key] = (passenger as any)[key] ?? null;
   }
 
-  // Apply the updates — convert DateTime fields & clean empty values
+  // Apply the updates — convert DateTime fields & map field names
   const prismaData: Record<string, any> = {};
+  // Frontend uses 'issuingCountry' but BookingPassenger model uses 'passportCountry'
+  const FIELD_MAP: Record<string, string> = { issuingCountry: 'passportCountry' };
+
   for (const [key, value] of Object.entries(safeUpdates)) {
+    const dbKey = FIELD_MAP[key] || key;
     if (key === 'passportExpiry') {
       if (!value || value.trim() === '') {
-        // Empty date — skip (don't overwrite with invalid value)
         continue;
       }
       const parsed = new Date(value);
-      prismaData[key] = isNaN(parsed.getTime()) ? undefined : parsed;
+      prismaData[dbKey] = isNaN(parsed.getTime()) ? undefined : parsed;
     } else {
-      prismaData[key] = value;
+      prismaData[dbKey] = value;
     }
   }
 
@@ -106,7 +109,7 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
   } catch (err: any) {
     const msg = err?.message ?? String(err);
     console.error('[passenger-update] Prisma update failed:', msg);
-    return NextResponse.json({ error: `Update failed: ${msg.slice(0, 200)}` }, { status: 500 });
+    return NextResponse.json({ error: `Update failed: ${msg.slice(0, 800)}` }, { status: 500 });
   }
 
   // ── Success — return immediately, then fire side-effects ──
