@@ -49,10 +49,7 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
 
   // Update status to CANCEL_REQUESTED
   try {
-    await prisma.masterBooking.update({
-      where: { id: booking.id },
-      data: { bookingStatus: 'CANCEL_REQUESTED' },
-    });
+    await prisma.$executeRaw`UPDATE master_bookings SET booking_status = 'CANCEL_REQUESTED'::"MbBookingStatus", updated_at = NOW() WHERE id = ${booking.id}`;
   } catch (err) {
     console.error('[cancellation-request] Status update failed:', err);
     return NextResponse.json({ error: 'Failed to update booking status' }, { status: 500 });
