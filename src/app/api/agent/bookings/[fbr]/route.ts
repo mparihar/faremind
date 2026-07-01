@@ -14,7 +14,7 @@ export const GET = withAgent(async (_req: NextRequest, { agent, params }) => {
     include: {
       pnrs: true,
       journeys: true,
-      segments: { orderBy: { sequenceNumber: 'asc' } },
+      segments: { orderBy: { segmentOrder: 'asc' } },
       passengers: true,
       tickets: true,
       seats: true,
