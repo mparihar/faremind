@@ -140,8 +140,109 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
   const amount = String(d.total_amount ?? '');
 
   switch (eventType) {
-    // NOTE: BOOKING_CONFIRMED customer email is handled by the frontend (src/lib/notify.ts)
-    // which sends a rich itinerary-based email. No duplicate from backend.
+    case 'BOOKING_CONFIRMED': {
+      const airlinePnr = String(d.airline_pnr || d.pnr || '');
+      const airline = String(d.airline ?? '');
+      const confirmedAt = d.confirmed_at ? new Date(String(d.confirmed_at)).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
+      const cardLast4 = String(d.card_last4 ?? '');
+      const currency = String(d.currency ?? 'USD');
+      const appUrl = process.env.APP_URL || 'https://faremind.ai';
+
+      // Passenger rows
+      const passengers = Array.isArray(d.passengers) ? d.passengers : [];
+      let paxHtml = '';
+      for (let i = 0; i < passengers.length; i++) {
+        const p = passengers[i] as Record<string, unknown>;
+        const pName = String(p.name ?? `Passenger ${i + 1}`);
+        const pType = String(p.type ?? 'Adult');
+        paxHtml += `<tr>
+          <td style="padding:6px 0;color:#0f172a;font-size:13px;">${pName}</td>
+          <td style="padding:6px 0;text-align:right;color:#64748b;font-size:12px;">${pType}</td>
+        </tr>`;
+      }
+
+      // Price per passenger
+      const pricePerPax = Array.isArray(d.price_per_passenger) ? d.price_per_passenger : [];
+      let pricePaxHtml = '';
+      for (const pp of pricePerPax) {
+        const ppObj = pp as Record<string, unknown>;
+        pricePaxHtml += `<tr>
+          <td style="padding:5px 0;color:#64748b;font-size:13px;">${String(ppObj.label ?? '')}</td>
+          <td style="padding:5px 0;text-align:right;font-weight:600;color:#0f172a;font-size:13px;">${String(ppObj.amount ?? '')}</td>
+        </tr>`;
+      }
+
+      // Add-ons
+      const addOns = Array.isArray(d.price_add_ons) ? d.price_add_ons : [];
+      let addOnsHtml = '';
+      for (const ao of addOns) {
+        const aoObj = ao as Record<string, unknown>;
+        addOnsHtml += `<tr>
+          <td style="padding:5px 0;color:#64748b;font-size:13px;">${String(aoObj.label ?? '')}</td>
+          <td style="padding:5px 0;text-align:right;font-weight:600;color:#0f172a;font-size:13px;">${String(aoObj.amount ?? '')}</td>
+        </tr>`;
+      }
+
+      return {
+        subject: `Your FAREMIND flight is confirmed – ${ref}`,
+        html: wrap('Booking Confirmed', `
+          <!-- Hero Booking Reference -->
+          <div style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f3460 100%);border-radius:12px;padding:28px 32px;text-align:center;margin-bottom:24px;">
+            <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:4px 14px;margin-bottom:12px;">
+              <div style="width:6px;height:6px;border-radius:50%;background:#10b981;"></div>
+              <span style="font-size:11px;font-weight:700;color:#10b981;letter-spacing:0.5px;">Booking Confirmed</span>
+            </div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:8px;"><span style="color:#fff;">FARE</span><span style="color:#009CA6;">MIND</span> <span style="color:#64748b;">BOOKING REFERENCE</span></div>
+            <div style="font-family:'Courier New',monospace;font-size:30px;font-weight:900;letter-spacing:6px;color:#fff;">${ref}</div>
+            ${airlinePnr ? `<div style="margin-top:12px;"><span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span> <span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;margin-left:8px;">${airlinePnr}</span></div>` : ''}
+          </div>
+
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking Confirmed ✈️</h2>
+          <p style="margin:0 0 20px;color:#64748b;font-size:14px;line-height:1.6;">
+            Hi <strong style="color:#0f172a">${name}</strong>, your flight has been booked successfully!
+          </p>
+
+          <!-- Flight Details -->
+          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin-bottom:20px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+              <tr><td style="padding:6px 0;color:#64748b;">FAREMIND Booking Ref</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${ref}</td></tr>
+              ${airlinePnr ? `<tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-family:'Courier New',monospace;font-weight:700;color:#1abc9c;letter-spacing:1px;">${airlinePnr}</td></tr>` : ''}
+              <tr><td style="padding:6px 0;color:#64748b;">Route</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${route}</td></tr>
+              ${airline ? `<tr><td style="padding:6px 0;color:#64748b;">Airline</td><td style="padding:6px 0;text-align:right;color:#0f172a;">${airline}</td></tr>` : ''}
+              <tr><td style="padding:6px 0;color:#64748b;">Confirmed</td><td style="padding:6px 0;text-align:right;color:#0f172a;">${confirmedAt}</td></tr>
+            </table>
+          </div>
+
+          ${paxHtml ? `
+          <!-- Passengers -->
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:20px;">
+            <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">Passengers</p>
+            <table width="100%" cellpadding="0" cellspacing="0">${paxHtml}</table>
+          </div>` : ''}
+
+          ${(pricePaxHtml || addOnsHtml || amount) ? `
+          <!-- Pricing -->
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:20px;">
+            <p style="margin:0 0 10px;font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">Price Breakdown</p>
+            <table width="100%" cellpadding="0" cellspacing="0">
+              ${pricePaxHtml}
+              ${addOnsHtml}
+              <tr style="border-top:2px solid #e2e8f0;"><td style="padding:10px 0 0;font-weight:900;color:#0f172a;font-size:16px;">Total Charged</td><td style="padding:10px 0 0;text-align:right;font-weight:900;color:#1abc9c;font-size:18px;">${amount}</td></tr>
+            </table>
+            ${cardLast4 ? `<p style="margin:8px 0 0;font-size:11px;color:#94a3b8;">Paid with card ending ${cardLast4}</p>` : ''}
+          </div>` : ''}
+
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">
+            You can view and manage your booking anytime at <a href="${appUrl}/manage-booking" style="color:#1abc9c;text-decoration:none;font-weight:600;">Manage Booking</a>.
+          </p>
+
+          <p style="margin:0;color:#0f172a;font-size:14px;font-weight:600;">FAREMIND</p>
+          <p style="margin:4px 0;color:#1abc9c;font-size:12px;font-weight:600;">Your Personal Travel Consultant</p>
+          <p style="margin:4px 0 0;font-size:12px;"><a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a></p>
+        `),
+        text: `Hi ${name}, your flight ${ref} (${route}) is confirmed. Airline PNR: ${airlinePnr}. Total: ${amount}. Manage your booking at ${appUrl}/manage-booking`,
+      };
+    }
 
     case 'BOOKING_PENDING':
       return {
@@ -759,7 +860,7 @@ function buildAgentEmail(eventType: string, d: Record<string, unknown>, agentNam
 
 // Which events send to customer vs support
 const CUSTOMER_EVENTS = new Set<string>([
-  'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
+  'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
   'PASSENGER_INFO_UPDATED',
   'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
   'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
