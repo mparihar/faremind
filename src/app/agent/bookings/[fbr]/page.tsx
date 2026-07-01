@@ -94,7 +94,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
       });
       const data = await res.json();
       if (res.ok) {
-        setActionMsg({ type: 'success', text: `Updated: ${data.updatedFields?.join(', ')}` });
+        setActionMsg({ type: 'success', text: data.message || 'Passenger details saved.' });
         setEditingPassenger(null);
         fetchBooking();
       } else {

@@ -112,8 +112,22 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
     return NextResponse.json({ error: `Update failed: ${msg.slice(0, 800)}` }, { status: 500 });
   }
 
-  // ── Success — return immediately, then fire side-effects ──
-  const updatedFields = Object.keys(safeUpdates);
+  // ── Success — only report fields that actually changed ──
+  const changedFields: string[] = [];
+  for (const [key, newVal] of Object.entries(safeUpdates)) {
+    const dbKey = FIELD_MAP[key] || key;
+    const oldVal = (passenger as any)[dbKey];
+    // Normalize for comparison: treat null/undefined/'' as equivalent
+    const oldNorm = oldVal == null ? '' : String(oldVal);
+    const newNorm = newVal == null ? '' : String(newVal);
+    // For dates, compare date portions only
+    if (key === 'passportExpiry') {
+      const oldDate = oldVal ? new Date(oldVal).toISOString().split('T')[0] : '';
+      if (oldDate !== newNorm) changedFields.push(FIELD_LABELS[key] || key);
+    } else if (oldNorm !== newNorm) {
+      changedFields.push(FIELD_LABELS[key] || key);
+    }
+  }
 
   // Fire-and-forget: event log + notifications (don't block the response)
   (async () => {
@@ -198,7 +212,9 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
 
   return NextResponse.json({
     success: true,
-    updatedFields,
-    note: 'Identity fields (name, DOB, gender) cannot be edited directly after booking.',
+    updatedFields: changedFields,
+    message: changedFields.length > 0
+      ? `Updated: ${changedFields.join(', ')}`
+      : 'No changes detected.',
   });
 });
