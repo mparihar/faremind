@@ -1,4 +1,4 @@
-import { NextRequest, NextResponse } from 'next/server';
+import { NextRequest, NextResponse, after } from 'next/server';
 import prisma from '@/lib/db';
 import { fireNotification } from '@/lib/notify';
 import { determinePnrStrategy } from '@/lib/pnr-strategy';
@@ -1823,53 +1823,66 @@ export async function POST(req: NextRequest) {
       },
     }).catch(() => null);
 
-    // Fire email notifications (non-blocking, errors logged not swallowed)
-    fireNotification({
-      event_type: 'BOOKING_CONFIRMED',
-      booking_id: masterBooking.id,
-      customer_email: customerEmail || undefined,
-      data: {
-        booking_reference: masterBookingReference,
-        pnr: masterPnr,
-        airline_pnr: masterPnr,
-        customer_name: customerName,
-        customer_email: customerEmail,
-        origin: originAirport,
-        destination: destinationAirport,
-        route: `${originAirport} - ${destinationAirport}`,
-        airline: airlineName,
-        fare_class: selectedFare?.cabin ?? 'Economy',
-        passengers: passengers.map((p: any) => ({ name: `${p.firstName} ${p.lastName}`.trim(), type: p.type ?? 'adult' })),
-        total_amount: `$${totalAmount.toLocaleString()}`,
-        total_charged: totalAmount,
-        currency,
-        confirmed_at: new Date(confirmedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
-        payment_intent_id: paymentIntentId ?? '',
-        full_booking_data: fullBooking ?? undefined,
-      },
-    }).catch(err => console.error('[Checkout] BOOKING_CONFIRMED notification error:', err instanceof Error ? err.message : err));
+    // Fire email notifications inside after() so the runtime keeps the
+    // serverless invocation alive until the emails are actually sent.
+    // Previously these were unawaited promises that got killed when the
+    // response was returned — causing customers to never receive emails.
+    after(async () => {
+      try {
+        await fireNotification({
+          event_type: 'BOOKING_CONFIRMED',
+          booking_id: masterBooking.id,
+          customer_email: customerEmail || undefined,
+          data: {
+            booking_reference: masterBookingReference,
+            pnr: masterPnr,
+            airline_pnr: masterPnr,
+            customer_name: customerName,
+            customer_email: customerEmail,
+            origin: originAirport,
+            destination: destinationAirport,
+            route: `${originAirport} - ${destinationAirport}`,
+            airline: airlineName,
+            fare_class: selectedFare?.cabin ?? 'Economy',
+            passengers: passengers.map((p: any) => ({ name: `${p.firstName} ${p.lastName}`.trim(), type: p.type ?? 'adult' })),
+            total_amount: `$${totalAmount.toLocaleString()}`,
+            total_charged: totalAmount,
+            currency,
+            confirmed_at: new Date(confirmedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+            payment_intent_id: paymentIntentId ?? '',
+            full_booking_data: fullBooking ?? undefined,
+          },
+        });
+      } catch (err) {
+        console.error('[Checkout] BOOKING_CONFIRMED notification error:', err instanceof Error ? err.message : err);
+      }
 
-    fireNotification({
-      event_type: 'PAYMENT_SUCCESS',
-      booking_id: masterBooking.id,
-      customer_email: customerEmail || undefined,
-      data: {
-        booking_reference: masterBookingReference,
-        pnr: masterPnr,
-        airline_pnr: masterPnr,
-        customer_name: customerName,
-        customer_email: customerEmail,
-        origin: originAirport,
-        destination: destinationAirport,
-        route: `${originAirport} - ${destinationAirport}`,
-        airline: airlineName,
-        total_amount: `$${totalAmount.toLocaleString()}`,
-        total_charged: totalAmount,
-        currency,
-        payment_intent_id: paymentIntentId ?? '',
-        confirmed_at: new Date(confirmedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
-      },
-    }).catch(err => console.error('[Checkout] PAYMENT_SUCCESS notification error:', err instanceof Error ? err.message : err));
+      try {
+        await fireNotification({
+          event_type: 'PAYMENT_SUCCESS',
+          booking_id: masterBooking.id,
+          customer_email: customerEmail || undefined,
+          data: {
+            booking_reference: masterBookingReference,
+            pnr: masterPnr,
+            airline_pnr: masterPnr,
+            customer_name: customerName,
+            customer_email: customerEmail,
+            origin: originAirport,
+            destination: destinationAirport,
+            route: `${originAirport} - ${destinationAirport}`,
+            airline: airlineName,
+            total_amount: `$${totalAmount.toLocaleString()}`,
+            total_charged: totalAmount,
+            currency,
+            payment_intent_id: paymentIntentId ?? '',
+            confirmed_at: new Date(confirmedAt).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }),
+          },
+        });
+      } catch (err) {
+        console.error('[Checkout] PAYMENT_SUCCESS notification error:', err instanceof Error ? err.message : err);
+      }
+    });
 
     // ══════════════════════════════════════════════════════════════════════════
     // PHASE 3 — Customer-Safe Confirmation Response
