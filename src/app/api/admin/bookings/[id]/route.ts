@@ -374,22 +374,35 @@ export const PATCH = withAdmin(async (req: NextRequest, { admin, params }: any) 
       const eventType = update.bookingStatus === 'CANCELLED' ? 'BOOKING_CANCELLED'
         : update.bookingStatus === 'CONFIRMED' ? 'BOOKING_CONFIRMED'
         : 'BOOKING_UPDATED';
+      
+      // Build notification data with refund details for cancellations
+      const notifyData: Record<string, unknown> = {
+        booking_reference: mb.masterBookingReference,
+        pnr: mb.masterPnr ?? mb.masterBookingReference,
+        customer_name: mb.customerName ?? '',
+        customer_email: mb.customerEmail ?? '',
+        origin: mb.originAirport,
+        destination: mb.destinationAirport,
+        route: `${mb.originAirport} - ${mb.destinationAirport}`,
+        updated_by: admin.email,
+        updated_fields: Object.keys(update).join(', '),
+        new_status: newStatus,
+      };
+
+      // Add refund info for cancellations
+      if (eventType === 'BOOKING_CANCELLED') {
+        const totalAmt = Number((updated as any).totalAmount || 0);
+        notifyData.refund_amount = body.refundAmount ? `$${Number(body.refundAmount).toLocaleString()}` : (totalAmt > 0 ? `$${totalAmt.toLocaleString()}` : 'Non-refundable');
+        notifyData.refund_status = body.refundStatus || 'Pending';
+        notifyData.cancellation_reason = body.cancellationReason || 'Cancelled by admin';
+        notifyData.refund_policy = 'Refund will be processed within 5–10 business days';
+      }
+
       fireNotification({
         event_type: eventType,
         booking_id: mb.id,
         customer_email: mb.customerEmail || undefined,
-        data: {
-          booking_reference: mb.masterBookingReference,
-          pnr: mb.masterPnr ?? mb.masterBookingReference,
-          customer_name: mb.customerName ?? '',
-          customer_email: mb.customerEmail ?? '',
-          origin: mb.originAirport,
-          destination: mb.destinationAirport,
-          route: `${mb.originAirport} - ${mb.destinationAirport}`,
-          updated_by: admin.email,
-          updated_fields: Object.keys(update).join(', '),
-          new_status: newStatus,
-        },
+        data: notifyData,
       }).catch(err => console.error(`[admin/bookings] ${eventType} notification error:`, err instanceof Error ? err.message : err));
     }
 
