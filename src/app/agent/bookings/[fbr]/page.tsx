@@ -299,30 +299,75 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
             </div>
           </div>
 
-          {/* Segments */}
-          {booking.segments?.length > 0 && (
+          {/* Flight Segments — grouped by journey */}
+          {(booking.journeys?.length > 0 || booking.segments?.length > 0) && (
             <div className="lg:col-span-2 bg-slate-900/80 border border-white/[0.06] rounded-2xl p-6">
               <h3 className="text-sm font-bold text-white mb-4">Flight Segments</h3>
-              <div className="space-y-3">
-                {booking.segments.map((seg: any, i: number) => (
-                  <div key={i} className="flex items-center gap-4 p-3 rounded-xl bg-slate-800/40 border border-white/[0.04]">
-                    <div className="text-center shrink-0">
-                      <p className="text-xs font-bold text-white">{seg.depAirport}</p>
-                      <p className="text-[10px] text-slate-500">{seg.departureTime ? new Date(seg.departureTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+              <div className="space-y-5">
+                {booking.journeys?.length > 0 ? booking.journeys.map((j: any, ji: number) => {
+                  const jSegs = (booking.segments || []).filter((s: any) => s.journeyId === j.id).sort((a: any, b: any) => (a.segmentOrder ?? 0) - (b.segmentOrder ?? 0));
+                  const isReturn = j.direction === 'RETURN';
+                  return (
+                    <div key={ji}>
+                      <div className={`flex items-center gap-2 mb-2 px-3 py-1.5 rounded-lg ${isReturn ? 'bg-amber-500/10' : 'bg-[#1ABC9C]/10'}`}>
+                        <span className={`text-[10px] font-bold uppercase tracking-wider ${isReturn ? 'text-amber-400' : 'text-[#1ABC9C]'}`}>
+                          {isReturn ? 'Return Flight' : 'Outbound Flight'}
+                        </span>
+                        <span className="ml-auto text-[10px] text-slate-400">{j.departureDate ? new Date(j.departureDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : ''}</span>
+                      </div>
+                      <div className="space-y-2">
+                        {jSegs.map((seg: any, si: number) => (
+                          <div key={si} className="flex items-center gap-4 p-3 rounded-xl bg-slate-800/40 border border-white/[0.04]">
+                            <div className="text-center shrink-0 min-w-[52px]">
+                              <p className="text-sm font-bold text-white">{seg.originAirport}</p>
+                              <p className="text-[10px] text-slate-500">{seg.departureDateTime ? new Date(seg.departureDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                            </div>
+                            <div className="flex-1 flex flex-col items-center gap-0.5">
+                              <p className="text-[9px] text-slate-600 font-medium">
+                                {seg.durationMinutes ? `${Math.floor(seg.durationMinutes / 60)}h ${seg.durationMinutes % 60}m` : ''}
+                              </p>
+                              <div className="w-full border-t border-dashed border-slate-700 relative">
+                                <Plane className="w-3 h-3 text-[#1ABC9C] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-800/40" />
+                              </div>
+                              <p className="text-[9px] text-slate-600 uppercase">{seg.cabin || ''}</p>
+                            </div>
+                            <div className="text-center shrink-0 min-w-[52px]">
+                              <p className="text-sm font-bold text-white">{seg.destinationAirport}</p>
+                              <p className="text-[10px] text-slate-500">{seg.arrivalDateTime ? new Date(seg.arrivalDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                            </div>
+                            <div className="shrink-0 text-right min-w-[90px]">
+                              <p className="text-xs text-slate-400 font-medium">{seg.airlineName}</p>
+                              <p className="text-[10px] font-mono text-slate-500">{seg.airlineCode}{seg.flightNumber}</p>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
                     </div>
-                    <div className="flex-1 border-t border-dashed border-slate-700 relative">
-                      <Plane className="w-3 h-3 text-[#1ABC9C] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-800/40" />
-                    </div>
-                    <div className="text-center shrink-0">
-                      <p className="text-xs font-bold text-white">{seg.arrAirport}</p>
-                      <p className="text-[10px] text-slate-500">{seg.arrivalTime ? new Date(seg.arrivalTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
-                    </div>
-                    <div className="shrink-0 text-right">
-                      <p className="text-xs text-slate-400">{seg.airlineName || seg.marketingCarrier}</p>
-                      <p className="text-[10px] text-slate-500">{seg.flightNumber}</p>
-                    </div>
+                  );
+                }) : (
+                  /* Fallback: flat segments if no journeys */
+                  <div className="space-y-2">
+                    {booking.segments.map((seg: any, i: number) => (
+                      <div key={i} className="flex items-center gap-4 p-3 rounded-xl bg-slate-800/40 border border-white/[0.04]">
+                        <div className="text-center shrink-0 min-w-[52px]">
+                          <p className="text-sm font-bold text-white">{seg.originAirport}</p>
+                          <p className="text-[10px] text-slate-500">{seg.departureDateTime ? new Date(seg.departureDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                        </div>
+                        <div className="flex-1 border-t border-dashed border-slate-700 relative">
+                          <Plane className="w-3 h-3 text-[#1ABC9C] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-800/40" />
+                        </div>
+                        <div className="text-center shrink-0 min-w-[52px]">
+                          <p className="text-sm font-bold text-white">{seg.destinationAirport}</p>
+                          <p className="text-[10px] text-slate-500">{seg.arrivalDateTime ? new Date(seg.arrivalDateTime).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                        </div>
+                        <div className="shrink-0 text-right">
+                          <p className="text-xs text-slate-400">{seg.airlineName}</p>
+                          <p className="text-[10px] font-mono text-slate-500">{seg.airlineCode}{seg.flightNumber}</p>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
             </div>
           )}
