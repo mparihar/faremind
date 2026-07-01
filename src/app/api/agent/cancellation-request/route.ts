@@ -4,7 +4,12 @@ import { withAgent } from '@/lib/agent-auth';
 import { prisma } from '@/lib/db';
 
 export const POST = withAgent(async (req: NextRequest, { agent }) => {
-  const body = await req.json();
+  let body: any;
+  try {
+    body = await req.json();
+  } catch {
+    return NextResponse.json({ error: 'Invalid JSON body' }, { status: 400 });
+  }
   const { bookingReference, reason } = body;
 
   if (!bookingReference) {
@@ -20,7 +25,6 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
       masterBookingReference: true,
       customerName: true,
       customerEmail: true,
-      departureDate: true,
       totalAmount: true,
       currency: true,
     },
@@ -39,31 +43,34 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
     }, { status: 400 });
   }
 
-  // Check if departure is in the past
-  if (booking.departureDate < new Date()) {
-    return NextResponse.json({
-      error: 'Cannot cancel — departure date has already passed.',
-    }, { status: 400 });
+  // Update status to CANCEL_REQUESTED
+  try {
+    await prisma.masterBooking.update({
+      where: { id: booking.id },
+      data: { bookingStatus: 'CANCEL_REQUESTED' },
+    });
+  } catch (err) {
+    console.error('[cancellation-request] Status update failed:', err);
+    return NextResponse.json({ error: 'Failed to update booking status' }, { status: 500 });
   }
 
-  // Update status to CANCEL_REQUESTED
-  await prisma.masterBooking.update({
-    where: { id: booking.id },
-    data: { bookingStatus: 'CANCEL_REQUESTED' },
-  });
-
-  // Log event
+  // Log event (use correct Prisma field names)
   try {
     await prisma.bookingEvent.create({
       data: {
         bookingId: booking.id,
-        type: 'CANCELLATION_REQUESTED',
-        title: 'Cancellation requested by agent',
-        description: `Agent ${agent.name} (${agent.email}) requested cancellation. Reason: ${reason || 'Not provided'}`,
-        metadata: { agent: agent.email, reason: reason || null },
+        eventType: 'CANCELLATION_REQUESTED',
+        eventTitle: 'Cancellation requested by agent',
+        eventDescription: `Agent ${agent.name} (${agent.email}) requested cancellation. Reason: ${reason || 'Not provided'}`,
+        actorType: 'agent',
+        actorId: agent.id,
+        actorName: agent.name,
+        payloadJson: { reason: reason || null },
       },
     });
-  } catch {}
+  } catch (err) {
+    console.error('[cancellation-request] Event log failed:', err instanceof Error ? err.message : err);
+  }
 
   // Create support ticket for admin review
   try {
@@ -74,11 +81,14 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
         priority: 'HIGH',
         status: 'OPEN',
         category: 'Cancellation Request',
-        customerName: booking.customerName,
-        customerEmail: booking.customerEmail,
+        customerName: booking.customerName ?? '',
+        customerEmail: booking.customerEmail ?? '',
+        bookingRef: booking.masterBookingReference,
       },
     });
-  } catch {}
+  } catch (err) {
+    console.error('[cancellation-request] Support ticket failed:', err instanceof Error ? err.message : err);
+  }
 
   return NextResponse.json({
     success: true,

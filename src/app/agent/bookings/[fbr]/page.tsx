@@ -118,13 +118,16 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
       });
       const data = await res.json();
       if (res.ok) {
-        setActionMsg({ type: 'success', text: data.message });
         setShowCancelDialog(false);
+        setActionMsg({ type: 'success', text: data.message });
         fetchBooking();
       } else {
-        setActionMsg({ type: 'error', text: data.error || 'Cancellation failed.' });
+        // Close dialog so the error message is visible
+        setShowCancelDialog(false);
+        setActionMsg({ type: 'error', text: data.error || 'Cancellation request failed.' });
       }
     } catch {
+      setShowCancelDialog(false);
       setActionMsg({ type: 'error', text: 'Network error.' });
     } finally {
       setSaving(false);
