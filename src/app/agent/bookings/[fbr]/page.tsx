@@ -403,7 +403,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                         nationality: pax.nationality || '',
                         passportNumber: pax.passportNumber || '',
                         passportExpiry: pax.passportExpiry ? new Date(pax.passportExpiry).toISOString().split('T')[0] : '',
-                        issuingCountry: pax.issuingCountry || '',
+                        issuingCountry: pax.issuingCountry || pax.passportCountry || '',
                       });
                     }}
                     className="flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold text-[#1ABC9C] hover:text-white bg-[#1ABC9C]/10 hover:bg-[#1ABC9C]/20 border border-[#1ABC9C]/20 transition-all"
@@ -449,7 +449,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                   {EDITABLE_FIELDS.map((field) => (
                     <div key={field.key}>
                       <p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">{field.label}</p>
-                      <p className="text-xs text-white">{(pax as any)[field.key] || '—'}</p>
+                      <p className="text-xs text-white">{field.key === 'issuingCountry' ? ((pax as any).issuingCountry || (pax as any).passportCountry || '—') : ((pax as any)[field.key] || '—')}</p>
                     </div>
                   ))}
                 </div>
