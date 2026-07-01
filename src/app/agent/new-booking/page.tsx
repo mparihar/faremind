@@ -267,7 +267,7 @@ export default function AgentNewBookingPage() {
       {/* Info banner */}
       <div className="flex items-start gap-2.5 p-4 rounded-xl bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 mb-6">
         <Info className="w-4 h-4 text-[#1ABC9C] shrink-0 mt-0.5" />
-        <p className="text-xs text-[#1ABC9C]">
+        <p className="text-sm text-[#1ABC9C]">
           Enter customer details below, then search for flights. The booking will be created under your agent account with the customer&apos;s contact information.
         </p>
       </div>
