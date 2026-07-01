@@ -449,7 +449,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                   {EDITABLE_FIELDS.map((field) => (
                     <div key={field.key}>
                       <p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">{field.label}</p>
-                      <p className="text-xs text-white">{field.key === 'issuingCountry' ? ((pax as any).issuingCountry || (pax as any).passportCountry || '—') : ((pax as any)[field.key] || '—')}</p>
+                      <p className="text-xs text-white">{field.key === 'issuingCountry' ? ((pax as any).issuingCountry || (pax as any).passportCountry || '—') : field.key === 'passportExpiry' ? ((pax as any).passportExpiry ? new Date((pax as any).passportExpiry).toLocaleDateString('en-US', { month: '2-digit', day: '2-digit', year: 'numeric' }) : '—') : ((pax as any)[field.key] || '—')}</p>
                     </div>
                   ))}
                 </div>
