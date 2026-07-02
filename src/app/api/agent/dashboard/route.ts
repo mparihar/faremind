@@ -15,13 +15,13 @@ export const GET = withAgent(async (_req: NextRequest, { agent }) => {
     failedBookings,
     recentBookings,
   ] = await Promise.all([
-    // Total bookings by this agent
-    prisma.masterBooking.count({ where: { agentUserId: agent.id } }),
+    // Total bookings by this agent (including self-bookings)
+    prisma.masterBooking.count({ where: { OR: [{ agentUserId: agent.id }, { userId: agent.id }] } }),
 
     // Upcoming trips (departure in the future)
     prisma.masterBooking.count({
       where: {
-        agentUserId: agent.id,
+        OR: [{ agentUserId: agent.id }, { userId: agent.id }],
         departureDate: { gte: now },
         bookingStatus: { in: ['CONFIRMED', 'TICKETED', 'CREATED'] },
       },
@@ -33,7 +33,7 @@ export const GET = withAgent(async (_req: NextRequest, { agent }) => {
     // Cancellation requests
     prisma.masterBooking.count({
       where: {
-        agentUserId: agent.id,
+        OR: [{ agentUserId: agent.id }, { userId: agent.id }],
         bookingStatus: 'CANCEL_REQUESTED',
       },
     }).catch(() => 0),
@@ -41,14 +41,14 @@ export const GET = withAgent(async (_req: NextRequest, { agent }) => {
     // Failed bookings
     prisma.masterBooking.count({
       where: {
-        agentUserId: agent.id,
+        OR: [{ agentUserId: agent.id }, { userId: agent.id }],
         bookingStatus: 'FAILED',
       },
     }).catch(() => 0),
 
     // Recent bookings (last 10)
     prisma.masterBooking.findMany({
-      where: { agentUserId: agent.id },
+      where: { OR: [{ agentUserId: agent.id }, { userId: agent.id }] },
       select: {
         id: true,
         masterBookingReference: true,

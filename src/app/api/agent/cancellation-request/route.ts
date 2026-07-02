@@ -19,7 +19,13 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
 
   // Verify ownership
   const booking = await prisma.masterBooking.findFirst({
-    where: { masterBookingReference: bookingReference, agentUserId: agent.id },
+    where: {
+      masterBookingReference: bookingReference,
+      OR: [
+        { agentUserId: agent.id },
+        { userId: agent.id },
+      ],
+    },
     select: {
       id: true,
       bookingStatus: true,
