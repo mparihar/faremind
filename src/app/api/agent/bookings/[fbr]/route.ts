@@ -9,7 +9,10 @@ export const GET = withAgent(async (_req: NextRequest, { agent, params }) => {
   const booking = await prisma.masterBooking.findFirst({
     where: {
       masterBookingReference: fbr,
-      agentUserId: agent.id, // Ownership check
+      OR: [
+        { agentUserId: agent.id },
+        { userId: agent.id },
+      ],
     },
     include: {
       pnrs: true,

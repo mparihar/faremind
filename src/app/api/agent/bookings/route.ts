@@ -11,14 +11,26 @@ export const GET = withAgent(async (req: NextRequest, { agent }) => {
   const status = url.searchParams.get('status')?.trim() || '';
   const skip = (page - 1) * limit;
 
-  const where: any = { agentUserId: agent.id };
+  // Show bookings where the user is the agent OR the customer (self-bookings)
+  const ownershipFilter: any = {
+    OR: [
+      { agentUserId: agent.id },
+      { userId: agent.id },
+    ],
+  };
+
+  const where: any = { ...ownershipFilter };
 
   if (search) {
-    where.OR = [
-      { masterBookingReference: { contains: search, mode: 'insensitive' } },
-      { masterPnr: { contains: search, mode: 'insensitive' } },
-      { customerName: { contains: search, mode: 'insensitive' } },
-      { customerEmail: { contains: search, mode: 'insensitive' } },
+    where.AND = [
+      {
+        OR: [
+          { masterBookingReference: { contains: search, mode: 'insensitive' } },
+          { masterPnr: { contains: search, mode: 'insensitive' } },
+          { customerName: { contains: search, mode: 'insensitive' } },
+          { customerEmail: { contains: search, mode: 'insensitive' } },
+        ],
+      },
     ];
   }
 
