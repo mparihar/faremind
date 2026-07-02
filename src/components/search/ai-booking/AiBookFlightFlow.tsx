@@ -28,6 +28,7 @@ import type {
 import { SECONDARY_PASSENGER_FIELDS } from '@/lib/ai-booking-types';
 import type { FareOption, FareSelectionPayload } from '@/lib/fare-types';
 import type { RecommendedSeat, SeatRecommendationResponse, SeatPreferenceInput, GroupSeatBlock, GroupSeatResponse } from '@/lib/ai-seat/ai-seat-types';
+import type { NormalizedAncillary } from '@/lib/providers/providerAncillaryNormalizer';
 
 // ─── Step back mapping ────────────────────────────────────────────────────────
 
@@ -106,6 +107,11 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
   const [fareOptions, setFareOptions] = useState<FareOption[]>([]);
   const [fareLoading, setFareLoading] = useState(false);
   const [fareError, setFareError] = useState<string | null>(null);
+
+  // Provider ancillary state (live baggage pricing)
+  const [providerBaggage, setProviderBaggage] = useState<NormalizedAncillary[]>([]);
+  const [baggageLoading, setBaggageLoading] = useState(false);
+  const [baggageUnavailable, setBaggageUnavailable] = useState(false);
 
   // Seat recommendation state
   const [seatRecommendations, setSeatRecommendations] = useState<RecommendedSeat[]>([]);
@@ -331,6 +337,28 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
 
   const handleFareSelect = (fare: FareOption) => {
     store.selectFareFromOption(fare);
+
+    // Fetch live ancillaries (baggage) from provider API
+    const offerId = fare.offerId || store.selectedFlight?.providerOfferId;
+    const provider = (store.selectedFlight?.provider ?? 'duffel').toLowerCase();
+    if (offerId) {
+      setBaggageLoading(true);
+      setBaggageUnavailable(false);
+      setProviderBaggage([]);
+      fetch(`/api/ancillaries?offer_id=${encodeURIComponent(offerId)}&provider=${provider}`)
+        .then(r => r.json())
+        .then((data: { baggage?: NormalizedAncillary[]; error?: string; info?: string }) => {
+          const bags = (data.baggage ?? []).filter(a => !a.included && a.chargeable);
+          setProviderBaggage(bags);
+          if (bags.length === 0) setBaggageUnavailable(true);
+        })
+        .catch(() => {
+          setBaggageUnavailable(true);
+        })
+        .finally(() => setBaggageLoading(false));
+    } else {
+      setBaggageUnavailable(true);
+    }
     // Now goes to 'passenger_count' (set in store)
   };
 
@@ -371,6 +399,13 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
   };
 
   const handlePassengerConfirm = () => {
+    // Check if seat selection is available for this fare
+    const seatPolicy = store.fareDetails?.seatSelection;
+    if (seatPolicy === 'not_available') {
+      // Skip seat preference entirely — go straight to meals
+      store.setStatus('meal_preference');
+      return;
+    }
     setSeatPaxIndex(0);
     setSeatJourney('outbound');
     setSelectedSeatNumbers([]);
@@ -618,7 +653,11 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
     store.setStatus('add_ons');
   };
 
-  const handleAddOnsComplete = (addOns: { extraBags: number; travelInsurance: boolean }) => {
+  const handleAddOnsComplete = (addOns: { extraBags: number; travelInsurance: boolean; liveBagPrice?: number }) => {
+    // Set live baggage price if available (from provider API)
+    if (addOns.liveBagPrice !== undefined && addOns.liveBagPrice > 0) {
+      store.setLiveBaggagePrice(addOns.liveBagPrice);
+    }
     store.setExtraBags(addOns.extraBags);
     if (addOns.travelInsurance !== store.addOns.travelInsurance) {
       store.toggleInsurance();
@@ -632,7 +671,9 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
   const handleGoBack = () => {
     // Dynamic overrides
     if (store.status === 'meal_preference') {
-      store.setStatus('seat_preference');
+      // If seats were skipped, go back to passenger confirm
+      const seatPolicy = store.fareDetails?.seatSelection;
+      store.setStatus(seatPolicy === 'not_available' ? 'passenger_confirm' : 'seat_preference');
       return;
     }
     if (store.status === 'passenger_details' && store.currentPassengerIndex > 0) {
@@ -1187,6 +1228,9 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
               passengerCount={store.passengerCount}
               baseFarePrice={store.fareDetails.totalPrice}
               currency={store.fareDetails.currency}
+              providerBaggage={providerBaggage}
+              baggageLoading={baggageLoading}
+              baggageUnavailable={baggageUnavailable}
               onComplete={handleAddOnsComplete}
             />
           </>

@@ -121,8 +121,9 @@ export function OfferExpiryModals() {
     setShowExpiredModal(false);
     setShowWarningModal(false);
 
-    // Navigate to search results
-    router.push('/');
+    // Navigate to agent hero page if in agent mode, otherwise search results
+    const isAgentMode = typeof window !== 'undefined' && !!sessionStorage.getItem('agentBookingContext');
+    router.push(isAgentMode ? '/agent' : '/');
   }, [searchCriteria, clearSession, router]);
 
   return (
