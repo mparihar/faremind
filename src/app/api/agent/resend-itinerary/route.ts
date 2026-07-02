@@ -141,8 +141,16 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
     });
   } catch {}
 
-  // Notify agent + admin that itinerary was resent
+  // Notify agent + admin with the FULL itinerary attached
   const route = `${booking.originAirport} - ${booking.destinationAirport}`;
+  const itinerarySummaryHtml = `
+    <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Itinerary Resent</h2>
+    <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Agent <strong>${agent.name}</strong> resent the itinerary for booking <strong>${ref}</strong> (${route}) to <strong>${targetEmail}</strong>.</p>
+    <div style="margin-top:24px;border-top:2px solid #e2e8f0;padding-top:24px;">
+      <p style="margin:0 0 12px;font-size:12px;font-weight:700;color:#94a3b8;text-transform:uppercase;letter-spacing:1px;">Detailed Itinerary</p>
+      ${htmlContent}
+    </div>
+  `;
   agentNotifyAll({
     event: 'Itinerary Resent',
     bookingRef: ref,
@@ -154,10 +162,7 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
     agentEmail: agent.email,
     subject: `Itinerary resent – ${ref}`,
     adminSubject: `[FAREMIND] Agent Resent Itinerary – ${ref}`,
-    bodyHtml: `
-      <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Itinerary Resent</h2>
-      <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Agent <strong>${agent.name}</strong> resent the itinerary for booking <strong>${ref}</strong> (${route}) to <strong>${targetEmail}</strong>.</p>
-    `,
+    bodyHtml: itinerarySummaryHtml,
     bodyText: `Agent ${agent.name} resent itinerary for booking ${ref} (${route}) to ${targetEmail}.`,
   }).catch(err => console.error('[resend-itinerary] Agent/admin notify failed:', err));
 
