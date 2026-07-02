@@ -630,8 +630,8 @@ export default function FloatingAIAssistant({
                     📋 Manage Booking
                   </motion.button>
 
-                  {/* 🧬 DNA Search — special action chip */}
-                  {onDnaSearch && (
+                  {/* 🧬 DNA Search — special action chip (hidden for agents) */}
+                  {onDnaSearch && !isAgentMode && (
                     <motion.button
                       whileHover={{ scale: 1.03 }}
                       whileTap={{ scale: 0.97 }}

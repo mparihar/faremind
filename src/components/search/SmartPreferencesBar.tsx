@@ -196,6 +196,13 @@ export default function SmartPreferencesBar({
   const [budgetRange, setBudgetRange] = useState<[number, number]>([prefs.budgetMin, prefs.budgetMax]);
   const [resetting, setResetting] = useState(false);
 
+  // Detect agent mode — hide DNA Search for agents
+  const [isAgentMode, setIsAgentMode] = useState(false);
+  useEffect(() => {
+    try { setIsAgentMode(!!sessionStorage.getItem('agentBookingContext')); } catch {}
+  }, []);
+  const showDnaSearch = onDnaSearch && !isAgentMode;
+
   const toggleDropdown = (name: string) => {
     setActiveDropdown((prev) => (prev === name ? null : name));
   };
@@ -563,7 +570,7 @@ export default function SmartPreferencesBar({
             </div>
 
             {/* 🧬 DNA Search Toggle (embedded) */}
-            {onDnaSearch && (
+            {showDnaSearch && (
               <div className="relative">
                 <button
                   onClick={() => {
@@ -1016,7 +1023,7 @@ export default function SmartPreferencesBar({
           </div>
 
           {/* ── 🧬 DNA Search Toggle ── */}
-          {onDnaSearch && (
+          {showDnaSearch && (
             <div className="relative mr-2 flex flex-col group">
               <button
                 onClick={() => {
