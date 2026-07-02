@@ -282,6 +282,56 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                   </div>
                 </div>
               )}
+
+              {/* Fare Policy Indicators */}
+              {booking.pnrs?.length > 0 && (() => {
+                const isRefundable = booking.pnrs.some((p: any) => p.refundable);
+                const isChangeable = booking.pnrs.some((p: any) => p.changeable);
+                const cancellationFee = booking.pnrs.find((p: any) => p.cancellationFee != null)?.cancellationFee;
+                const changeFee = booking.pnrs.find((p: any) => p.changeFee != null)?.changeFee;
+                return (
+                  <div className="pt-3 border-t border-white/[0.06]">
+                    <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Fare Policy</p>
+                    <div className="flex flex-wrap gap-2">
+                      {/* Refundable indicator */}
+                      <span className={cn(
+                        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border',
+                        isRefundable
+                          ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/25'
+                          : 'bg-red-500/10 text-red-400 border-red-500/25'
+                      )}>
+                        <span className={cn('w-1.5 h-1.5 rounded-full', isRefundable ? 'bg-emerald-400' : 'bg-red-400')} />
+                        {isRefundable ? 'Refundable' : 'Non-Refundable'}
+                      </span>
+
+                      {/* Changeable indicator */}
+                      <span className={cn(
+                        'inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-bold border',
+                        isChangeable
+                          ? 'bg-blue-500/10 text-blue-400 border-blue-500/25'
+                          : 'bg-orange-500/10 text-orange-400 border-orange-500/25'
+                      )}>
+                        <span className={cn('w-1.5 h-1.5 rounded-full', isChangeable ? 'bg-blue-400' : 'bg-orange-400')} />
+                        {isChangeable ? 'Changeable' : 'Non-Changeable'}
+                      </span>
+
+                      {/* Cancellation fee */}
+                      {cancellationFee != null && Number(cancellationFee) > 0 && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-300 border border-white/[0.06]">
+                          Cancel Fee: ${Number(cancellationFee).toLocaleString()}
+                        </span>
+                      )}
+
+                      {/* Change fee */}
+                      {changeFee != null && Number(changeFee) > 0 && (
+                        <span className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-[11px] font-semibold bg-slate-800/60 text-slate-300 border border-white/[0.06]">
+                          Change Fee: ${Number(changeFee).toLocaleString()}
+                        </span>
+                      )}
+                    </div>
+                  </div>
+                );
+              })()}
             </div>
           </div>
 
