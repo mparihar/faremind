@@ -57,7 +57,7 @@ export default function AiPassengerSummaryTable({ passengers, onConfirm, onEdit 
             <div className="grid grid-cols-2 gap-x-3 gap-y-0.5 text-[12px]">
               <div>
                 <span className="text-slate-400">Name: </span>
-                <span className="font-semibold text-slate-700">{pax.firstName} {pax.lastName}</span>
+                <span className="font-semibold text-slate-700">{pax.firstName}{pax.middleName ? ` ${pax.middleName}` : ''} {pax.lastName}</span>
               </div>
               <div>
                 <span className="text-slate-400">Gender: </span>

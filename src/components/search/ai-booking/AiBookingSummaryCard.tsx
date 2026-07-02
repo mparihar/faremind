@@ -139,7 +139,7 @@ export default function AiBookingSummaryCard({
           <div key={i} className={i > 0 ? 'mt-1.5 pt-1.5 border-t border-slate-100' : ''}>
             <p className="text-[13px] font-bold text-slate-900">
               {passengerCount > 1 && <span className="text-[#1ABC9C] mr-1">T{i + 1}</span>}
-              {pax.firstName} {pax.lastName}
+              {pax.firstName}{pax.middleName ? ` ${pax.middleName}` : ''} {pax.lastName}
             </p>
             {i === 0 && (
               <p className="text-[11px] text-slate-400">{pax.email} · {pax.phone}</p>

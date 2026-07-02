@@ -47,6 +47,7 @@ const SSR_MEAL_LABELS: Record<string, string> = {
 
 const EMPTY_PASSENGER: AiPassengerData = {
   firstName: '',
+  middleName: '',
   lastName: '',
   email: '',
   phone: '',
@@ -783,6 +784,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
       const paxType = paxTypes[i] ?? 'adult';
       const pax = makePassenger(i, paxType);
       pax.firstName = p.firstName;
+      pax.middleName = p.middleName || '';
       pax.lastName = p.lastName;
       pax.email = i === 0 ? p.email : passengers[0].email;
       pax.phone = i === 0 ? p.phone : passengers[0].phone;

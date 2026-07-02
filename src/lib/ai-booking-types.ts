@@ -87,6 +87,7 @@ export interface AiSeatPreference {
 
 export interface AiPassengerData {
   firstName: string;
+  middleName: string;
   lastName: string;
   email: string;
   phone: string;
@@ -189,6 +190,7 @@ export interface AiBookingSession {
 
 export const PASSENGER_FIELD_ORDER: (keyof AiPassengerData)[] = [
   'firstName',
+  'middleName',
   'lastName',
   'email',
   'phone',
@@ -203,6 +205,7 @@ export const PASSENGER_FIELD_ORDER: (keyof AiPassengerData)[] = [
 // Fields collected for secondary passengers (skip email/phone — use primary contact)
 export const SECONDARY_PASSENGER_FIELDS: (keyof AiPassengerData)[] = [
   'firstName',
+  'middleName',
   'lastName',
   'gender',
   'dateOfBirth',
@@ -214,6 +217,7 @@ export const SECONDARY_PASSENGER_FIELDS: (keyof AiPassengerData)[] = [
 
 export const PASSENGER_FIELD_LABELS: Record<keyof AiPassengerData, string> = {
   firstName: 'First Name',
+  middleName: 'Middle Name (optional)',
   lastName: 'Last Name',
   email: 'Email Address',
   phone: 'Phone Number',

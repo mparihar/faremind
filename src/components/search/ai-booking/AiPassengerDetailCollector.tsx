@@ -24,6 +24,9 @@ function validateField(field: keyof AiPassengerData, value: string, passengerTyp
     case 'lastName':
       return value.trim() ? null : `${PASSENGER_FIELD_LABELS[field]} is required`;
 
+    case 'middleName':
+      return null; // Optional field — always valid
+
     case 'email':
       return /^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value) ? null : 'Please enter a valid email address';
 
@@ -338,7 +341,7 @@ export default function AiPassengerDetailCollector({
           <span className="text-[13px] font-bold text-[#1ABC9C]">Passenger Info</span>
         </div>
         <p className="text-[15px] text-white/90 leading-relaxed">
-          Please enter your <span className="font-bold text-white">{PASSENGER_FIELD_LABELS[currentField]}</span>:
+          Please enter your <span className="font-bold text-white">{PASSENGER_FIELD_LABELS[currentField!]}</span>:
         </p>
         {currentField === 'phone' && (
           <p className="text-[13px] text-white/50 mt-0.5">Enter +country code followed by number (e.g. +1 9725671234)</p>
@@ -353,6 +356,9 @@ export default function AiPassengerDetailCollector({
         )}
         {(currentField === 'dateOfBirth' || currentField === 'passportExpiry') && (
           <p className="text-[13px] text-white/50 mt-0.5">Format: MM/DD/YYYY</p>
+        )}
+        {currentField === 'middleName' && (
+          <p className="text-[13px] text-white/50 mt-0.5">Leave blank and tap skip if no middle name</p>
         )}
       </div>
 
@@ -378,16 +384,25 @@ export default function AiPassengerDetailCollector({
           value={inputValue}
           onChange={e => { setInputValue(e.target.value); setError(null); }}
           onKeyDown={handleKeyDown}
-          placeholder={PASSENGER_FIELD_LABELS[currentField]}
+          placeholder={PASSENGER_FIELD_LABELS[currentField!]}
           className="flex-1 px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 text-[15px] placeholder-slate-400 focus:outline-none focus:border-[#1ABC9C]/50 transition-colors min-w-0"
         />
         <button
           onClick={handleSubmitField}
-          disabled={!inputValue.trim()}
+          disabled={!inputValue.trim() && currentField !== 'middleName'}
           className="flex-none w-8 h-8 rounded-xl bg-[#1ABC9C] hover:bg-emerald-500 text-white flex items-center justify-center disabled:opacity-40 disabled:cursor-not-allowed transition-all"
         >
           <ChevronRight className="w-4 h-4" />
         </button>
+        {/* Skip button for optional fields */}
+        {currentField === 'middleName' && !inputValue.trim() && (
+          <button
+            onClick={handleSubmitField}
+            className="flex-none px-2.5 h-8 rounded-xl bg-slate-100 hover:bg-slate-200 text-slate-500 text-[12px] font-semibold transition-all"
+          >
+            Skip
+          </button>
+        )}
         {/* Animated voice button */}
         {voiceSupported && (
           <button
