@@ -202,7 +202,11 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
       const roundTrip = store.selectedRoundTrip;
       if (!flight) throw new Error('No flight selected');
 
-      const offerId = roundTrip?.offerId || flight.providerOfferId;
+      // Use the fare-level offer ID (from fare selection API) as the primary source.
+      // The original search-level providerOfferId becomes stale after fare selection
+      // because Duffel creates a new offer for the selected fare class.
+      const selectedFare = store.selectedFareOption;
+      const offerId = selectedFare?.offerId || roundTrip?.providerOfferId || flight.providerOfferId;
       const provider = flight.provider || 'duffel';
       const pref = store.seatPreference;
 
@@ -445,7 +449,9 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
       const roundTrip = store.selectedRoundTrip;
       if (!flight) throw new Error('No flight selected');
 
-      const offerId = roundTrip?.providerOfferId || flight.providerOfferId;
+      // Use fare-level offer ID first (valid after fare selection), then fallback
+      const selectedFare = store.selectedFareOption;
+      const offerId = selectedFare?.offerId || roundTrip?.providerOfferId || flight.providerOfferId;
       const provider = flight.provider || 'duffel';
 
       console.log('[AI Seat Client] Fetching group blocks:', { offerId, provider, segmentIndex, passengerCount: store.passengerCount, area: mapPrefToArea(pref), type: pref.type });

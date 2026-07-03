@@ -7,7 +7,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
-import { Sparkles, ChevronLeft, Settings, X, Loader2, AlertCircle, Mail } from 'lucide-react';
+import { Sparkles, ChevronLeft, Settings, X, Loader2, AlertCircle, Mail, Send, CheckCircle2 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 
@@ -41,7 +41,8 @@ type FlowStep =
   | 'select_booking'  // Show booking tiles
   | 'choose_action'   // Choose cancel / update passenger
   | 'cancel'          // Cancel booking sub-flow
-  | 'update_passenger'; // Update passenger sub-flow
+  | 'update_passenger' // Update passenger sub-flow
+  | 'email_itinerary'; // Email itinerary sub-flow
 
 interface Props {
   /** Pre-selected intent from chat message (e.g. 'cancel' or 'update_passenger') */
@@ -63,6 +64,13 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
   const [otpValue, setOtpValue] = useState('');
   const [otpError, setOtpError] = useState<string | null>(null);
   const [otpVerifying, setOtpVerifying] = useState(false);
+
+  // Email itinerary state
+  const [emailSending, setEmailSending] = useState(false);
+  const [emailSent, setEmailSent] = useState(false);
+  const [emailError, setEmailError] = useState<string | null>(null);
+  const [emailTarget, setEmailTarget] = useState('');
+  const [customEmail, setCustomEmail] = useState('');
 
   const isLoggedIn = !!auth.user;
 
@@ -257,6 +265,9 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
         break;
       case 'cancel':
       case 'update_passenger':
+      case 'email_itinerary':
+        setEmailSent(false);
+        setEmailError(null);
         setStep('choose_action');
         break;
       default:
@@ -476,6 +487,24 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
                   Email, phone, passport, nationality
                 </p>
               </button>
+
+              {/* Email Itinerary */}
+              <button
+                onClick={() => {
+                  setEmailSent(false);
+                  setEmailError(null);
+                  setCustomEmail('');
+                  setStep('email_itinerary');
+                }}
+                className="w-full text-left px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 hover:bg-blue-50 hover:border-blue-300 transition-all group"
+              >
+                <p className="text-[12px] font-bold text-blue-700 group-hover:text-blue-800">
+                  Email Itinerary
+                </p>
+                <p className="text-[10px] text-blue-400 mt-0.5">
+                  Send booking itinerary to email
+                </p>
+              </button>
             </div>
           </>
         )}
@@ -514,6 +543,142 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
               onBack={() => setStep('choose_action')}
               onDone={onExit}
             />
+          </>
+        )}
+
+        {/* ── Step: Email Itinerary ──────────────────────────────────────── */}
+        {step === 'email_itinerary' && selectedBooking && (
+          <>
+            <AiBubble>
+              {emailSent ? (
+                <p>Itinerary sent successfully! ✉️</p>
+              ) : (
+                <p>
+                  Send itinerary for booking <strong>{meta.ref}</strong> to an email address.
+                </p>
+              )}
+            </AiBubble>
+
+            {emailSent ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                  <p className="text-[13px] font-bold text-emerald-700">Email Sent</p>
+                </div>
+                <p className="text-[11px] text-emerald-600">
+                  Itinerary has been sent to <strong>{emailTarget}</strong>
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => { setEmailSent(false); setCustomEmail(''); }}
+                    className="flex-1 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-700 text-[12px] font-semibold transition-colors"
+                  >
+                    Send to Another Email
+                  </button>
+                  <button
+                    onClick={() => setStep('choose_action')}
+                    className="flex-1 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold transition-colors"
+                  >
+                    Back to Actions
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <div className="space-y-2">
+                {/* Send to booking email */}
+                {selectedBooking.customerEmail && (
+                  <button
+                    onClick={async () => {
+                      setEmailSending(true);
+                      setEmailError(null);
+                      try {
+                        const res = await fetch('/api/manage-booking/email-itinerary', {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ bookingId: selectedBooking.id }),
+                        });
+                        const data = await res.json();
+                        if (!res.ok) throw new Error(data.error || 'Failed to send email');
+                        setEmailTarget(data.sentTo);
+                        setEmailSent(true);
+                      } catch (err: any) {
+                        setEmailError(err.message || 'Failed to send email');
+                      } finally {
+                        setEmailSending(false);
+                      }
+                    }}
+                    disabled={emailSending}
+                    className="w-full text-left px-4 py-3 rounded-xl border border-blue-200 bg-blue-50/30 hover:bg-blue-50 hover:border-blue-300 transition-all group disabled:opacity-60"
+                  >
+                    <div className="flex items-center gap-2">
+                      {emailSending ? (
+                        <Loader2 className="w-4 h-4 text-blue-500 animate-spin" />
+                      ) : (
+                        <Send className="w-4 h-4 text-blue-500" />
+                      )}
+                      <div>
+                        <p className="text-[12px] font-bold text-blue-700">
+                          {emailSending ? 'Sending...' : 'Send to booking email'}
+                        </p>
+                        <p className="text-[10px] text-blue-400 mt-0.5">
+                          {selectedBooking.customerEmail}
+                        </p>
+                      </div>
+                    </div>
+                  </button>
+                )}
+
+                {/* Send to custom email */}
+                <div className="px-4 py-3 rounded-xl border border-slate-200 bg-white">
+                  <p className="text-[12px] font-bold text-slate-700 mb-2">Or send to a different email:</p>
+                  <div className="flex gap-1.5">
+                    <input
+                      type="email"
+                      value={customEmail}
+                      onChange={(e) => { setCustomEmail(e.target.value); setEmailError(null); }}
+                      placeholder="Enter email address"
+                      className="flex-1 px-3 py-2 rounded-lg bg-slate-50 border border-slate-200 text-slate-900 text-[13px] placeholder-slate-400 focus:outline-none focus:border-blue-400 transition-colors min-w-0"
+                    />
+                    <button
+                      onClick={async () => {
+                        if (!customEmail.trim() || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(customEmail)) {
+                          setEmailError('Please enter a valid email address');
+                          return;
+                        }
+                        setEmailSending(true);
+                        setEmailError(null);
+                        try {
+                          const res = await fetch('/api/manage-booking/email-itinerary', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({ bookingId: selectedBooking.id, recipientEmail: customEmail.trim() }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) throw new Error(data.error || 'Failed to send email');
+                          setEmailTarget(data.sentTo);
+                          setEmailSent(true);
+                        } catch (err: any) {
+                          setEmailError(err.message || 'Failed to send email');
+                        } finally {
+                          setEmailSending(false);
+                        }
+                      }}
+                      disabled={emailSending || !customEmail.trim()}
+                      className="flex-none px-3 py-2 rounded-lg bg-blue-500 hover:bg-blue-600 text-white text-[12px] font-semibold transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    >
+                      {emailSending ? <Loader2 className="w-4 h-4 animate-spin" /> : <Send className="w-4 h-4" />}
+                    </button>
+                  </div>
+                </div>
+
+                {emailError && (
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-red-50 border border-red-200">
+                    <AlertCircle className="w-3.5 h-3.5 text-red-500 flex-none" />
+                    <p className="text-[11px] text-red-600">{emailError}</p>
+                  </div>
+                )}
+              </div>
+            )}
           </>
         )}
       </div>
