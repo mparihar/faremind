@@ -1,7 +1,7 @@
 // ═══════════════════════════════════════════════
 // AiMultiPaxAddOnsStep
 // Add-ons for multiple passengers:
-// bags (all/per-pax/none), insurance (all/per-pax/none)
+// bags (total count, not per-pax), insurance (toggle)
 //
 // Uses live provider baggage pricing from /api/ancillaries
 // when available. Falls back to EXTRA_BAG_PRICE only when
@@ -120,6 +120,8 @@ export default function AiMultiPaxAddOnsStep({
     }
 
     // Live pricing available — show bag selection
+    // Max bags = 3 or (3 × passengerCount) whichever is smaller, capped at 3
+    const maxBags = 3;
     return (
       <div className="space-y-2.5">
         <div className="bg-[#0F172A] rounded-xl rounded-bl-sm px-3 py-2.5">
@@ -128,42 +130,53 @@ export default function AiMultiPaxAddOnsStep({
             <span className="text-[14px] font-bold text-[#1ABC9C]">Extra Checked Bags</span>
           </div>
           <p className="text-[15px] text-white/90">
-            How many extra bags per passenger? ({fmt(effectiveBagPrice)} each)
+            How many extra bags do you need? ({fmt(effectiveBagPrice)} each)
           </p>
           {isLivePrice && (
             <p className="text-[11px] text-emerald-400/70 mt-0.5">✓ Live pricing from airline</p>
           )}
           {passengerCount > 1 && (
             <p className="text-[12px] text-white/50 mt-0.5">
-              Applied to all {passengerCount} passengers
+              For {passengerCount} travelers — add only what you need
             </p>
           )}
         </div>
 
-        <div className="flex gap-2 px-0.5">
-          {[0, 1, 2].map(n => (
+        <div className="space-y-1.5 px-0.5">
+          {Array.from({ length: maxBags }, (_, i) => i + 1).map(n => (
             <button
               key={n}
               onClick={() => {
                 setExtraBags(n);
                 setStep('menu');
-                if (n > 0) setSelections(prev => [...prev.filter(s => s !== 'bags'), 'bags']);
-                else setSelections(prev => prev.filter(s => s !== 'bags'));
+                setSelections(prev => [...prev.filter(s => s !== 'bags'), 'bags']);
               }}
-              className={`flex-1 py-2.5 rounded-xl border text-center transition-all font-bold text-[15px] ${
-                n === 0
-                  ? 'bg-slate-50 border-slate-200/80 text-slate-500 hover:border-slate-300'
-                  : 'bg-white/90 border-slate-200/80 text-slate-700 hover:border-[#1ABC9C]/40'
-              }`}
+              className="w-full flex items-center justify-between px-3 py-2.5 rounded-xl bg-white/90 border border-slate-200/80 hover:border-[#1ABC9C]/40 hover:shadow-sm transition-all"
             >
-              {n === 0 ? 'None' : `${n} bag${n > 1 ? 's' : ''}`}
-              {n > 0 && (
-                <span className="block text-[12px] font-normal text-slate-400">
-                  {fmt(effectiveBagPrice * n * passengerCount)} total
+              <div className="flex items-center gap-2">
+                <span className="text-[13px] font-black text-[#1ABC9C] bg-[#1ABC9C]/10 w-6 h-6 rounded-full flex items-center justify-center">
+                  {n}
                 </span>
-              )}
+                <span className="text-[15px] font-semibold text-slate-700">
+                  {n} extra bag{n > 1 ? 's' : ''}
+                </span>
+              </div>
+              <span className="text-[15px] font-bold text-[#F97316]">
+                +{fmt(n * effectiveBagPrice)}
+              </span>
             </button>
           ))}
+
+          <button
+            onClick={() => {
+              setExtraBags(0);
+              setStep('menu');
+              setSelections(prev => prev.filter(s => s !== 'bags'));
+            }}
+            className="w-full flex items-center justify-center gap-1 px-3 py-2 rounded-xl bg-slate-50 border border-slate-200/80 hover:border-slate-300 transition-all"
+          >
+            <span className="text-[14px] text-slate-500 font-medium">No extra bags</span>
+          </button>
         </div>
       </div>
     );

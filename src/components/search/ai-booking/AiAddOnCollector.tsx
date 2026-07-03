@@ -85,7 +85,7 @@ export default function AiAddOnCollector({
         </div>
 
         <div className="space-y-1.5 px-0.5">
-          {[1, 2].map(n => (
+          {[1, 2, 3].map(n => (
             <button
               key={n}
               onClick={() => handleBagSelect(n)}

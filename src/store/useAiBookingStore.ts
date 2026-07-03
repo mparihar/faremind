@@ -116,7 +116,8 @@ function computePriceSummary(
   const protectionFee = protectedCount * effectiveProtectionPerPax;
 
   const bagPricePerUnit = liveBaggagePrice ?? EXTRA_BAG_PRICE;
-  const baggageFee = addOns.extraBags * bagPricePerUnit * paxCount;
+  // extraBags is the total bag count (not per-passenger)
+  const baggageFee = addOns.extraBags * bagPricePerUnit;
 
   // Use DB-driven insurance fee if available, otherwise fallback
   const insuranceFee = addOns.travelInsurance
