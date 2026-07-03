@@ -141,9 +141,30 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
   console.log(`[notify] 🔍 buildCustomerEmail: event=${eventType} ref=${ref} name=${name} has_full_booking_data=${!!d.full_booking_data}`);
 
   switch (eventType) {
-    // BOOKING_CONFIRMED customer email removed — customers receive the
-    // detailed itinerary via the PAYMENT_SUCCESS notification instead.
-    // Admin/support still gets BOOKING_CONFIRMED via buildSupportEmail.
+    case 'BOOKING_CONFIRMED': {
+      // Send ONLY the detailed itinerary email — no simple fallback template.
+      // If itinerary generation fails, customer does not receive any email
+      // (avoids sending a broken template with incorrect PNR/ref).
+      const fullBookingData = d.full_booking_data as Record<string, unknown> | undefined;
+      if (fullBookingData) {
+        try {
+          console.log(`[notify] 📄 Generating detailed itinerary HTML for customer email (ref=${ref})...`);
+          const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
+          console.log(`[notify] ✅ Itinerary HTML generated successfully (${itineraryHtml.length} chars)`);
+          return {
+            subject: `Your FAREMIND flight is confirmed – ${ref}`,
+            html: itineraryHtml,
+            text: `Hi ${name}, your flight ${ref} (${route}) is confirmed. Total: ${amount}. View your full itinerary at ${process.env.NEXT_PUBLIC_APP_URL || 'https://faremind.ai'}/manage-booking`,
+          };
+        } catch (itineraryErr) {
+          console.error('[notify] ❌ generateItineraryHtmlFromBooking FAILED for customer email:', itineraryErr instanceof Error ? `${itineraryErr.message}\n${itineraryErr.stack}` : itineraryErr);
+        }
+      } else {
+        console.warn(`[notify] ⚠️ No full_booking_data provided for BOOKING_CONFIRMED — skipping customer email`);
+      }
+      // No fallback — return null so no broken email is sent
+      return null;
+    }
 
     case 'BOOKING_PENDING':
       return {
@@ -419,9 +440,9 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
 
 // Mapping: which events send to customer, support, or both
 const CUSTOMER_EVENTS = new Set<string>([
-  'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
+  'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
   'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
-  'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
+  'PAYMENT_FAILED',
   'PRICE_DROP_ALERT', 'PRICE_DROP_REFUND',
   'CHECKIN_REMINDER', 'UPCOMING_TRIP',
 ]);
