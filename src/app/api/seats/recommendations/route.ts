@@ -18,6 +18,8 @@ import type {
   GroupSeatResponse,
 } from '@/lib/ai-seat/ai-seat-types';
 import { flattenSeatMap, recommendSeats, findConsecutiveGroupSeatBlocks } from '@/lib/ai-seat/seat-classifier';
+import { getSeatMaps } from '@/lib/providers/duffel';
+import { transformSeatMap } from '@/app/api/seats/seat-map/route';
 
 // ── In-memory cache (3-min TTL) ───────────────────────────────────────────────
 const cache = new Map<string, { data: SegmentSeatMap[]; expiresAt: number }>();
@@ -33,9 +35,10 @@ function setCached(key: string, data: SegmentSeatMap[]): void {
   cache.set(key, { data, expiresAt: Date.now() + 3 * 60 * 1000 });
 }
 
-// ── Fetch seat maps via the existing internal API route ──────────────────────
-// Reuses /api/seats/seat-map which already handles Duffel transformation.
-// For Mystifly, we call the backend adapter directly.
+// ── Fetch seat maps directly from the provider ──────────────────────────────
+// Previously this made an HTTP self-call to /api/seats/seat-map which fails in
+// serverless deployments (Vercel) where the server can't reach itself via HTTP.
+// Now we import and call the provider directly.
 
 async function fetchSeatMaps(offerId: string, provider: string): Promise<SegmentSeatMap[]> {
   const cacheKey = `ai_seat:${provider}:${offerId}`;
@@ -63,35 +66,24 @@ async function fetchSeatMaps(offerId: string, provider: string): Promise<Segment
     return seatMaps;
   }
 
-  // Duffel (or default): call existing internal seat map route
-  const baseUrl = process.env.NEXT_PUBLIC_BASE_URL
-    || (process.env.VERCEL_URL ? `https://${process.env.VERCEL_URL}` : null)
-    || 'http://localhost:3000';
+  // Duffel: call provider directly (no HTTP self-call)
+  try {
+    console.log(`[AI Seat] Fetching seat map directly from Duffel for offer: ${offerId}`);
+    const raw = await getSeatMaps(offerId, 'offer');
+    const seatMaps = raw.map(transformSeatMap);
+    console.log(`[AI Seat] Seat map result: ${seatMaps.length} segment(s) from direct Duffel call`);
 
-  const seatMapUrl = `${baseUrl}/api/seats/seat-map?offer_id=${encodeURIComponent(offerId)}`;
-  console.log(`[AI Seat] Fetching seat map from: ${seatMapUrl}`);
-
-  const res = await fetch(seatMapUrl, {
-    headers: { 'Content-Type': 'application/json' },
-  });
-
-  if (!res.ok) {
-    console.warn(`[AI Seat] Duffel seat map fetch failed: ${res.status}`);
-    return [];
-  }
-
-  const data = await res.json();
-  const seatMaps: SegmentSeatMap[] = data.seatMaps ?? [];
-  console.log(`[AI Seat] Seat map result: ${seatMaps.length} segment(s), error=${data.error ?? 'none'}, cached=${data.cached ?? false}`);
-  if (seatMaps.length === 0) {
-    if (data.error) {
-      console.warn(`[AI Seat] Seat map API returned 200 but with error: ${data.error}`);
+    if (seatMaps.length === 0) {
+      // Do NOT cache empty results — allow retry on next request
+      return [];
     }
-    // Do NOT cache empty results — allow retry on next request
+    setCached(cacheKey, seatMaps);
+    return seatMaps;
+  } catch (err) {
+    const errMsg = (err as Error).message;
+    console.warn(`[AI Seat] Duffel seat map fetch failed: ${errMsg}`);
     return [];
   }
-  setCached(cacheKey, seatMaps);
-  return seatMaps;
 }
 
 // ── Detect request type ──────────────────────────────────────────────────────

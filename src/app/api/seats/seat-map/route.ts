@@ -119,7 +119,7 @@ function mergeSameCabins(cabins: SeatCabin[]): SeatCabin[] {
   return ordered.map((cc) => map.get(cc)!);
 }
 
-function transformSeatMap(sm: DuffelSeatMap): SegmentSeatMap {
+export function transformSeatMap(sm: DuffelSeatMap): SegmentSeatMap {
   return {
     seatMapId: sm.id,
     segmentId: sm.segment_id,
