@@ -3,6 +3,7 @@
 import { useState, useEffect, use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
+import { apiUrl } from '@/lib/api-client';
 
 import {
   ArrowLeft,
@@ -58,6 +59,27 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
   const [cancelReason, setCancelReason] = useState('');
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [eventsExpanded, setEventsExpanded] = useState(false);
+  const [cancelQuote, setCancelQuote] = useState<any>(null);
+  const [loadingQuote, setLoadingQuote] = useState(false);
+
+  useEffect(() => {
+    if (showCancelDialog && booking?.id) {
+      setLoadingQuote(true);
+      setCancelQuote(null);
+      fetch(apiUrl(`/api/manage-booking/${booking.id}/cancel/quote`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({}),
+      })
+        .then((res) => {
+          if (res.ok) return res.json();
+          throw new Error('Failed to load cancel quote');
+        })
+        .then((data) => setCancelQuote(data))
+        .catch((err) => console.error(err))
+        .finally(() => setLoadingQuote(false));
+    }
+  }, [showCancelDialog, booking?.id]);
 
   useEffect(() => {
     if (!sessionToken) return;
@@ -567,6 +589,65 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
             <p className="text-xs text-slate-400 mb-4">
               This will submit a cancellation request to Admin. Financial processing (refund/penalty) will be handled by Admin/Super Admin.
             </p>
+
+            {loadingQuote && (
+              <div className="flex items-center gap-2 py-4 justify-center">
+                <Loader2 className="w-5 h-5 text-[#1ABC9C] animate-spin" />
+                <span className="text-xs text-slate-400">Loading cancellation details...</span>
+              </div>
+            )}
+
+            {!loadingQuote && cancelQuote && (
+              <div className="mb-4 bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 space-y-3 text-sm">
+                <div className="flex items-center justify-between pb-2 border-b border-white/[0.05]">
+                  <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Refund Estimate</span>
+                  <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                    cancelQuote.refundability === 'FULL_REFUND'
+                      ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                      : cancelQuote.refundability === 'PARTIAL_REFUND'
+                        ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                  }`}>
+                    {cancelQuote.refundability === 'FULL_REFUND'
+                      ? 'Fully Refundable'
+                      : cancelQuote.refundability === 'PARTIAL_REFUND'
+                        ? 'Partially Refundable'
+                        : 'Non-refundable'}
+                  </span>
+                </div>
+                <div className="flex justify-between text-xs text-slate-400">
+                  <span>Original Fare</span>
+                  <span className="text-white font-medium">
+                    {new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.originalAmount)}
+                  </span>
+                </div>
+                {cancelQuote.airlinePenalty > 0 && (
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>Airline Penalty</span>
+                    <span className="text-red-400 font-medium">
+                      −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.airlinePenalty)}
+                    </span>
+                  </div>
+                )}
+                {cancelQuote.fareMindFee > 0 && (
+                  <div className="flex justify-between text-xs text-slate-400">
+                    <span>FAREMIND Processing Fee</span>
+                    <span className="text-red-400 font-medium">
+                      −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.fareMindFee)}
+                    </span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center pt-2 border-t border-white/[0.05]">
+                  <span className="text-white font-bold text-xs">Estimated Refund</span>
+                  <span className={`font-black text-sm ${cancelQuote.estimatedRefund > 0 ? 'text-[#1ABC9C]' : 'text-red-400'}`}>
+                    {cancelQuote.estimatedRefund > 0
+                      ? new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.refundCurrency || cancelQuote.currency }).format(cancelQuote.estimatedRefund)
+                      : 'Non-refundable'}
+                  </span>
+                </div>
+              </div>
+            )}
+
             <textarea
               value={cancelReason}
               onChange={(e) => setCancelReason(e.target.value)}
@@ -582,7 +663,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
               </button>
               <button
                 onClick={handleCancellation}
-                disabled={saving}
+                disabled={saving || loadingQuote}
                 className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-50"
               >
                 {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}

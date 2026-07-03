@@ -155,13 +155,19 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
               <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-white/[0.05] flex items-center justify-between">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Refund Estimate</p>
-                  {(cancelQuote as any).fareRules && (
+                  {cancelQuote.refundability && (
                     <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                      (cancelQuote as any).fareRules.refundable
+                      cancelQuote.refundability === 'FULL_REFUND'
                         ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                        : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                        : cancelQuote.refundability === 'PARTIAL_REFUND'
+                          ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                          : 'bg-red-500/10 text-red-400 border border-red-500/20'
                     }`}>
-                      {(cancelQuote as any).fareRules.refundable ? 'Refundable fare' : 'Non-refundable fare'}
+                      {cancelQuote.refundability === 'FULL_REFUND'
+                        ? 'Fully Refundable'
+                        : cancelQuote.refundability === 'PARTIAL_REFUND'
+                          ? 'Partially Refundable'
+                          : 'Non-refundable'}
                     </span>
                   )}
                 </div>
