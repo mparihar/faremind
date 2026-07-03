@@ -369,6 +369,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       return {
         quoteId: quote.quoteId,
         bookingReference: booking.masterBookingReference,
+        airlinePnr: booking.masterPnr || primaryPnr?.pnrCode || null,
+        route: `${booking.originAirport} → ${booking.destinationAirport}`,
+        departureDate: booking.departureDate,
         bookingStatus: booking.bookingStatus,
         cancellationAllowed: true,
         airlinePermitted: true,

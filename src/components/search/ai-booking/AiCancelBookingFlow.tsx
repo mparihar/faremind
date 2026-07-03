@@ -200,13 +200,30 @@ export default function AiCancelBookingFlow({
         {/* Summary Card */}
         <div className="px-3 py-3 rounded-xl border border-slate-200 bg-white space-y-2.5">
           <InfoRow label="FareMind Reference" value={q.bookingReference} />
-          {pnrCode && <InfoRow label="Airline PNR" value={pnrCode} />}
-          <InfoRow label="Route" value={route} />
-          <InfoRow label="Departure" value={formatBookingDate(departureDate)} />
+          {(q.airlinePnr || pnrCode) && <InfoRow label="Airline PNR" value={q.airlinePnr || pnrCode!} />}
+          <InfoRow label="Route" value={q.route || route} />
+          <InfoRow label="Departure" value={formatBookingDate(q.departureDate || departureDate)} />
 
           {/* Refund Breakdown */}
           <div className="pt-2 border-t border-slate-100 space-y-1.5">
-            <p className="text-[9px] font-black uppercase tracking-widest text-slate-400 mb-1">Refund Estimate</p>
+            <div className="flex items-center justify-between mb-1">
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Refund Estimate</p>
+              {q.refundability && (
+                <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
+                  q.refundability === 'FULL_REFUND'
+                    ? 'bg-emerald-100 text-emerald-600'
+                    : q.refundability === 'PARTIAL_REFUND'
+                      ? 'bg-amber-100 text-amber-600'
+                      : 'bg-red-100 text-red-500'
+                }`}>
+                  {q.refundability === 'FULL_REFUND'
+                    ? 'Fully Refundable'
+                    : q.refundability === 'PARTIAL_REFUND'
+                      ? 'Partially Refundable'
+                      : 'Non-refundable'}
+                </span>
+              )}
+            </div>
             <div className="flex justify-between text-[11px]">
               <span className="text-slate-500">Original Fare</span>
               <span className="font-semibold text-slate-700">{fmtCurrency(q.originalAmount, q.currency)}</span>
@@ -219,14 +236,14 @@ export default function AiCancelBookingFlow({
             )}
             {q.fareMindFee > 0 && (
               <div className="flex justify-between text-[11px]">
-                <span className="text-slate-500">FareMind Fee</span>
+                <span className="text-slate-500">FAREMIND Service Fee</span>
                 <span className="font-semibold text-red-500">-{fmtCurrency(q.fareMindFee, q.currency)}</span>
               </div>
             )}
             <div className="flex justify-between text-[12px] pt-1 border-t border-dashed border-slate-200">
               <span className="font-bold text-slate-700">Estimated Refund</span>
-              <span className={`font-black ${q.estimatedRefund > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
-                {q.estimatedRefund > 0 ? fmtCurrency(q.estimatedRefund, q.currency) : 'Non-refundable'}
+              <span className={`font-black ${q.estimatedRefund > 0 ? 'text-emerald-600' : 'text-red-500 italic'}`}>
+                {q.estimatedRefund > 0 ? fmtCurrency(q.estimatedRefund, q.refundCurrency || q.currency) : 'Non-refundable'}
               </span>
             </div>
           </div>
@@ -234,7 +251,11 @@ export default function AiCancelBookingFlow({
           {/* Refund Method */}
           <div className="flex items-center gap-1.5 text-[10px] text-slate-500">
             <CreditCard className="w-3 h-3 text-slate-400" />
-            <span>{q.refundMethod === 'AIRLINE_CREDIT' ? 'Airline Credit' : 'Original Payment'} · {q.refundTimeline}</span>
+            <span>
+              {q.estimatedRefund > 0
+                ? `Original Payment · ${q.refundTimeline || '5–10 business days'}`
+                : 'No refund will be issued for this non-refundable ticket'}
+            </span>
           </div>
         </div>
 

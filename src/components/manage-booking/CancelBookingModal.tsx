@@ -142,7 +142,6 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                 </div>
                 <div>
                   <h3 className="text-white font-bold text-sm">Cancel Booking</h3>
-                  <p className="text-slate-500 text-[11px] font-mono">{cancelQuote.bookingReference}</p>
                 </div>
               </div>
               <button onClick={onClose} className="text-slate-500 hover:text-white transition-colors p-1">
@@ -151,7 +150,35 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
             </div>
 
             <div className="px-5 py-4 space-y-4">
-              {/* Refund breakdown */}
+              {/* Booking Details */}
+              <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
+                <div className="px-4 py-3 space-y-2 text-sm">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">FareMind Reference</span>
+                    <span className="text-white font-bold font-mono">{cancelQuote.bookingReference}</span>
+                  </div>
+                  {cancelQuote.airlinePnr && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Airline PNR</span>
+                      <span className="text-white font-bold font-mono">{cancelQuote.airlinePnr}</span>
+                    </div>
+                  )}
+                  {cancelQuote.route && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Route</span>
+                      <span className="text-white font-medium">{cancelQuote.route}</span>
+                    </div>
+                  )}
+                  {cancelQuote.departureDate && (
+                    <div className="flex justify-between">
+                      <span className="text-slate-400">Departure</span>
+                      <span className="text-white font-medium">{new Date(cancelQuote.departureDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                    </div>
+                  )}
+                </div>
+              </div>
+
+              {/* Refund Estimate */}
               <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
                 <div className="px-4 py-3 border-b border-white/[0.05] flex items-center justify-between">
                   <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Refund Estimate</p>
@@ -184,58 +211,27 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                   )}
                   {cancelQuote.fareMindFee > 0 && (
                     <div className="flex justify-between">
-                      <span className="text-slate-400">FAREMIND Processing Fee</span>
+                      <span className="text-slate-400">FAREMIND Service Fee</span>
                       <span className="text-red-400 font-medium">−{fmt(cancelQuote.fareMindFee, cancelQuote.currency)}</span>
                     </div>
                   )}
                   <div className="border-t border-white/[0.06] pt-2.5 flex justify-between items-center">
                     <span className="text-white font-bold">Estimated Refund</span>
-                    <span className={`font-black text-lg ${cancelQuote.estimatedRefund > 0 ? 'text-[#1ABC9C]' : 'text-red-400'}`}>
-                      {cancelQuote.estimatedRefund > 0 ? fmt(cancelQuote.estimatedRefund, cancelQuote.refundCurrency) : 'Non-refundable'}
+                    <span className={`font-black text-lg ${cancelQuote.estimatedRefund > 0 ? 'text-[#1ABC9C]' : 'text-red-400 italic'}`}>
+                      {cancelQuote.estimatedRefund > 0 ? fmt(cancelQuote.estimatedRefund, cancelQuote.refundCurrency || cancelQuote.currency) : 'Non-refundable'}
                     </span>
                   </div>
                 </div>
               </div>
 
-              {/* Refund method selector */}
-              {cancelQuote.estimatedRefund > 0 && (
-                <div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Refund To</p>
-                  <div className="grid grid-cols-2 gap-2">
-                    {(['ORIGINAL_PAYMENT', 'AIRLINE_CREDIT'] as const).map(method => (
-                      <button
-                        key={method}
-                        onClick={() => setRefundMethodChoice(method)}
-                        className={`flex items-center gap-2 px-3 py-2.5 rounded-xl border text-left text-xs font-semibold transition-all ${refundMethodChoice === method
-                          ? 'border-[#1ABC9C] bg-[#1ABC9C]/10 text-[#1ABC9C]'
-                          : 'border-white/[0.08] bg-white/[0.03] text-slate-400 hover:border-white/20'}`}
-                      >
-                        <CreditCard size={13} />
-                        {method === 'ORIGINAL_PAYMENT' ? 'Original Payment' : 'Airline Credit'}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              {/* Details row */}
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-3">
-                  <p className="text-slate-500 mb-0.5">Refund Timeline</p>
-                  <div className="flex items-center gap-1.5 text-white font-semibold">
-                    <Clock size={11} className="text-[#1ABC9C]" />
-                    {cancelQuote.refundTimeline}
-                  </div>
-                </div>
-                <div className="bg-white/[0.02] border border-white/[0.06] rounded-xl p-3">
-                  <p className="text-slate-500 mb-0.5">Airline PNR(s)</p>
-                  <div className="flex flex-wrap gap-1">
-                    {cancelQuote.pnrs.slice(0, 3).map(p => (
-                      <span key={p.pnrCode} className="font-mono font-bold text-white">{p.pnrCode}</span>
-                    ))}
-                    {cancelQuote.pnrs.length === 0 && <span className="text-slate-600">—</span>}
-                  </div>
-                </div>
+              {/* Payment method & timeline */}
+              <div className="flex items-center gap-2 text-xs text-slate-400">
+                <CreditCard size={12} className="text-slate-500 shrink-0" />
+                <span>
+                  {cancelQuote.estimatedRefund > 0
+                    ? `Original Payment · ${cancelQuote.refundTimeline || '5–10 business days'}`
+                    : 'No refund will be issued for this non-refundable ticket'}
+                </span>
               </div>
 
               {/* Warning */}
@@ -245,6 +241,11 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                   <p className="text-amber-200/70 text-xs leading-relaxed">{cancelQuote.warningMessage}</p>
                 </div>
               )}
+
+              {/* Confirm text */}
+              <p className="text-xs text-slate-400 text-center">
+                Please confirm that you want to cancel booking <span className="text-white font-bold">{cancelQuote.bookingReference}</span>.
+              </p>
             </div>
 
             {/* Footer buttons */}
