@@ -21,6 +21,7 @@ import {
   Sparkles,
 } from 'lucide-react';
 import type { UnifiedFlight } from '@/lib/types';
+import type { RoundTripOption } from '@/lib/round-trip-types';
 import type { AiFareDetails, AiPassengerData, AiSeatPreference, AiPriceSummary } from '@/lib/ai-booking-types';
 import type { SelectedSeatData } from '@/lib/ai-seat/ai-seat-types';
 import { formatPrice, formatDuration, getStopsLabel } from '@/lib/utils';
@@ -32,6 +33,7 @@ import type { PassengerSeatSelection, PassengerMealSelection } from '@/lib/ai-bo
 
 interface Props {
   flight: UnifiedFlight;
+  roundTrip?: RoundTripOption | null;
   fareDetails: AiFareDetails;
   passengers: AiPassengerData[];
   passengerCount: number;
@@ -64,6 +66,7 @@ const SEAT_TYPE_LABELS: Record<string, string> = {
 
 export default function AiBookingSummaryCard({
   flight,
+  roundTrip,
   fareDetails,
   passengers,
   passengerCount,
@@ -89,27 +92,90 @@ export default function AiBookingSummaryCard({
   const currency = priceSummary.currency || 'USD';
   const passenger = passengers[0]; // primary contact
 
+  // Round-trip details
+  const isRoundTrip = !!roundTrip;
+  const ob = roundTrip?.outboundJourney;
+  const rt = roundTrip?.returnJourney;
+
   return (
     <div className="space-y-2.5">
       {/* ── Flight Card ── */}
       <div className="bg-white/90 backdrop-blur-sm rounded-xl border border-slate-200 p-3">
         <div className="flex items-center gap-1.5 mb-2">
           <Plane className="w-3 h-3 text-[#1ABC9C]" />
-          <span className="text-[12px] font-bold text-slate-500 uppercase tracking-wider">Flight</span>
-        </div>
-        <div className="flex items-center gap-2 mb-1">
-          <span className="text-[14px] font-extrabold text-slate-900">{origin}</span>
-          <ArrowRight className="w-3 h-3 text-slate-400" />
-          <span className="text-[14px] font-extrabold text-slate-900">{dest}</span>
-          <span className="text-[12px] text-slate-400 ml-auto">{airline}</span>
-        </div>
-        <div className="flex items-center gap-3 text-[12px] text-slate-500">
-          <span className="flex items-center gap-0.5">
-            <Clock className="w-2.5 h-2.5" />
-            {formatDuration(flight.totalDuration)}
+          <span className="text-[12px] font-bold text-slate-500 uppercase tracking-wider">
+            {isRoundTrip ? 'Flights' : 'Flight'}
           </span>
-          <span>{getStopsLabel(flight.stops)}</span>
         </div>
+
+        {isRoundTrip && ob && rt ? (
+          <div className="space-y-2.5">
+            {/* Outbound */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-[9px] font-black uppercase tracking-widest text-[#1ABC9C] bg-[#1ABC9C]/10 px-1.5 py-0.5 rounded">Outbound</span>
+                <span className="text-[11px] text-slate-400 ml-auto">{ob.airlineNames.join(', ')}</span>
+              </div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[14px] font-extrabold text-slate-900">{ob.departureAirport}</span>
+                <ArrowRight className="w-3 h-3 text-slate-400" />
+                <span className="text-[14px] font-extrabold text-slate-900">{ob.arrivalAirport}</span>
+              </div>
+              <div className="flex items-center gap-3 text-[12px] text-slate-500">
+                <span className="flex items-center gap-0.5">
+                  <Clock className="w-2.5 h-2.5" />
+                  {formatDuration(ob.durationMinutes)}
+                </span>
+                <span>{getStopsLabel(ob.stops)}</span>
+                {ob.flightNumbers.length > 0 && (
+                  <span className="text-slate-400 font-mono text-[11px]">{ob.flightNumbers.join(' · ')}</span>
+                )}
+              </div>
+            </div>
+
+            <div className="border-t border-dashed border-slate-200" />
+
+            {/* Return */}
+            <div>
+              <div className="flex items-center gap-1.5 mb-1">
+                <span className="text-[9px] font-black uppercase tracking-widest text-orange-500 bg-orange-50 px-1.5 py-0.5 rounded">Return</span>
+                <span className="text-[11px] text-slate-400 ml-auto">{rt.airlineNames.join(', ')}</span>
+              </div>
+              <div className="flex items-center gap-2 mb-0.5">
+                <span className="text-[14px] font-extrabold text-slate-900">{rt.departureAirport}</span>
+                <ArrowRight className="w-3 h-3 text-slate-400" />
+                <span className="text-[14px] font-extrabold text-slate-900">{rt.arrivalAirport}</span>
+              </div>
+              <div className="flex items-center gap-3 text-[12px] text-slate-500">
+                <span className="flex items-center gap-0.5">
+                  <Clock className="w-2.5 h-2.5" />
+                  {formatDuration(rt.durationMinutes)}
+                </span>
+                <span>{getStopsLabel(rt.stops)}</span>
+                {rt.flightNumbers.length > 0 && (
+                  <span className="text-slate-400 font-mono text-[11px]">{rt.flightNumbers.join(' · ')}</span>
+                )}
+              </div>
+            </div>
+          </div>
+        ) : (
+          /* One-way flight */
+          <>
+            <div className="flex items-center gap-2 mb-1">
+              <span className="text-[14px] font-extrabold text-slate-900">{origin}</span>
+              <ArrowRight className="w-3 h-3 text-slate-400" />
+              <span className="text-[14px] font-extrabold text-slate-900">{dest}</span>
+              <span className="text-[12px] text-slate-400 ml-auto">{airline}</span>
+            </div>
+            <div className="flex items-center gap-3 text-[12px] text-slate-500">
+              <span className="flex items-center gap-0.5">
+                <Clock className="w-2.5 h-2.5" />
+                {formatDuration(flight.totalDuration)}
+              </span>
+              <span>{getStopsLabel(flight.stops)}</span>
+            </div>
+          </>
+        )}
       </div>
 
       {/* ── Fare ── */}

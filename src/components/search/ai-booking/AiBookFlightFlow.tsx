@@ -1256,6 +1256,7 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
             </AiBubble>
             <AiBookingSummaryCard
               flight={store.selectedFlight}
+              roundTrip={store.selectedRoundTrip}
               fareDetails={store.fareDetails}
               passengers={store.passengers}
               passengerCount={store.passengerCount}
