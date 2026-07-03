@@ -625,6 +625,18 @@ function PriceSummary({
           <span>Base fare</span>
           <span>{fmt(pricing.fareTotal)}</span>
         </div>
+        {pricing.seatFees > 0 && (
+          <div className="flex justify-between text-slate-600">
+            <span>Seat selection</span>
+            <span>+{fmt(pricing.seatFees)}</span>
+          </div>
+        )}
+        {pricing.mealFees > 0 && (
+          <div className="flex justify-between text-slate-600">
+            <span>Meal selection</span>
+            <span>+{fmt(pricing.mealFees)}</span>
+          </div>
+        )}
         {pricing.baggageFees > 0 && (
           <div className="flex justify-between text-slate-600">
             <span>Extra baggage</span>
