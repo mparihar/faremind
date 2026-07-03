@@ -151,8 +151,11 @@ export default function AiCancelBookingFlow({
             <InfoRow label="Status" value="Cancellation submitted" highlight />
             <InfoRow
               label="Estimated Refund"
-              value={fmtCurrency(cancelSuccess.refundAmount, cancelSuccess.refundCurrency)}
+              value={cancelSuccess.refundAmount > 0 
+                ? fmtCurrency(cancelSuccess.refundAmount, cancelSuccess.refundCurrency) 
+                : 'Non-refundable'}
               bold
+              highlight={cancelSuccess.refundAmount > 0}
             />
             <InfoRow label="Refund Timeline" value={cancelSuccess.refundTimeline || '5–10 business days'} />
             <InfoRow
@@ -222,7 +225,9 @@ export default function AiCancelBookingFlow({
             )}
             <div className="flex justify-between text-[12px] pt-1 border-t border-dashed border-slate-200">
               <span className="font-bold text-slate-700">Estimated Refund</span>
-              <span className="font-black text-emerald-600">{fmtCurrency(q.estimatedRefund, q.currency)}</span>
+              <span className={`font-black ${q.estimatedRefund > 0 ? 'text-emerald-600' : 'text-red-500'}`}>
+                {q.estimatedRefund > 0 ? fmtCurrency(q.estimatedRefund, q.currency) : 'Non-refundable'}
+              </span>
             </div>
           </div>
 

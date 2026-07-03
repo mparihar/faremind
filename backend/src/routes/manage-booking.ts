@@ -23,6 +23,66 @@ const BREVO_URL    = 'https://api.brevo.com/v3/smtp/email';
 const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL ?? 'noreply@faremind.ai';
 const SENDER_NAME  = 'FAREMIND';
 
+async function getAdminServiceFee(booking: any): Promise<number> {
+  try {
+    const rules = await prisma.platformFeeRule.findMany({
+      where: {
+        feeType: 'SERVICE_FEE',
+        active: true,
+        deletedAt: null,
+      },
+      orderBy: { priority: 'desc' },
+    });
+
+    const primaryPnr = booking.pnrs.find((p: any) => p.isPrimary) ?? booking.pnrs[0];
+    const cabin = primaryPnr?.cabinClass || 'ECONOMY';
+    const provider = booking.primaryProvider || 'DUFFEL';
+    const tripType = booking.tripType || 'ROUND_TRIP';
+
+    const now = new Date();
+
+    const matchesRule = (r: any) => {
+      if (new Date(r.effectiveFrom) > now) return false;
+      if (r.effectiveTo && new Date(r.effectiveTo) < now) return false;
+      if (r.providerScope !== 'ALL' && r.providerScope.toLowerCase() !== provider.toLowerCase()) return false;
+
+      if (r.cabinScope !== 'ALL') {
+        const normalizedCabin = cabin.toLowerCase().replace(/\s+/g, '_');
+        const normalizedScope = r.cabinScope.toLowerCase().replace(/\s+/g, '_');
+        if (normalizedScope !== normalizedCabin) {
+          if (normalizedScope === 'economy' && !normalizedCabin.startsWith('economy')) return false;
+          if (normalizedScope === 'premium_economy' && !normalizedCabin.startsWith('premium_economy')) return false;
+          if (normalizedScope === 'business' && !normalizedCabin.startsWith('business')) return false;
+        }
+      }
+
+      if (r.tripTypeScope !== 'ALL' && r.tripTypeScope !== tripType) return false;
+      return true;
+    };
+
+    const matchedRule = rules.find(matchesRule);
+    if (!matchedRule) return 20;
+
+    const passengersCount = booking.passengers?.length || 1;
+    const baseFare = Number(booking.totalAmount);
+
+    if (matchedRule.calculationModel === 'FIXED_PER_BOOKING') {
+      return Number(matchedRule.fixedAmount ?? 20);
+    } else if (matchedRule.calculationModel === 'FIXED_PER_TRAVELER') {
+      return Number(matchedRule.fixedAmount ?? 20) * passengersCount;
+    } else if (matchedRule.calculationModel === 'PERCENTAGE_OF_FARE' || matchedRule.calculationModel === 'PERCENTAGE_OF_BOOKING_TOTAL') {
+      return Math.round(baseFare * (Number(matchedRule.percentageValue ?? 0) / 100));
+    } else if (matchedRule.calculationModel === 'HYBRID') {
+      return Math.round(Number(matchedRule.fixedAmount ?? 20) * passengersCount + baseFare * (Number(matchedRule.percentageValue ?? 0) / 100));
+    }
+
+    return 20;
+  } catch (err) {
+    console.error('[getAdminServiceFee] Error calculating admin service fee:', err);
+    return 20;
+  }
+}
+
 async function sendBookingOtpEmail(toEmail: string, toName: string, otp: string): Promise<void> {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) {
@@ -214,10 +274,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (['FAILED', 'COMPLETED'].includes(booking.bookingStatus)) return reply.code(400).send({ error: 'This booking cannot be cancelled', code: 'NOT_CANCELLABLE' });
       if (new Date(booking.departureDate) < new Date()) return reply.code(400).send({ error: 'This flight has already departed', code: 'PAST_FLIGHT' });
 
-      const FAREMIND_FEE = 20;
+      const FAREMIND_FEE = await getAdminServiceFee(booking);
       const originalAmount = Number(booking.totalAmount);
       const providerPnr = booking.pnrs.find(p => p.providerOrderId);
       const pnrs = booking.pnrs.map(p => ({ pnrCode: p.pnrCode, status: p.status }));
+
+      const primaryPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
+      const isRefundable = primaryPnr?.refundable ?? false;
+      const storedCancelFee = primaryPnr?.cancellationFee != null ? Number(primaryPnr.cancellationFee) : null;
 
       if (providerPnr?.providerOrderId) {
         try {
@@ -225,8 +289,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           const quote = await provider.getCancellationQuote(providerPnr.providerOrderId);
           await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote', providerReference: quote.quoteId, payloadJson: quote.raw as object });
 
-          const airlinePenalty = Math.max(0, originalAmount - quote.refundAmount);
-          const estimatedRefund = Math.max(0, quote.refundAmount - FAREMIND_FEE);
+          let refundAmount = isRefundable ? quote.refundAmount : 0;
+          let airlinePenalty = isRefundable ? Math.max(0, originalAmount - refundAmount) : originalAmount;
+          let estimatedRefund = isRefundable ? Math.max(0, refundAmount - FAREMIND_FEE) : 0;
+          let fareMindFee = estimatedRefund > 0 ? FAREMIND_FEE : 0;
           const refundability = estimatedRefund <= 0 ? 'NON_REFUNDABLE' : airlinePenalty > 0 ? 'PARTIAL_REFUND' : 'FULL_REFUND';
 
           return {
@@ -239,15 +305,17 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             originalAmount,
             currency: booking.currency,
             airlinePenalty,
-            fareMindFee: FAREMIND_FEE,
-            penaltyAmount: airlinePenalty + FAREMIND_FEE,
+            fareMindFee,
+            penaltyAmount: airlinePenalty + fareMindFee,
             estimatedRefund,
-            refundAmount: quote.refundAmount,
+            refundAmount,
             refundCurrency: quote.refundCurrency,
             refundTo: quote.refundTo,
             refundMethod: 'ORIGINAL_PAYMENT',
             refundTimeline: '5–10 business days',
-            warningMessage: 'Cancellation penalties may vary until airline confirmation. This action cannot be undone.',
+            warningMessage: isRefundable 
+              ? 'Cancellation penalties may vary until airline confirmation. This action cannot be undone.'
+              : 'This ticket is non-refundable. Confirming cancellation will cancel the booking without a refund.',
             pnrs,
             expiresAt: quote.expiresAt,
           };
@@ -257,14 +325,13 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
 
       // Fallback estimate — use stored fare rules if available
-      const primaryPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
-      const storedCancelFee = primaryPnr?.cancellationFee != null ? Number(primaryPnr.cancellationFee) : null;
-      const isRefundable = primaryPnr?.refundable ?? false;
-
-      const airlinePenalty = storedCancelFee != null
-        ? storedCancelFee
-        : (isRefundable ? 0 : Math.round(originalAmount * 0.15));
-      const estimatedRefund = Math.max(0, originalAmount - airlinePenalty - FAREMIND_FEE);
+      const airlinePenalty = isRefundable
+        ? (storedCancelFee != null ? storedCancelFee : 0)
+        : originalAmount;
+      const estimatedRefund = isRefundable
+        ? Math.max(0, originalAmount - airlinePenalty - FAREMIND_FEE)
+        : 0;
+      const fareMindFee = estimatedRefund > 0 ? FAREMIND_FEE : 0;
       const refundability = isRefundable && airlinePenalty === 0
         ? 'FULL_REFUND'
         : estimatedRefund <= 0 ? 'NON_REFUNDABLE' : 'PARTIAL_REFUND';
@@ -279,17 +346,19 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         originalAmount,
         currency: booking.currency,
         airlinePenalty,
-        fareMindFee: FAREMIND_FEE,
-        penaltyAmount: airlinePenalty + FAREMIND_FEE,
+        fareMindFee,
+        penaltyAmount: airlinePenalty + fareMindFee,
         estimatedRefund,
         refundAmount: estimatedRefund,
         refundCurrency: booking.currency,
         refundTo: 'original_form_of_payment',
         refundMethod: 'ORIGINAL_PAYMENT',
         refundTimeline: '5–10 business days',
-        warningMessage: storedCancelFee != null
-          ? 'Cancellation fee is based on your fare rules. This action cannot be undone.'
-          : 'This is an estimate based on standard airline policies. Actual refund may vary. Our team will confirm exact amounts.',
+        warningMessage: !isRefundable
+          ? 'This ticket is non-refundable. Confirming cancellation will cancel the booking without a refund.'
+          : storedCancelFee != null
+            ? 'Cancellation fee is based on your fare rules. This action cannot be undone.'
+            : 'This is an estimate based on standard airline policies. Actual refund may vary. Our team will confirm exact amounts.',
         fareRules: {
           refundable: isRefundable,
           changeable: primaryPnr?.changeable ?? false,

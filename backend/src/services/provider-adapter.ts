@@ -268,7 +268,7 @@ function normalizeDuffelOrder(order: DuffelOrder): OrderDetails {
     capabilities: {
       // For Duffel, we check available_services to see if baggage is an option.
       // Often return_available_services=false during fetch, so we default to false unless explicitly seen
-      addBaggageAllowed: order.available_services?.some(s => s.type === 'baggage') ?? false,
+      addBaggageAllowed: (order as any).available_services?.some((s: any) => s.type === 'baggage') ?? false,
     },
     createdAt: order.created_at,
     raw: order,
@@ -507,14 +507,17 @@ export class MystiflyAdapter implements IBookingProvider {
     // Mystifly doesn't have a separate cancel-quote API.
     // We return a synthetic quote; the actual cancellation happens in confirmCancellation.
     const order = await this.getOrder(mfRef);
+    const isRefundable = order.conditions?.refundable ?? false;
+    const refundAmount = isRefundable ? order.totalAmount : 0;
+    const penaltyAmount = isRefundable ? 0 : order.totalAmount;
 
     return {
       quoteId: `mystifly_cancel_quote_${mfRef}`,
       orderId: mfRef,
-      refundAmount: order.totalAmount, // Estimated — actual refund depends on fare rules
+      refundAmount, // Estimated — actual refund depends on fare rules
       refundCurrency: order.currency,
       refundTo: 'original_payment',
-      penaltyAmount: 0, // Unknown until provider processes
+      penaltyAmount,
       expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 min synthetic expiry
       raw: { note: 'Mystifly does not provide cancellation quotes. This is an estimated refund.' },
     };
