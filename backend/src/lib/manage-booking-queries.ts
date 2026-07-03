@@ -105,13 +105,12 @@ export async function getUserMasterBookings(
 ) {
   const now = new Date();
 
-  // Match by userId, customerEmail, OR agentUserId to catch:
-  // - bookings linked by userId
-  // - bookings created before userId was linked (matched by email)
-  // - bookings created by this user acting as an agent for clients
+  // Match by userId or customerEmail to show the user's OWN bookings.
+  // Agent bookings (where this user acted as agent for clients) are intentionally
+  // excluded here — they are only visible through the agent portal.
   const identityClause = userEmail
-    ? { OR: [{ userId }, { customerEmail: { equals: userEmail, mode: 'insensitive' } }, { agentUserId: userId }] }
-    : { OR: [{ userId }, { agentUserId: userId }] };
+    ? { OR: [{ userId }, { customerEmail: { equals: userEmail, mode: 'insensitive' } }] }
+    : { userId };
 
   const where: any = { ...identityClause };
 
