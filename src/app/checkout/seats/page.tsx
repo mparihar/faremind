@@ -133,11 +133,13 @@ function SegmentTabs({
   segments,
   activeIndex,
   seatMaps,
+  completedSegments,
   onSelect,
 }: {
   segments: DisplaySegment[];
   activeIndex: number;
   seatMaps: SegmentSeatMap[];
+  completedSegments: Set<number>;
   onSelect: (i: number) => void;
 }) {
   if (segments.length <= 1) return null;
@@ -158,22 +160,34 @@ function SegmentTabs({
               if (seg.journeyLabel !== journey) return null;
               const hasSeatMap = !!seatMaps[i]?.cabins?.[0]?.rows?.length;
               const isActive = i === activeIndex;
+              const isDone = completedSegments.has(i);
               return (
                 <button
                   key={seg.key}
                   onClick={() => onSelect(i)}
                   className={cn(
-                    'flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border',
+                    'relative flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-semibold transition-all border cursor-pointer',
                     isActive
                       ? 'bg-[#1ABC9C] border-[#1ABC9C] text-white shadow-md shadow-[#1ABC9C]/20'
-                      : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300',
+                      : isDone
+                        ? 'bg-emerald-50 border-emerald-300 text-emerald-700 hover:border-emerald-400 hover:bg-emerald-100/80'
+                        : 'bg-white border-slate-200 text-slate-600 hover:border-slate-300 hover:bg-slate-50',
                   )}
                 >
-                  <Plane className="w-3.5 h-3.5" />
+                  {isDone && !isActive ? (
+                    <Check className="w-3.5 h-3.5 text-emerald-500" strokeWidth={3} />
+                  ) : (
+                    <Plane className="w-3.5 h-3.5" />
+                  )}
                   <span className="font-bold">{seg.flightNumber || `${seg.from}→${seg.to}`}</span>
                   <span className="text-xs opacity-70">{seg.from}→{seg.to}</span>
                   {hasSeatMap && (
                     <span className="w-1.5 h-1.5 rounded-full bg-current opacity-60" />
+                  )}
+                  {isDone && !isActive && (
+                    <span className="text-[10px] font-bold text-emerald-500 bg-emerald-100 px-1.5 py-0.5 rounded-full leading-none">
+                      Done
+                    </span>
                   )}
                 </button>
               );
@@ -642,6 +656,25 @@ export default function SeatsPage() {
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   const [autoAdvanceMsg, setAutoAdvanceMsg] = useState<string | null>(null);
 
+  // Track whether the user manually navigated to a tab (suppresses auto-advance)
+  const manualTabOverride = useRef(false);
+  // Track seat-change count to re-enable auto-advance after an edit
+  const seatChangeCounter = useRef(0);
+
+  // Handler for manual segment tab selection
+  const handleSegmentTabSelect = useCallback((idx: number) => {
+    // Clear any pending auto-advance
+    if (autoAdvanceTimer.current) {
+      clearTimeout(autoAdvanceTimer.current);
+      autoAdvanceTimer.current = null;
+      setAutoAdvanceMsg(null);
+    }
+    // Mark as manual override so auto-advance doesn't immediately kick in
+    manualTabOverride.current = true;
+    seatChangeCounter.current = 0;
+    setActiveSegIdx(idx);
+  }, []);
+
   // Check if all passengers have a seat or preference for the given segment
   const allPaxDoneForSeg = useCallback((segKey: string, currentSelections: typeof seatSelections) => {
     return seatEligiblePax.every(p =>
@@ -651,11 +684,33 @@ export default function SeatsPage() {
     );
   }, [seatEligiblePax]);
 
+  // Build a set of completed segment indices for the tab UI
+  const completedSegments = useMemo(() => {
+    const done = new Set<number>();
+    segments.forEach((seg, i) => {
+      if (allPaxDoneForSeg(seg.key, seatSelections)) done.add(i);
+    });
+    return done;
+  }, [segments, seatSelections, allPaxDoneForSeg]);
+
   // Auto-advance effect: when all passengers are done on current segment, jump to next
+  // Respects manual tab override — only auto-advances after user makes a seat change
   useEffect(() => {
     if (segments.length <= 1) return; // only one segment, nothing to advance to
     if (activeSegIdx >= segments.length - 1) return; // already on last segment
     if (!activeSeg) return;
+
+    // If user manually navigated to this tab and hasn't made a seat change yet,
+    // don't auto-advance — let them browse/edit freely
+    if (manualTabOverride.current && seatChangeCounter.current === 0) {
+      // Clear any leftover auto-advance UI
+      if (autoAdvanceTimer.current) {
+        clearTimeout(autoAdvanceTimer.current);
+        autoAdvanceTimer.current = null;
+        setAutoAdvanceMsg(null);
+      }
+      return;
+    }
 
     const done = allPaxDoneForSeg(activeSeg.key, seatSelections);
     if (!done) {
@@ -674,6 +729,8 @@ export default function SeatsPage() {
     setAutoAdvanceMsg(`All seats selected! Switching to ${nextSeg?.journeyLabel ?? 'next segment'}…`);
 
     autoAdvanceTimer.current = setTimeout(() => {
+      manualTabOverride.current = false; // reset override for new segment
+      seatChangeCounter.current = 0;
       setActiveSegIdx(nextIdx);
       setAutoAdvanceMsg(null);
       autoAdvanceTimer.current = null;
@@ -698,6 +755,9 @@ export default function SeatsPage() {
     if (!activeSeg) return;
     const pax = seatEligiblePax[activePaxIdx];
     if (!pax) return;
+
+    // Track that the user made a seat change (re-enables auto-advance after manual tab nav)
+    seatChangeCounter.current += 1;
 
     // Toggle: clicking an already-assigned seat deselects it
     const existing = seatSelections.find(
@@ -728,6 +788,8 @@ export default function SeatsPage() {
 
   // ── Preference handler (fallback) ───────────────────────────────────────────
   const handlePrefSelect = useCallback((paxId: string, segKey: string, pref: SeatPreference) => {
+    // Track that the user made a change (re-enables auto-advance after manual tab nav)
+    seatChangeCounter.current += 1;
     updateSeatSelection(paxId, segKey, { preference: pref, seatNumber: null, priceUsd: 0, serviceId: null });
     // Note: auto-advance to next segment is handled by the useEffect above
     // that watches seatSelections changes
@@ -804,7 +866,8 @@ export default function SeatsPage() {
                 segments={segments}
                 activeIndex={activeSegIdx}
                 seatMaps={seatMaps}
-                onSelect={setActiveSegIdx}
+                completedSegments={completedSegments}
+                onSelect={handleSegmentTabSelect}
               />
             )}
 
