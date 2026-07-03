@@ -61,22 +61,30 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
   const [eventsExpanded, setEventsExpanded] = useState(false);
   const [cancelQuote, setCancelQuote] = useState<any>(null);
   const [loadingQuote, setLoadingQuote] = useState(false);
+  const [cancelQuoteError, setCancelQuoteError] = useState<string | null>(null);
 
   useEffect(() => {
     if (showCancelDialog && booking?.id) {
       setLoadingQuote(true);
       setCancelQuote(null);
+      setCancelQuoteError(null);
       fetch(apiUrl(`/api/manage-booking/${booking.id}/cancel/quote`), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({}),
       })
-        .then((res) => {
-          if (res.ok) return res.json();
-          throw new Error('Failed to load cancel quote');
+        .then(async (res) => {
+          const data = await res.json();
+          if (res.ok) {
+            setCancelQuote(data);
+          } else {
+            setCancelQuoteError(data.error || 'Failed to load cancellation details.');
+          }
         })
-        .then((data) => setCancelQuote(data))
-        .catch((err) => console.error(err))
+        .catch((err) => {
+          console.error(err);
+          setCancelQuoteError('Unable to connect to the cancellation service. Please try again later.');
+        })
         .finally(() => setLoadingQuote(false));
     }
   }, [showCancelDialog, booking?.id]);
@@ -597,7 +605,23 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
               </div>
             )}
 
-            {!loadingQuote && cancelQuote && (
+            {!loadingQuote && cancelQuoteError && (
+              <div className="mb-4 bg-red-500/5 border border-red-500/20 rounded-xl p-4 space-y-3">
+                <div className="flex items-center gap-2">
+                  <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                  <span className="text-xs font-bold text-red-400">Unable to Process Cancellation</span>
+                </div>
+                <p className="text-xs text-slate-400 leading-relaxed">{cancelQuoteError}</p>
+                <button
+                  onClick={() => setShowCancelDialog(false)}
+                  className="w-full py-2 rounded-lg text-sm font-medium text-white bg-slate-800 hover:bg-slate-700 border border-white/10 transition-colors"
+                >
+                  Close
+                </button>
+              </div>
+            )}
+
+            {!loadingQuote && !cancelQuoteError && cancelQuote && (
               <div className="mb-4 bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 space-y-3 text-sm">
                 <div className="flex items-center justify-between pb-2 border-b border-white/[0.05]">
                   <span className="text-xs font-bold text-slate-400 uppercase tracking-wider">Refund Estimate</span>

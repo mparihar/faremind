@@ -83,6 +83,57 @@ async function getAdminServiceFee(booking: any): Promise<number> {
   }
 }
 
+/**
+ * Create a support ticket for the admin support queue when a cancellation
+ * cannot be processed automatically (e.g. provider API failure, no order linked).
+ */
+async function createCancellationSupportTicket(booking: any, reason: string): Promise<void> {
+  try {
+    const route = `${booking.originAirport} → ${booking.destinationAirport}`;
+    const amount = fmtCurrency(Number(booking.totalAmount), booking.currency);
+
+    await prisma.supportTicket.create({
+      data: {
+        subject: `Cancellation Assistance Required: ${booking.masterBookingReference} — ${booking.customerName ?? 'Customer'}`,
+        description: [
+          `A cancellation could not be processed automatically for booking ${booking.masterBookingReference}.`,
+          '',
+          `Customer: ${booking.customerName ?? 'N/A'} (${booking.customerEmail ?? 'N/A'})`,
+          `Route: ${route}`,
+          `Amount: ${amount}`,
+          `Provider: ${booking.primaryProvider ?? 'Unknown'}`,
+          `PNR: ${booking.masterPnr ?? 'N/A'}`,
+          '',
+          `Reason: ${reason}`,
+          '',
+          'Action Required: Please review this booking and manually process the cancellation with the airline provider.',
+        ].join('\n'),
+        priority: 'HIGH',
+        status: 'OPEN',
+        category: 'Cancellation Request',
+        channel: 'SYSTEM',
+        customerName: booking.customerName ?? '',
+        customerEmail: booking.customerEmail ?? '',
+        bookingRef: booking.masterBookingReference,
+        airlinePnr: booking.masterPnr ?? undefined,
+      },
+    });
+
+    // Also log a booking event so it's visible in the timeline
+    await prisma.bookingEvent.create({
+      data: {
+        bookingId: booking.id,
+        eventType: 'CANCELLATION_ESCALATED',
+        eventTitle: 'Cancellation escalated to admin support',
+        eventDescription: `Auto-cancellation unavailable: ${reason}. Support ticket created for manual processing.`,
+        actorType: 'system',
+      },
+    }).catch(() => {}); // non-critical
+  } catch (err) {
+    console.error('[createCancellationSupportTicket] Failed to create support ticket:', err);
+  }
+}
+
 async function sendBookingOtpEmail(toEmail: string, toName: string, otp: string): Promise<void> {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) {
@@ -281,67 +332,46 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const primaryPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
       const isRefundable = primaryPnr?.refundable ?? false;
-      const storedCancelFee = primaryPnr?.cancellationFee != null ? Number(primaryPnr.cancellationFee) : null;
 
-      if (providerPnr?.providerOrderId) {
-        try {
-          const provider = getProvider(booking.primaryProvider);
-          const quote = await provider.getCancellationQuote(providerPnr.providerOrderId);
-          await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote', providerReference: quote.quoteId, payloadJson: quote.raw as object });
-
-          let refundAmount = isRefundable ? quote.refundAmount : 0;
-          let airlinePenalty = isRefundable ? Math.max(0, originalAmount - refundAmount) : originalAmount;
-          let estimatedRefund = isRefundable ? Math.max(0, refundAmount - FAREMIND_FEE) : 0;
-          let fareMindFee = estimatedRefund > 0 ? FAREMIND_FEE : 0;
-          const refundability = estimatedRefund <= 0 ? 'NON_REFUNDABLE' : airlinePenalty > 0 ? 'PARTIAL_REFUND' : 'FULL_REFUND';
-
-          return {
-            quoteId: quote.quoteId,
-            bookingReference: booking.masterBookingReference,
-            bookingStatus: booking.bookingStatus,
-            cancellationAllowed: true,
-            airlinePermitted: true,
-            refundability,
-            originalAmount,
-            currency: booking.currency,
-            airlinePenalty,
-            fareMindFee,
-            penaltyAmount: airlinePenalty + fareMindFee,
-            estimatedRefund,
-            refundAmount,
-            refundCurrency: quote.refundCurrency,
-            refundTo: quote.refundTo,
-            refundMethod: 'ORIGINAL_PAYMENT',
-            refundTimeline: '5–10 business days',
-            warningMessage: isRefundable 
-              ? 'Cancellation penalties may vary until airline confirmation. This action cannot be undone.'
-              : 'This ticket is non-refundable. Confirming cancellation will cancel the booking without a refund.',
-            pnrs,
-            expiresAt: quote.expiresAt,
-          };
-        } catch (providerErr) {
-          fastify.log.warn({ providerErr }, '[manage-booking/cancel/quote] Provider call failed — returning estimate');
-        }
+      // ── Provider order must exist to proceed ──────────────────────────────
+      if (!providerPnr?.providerOrderId) {
+        fastify.log.warn({ bookingId }, '[manage-booking/cancel/quote] No provider order linked — creating support ticket');
+        await createCancellationSupportTicket(booking, 'No provider order linked to this booking. Live cancellation quote could not be retrieved.');
+        return reply.code(422).send({
+          error: 'We could not retrieve live cancellation details from the airline for this booking. A support ticket has been created and our team will contact you shortly to assist with the cancellation.',
+          code: 'PROVIDER_QUOTE_UNAVAILABLE',
+          supportTicketCreated: true,
+        });
       }
 
-      // Fallback estimate — use stored fare rules if available
-      const airlinePenalty = isRefundable
-        ? (storedCancelFee != null ? storedCancelFee : 0)
-        : originalAmount;
-      const estimatedRefund = isRefundable
-        ? Math.max(0, originalAmount - airlinePenalty - FAREMIND_FEE)
-        : 0;
-      const fareMindFee = estimatedRefund > 0 ? FAREMIND_FEE : 0;
-      const refundability = isRefundable && airlinePenalty === 0
-        ? 'FULL_REFUND'
-        : estimatedRefund <= 0 ? 'NON_REFUNDABLE' : 'PARTIAL_REFUND';
+      // ── Fetch live cancellation quote from provider ───────────────────────
+      let quote;
+      try {
+        const provider = getProvider(booking.primaryProvider);
+        quote = await provider.getCancellationQuote(providerPnr.providerOrderId);
+        await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote', providerReference: quote.quoteId, payloadJson: quote.raw as object });
+      } catch (providerErr) {
+        fastify.log.error({ providerErr }, '[manage-booking/cancel/quote] Provider API failed — creating support ticket');
+        await createCancellationSupportTicket(booking, `Provider API error while fetching cancellation quote: ${providerErr instanceof Error ? providerErr.message : String(providerErr)}`);
+        return reply.code(502).send({
+          error: 'The airline provider could not return cancellation details at this time. A support ticket has been created and our team will process your cancellation request manually.',
+          code: 'PROVIDER_QUOTE_FAILED',
+          supportTicketCreated: true,
+        });
+      }
+
+      let refundAmount = isRefundable ? quote.refundAmount : 0;
+      let airlinePenalty = isRefundable ? Math.max(0, originalAmount - refundAmount) : originalAmount;
+      let estimatedRefund = isRefundable ? Math.max(0, refundAmount - FAREMIND_FEE) : 0;
+      let fareMindFee = estimatedRefund > 0 ? FAREMIND_FEE : 0;
+      const refundability = estimatedRefund <= 0 ? 'NON_REFUNDABLE' : airlinePenalty > 0 ? 'PARTIAL_REFUND' : 'FULL_REFUND';
 
       return {
-        quoteId: `est_${bookingId}_${Date.now()}`,
+        quoteId: quote.quoteId,
         bookingReference: booking.masterBookingReference,
         bookingStatus: booking.bookingStatus,
         cancellationAllowed: true,
-        airlinePermitted: null,
+        airlinePermitted: true,
         refundability,
         originalAmount,
         currency: booking.currency,
@@ -349,25 +379,19 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         fareMindFee,
         penaltyAmount: airlinePenalty + fareMindFee,
         estimatedRefund,
-        refundAmount: estimatedRefund,
-        refundCurrency: booking.currency,
-        refundTo: 'original_form_of_payment',
+        refundAmount,
+        refundCurrency: quote.refundCurrency,
+        refundTo: quote.refundTo,
         refundMethod: 'ORIGINAL_PAYMENT',
         refundTimeline: '5–10 business days',
-        warningMessage: !isRefundable
-          ? 'This ticket is non-refundable. Confirming cancellation will cancel the booking without a refund.'
-          : storedCancelFee != null
-            ? 'Cancellation fee is based on your fare rules. This action cannot be undone.'
-            : 'This is an estimate based on standard airline policies. Actual refund may vary. Our team will confirm exact amounts.',
-        fareRules: {
-          refundable: isRefundable,
-          changeable: primaryPnr?.changeable ?? false,
-          cancellationFee: storedCancelFee,
-          changeFee: primaryPnr?.changeFee != null ? Number(primaryPnr.changeFee) : null,
-        },
+        warningMessage: isRefundable 
+          ? 'Cancellation penalties may vary until airline confirmation. This action cannot be undone.'
+          : 'This ticket is non-refundable. Confirming cancellation will cancel the booking without a refund.',
         pnrs,
-        expiresAt: new Date(Date.now() + 30 * 60_000).toISOString(),
+        expiresAt: quote.expiresAt,
       };
+
+      // No fallback — all cancellation quotes must come from the live provider API
     } catch (e) { fastify.log.error(e, '[manage-booking/cancel/quote]'); reply.code(500).send({ error: 'Failed to get cancellation eligibility. Please try again or contact support.' }); }
   });
 
@@ -392,13 +416,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const isEstimate = quoteId.startsWith('est_');
 
       if (isEstimate) {
-        // No Duffel order linked — record cancellation without provider call
-        result = {
-          cancellationId: `manual_${bookingId}_${Date.now()}`,
-          refundAmount: 0,
-          refundCurrency: booking.currency,
-          raw: { note: 'Manual cancellation — no provider order' },
-        };
+        // Estimate-based quotes are no longer allowed — escalate to admin support
+        fastify.log.warn({ bookingId, quoteId }, '[manage-booking/cancel/confirm] Estimate-based quoteId rejected');
+        await createCancellationSupportTicket(booking, 'Customer attempted to confirm cancellation with an estimate-based quote (no live provider data). Requires manual admin processing.');
+        return reply.code(422).send({
+          error: 'This cancellation cannot be processed automatically. A support ticket has been created and our team will assist you shortly.',
+          code: 'ESTIMATE_QUOTE_NOT_ALLOWED',
+          supportTicketCreated: true,
+        });
       } else {
         try {
           const provider = getProvider(booking.primaryProvider);
@@ -417,7 +442,16 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
 
       // ── Database updates (atomic-ish) ─────────────────────────────────────
-      const isFullRefund = result.refundAmount >= originalAmount - 1; // 1 USD tolerance
+      const primaryPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
+      const isRefundable = primaryPnr?.refundable ?? false;
+      const adminFee = isRefundable ? await getAdminServiceFee(booking) : 0;
+
+      const netRefundAmount = isRefundable ? Math.max(0, result.refundAmount - adminFee) : 0;
+      const fareMindFee = netRefundAmount > 0 ? adminFee : 0;
+      const airlinePenalty = Math.max(0, originalAmount - result.refundAmount);
+      const totalPenalty = Math.max(0, originalAmount - netRefundAmount);
+
+      const isFullRefund = netRefundAmount >= originalAmount - 1; // 1 USD tolerance
       const newPaymentStatus = isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
 
       await prisma.masterBooking.update({
@@ -432,22 +466,21 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       await prisma.bookingSegment.updateMany({ where: { bookingId }, data: { segmentStatus: 'cancelled' } });
 
       // Persist cancellation record
-      const penaltyAmount = Math.max(0, originalAmount - result.refundAmount);
       const cancel = await mbq.createCancellationRecord({
         bookingId, requestedBy: booking.userId || booking.customerEmail, originalAmount,
-        penaltyAmount, airlinePenalty: penaltyAmount, refundAmount: result.refundAmount,
+        penaltyAmount: totalPenalty, airlinePenalty, refundAmount: netRefundAmount,
         currency: result.refundCurrency, refundMethod: resolvedRefundMethod as any,
         providerCancelId: result.cancellationId, providerResponse: result.raw as object,
         notes: isEstimate ? 'Manual cancellation — provider order not linked' : undefined,
       } as any);
 
       // Create refund record
-      if (result.refundAmount > 0) {
+      if (netRefundAmount > 0) {
         await prisma.bookingRefund.create({
           data: {
             bookingId,
             cancellationId: cancel.id,
-            amount: result.refundAmount,
+            amount: netRefundAmount,
             currency: result.refundCurrency,
             method: resolvedRefundMethod as any,
             status: 'INITIATED',
@@ -458,14 +491,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       await mbq.createBookingEvent({
         bookingId, eventType: 'BOOKING_CANCELLED', eventTitle: 'Booking cancelled',
-        eventDescription: `Refund: ${fmtCurrency(result.refundAmount, result.refundCurrency)} via ${resolvedRefundMethod === 'AIRLINE_CREDIT' ? 'Airline Credit' : 'Original Payment'}`,
+        eventDescription: `Refund: ${fmtCurrency(netRefundAmount, result.refundCurrency)} via ${resolvedRefundMethod === 'AIRLINE_CREDIT' ? 'Airline Credit' : 'Original Payment'}`,
         actorType: 'system',
       });
 
       // ── Notifications (fire-and-forget) ───────────────────────────────────
-      const fmtRef = fmtCurrency(result.refundAmount, result.refundCurrency);
+      const fmtRef = fmtCurrency(netRefundAmount, result.refundCurrency);
       const fmtOrig = fmtCurrency(originalAmount, booking.currency);
-      const fmtPenalty = fmtCurrency(penaltyAmount, booking.currency);
+      const fmtPenalty = fmtCurrency(totalPenalty, booking.currency);
 
       if (booking.customerEmail) {
         fireNotification({
@@ -480,8 +513,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             origin: booking.originAirport,
             destination: booking.destinationAirport,
             route,
-            refund_amount: result.refundAmount > 0 ? fmtRef : 'Non-refundable',
-            refund_status: result.refundAmount > 0 ? 'Pending' : 'Not Applicable',
+            refund_amount: netRefundAmount > 0 ? fmtRef : 'Non-refundable',
+            refund_status: netRefundAmount > 0 ? 'Pending' : 'Not Applicable',
           },
         });
       }
