@@ -722,6 +722,13 @@ export async function POST(req: NextRequest) {
           for (const seat of seatSelections) {
             if (!seat.seatNumber) continue;
 
+            // Skip infant passengers — they are lap infants (infant_without_seat) and don't get seats
+            const seatPax = passengers.find((p: any) => p.id === seat.passengerId);
+            if (seatPax?.type === 'infant') {
+              console.log(`[Duffel] Skipping seat ${seat.seatNumber} for infant passenger ${seat.passengerId}`);
+              continue;
+            }
+
             // Extract passenger index from passengerId (e.g. "pax_0" → 0, "pax_1" → 1)
             const paxIndex = parseInt(seat.passengerId?.replace('pax_', '') ?? '0', 10);
 

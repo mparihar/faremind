@@ -525,7 +525,7 @@ export default function ReviewPage() {
                   {hasAssignedSeats ? 'Seat Assignments' : 'Seat Preferences'}
                 </h2>
                 <div className="space-y-2">
-                  {passengers.map((pax, pi) =>
+                  {passengers.filter(p => p.type !== 'infant').map((pax, pi) =>
                     seatMealSegs.map((seg) => {
                       const sel = seatSelections.find(s => s.passengerId === pax.id && s.segmentKey === seg.key);
                       const seatValue = sel?.seatNumber

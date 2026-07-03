@@ -234,6 +234,19 @@ export function buildPassengerServices(params: {
     const fullName = [pax.firstName, pax.middleName, pax.lastName].filter(Boolean).join(' ')
       || passengerNames[idx] || 'Passenger';
 
+    // Lap infants (under 2) sit on a parent's lap — no seat or meal assignment
+    if (pax.type === 'infant') {
+      const directions: DirectionServices[] = allDirs.map(({ label, route }) => ({
+        label, route,
+        seat: 'Lap infant — no seat required',
+        seatStatus: 'N/A',
+        meal: 'N/A',
+        baggage,
+        segments: [],
+      }));
+      return { passengerId: pax.id, passengerName: fullName, passengerType: pax.type, isLeadPassenger: pax.isContact, directions };
+    }
+
     const directions: DirectionServices[] = allDirs.map(({ label, route, segs, seatKeys, mealKey }) => {
       // Meal is stored at journey level — look it up once per direction
       const dirMeal = mealSelections.find(m => m.passengerId === pax.id && m.segmentKey === mealKey);
