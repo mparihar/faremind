@@ -141,49 +141,9 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
   console.log(`[notify] 🔍 buildCustomerEmail: event=${eventType} ref=${ref} name=${name} has_full_booking_data=${!!d.full_booking_data}`);
 
   switch (eventType) {
-    case 'BOOKING_CONFIRMED': {
-      // If full booking data is provided, try to embed the complete itinerary
-      const fullBookingData = d.full_booking_data as Record<string, unknown> | undefined;
-      if (fullBookingData) {
-        try {
-          console.log(`[notify] 📄 Generating detailed itinerary HTML for customer email (ref=${ref})...`);
-          const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
-          console.log(`[notify] ✅ Itinerary HTML generated successfully (${itineraryHtml.length} chars)`);
-          return {
-            subject: `Your FAREMIND flight is confirmed – ${ref}`,
-            html: itineraryHtml,
-            text: `Hi ${name}, your flight ${ref} (${route}) is confirmed. Total: ${amount}. View your full itinerary at ${process.env.NEXT_PUBLIC_APP_URL || 'https://faremind.ai'}/manage-booking`,
-          };
-        } catch (itineraryErr) {
-          console.error('[notify] ❌ generateItineraryHtmlFromBooking FAILED for customer email, falling back to simple template:', itineraryErr instanceof Error ? `${itineraryErr.message}\n${itineraryErr.stack}` : itineraryErr);
-          // Fall through to simple template below
-        }
-      } else {
-        console.warn(`[notify] ⚠️ No full_booking_data provided for BOOKING_CONFIRMED — using simple template`);
-      }
-      // Fallback: simple summary (also used when itinerary generation fails)
-      return {
-        subject: `Your FAREMIND flight is confirmed – ${ref}`,
-        html: wrap('Booking Confirmed', `
-          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking Confirmed ✈️</h2>
-          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">
-            Hi ${name}, your flight has been booked successfully!
-          </p>
-          <div style="background:#f0fdf4;border:1px solid #bbf7d0;border-radius:12px;padding:20px;margin-bottom:24px;">
-            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
-              <tr><td style="padding:6px 0;color:#64748b;">FAREMIND Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${String(d.booking_reference || ref)}</td></tr>
-              ${(d.airline_pnr || d.pnr) ? `<tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#1abc9c;">${String(d.airline_pnr || d.pnr)}</td></tr>` : ''}
-              <tr><td style="padding:6px 0;color:#64748b;">Route</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${route}</td></tr>
-              ${amount ? `<tr><td style="padding:6px 0;color:#64748b;">Total Charged</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:18px;color:#1abc9c;">${amount}</td></tr>` : ''}
-            </table>
-          </div>
-          <p style="margin:0;color:#64748b;font-size:13px;">
-            You can view and manage your booking anytime at <a href="${process.env.NEXT_PUBLIC_APP_URL || 'https://faremind.ai'}/manage-booking" style="color:#1abc9c;text-decoration:none;">Manage Booking</a>.
-          </p>
-        `),
-        text: `Hi ${name}, your flight ${ref} (${route}) is confirmed. Total: ${amount}.`,
-      };
-    }
+    // BOOKING_CONFIRMED customer email removed — customers receive the
+    // detailed itinerary via the PAYMENT_SUCCESS notification instead.
+    // Admin/support still gets BOOKING_CONFIRMED via buildSupportEmail.
 
     case 'BOOKING_PENDING':
       return {
@@ -459,7 +419,7 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
 
 // Mapping: which events send to customer, support, or both
 const CUSTOMER_EVENTS = new Set<string>([
-  'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
+  'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
   'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
   'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
   'PRICE_DROP_ALERT', 'PRICE_DROP_REFUND',
