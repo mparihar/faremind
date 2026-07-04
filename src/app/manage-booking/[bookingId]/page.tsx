@@ -151,7 +151,7 @@ function PassengerModal({ bookingId, passengers, onClose }: { bookingId: string;
     setSaving(false); setDone(true);
     setTimeout(onClose, 1000);
   }
-  const iCls = 'w-full px-3 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all';
+  const iCls = 'w-full px-3 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all [color-scheme:dark]';
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md bg-slate-900 border border-white/10 rounded-2xl p-6" onClick={e => e.stopPropagation()}>
@@ -190,7 +190,7 @@ function DateChangeModal({ bookingId, booking, onClose }: { bookingId: string; b
   const [retDate, setRetDate] = useState('');
   const [reason, setReason] = useState('');
   const [done, setDone] = useState(false);
-  const iCls = 'w-full px-3 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all';
+  const iCls = 'w-full px-3 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all [color-scheme:dark]';
 
   async function handleSubmit() {
     if (!depDate) return;
