@@ -77,7 +77,7 @@ export default function BookingDetailPage() {
     }
   }, [activeModal, booking, setActiveModal]);
 
-  if (bookingLoading || !booking) return <div className="flex items-center justify-center py-24"><Loader2 className="w-7 h-7 text-[#1ABC9C] animate-spin" /></div>;
+  if (!booking) return <div className="flex items-center justify-center py-24"><Loader2 className="w-7 h-7 text-[#1ABC9C] animate-spin" /></div>;
 
   const b = booking;
   const isCancelled = b.bookingStatus === 'CANCELLED';
