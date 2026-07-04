@@ -615,7 +615,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         success: true,
         cancellationId: cancel.id,
         bookingReference: booking.masterBookingReference,
-        refundAmount: result.refundAmount,
+        refundAmount: netRefundAmount,
         refundCurrency: result.refundCurrency,
         refundTimeline: '5–10 business days',
         refundMethod: resolvedRefundMethod,
