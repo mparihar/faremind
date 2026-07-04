@@ -8,7 +8,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { usePathname } from 'next/navigation';
-import { Sparkles, ChevronLeft, Settings, X, Loader2, AlertCircle, Mail, Send, CheckCircle2 } from 'lucide-react';
+import { Sparkles, ChevronLeft, Settings, X, Loader2, AlertCircle, Mail, Send, CheckCircle2, Calendar, Check } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 
@@ -43,7 +43,8 @@ type FlowStep =
   | 'choose_action'   // Choose cancel / update passenger
   | 'cancel'          // Cancel booking sub-flow
   | 'update_passenger' // Update passenger sub-flow
-  | 'email_itinerary'; // Email itinerary sub-flow
+  | 'email_itinerary'  // Email itinerary sub-flow
+  | 'date_change';     // Change flight date sub-flow
 
 interface Props {
   /** Pre-selected intent from chat message (e.g. 'cancel' or 'update_passenger') */
@@ -78,6 +79,11 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
   const [emailError, setEmailError] = useState<string | null>(null);
   const [emailTarget, setEmailTarget] = useState('');
   const [customEmail, setCustomEmail] = useState('');
+
+  // Date change state
+  const [dcDate, setDcDate] = useState('');
+  const [dcStep, setDcStep] = useState<'date' | 'searching' | 'offers' | 'confirming' | 'done' | 'fallback'>('date');
+  const [dcSelectedOffer, setDcSelectedOffer] = useState<any>(null);
 
   const isLoggedIn = !!auth.user;
 
@@ -273,6 +279,7 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
       case 'cancel':
       case 'update_passenger':
       case 'email_itinerary':
+      case 'date_change':
         setEmailSent(false);
         setEmailError(null);
         setStep('choose_action');
@@ -482,6 +489,27 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
                 </button>
               )}
 
+              {/* Change Flight Date */}
+              {selectedBooking.bookingStatus !== 'CANCELLED' && (
+                <button
+                  onClick={() => {
+                    setDcDate('');
+                    setDcStep('date');
+                    setDcSelectedOffer(null);
+                    mbStore.resetChangeState();
+                    setStep('date_change');
+                  }}
+                  className="w-full text-left px-4 py-3 rounded-xl border border-purple-200 bg-purple-50/30 hover:bg-purple-50 hover:border-purple-300 transition-all group"
+                >
+                  <p className="text-[12px] font-bold text-purple-700 group-hover:text-purple-800">
+                    Change Flight Date
+                  </p>
+                  <p className="text-[10px] text-purple-400 mt-0.5">
+                    Search alternative dates with the airline
+                  </p>
+                </button>
+              )}
+
               {/* Update Passenger */}
               <button
                 onClick={() => setStep('update_passenger')}
@@ -532,6 +560,204 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
               onBack={() => setStep('choose_action')}
               onDone={onExit}
             />
+          </>
+        )}
+
+        {/* ── Step: Change Flight Date ─────────────────────────────────── */}
+        {step === 'date_change' && selectedBooking && (
+          <>
+            <AiBubble>
+              {dcStep === 'done' ? (
+                <p>Your flight date has been updated! ✅</p>
+              ) : dcStep === 'fallback' ? (
+                <p>Your date change request has been submitted. Our team will contact you within 24 hours.</p>
+              ) : (
+                <p>Let's change the flight date for booking <strong>{meta.ref}</strong>.</p>
+              )}
+            </AiBubble>
+
+            {dcStep === 'done' ? (
+              <div className="bg-emerald-50 border border-emerald-200 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <Check className="w-4 h-4 text-emerald-600" />
+                  <p className="text-[13px] font-bold text-emerald-700">
+                    {mbStore.changeConfirmResult?.changeId ? 'Trip Updated' : 'Change Confirmed'}
+                  </p>
+                </div>
+                <p className="text-[11px] text-emerald-600">
+                  {mbStore.changeConfirmResult?.message || 'Your flight date has been updated successfully.'}
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => setStep('choose_action')}
+                    className="flex-1 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold transition-colors"
+                  >
+                    Back to Actions
+                  </button>
+                  <button
+                    onClick={onExit}
+                    className="flex-1 py-2 rounded-lg bg-emerald-100 hover:bg-emerald-200 text-emerald-700 text-[12px] font-semibold transition-colors"
+                  >
+                    Done
+                  </button>
+                </div>
+              </div>
+            ) : dcStep === 'fallback' ? (
+              <div className="bg-amber-50 border border-amber-200 rounded-xl px-4 py-3">
+                <div className="flex items-center gap-2 mb-1">
+                  <AlertCircle className="w-4 h-4 text-amber-600" />
+                  <p className="text-[13px] font-bold text-amber-700">Request Submitted</p>
+                </div>
+                <p className="text-[11px] text-amber-600">
+                  Online date change isn't available for this booking. Our support team will review your request and contact you within 24 hours.
+                </p>
+                <div className="flex gap-2 mt-3">
+                  <button
+                    onClick={() => setStep('choose_action')}
+                    className="flex-1 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-600 text-[12px] font-semibold transition-colors"
+                  >
+                    Back to Actions
+                  </button>
+                </div>
+              </div>
+            ) : dcStep === 'offers' ? (
+              <div className="space-y-2">
+                <div className="bg-white/80 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-500">
+                  <span className="text-slate-800 font-medium">{selectedBooking.originAirport} → {selectedBooking.destinationAirport}</span>
+                  {' · '}New date: <span className="text-purple-600 font-medium">{dcDate}</span>
+                </div>
+
+                {mbStore.changeOffers.length === 0 ? (
+                  <div className="text-center py-4">
+                    <AlertCircle className="w-5 h-5 text-amber-500 mx-auto mb-1" />
+                    <p className="text-[12px] font-bold text-slate-700">No Alternatives Found</p>
+                    <p className="text-[10px] text-slate-400">The airline has no available options for this date.</p>
+                    <button onClick={() => setDcStep('date')} className="mt-2 px-3 py-1.5 text-[10px] rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 transition-colors">Try Another Date</button>
+                  </div>
+                ) : (
+                  <>
+                    <p className="text-slate-500 text-[10px]">{mbStore.changeOffers.length} option{mbStore.changeOffers.length > 1 ? 's' : ''} from airline</p>
+                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                      {mbStore.changeOffers.map((o: any) => {
+                        const fmt = (n: number, c = 'USD') => new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(n);
+                        return (
+                          <button key={o.id} onClick={() => setDcSelectedOffer(o)}
+                            className={`w-full text-left p-3 rounded-xl border transition-all ${dcSelectedOffer?.id === o.id ? 'border-purple-400 bg-purple-50/50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                            <div className="flex justify-between items-center">
+                              <div>
+                                <p className="text-slate-800 text-[12px] font-semibold">
+                                  {o.newSlices?.[0]?.segments?.[0]?.departing_at
+                                    ? new Date(o.newSlices[0].segments[0].departing_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
+                                    : dcDate}
+                                </p>
+                                <p className="text-slate-400 text-[10px]">
+                                  {o.newSlices?.[0]?.segments?.map((s: any) => `${s.marketing_carrier?.iata_code || ''}${s.marketing_carrier_flight_number || ''}`).join(' → ') || 'Flight details'}
+                                </p>
+                              </div>
+                              <div className="text-right">
+                                {o.changeTotalAmount !== 0 && (
+                                  <p className={`text-[12px] font-bold ${o.changeTotalAmount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                    {o.changeTotalAmount > 0 ? '+' : ''}{fmt(o.changeTotalAmount, o.changeTotalCurrency)}
+                                  </p>
+                                )}
+                                {o.penaltyAmount > 0 && <p className="text-[9px] text-slate-400">Penalty: {fmt(o.penaltyAmount, o.penaltyCurrency)}</p>}
+                              </div>
+                            </div>
+                          </button>
+                        );
+                      })}
+                    </div>
+
+                    {dcSelectedOffer && (
+                      <button
+                        onClick={async () => {
+                          setDcStep('confirming');
+                          const ok = await mbStore.confirmChangeOption(
+                            selectedBooking.id,
+                            dcSelectedOffer.id,
+                            dcSelectedOffer.changeTotalAmount > 0 ? dcSelectedOffer.changeTotalAmount : undefined,
+                            dcSelectedOffer.changeTotalCurrency
+                          );
+                          if (ok) {
+                            setDcStep('done');
+                          } else {
+                            setDcStep('offers');
+                          }
+                        }}
+                        disabled={mbStore.changeConfirmLoading}
+                        className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-[12px] font-bold transition-all disabled:opacity-50"
+                      >
+                        {mbStore.changeConfirmLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Confirm Change'}
+                      </button>
+                    )}
+
+                    {mbStore.changeConfirmError && (
+                      <div className="flex items-start gap-1.5 text-[10px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                        <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
+                        <span>{mbStore.changeConfirmError}</span>
+                      </div>
+                    )}
+
+                    <button onClick={() => setDcStep('date')} className="w-full py-2 rounded-lg border border-slate-200 text-slate-500 text-[11px] font-medium hover:text-slate-700 transition-colors">
+                      Try Another Date
+                    </button>
+                  </>
+                )}
+              </div>
+            ) : (
+              /* dcStep === 'date' or 'searching' or 'confirming' */
+              <div className="space-y-2">
+                <div className="bg-white/80 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-500">
+                  Current: <span className="text-slate-800 font-medium">{selectedBooking.originAirport} {(selectedBooking.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} {selectedBooking.destinationAirport}</span>
+                  {' · '}{new Date(selectedBooking.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                </div>
+
+                <div>
+                  <label className="text-[10px] text-slate-500 font-bold mb-1 block">NEW DEPARTURE DATE</label>
+                  <input
+                    type="date"
+                    value={dcDate}
+                    onChange={e => setDcDate(e.target.value)}
+                    min={new Date().toISOString().split('T')[0]}
+                    className="w-full px-3 py-2.5 bg-white border border-slate-300 rounded-xl text-slate-800 text-sm focus:outline-none focus:border-purple-500 transition-all"
+                  />
+                </div>
+
+                {mbStore.changeSearchError && (
+                  <div className="flex items-start gap-1.5 text-[10px] text-amber-600 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                    <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
+                    <span>Online change not available. Your request has been submitted to our support team.</span>
+                  </div>
+                )}
+
+                <div className="flex gap-2">
+                  <button
+                    onClick={() => setStep('choose_action')}
+                    className="flex-1 py-2.5 rounded-xl border border-slate-200 text-slate-500 text-[12px] font-semibold hover:bg-slate-50 transition-all"
+                  >
+                    Back
+                  </button>
+                  <button
+                    onClick={async () => {
+                      if (!dcDate) return;
+                      setDcStep('searching');
+                      const ok = await mbStore.searchChangeOptions(selectedBooking.id, dcDate, 0);
+                      if (ok) {
+                        setDcStep('offers');
+                      } else {
+                        // Fall back to manual request
+                        await mbStore.requestDateChange(selectedBooking.id, dcDate, undefined, 'Automated search unavailable — submitted via AI bot').catch(() => {});
+                        setDcStep('fallback');
+                      }
+                    }}
+                    disabled={!dcDate || dcStep === 'searching'}
+                    className="flex-1 py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-[12px] font-bold transition-all disabled:opacity-50"
+                  >
+                    {dcStep === 'searching' ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Search Flights'}
+                  </button>
+                </div>
+              </div>
+            )}
           </>
         )}
 

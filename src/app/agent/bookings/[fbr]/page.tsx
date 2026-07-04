@@ -4,6 +4,7 @@ import { useState, useEffect, use } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import { apiUrl } from '@/lib/api-client';
+import { DateChangeModal } from '@/components/manage-booking/BookingModals';
 
 import {
   ArrowLeft,
@@ -21,6 +22,7 @@ import {
   Loader2,
   ChevronDown,
   ChevronUp,
+  Calendar,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -64,6 +66,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
   const [cancelQuoteError, setCancelQuoteError] = useState<string | null>(null);
   const [cancelStep, setCancelStep] = useState<'review' | 'confirming' | 'success' | 'error'>('review');
   const [cancelSuccess, setCancelSuccess] = useState<any>(null);
+  const [showDateChangeDialog, setShowDateChangeDialog] = useState(false);
 
   useEffect(() => {
     if (showCancelDialog && booking?.id) {
@@ -246,12 +249,20 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
               <Mail className="w-3.5 h-3.5" /> Resend Itinerary
             </button>
             {!['CANCELLED', 'CANCEL_REQUESTED', 'FAILED'].includes(booking.bookingStatus) && (
-              <button
-                onClick={() => { setCancelStep('review'); setCancelQuoteError(null); setCancelSuccess(null); setShowCancelDialog(true); }}
-                className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-red-400 hover:text-red-300 bg-red-500/[0.06] hover:bg-red-500/[0.12] border border-red-500/20 transition-all"
-              >
-                <XCircle className="w-3.5 h-3.5" /> Cancel Booking
-              </button>
+              <>
+                <button
+                  onClick={() => setShowDateChangeDialog(true)}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-purple-400 hover:text-purple-300 bg-purple-500/[0.06] hover:bg-purple-500/[0.12] border border-purple-500/20 transition-all"
+                >
+                  <Calendar className="w-3.5 h-3.5" /> Change Date
+                </button>
+                <button
+                  onClick={() => { setCancelStep('review'); setCancelQuoteError(null); setCancelSuccess(null); setShowCancelDialog(true); }}
+                  className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-red-400 hover:text-red-300 bg-red-500/[0.06] hover:bg-red-500/[0.12] border border-red-500/20 transition-all"
+                >
+                  <XCircle className="w-3.5 h-3.5" /> Cancel Booking
+                </button>
+              </>
             )}
           </div>
         </div>
@@ -837,6 +848,11 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
             )}
           </div>
         </div>
+      )}
+
+      {/* Date Change Modal */}
+      {showDateChangeDialog && booking && (
+        <DateChangeModal bookingId={booking.id} booking={booking} onClose={() => setShowDateChangeDialog(false)} />
       )}
     </div>
   );
