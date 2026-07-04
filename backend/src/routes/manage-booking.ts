@@ -10,6 +10,9 @@ import * as emails from '../lib/manage-booking-emails';
 import { prisma } from '../lib/db';
 import { createHash, randomBytes } from 'crypto';
 import { fireNotification } from '../lib/notify';
+import Stripe from 'stripe';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
 function hashOtp(otp: string): string { return createHash('sha256').update(otp).digest('hex'); }
 function generateOtp(): string { return String(Math.floor(100_000 + Math.random() * 900_000)); }
@@ -477,9 +480,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         notes: isEstimate ? 'Manual cancellation — provider order not linked' : undefined,
       } as any);
 
-      // Create refund record
+      // Create refund record & process live Stripe refund
       if (netRefundAmount > 0) {
-        await prisma.bookingRefund.create({
+        const refundRecord = await prisma.bookingRefund.create({
           data: {
             bookingId,
             cancellationId: cancel.id,
@@ -490,6 +493,84 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             processingDays: 10,
           },
         });
+
+        // ── Live Stripe Refund ─────────────────────────────────────────
+        // Look up the original Stripe PaymentIntent from the BookingPayment record
+        const payment = await prisma.bookingPayment.findFirst({
+          where: { bookingId, status: 'SUCCEEDED' },
+          orderBy: { paidAt: 'desc' },
+        });
+
+        if (payment?.stripePaymentIntentId) {
+          try {
+            const refundAmountCents = Math.round(netRefundAmount * 100);
+            const stripeRefund = await stripe.refunds.create({
+              payment_intent: payment.stripePaymentIntentId,
+              amount: refundAmountCents,
+              reason: 'requested_by_customer',
+              metadata: {
+                bookingId,
+                bookingReference: booking.masterBookingReference,
+                cancellationId: cancel.id,
+                netRefundAmount: String(netRefundAmount),
+                adminFeeDeducted: String(fareMindFee),
+              },
+            });
+
+            fastify.log.info(
+              `[Stripe] ✅ Refund created: ${stripeRefund.id} — $${(stripeRefund.amount / 100).toFixed(2)} ${stripeRefund.currency} → ${payment.stripePaymentIntentId}`
+            );
+
+            // Update refund record with Stripe details
+            await prisma.bookingRefund.update({
+              where: { id: refundRecord.id },
+              data: {
+                status: stripeRefund.status === 'succeeded' ? 'COMPLETED' : 'PROCESSING',
+                stripeRefundId: stripeRefund.id,
+                completedAt: stripeRefund.status === 'succeeded' ? new Date() : undefined,
+              },
+            }).catch(() => {}); // non-critical DB update
+
+            // Log refund event
+            await mbq.createBookingEvent({
+              bookingId, eventType: 'REFUND_PROCESSED', eventTitle: 'Refund processed via Stripe',
+              eventDescription: `Stripe refund ${stripeRefund.id}: ${fmtCurrency(netRefundAmount, result.refundCurrency)} refunded to original payment method.`,
+              actorType: 'system',
+            });
+          } catch (stripeErr: any) {
+            fastify.log.error({ stripeErr }, `[Stripe] ❌ Refund failed for PI ${payment.stripePaymentIntentId}`);
+
+            // Mark refund as failed, create support ticket for manual processing
+            await prisma.bookingRefund.update({
+              where: { id: refundRecord.id },
+              data: { status: 'FAILED', failedAt: new Date(), failureReason: stripeErr.message },
+            }).catch(() => {});
+
+            await createCancellationSupportTicket(
+              booking,
+              `Stripe refund failed for PaymentIntent ${payment.stripePaymentIntentId}: ${stripeErr.message}. Net refund amount: ${fmtCurrency(netRefundAmount, result.refundCurrency)}. Please process refund manually.`
+            );
+
+            await mbq.createBookingEvent({
+              bookingId, eventType: 'REFUND_FAILED', eventTitle: 'Stripe refund failed — support ticket created',
+              eventDescription: `Refund of ${fmtCurrency(netRefundAmount, result.refundCurrency)} could not be processed via Stripe. A support ticket has been created for manual refund processing. Error: ${stripeErr.message}`,
+              actorType: 'system',
+            });
+          }
+        } else {
+          // No Stripe payment found — log for admin review
+          fastify.log.warn({ bookingId }, '[manage-booking/cancel/confirm] No Stripe PaymentIntent found — refund requires manual processing');
+
+          await createCancellationSupportTicket(
+            booking,
+            `No Stripe PaymentIntent found for this booking. Net refund amount: ${fmtCurrency(netRefundAmount, result.refundCurrency)}. Please process refund manually.`
+          );
+
+          await prisma.bookingRefund.update({
+            where: { id: refundRecord.id },
+            data: { status: 'PROCESSING' }, // Requires manual admin processing
+          }).catch(() => {});
+        }
       }
 
       await mbq.createBookingEvent({
