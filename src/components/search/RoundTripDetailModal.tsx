@@ -38,7 +38,9 @@ function generateInsights(opt: RoundTripOption): string[] {
     : `${opt.totalStops} connection${opt.totalStops > 1 ? 's' : ''} routed via optimized global hubs`
   );
   ins.push(opt.fareRules.refundable
-    ? 'Fully refundable fare with low commitment risk'
+    ? opt.fareRules.cancellationFee != null && opt.fareRules.cancellationFee > 0
+      ? `Refundable fare (penalty: $${opt.fareRules.cancellationFee}) — flexible booking`
+      : 'Fully refundable & changeable — maximum booking flexibility'
     : opt.fareRules.changeable
       ? 'Changeable fare — schedule flexibility if plans shift'
       : 'Standard non-refundable fare — review change policies before booking'
@@ -437,12 +439,28 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                       <PanelSection title="Fare Policy">
                         <div className="space-y-2.5 px-0.5">
                           <PolicyRow
-                            icon={<CheckCircle2 className="w-3.5 h-3.5 text-green-500" />}
-                            label={option.fareRules.refundable ? 'Refundable (up to $500)' : 'Non-refundable'}
+                            icon={<CheckCircle2 className={cn('w-3.5 h-3.5', option.fareRules.refundable ? 'text-green-500' : 'text-red-400')} />}
+                            label={
+                              option.fareRules.refundable
+                                ? option.fareRules.cancellationFee != null && option.fareRules.cancellationFee > 0
+                                  ? `Refundable (penalty: $${option.fareRules.cancellationFee})`
+                                  : option.fareRules.cancellationFee === 0
+                                    ? 'Fully Refundable (no fee)'
+                                    : 'Refundable'
+                                : 'Non-refundable'
+                            }
                           />
                           <PolicyRow
                             icon={<RotateCcw className={cn('w-3.5 h-3.5', option.fareRules.changeable ? 'text-slate-600' : 'text-slate-300')} />}
-                            label={option.fareRules.changeable ? 'Changes: $150 + fare diff' : 'No changes allowed'}
+                            label={
+                              option.fareRules.changeable
+                                ? option.fareRules.changeFee != null && option.fareRules.changeFee > 0
+                                  ? `Changes: $${option.fareRules.changeFee} + fare diff`
+                                  : option.fareRules.changeFee === 0
+                                    ? 'Free changes (fare diff may apply)'
+                                    : 'Changeable (fee may apply)'
+                                : 'No changes allowed'
+                            }
                           />
                           <PolicyRow
                             icon={<Clock className="w-3.5 h-3.5 text-slate-300" />}

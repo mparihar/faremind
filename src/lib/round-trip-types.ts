@@ -68,6 +68,8 @@ export interface RoundTripOption {
   fareRules: {
     refundable: boolean;
     changeable: boolean;
+    cancellationFee?: number;
+    changeFee?: number;
   };
   baggage: BaggageAllowance;
 
