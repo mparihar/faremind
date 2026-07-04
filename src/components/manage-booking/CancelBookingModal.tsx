@@ -150,16 +150,21 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
               </button>
             </div>
 
-            <div className="relative">
+            <div className="relative min-h-[200px] overflow-hidden">
               {/* Processing overlay */}
               {step === 'confirming' && (
-                <div className="absolute inset-0 z-10 bg-[#0f1525]/80 backdrop-blur-[2px] flex flex-col items-center justify-center gap-3 rounded-b-2xl">
-                  <div className="w-12 h-12 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-                    <Loader2 className="w-5 h-5 text-red-400 animate-spin" />
+                <motion.div
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  className="absolute inset-0 z-10 bg-[#0f1525]/90 backdrop-blur-sm flex flex-col items-center justify-center gap-3 rounded-b-2xl"
+                >
+                  <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                    <Loader2 className="w-6 h-6 text-red-400 animate-spin" />
                   </div>
-                  <p className="text-white font-bold text-sm">Processing Cancellation</p>
+                  <p className="text-white font-bold text-base">Processing Cancellation</p>
                   <p className="text-slate-400 text-xs">Contacting the airline — please wait…</p>
-                </div>
+                  <p className="text-slate-600 text-[10px] mt-2">Do not close this window</p>
+                </motion.div>
               )}
 
               <div className={`px-5 py-4 space-y-4 ${step === 'confirming' ? 'opacity-30 pointer-events-none' : ''}`}>
