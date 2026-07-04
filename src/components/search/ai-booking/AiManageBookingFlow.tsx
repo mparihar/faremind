@@ -7,6 +7,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { usePathname } from 'next/navigation';
 import { Sparkles, ChevronLeft, Settings, X, Loader2, AlertCircle, Mail, Send, CheckCircle2 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
@@ -53,6 +54,12 @@ interface Props {
 export default function AiManageBookingFlow({ preselectedAction, onExit }: Props) {
   const auth = useAuthStore();
   const mbStore = useManageBookingStore();
+  const pathname = usePathname();
+
+  // Detect if we're in agent mode (agent portal pages or agent booking context)
+  const isAgentMode = pathname.startsWith('/agent') || (() => {
+    try { return !!sessionStorage.getItem('agentBookingContext'); } catch { return false; }
+  })();
 
   const [step, setStep] = useState<FlowStep>('choose_method');
   const [selectedBooking, setSelectedBooking] = useState<any>(null);
@@ -94,7 +101,7 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
   const loadUserBookings = useCallback(async () => {
     if (!auth.user) return;
     setStep('loading_bookings');
-    await mbStore.loadUserBookings(auth.user.id);
+    await mbStore.loadUserBookings(auth.user.id, isAgentMode);
 
     // Read fresh state — mbStore ref is stale after await
     const freshBookings = useManageBookingStore.getState().bookings;
@@ -108,7 +115,7 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
     } else {
       setStep('select_booking');
     }
-  }, [auth.user, preselectedAction]);
+  }, [auth.user, preselectedAction, isAgentMode]);
 
   // ── Guest lookup ───────────────────────────────────────────────────────────
   const handleGuestLookup = async (pnr: string, lastName: string) => {

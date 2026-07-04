@@ -225,7 +225,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   fastify.get('/user/:userId/bookings', async (request, reply) => {
     try {
       const { userId } = request.params as { userId: string };
-      const { filter } = request.query as { filter?: 'upcoming' | 'past' | 'cancelled' | 'all' };
+      const { filter, agent } = request.query as { filter?: 'upcoming' | 'past' | 'cancelled' | 'all'; agent?: string };
+      const includeAgentBookings = agent === 'true';
 
       let userEmail: string | undefined;
 
@@ -257,7 +258,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
 
       const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
-      const bookings = await mbq.getUserMasterBookings(userId, filter || 'all', dbUser?.email ?? undefined);
+      const bookings = await mbq.getUserMasterBookings(userId, filter || 'all', dbUser?.email ?? undefined, includeAgentBookings);
       const now = new Date();
       return {
         bookings,

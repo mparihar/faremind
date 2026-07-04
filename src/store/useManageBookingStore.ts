@@ -175,7 +175,7 @@ interface ManageBookingStore {
   lookupBooking: () => Promise<boolean>;
   sendLookupOtp: () => Promise<boolean>;
   verifyLookupOtp: (otp: string) => Promise<string | null>;
-  loadUserBookings: (userId: string) => Promise<void>;
+  loadUserBookings: (userId: string, includeAgentBookings?: boolean) => Promise<void>;
   loadBookingDetail: (bookingId: string) => Promise<void>;
   loadActions: (bookingId: string) => Promise<void>;
   loadCancelQuote: (bookingId: string) => Promise<void>;
@@ -276,10 +276,11 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
     } catch (e: any) { set({ otpVerifying: false, lookupError: e.message }); return null; }
   },
 
-  loadUserBookings: async (userId) => {
+  loadUserBookings: async (userId, includeAgentBookings) => {
     set({ bookingsLoading: true });
     try {
-      const data = await api<any>(`/api/manage-booking/user/${userId}/bookings?filter=${get().bookingsFilter}`);
+      const agentParam = includeAgentBookings ? '&agent=true' : '';
+      const data = await api<any>(`/api/manage-booking/user/${userId}/bookings?filter=${get().bookingsFilter}${agentParam}`);
       set({ bookings: data.bookings, bookingCounts: data.counts, bookingsLoading: false });
     } catch { set({ bookingsLoading: false }); }
   },

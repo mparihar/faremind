@@ -101,16 +101,23 @@ export async function getMasterBookingFull(bookingId: string) {
 export async function getUserMasterBookings(
   userId: string,
   filter?: 'upcoming' | 'past' | 'cancelled' | 'all',
-  userEmail?: string
+  userEmail?: string,
+  includeAgentBookings?: boolean
 ) {
   const now = new Date();
 
   // Match by userId or customerEmail to show the user's OWN bookings.
-  // Agent bookings (where this user acted as agent for clients) are intentionally
-  // excluded here — they are only visible through the agent portal.
-  const identityClause = userEmail
-    ? { OR: [{ userId }, { customerEmail: { equals: userEmail, mode: 'insensitive' } }] }
-    : { userId };
+  // When includeAgentBookings is true, also include bookings where
+  // this user is the agent (agentUserId), so the AI bot in the agent
+  // portal can show all bookings the agent has access to.
+  const orClauses: any[] = [{ userId }];
+  if (userEmail) {
+    orClauses.push({ customerEmail: { equals: userEmail, mode: 'insensitive' } });
+  }
+  if (includeAgentBookings) {
+    orClauses.push({ agentUserId: userId });
+  }
+  const identityClause = { OR: orClauses };
 
   const where: any = { ...identityClause };
 
