@@ -212,6 +212,7 @@ export default function FareSelectionPage() {
         protectionFee: store.priceProtection ? protectionFee : 0,
         grandTotal: session.grandTotal,
         currency: store.payload?.currency || 'USD',
+        policy: selectedFare.policy,
       });
 
       // Sync to booking store

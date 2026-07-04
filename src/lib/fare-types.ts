@@ -115,4 +115,5 @@ export interface SelectedFare {
   protectionFee: number;
   grandTotal: number;
   currency: string;
+  policy?: FarePolicy;
 }

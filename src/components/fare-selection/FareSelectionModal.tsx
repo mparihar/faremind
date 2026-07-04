@@ -244,6 +244,7 @@ export default function FareSelectionModal({ onClose }: Props) {
       protectionFee:  store.priceProtection ? protectionFee : 0,
       grandTotal:     selectedFare.totalPrice + (store.priceProtection ? totalProtectionFee : 0),
       currency:       store.payload?.currency || 'USD',
+      policy:         selectedFare.policy,
     };
 
     // Write to Zustand store right now

@@ -290,12 +290,49 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const isPast = new Date(booking.departureDate) < new Date();
       const isCancelled = booking.bookingStatus === 'CANCELLED';
       const existingCancel = await mbq.getCancellationByBookingId(bookingId);
-      const actions = [];
-      if (!isCancelled && !isPast && !existingCancel) actions.push({ key: 'cancel', label: 'Cancel Booking', available: true });
       const primaryPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
-      const isFlightChangeable = primaryPnr ? primaryPnr.changeable : false;
+
+      // ── Resolve fare rules ────────────────────────────────────────────────
+      // If stored fare rules are both false (the schema default), this booking
+      // was likely created before the policy was carried through the checkout
+      // flow. Query the live provider order as a fallback.
+      let resolvedRefundable = primaryPnr?.refundable ?? false;
+      let resolvedChangeable = primaryPnr?.changeable ?? false;
+      let resolvedCancellationFee = primaryPnr?.cancellationFee != null ? Number(primaryPnr.cancellationFee) : null;
+      let resolvedChangeFee = primaryPnr?.changeFee != null ? Number(primaryPnr.changeFee) : null;
+
+      if (primaryPnr && !resolvedRefundable && !resolvedChangeable && primaryPnr.providerOrderId) {
+        try {
+          const providerName = (primaryPnr.provider || booking.primaryProvider || '').toLowerCase();
+          const provider = getProvider(providerName);
+          const order = await provider.getOrder(primaryPnr.providerOrderId);
+          if (order.conditions) {
+            resolvedRefundable = order.conditions.refundable ?? false;
+            resolvedChangeable = order.conditions.changeable ?? false;
+            if (order.conditions.refundPenalty != null) resolvedCancellationFee = order.conditions.refundPenalty;
+            if (order.conditions.changePenalty != null) resolvedChangeFee = order.conditions.changePenalty;
+
+            // Persist live values back to DB so we don't need to query again
+            await prisma.bookingPnr.update({
+              where: { id: primaryPnr.id },
+              data: {
+                refundable: resolvedRefundable,
+                changeable: resolvedChangeable,
+                cancellationFee: resolvedCancellationFee,
+                changeFee: resolvedChangeFee,
+              },
+            }).catch(() => {}); // Non-critical — silent fail
+          }
+        } catch (providerErr) {
+          fastify.log.warn({ err: providerErr }, '[manage-booking/actions] Live fare rules lookup failed, using stored defaults');
+        }
+      }
+
+      const isFlightChangeable = resolvedChangeable;
       const isSeatChangeable = primaryPnr ? (primaryPnr.seatSelection !== null && primaryPnr.seatSelection !== 'false' && primaryPnr.seatSelection !== 'none' && primaryPnr.seatSelection !== 'unavailable') : false;
 
+      const actions = [];
+      if (!isCancelled && !isPast && !existingCancel) actions.push({ key: 'cancel', label: 'Cancel Booking', available: true });
       if (!isCancelled && !isPast) actions.push({ key: 'date_change', label: 'Change Flight', available: true, disabled: !isFlightChangeable });
       if (!isCancelled && !isPast) actions.push({ key: 'seat_change', label: 'Change Seat', available: true, disabled: !isSeatChangeable });
       if (!isCancelled) actions.push({ key: 'passenger_update', label: 'Update Passenger Details', available: true });
@@ -303,12 +340,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       actions.push({ key: 'contact_support', label: 'Contact Support', available: true });
       if (existingCancel) actions.push({ key: 'refund_status', label: 'View Refund Status', available: true, data: existingCancel });
 
-      // Expose stored fare rules from primary PNR
+      // Expose fare rules
       const fareRules = primaryPnr ? {
-        refundable: primaryPnr.refundable,
-        changeable: primaryPnr.changeable,
-        cancellationFee: primaryPnr.cancellationFee != null ? Number(primaryPnr.cancellationFee) : null,
-        changeFee: primaryPnr.changeFee != null ? Number(primaryPnr.changeFee) : null,
+        refundable: resolvedRefundable,
+        changeable: resolvedChangeable,
+        cancellationFee: resolvedCancellationFee,
+        changeFee: resolvedChangeFee,
         seatSelection: primaryPnr.seatSelection,
         seatSelectionFee: primaryPnr.seatSelectionFee != null ? Number(primaryPnr.seatSelectionFee) : null,
         milesEarning: primaryPnr.milesEarning,

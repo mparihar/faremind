@@ -724,6 +724,18 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
       protectionFee: priceProtection ? s.protectionFee : 0,
       grandTotal: priceSummary.total,
       currency: fareDetails.currency,
+      policy: apiFare?.policy ?? {
+        refundable: fareDetails.refundable,
+        refundFeeUsd: fareDetails.refundFee,
+        changeable: fareDetails.changeable,
+        changeFeeUsd: fareDetails.changeFee,
+        seatSelection: fareDetails.seatSelection,
+        seatSelectionFeeUsd: fareDetails.seatSelectionFee,
+        upgradeable: false,
+        loungeAccess: false,
+        priorityBoarding: fareDetails.priorityBoarding,
+        milesEarning: fareDetails.milesEarning,
+      },
     };
 
     const fareOption: FareOption = apiFare ?? {
