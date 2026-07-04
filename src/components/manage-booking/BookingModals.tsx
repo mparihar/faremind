@@ -209,7 +209,7 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
   const [step, setStep] = useState<'date' | 'offers' | 'done'>('date');
   const [selectedOffer, setSelectedOffer] = useState<any>(null);
   const today = new Date().toISOString().split('T')[0];
-  const iCls = 'w-full px-3 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all';
+  const iCls = 'w-full px-3 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all [color-scheme:dark] date-icon-orange';
   const fmt = (n: number, c = 'USD') => new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(n);
 
   useEffect(() => { resetChangeState(); }, []);
@@ -218,7 +218,14 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
   async function handleSearch() {
     if (!depDate) return;
     const ok = await searchChangeOptions(bookingId, depDate, 0);
-    if (ok) setStep('offers');
+    if (ok) {
+      setStep('offers');
+    } else {
+      // Automated search failed — submit a manual change request so that
+      // admin, super admin, and support staff are notified via email.
+      const { requestDateChange } = useManageBookingStore.getState();
+      await requestDateChange(bookingId, depDate, undefined, 'Automated search unavailable — submitted via fallback').catch(() => {});
+    }
   }
 
   async function handleConfirm() {
@@ -282,7 +289,7 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
                     </button>
                   ))}
                 </div>
-                {changeConfirmError && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2"><AlertCircle size={14} />{changeConfirmError}</div>}
+                {changeConfirmError && <div className="flex items-start gap-2 text-amber-400 text-sm bg-amber-400/10 border border-amber-400/20 rounded-lg px-3 py-2.5"><AlertCircle size={14} className="shrink-0 mt-0.5" /><span>Please contact FareMind Support, and our team will review available options with the airline/provider.</span></div>}
                 <p className="text-slate-600 text-xs">Trip modifications depend on airline fare rules and provider support.</p>
                 <div className="flex gap-3">
                   <button onClick={() => { setStep('date'); setSelectedOffer(null); }} className="flex-1 py-3 rounded-xl border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/[0.04]">Back</button>
@@ -303,7 +310,7 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
             <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">New Departure Date</label>
               <input type="date" value={depDate} onChange={e => setDepDate(e.target.value)} min={today} className={iCls} /></div>
             <p className="text-slate-600 text-xs">We'll search the airline for available alternatives and pricing.</p>
-            {changeSearchError && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2"><AlertCircle size={14} />{changeSearchError}</div>}
+            {changeSearchError && <div className="flex items-start gap-2 text-amber-400 text-sm bg-amber-400/10 border border-amber-400/20 rounded-lg px-3 py-2.5"><AlertCircle size={14} className="shrink-0 mt-0.5" /><span>Please contact FareMind Support, and our team will review available options with the airline/provider.</span></div>}
             <div className="flex gap-3">
               <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/[0.04] transition-all">Cancel</button>
               <button onClick={handleSearch} disabled={!depDate || changeSearchLoading} className="flex-1 py-3 rounded-xl bg-purple-500 hover:bg-purple-600 text-white font-bold text-sm disabled:opacity-50 transition-all">
