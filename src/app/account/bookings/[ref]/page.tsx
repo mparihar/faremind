@@ -657,11 +657,11 @@ export default function BookingDetailPage() {
 
       {/* ── Modals ── */}
       <AnimatePresence>
-        {activeModal === 'cancel' && <CancelBookingModal bookingId={ref} onClose={() => setActiveModal(null)} successRedirect="/account/bookings" />}
-        {activeModal === 'seat_change' && <SeatMapModal bookingId={ref} onClose={() => setActiveModal(null)} provider={b.primaryProvider} />}
-        {activeModal === 'passenger_update' && <PassengerModal bookingId={ref} passengers={b.passengers || []} onClose={() => setActiveModal(null)} />}
-        {activeModal === 'date_change' && <DateChangeModal bookingId={ref} booking={b} onClose={() => setActiveModal(null)} />}
-        {activeModal === 'download_eticket' && <ETicketModal bookingId={ref} onClose={() => setActiveModal(null)} />}
+        {activeModal === 'cancel' && <CancelBookingModal bookingId={b.id} onClose={() => setActiveModal(null)} successRedirect="/account/bookings" />}
+        {activeModal === 'seat_change' && <SeatMapModal bookingId={b.id} onClose={() => setActiveModal(null)} provider={b.primaryProvider} />}
+        {activeModal === 'passenger_update' && <PassengerModal bookingId={b.id} passengers={b.passengers || []} onClose={() => setActiveModal(null)} />}
+        {activeModal === 'date_change' && <DateChangeModal bookingId={b.id} booking={b} onClose={() => setActiveModal(null)} />}
+        {activeModal === 'download_eticket' && <ETicketModal bookingId={b.id} onClose={() => setActiveModal(null)} />}
         {activeModal === 'refund_status' && <RefundModal booking={b} onClose={() => setActiveModal(null)} />}
         {activeModal === 'contact_support' && <SupportModal booking={b} onClose={() => setActiveModal(null)} />}
         {activeModal === 'email_itinerary' && (() => {
@@ -675,7 +675,7 @@ export default function BookingDetailPage() {
               const pdfBase64 = btoa(unescape(encodeURIComponent(htmlContent)));
               let apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
               apiUrl = apiUrl.replace(/\/$/, '');
-              const res = await fetch(`${apiUrl}/api/manage-booking/${ref}/email-itinerary`, {
+              const res = await fetch(`${apiUrl}/api/manage-booking/${b.id}/email-itinerary`, {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, pdfBase64, isHtml: true }),
