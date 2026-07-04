@@ -192,8 +192,10 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
             <div className="hidden md:flex items-center gap-1">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
-                // Route logged-in users to dashboard inner page, guests to public portal
-                const href = item.href;
+                // Route logged-in users to their manage booking area based on role
+                const href = item.href === '/manage-booking' && user
+                  ? user.role === 'FAREMIND_AGENT' ? '/agent/bookings' : '/account/manage-booking'
+                  : item.href;
                 // Dynamic label: "Travel DNA" → "My FareMind DNA™" when logged in
                 const label = (item.label === 'Travel DNA' && user)
                   ? <>My <span><span className="text-white">FARE</span><span style={{ color: '#009CA6' }}>MIND</span></span> DNA™</>
@@ -295,7 +297,9 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                       <div className="py-1.5">
                         {HELP_ITEMS.map((item) => {
                           const Icon = item.icon;
-                          const href = item.href;
+                          const href = item.href === '/manage-booking' && user
+                            ? user.role === 'FAREMIND_AGENT' ? '/agent/bookings' : '/account/manage-booking'
+                            : item.href;
                           return (
                             <button
                               key={item.label}
@@ -433,11 +437,13 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
               <div className="px-4 py-4 space-y-2">
                 {NAV_ITEMS.map((item) => {
                   const Icon = item.icon;
-                  const href = item.href;
+                  const href = item.href === '/manage-booking' && user
+                    ? user.role === 'FAREMIND_AGENT' ? '/agent/bookings' : '/account/manage-booking'
+                    : item.href;
                   const label = (item.label === 'Travel DNA' && user)
                     ? <>My <span><span className="text-white">FARE</span><span style={{ color: '#009CA6' }}>MIND</span></span> DNA™</>
                     : item.label;
-                  const isActive = pathname === href;
+                  const isActive = pathname === href || (href !== '/' && pathname.startsWith(href + '/'));
 
                   // "Search" (/) — force full page reload so hero form is clean
                   if (item.href === '/') {
@@ -516,7 +522,9 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                   <p className="px-4 py-2 text-xs text-slate-600 uppercase font-bold tracking-wider">Support</p>
                   {HELP_ITEMS.map((item) => {
                     const Icon = item.icon;
-                    const href = item.href;
+                    const href = item.href === '/manage-booking' && user
+                      ? user.role === 'FAREMIND_AGENT' ? '/agent/bookings' : '/account/manage-booking'
+                      : item.href;
                     return (
                       <button key={item.label} onClick={() => { setMobileOpen(false); item.auth ? authGuardedNav(href) : router.push(href); }}
                         className="flex items-center gap-3 w-full px-4 py-2.5 rounded-xl text-sm text-slate-400 hover:text-white hover:bg-white/[0.04] transition-all">
