@@ -396,3 +396,9 @@ body {
 .scrollbar-none::-webkit-scrollbar {
   display: none;
 }
+
+/* Orange calendar/date picker icon for dark-themed inputs */
+input[type="date"].date-icon-orange::-webkit-calendar-picker-indicator {
+  filter: invert(60%) sepia(90%) saturate(600%) hue-rotate(360deg) brightness(105%);
+  cursor: pointer;
+}

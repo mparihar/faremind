@@ -170,7 +170,7 @@ function PassengerModal({ bookingId, passengers, onClose }: { bookingId: string;
               <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Phone</label><input value={form.phone} onChange={e => setForm(f => ({ ...f, phone: e.target.value }))} className={iCls} /></div>
               <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Nationality</label><input value={form.nationality} onChange={e => setForm(f => ({ ...f, nationality: e.target.value }))} className={iCls} /></div>
               <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Passport Number</label><input value={form.passportNumber} onChange={e => setForm(f => ({ ...f, passportNumber: e.target.value }))} className={iCls} /></div>
-              <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Passport Expiry</label><input type="date" value={form.passportExpiry} onChange={e => setForm(f => ({ ...f, passportExpiry: e.target.value }))} className={iCls} /></div>
+              <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Passport Expiry</label><input type="date" value={form.passportExpiry} onChange={e => setForm(f => ({ ...f, passportExpiry: e.target.value }))} className={`${iCls} date-icon-orange`} /></div>
               <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Issuing Country</label><input value={form.passportCountry} onChange={e => setForm(f => ({ ...f, passportCountry: e.target.value }))} className={iCls} /></div>
             </div>
             <p className="text-xs text-slate-500 italic">* Identity fields cannot be edited after booking.</p>
@@ -229,12 +229,12 @@ function DateChangeModal({ bookingId, booking, onClose }: { bookingId: string; b
             </div>
             <div>
               <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">New Departure Date</label>
-              <input type="date" value={depDate} onChange={e => setDepDate(e.target.value)} min={new Date().toISOString().split('T')[0]} className={iCls} />
+              <input type="date" value={depDate} onChange={e => setDepDate(e.target.value)} min={new Date().toISOString().split('T')[0]} className={`${iCls} date-icon-orange`} />
             </div>
             {isRT && (
               <div>
                 <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">New Return Date (optional)</label>
-                <input type="date" value={retDate} onChange={e => setRetDate(e.target.value)} min={depDate || new Date().toISOString().split('T')[0]} className={iCls} />
+                <input type="date" value={retDate} onChange={e => setRetDate(e.target.value)} min={depDate || new Date().toISOString().split('T')[0]} className={`${iCls} date-icon-orange`} />
               </div>
             )}
             <div>
