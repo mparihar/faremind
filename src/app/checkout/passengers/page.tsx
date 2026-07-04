@@ -1,7 +1,7 @@
 // src/app/checkout/passengers/page.tsx
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -12,6 +12,8 @@ import {
   Check,
   Loader2,
   Mic,
+  AlertTriangle,
+  Sparkles,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
 import { cn } from '@/lib/utils';
@@ -424,6 +426,40 @@ function SelectField({ hasError, className = '', children, ...props }: SelectFie
   );
 }
 
+// ─── Passenger Lookup Helper ──────────────────────────────────────────────────
+
+interface LookupResult {
+  found: boolean;
+  source?: string;
+  data?: Record<string, string>;
+}
+
+async function lookupByEmail(email: string): Promise<LookupResult> {
+  try {
+    const res = await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-email', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email }),
+    });
+    return res;
+  } catch {
+    return { found: false };
+  }
+}
+
+async function lookupByName(firstName: string, lastName: string): Promise<LookupResult> {
+  try {
+    const res = await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-name', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ firstName, lastName }),
+    });
+    return res;
+  } catch {
+    return { found: false };
+  }
+}
+
 // ─── Primary Contact Box ──────────────────────────────────────────────────────
 
 interface PrimaryContactProps {
@@ -431,19 +467,51 @@ interface PrimaryContactProps {
   errors: PassengerErrors;
   touched: boolean;
   onChange: (field: keyof PassengerInfo, value: string) => void;
+  onAutoFill: (data: Record<string, string>) => void;
 }
 
-function PrimaryContactBox({ pax, errors, touched, onChange }: PrimaryContactProps) {
+function PrimaryContactBox({ pax, errors, touched, onChange, onAutoFill }: PrimaryContactProps) {
+  const [lookingUp, setLookingUp] = useState(false);
+  const [autoFilled, setAutoFilled] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleEmailBlur = useCallback(() => {
+    const email = pax.email.trim();
+    if (!email || !email.includes('@') || email.length < 5) return;
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setLookingUp(true);
+      const result = await lookupByEmail(email);
+      setLookingUp(false);
+      if (result.found && result.data) {
+        onAutoFill(result.data);
+        setAutoFilled(true);
+        setTimeout(() => setAutoFilled(false), 4000);
+      }
+    }, 300);
+  }, [pax.email, onAutoFill]);
+
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
       <div className="flex items-center gap-3 mb-5">
         <div className="w-8 h-8 rounded-full bg-[#1ABC9C]/10 flex items-center justify-center">
           <User className="w-4 h-4 text-[#1ABC9C]" />
         </div>
-        <div>
+        <div className="flex-1">
           <h3 className="text-sm font-bold text-slate-900">Primary Contact</h3>
           <p className="text-xs text-slate-500 mt-0.5">Booking confirmation will be sent to this email</p>
         </div>
+        {lookingUp && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500">
+            <Loader2 className="w-3 h-3 animate-spin" /> Looking up...
+          </span>
+        )}
+        {autoFilled && !lookingUp && (
+          <span className="inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700 animate-in fade-in">
+            <Sparkles className="w-3 h-3" /> Auto-filled from previous booking
+          </span>
+        )}
       </div>
 
       <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -478,6 +546,7 @@ function PrimaryContactBox({ pax, errors, touched, onChange }: PrimaryContactPro
             placeholder="john.doe@example.com"
             value={pax.email}
             onChange={e => onChange('email', e.target.value)}
+            onBlur={handleEmailBlur}
             hasError={touched && !!errors.email}
           />
           {touched && <FieldError message={errors.email} />}
@@ -557,11 +626,33 @@ interface PassengerCardProps {
   errors: PassengerErrors;
   touched: boolean;
   onChange: (field: keyof PassengerInfo, value: string) => void;
+  onAutoFill: (data: Record<string, string>) => void;
   departureDate?: string;
 }
 
-function PassengerCard({ pax, index, errors, touched, onChange, departureDate }: PassengerCardProps) {
+function PassengerCard({ pax, index, errors, touched, onChange, onAutoFill, departureDate }: PassengerCardProps) {
   const expectedTypeLabel = pax.type === 'adult' ? 'Adult' : pax.type === 'child' ? 'Child' : 'Infant';
+  const [lookingUp, setLookingUp] = useState(false);
+  const [autoFilled, setAutoFilled] = useState(false);
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const handleNameBlur = useCallback(() => {
+    const fn = pax.firstName.trim();
+    const ln = pax.lastName.trim();
+    if (fn.length < 2 || ln.length < 2) return;
+
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(async () => {
+      setLookingUp(true);
+      const result = await lookupByName(fn, ln);
+      setLookingUp(false);
+      if (result.found && result.data) {
+        onAutoFill(result.data);
+        setAutoFilled(true);
+        setTimeout(() => setAutoFilled(false), 4000);
+      }
+    }, 300);
+  }, [pax.firstName, pax.lastName, onAutoFill]);
 
   // Check if DOB is a future date (show error immediately, no need for touched)
   const isFutureDob = (() => {
@@ -592,13 +683,23 @@ function PassengerCard({ pax, index, errors, touched, onChange, departureDate }:
           Traveler {index + 1}{' '}
           <span className="text-slate-400 font-normal">({expectedTypeLabel})</span>
         </h3>
-        {isFutureDob && (
+        {lookingUp && (
+          <span className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-medium bg-slate-100 text-slate-500">
+            <Loader2 className="w-3 h-3 animate-spin" /> Looking up...
+          </span>
+        )}
+        {autoFilled && !lookingUp && (
+          <span className="ml-auto inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-bold bg-emerald-100 text-emerald-700">
+            <Sparkles className="w-3 h-3" /> Auto-filled
+          </span>
+        )}
+        {!lookingUp && !autoFilled && isFutureDob && (
           <span className="ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold bg-red-100 text-red-700">
             <AlertCircle className="w-3 h-3" />
             Future DOB
           </span>
         )}
-        {!isFutureDob && ageInfo && (
+        {!lookingUp && !autoFilled && !isFutureDob && ageInfo && (
           <span className={`ml-auto inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-[11px] font-bold ${
             ageInfo.matches
               ? 'bg-emerald-100 text-emerald-700'
@@ -619,6 +720,7 @@ function PassengerCard({ pax, index, errors, touched, onChange, departureDate }:
             placeholder="John"
             value={pax.firstName}
             onChange={e => onChange('firstName', e.target.value)}
+            onBlur={handleNameBlur}
             hasError={touched && !!errors.firstName}
           />
           {touched && <FieldError message={errors.firstName} />}
@@ -639,6 +741,7 @@ function PassengerCard({ pax, index, errors, touched, onChange, departureDate }:
             placeholder="Doe"
             value={pax.lastName}
             onChange={e => onChange('lastName', e.target.value)}
+            onBlur={handleNameBlur}
             hasError={touched && !!errors.lastName}
           />
           {touched && <FieldError message={errors.lastName} />}
@@ -810,6 +913,30 @@ export default function PassengersPage() {
     [updatePassenger],
   );
 
+  // Auto-fill handler: applies data from DB lookup to a passenger
+  // Only fills fields that are currently empty — does NOT overwrite user-edited values
+  const handleAutoFill = useCallback(
+    (paxId: string, data: Record<string, string>) => {
+      const pax = passengers.find(p => p.id === paxId);
+      if (!pax) return;
+      const updates: Partial<PassengerInfo> = {};
+      const fillable: (keyof PassengerInfo)[] = [
+        'firstName', 'middleName', 'lastName', 'phone', 'gender',
+        'dateOfBirth', 'nationality', 'passportCountry', 'passportNumber', 'passportExpiry',
+      ];
+      for (const field of fillable) {
+        const newVal = data[field];
+        if (newVal && !pax[field]) {
+          (updates as any)[field] = newVal;
+        }
+      }
+      if (Object.keys(updates).length > 0) {
+        updatePassenger(paxId, updates);
+      }
+    },
+    [passengers, updatePassenger],
+  );
+
   const handleSubmit = async () => {
     if (!sessionId) { router.replace('/'); return; }
     setTouched(true);
@@ -848,8 +975,13 @@ export default function PassengersPage() {
           </p>
         </div>
 
-
-
+        {/* ⚠ Amber validation warning banner */}
+        <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-amber-50 border border-amber-300 shadow-sm text-sm">
+          <AlertTriangle className="w-4 h-4 mt-0.5 flex-shrink-0 text-amber-600" />
+          <p className="text-amber-800 font-medium">
+            Please validate all details in the form carefully. Ensure names, dates of birth, and passport information match each traveler&apos;s passport exactly.
+          </p>
+        </div>
 
         {/* Age categorization info */}
         {departureDate && (
@@ -871,6 +1003,7 @@ export default function PassengersPage() {
             errors={primaryErrors}
             touched={touched}
             onChange={(field, value) => handleChange(primaryPax.id, field, value)}
+            onAutoFill={(data) => handleAutoFill(primaryPax.id, data)}
           />
         )}
 
@@ -883,6 +1016,7 @@ export default function PassengersPage() {
             errors={allErrors[i] ?? {}}
             touched={touched}
             onChange={(field, value) => handleChange(pax.id, field, value)}
+            onAutoFill={(data) => handleAutoFill(pax.id, data)}
             departureDate={departureDate}
           />
         ))}

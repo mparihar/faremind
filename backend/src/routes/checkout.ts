@@ -1,5 +1,6 @@
 import { FastifyPluginAsync } from 'fastify';
 import { fireNotification } from '../lib/notify';
+import { prisma } from '../lib/db';
 
 // FAREMIND_BUNDLE gate — reads from env (loaded via env.ts preloader)
 function isBundleEnabled(): boolean {
@@ -29,6 +30,120 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       return { success: true, sessionId };
     } catch (err) {
       console.error('[checkout] POST /passengers/save error:', err);
+      reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  // ── Passenger Lookup: by email (Primary Contact auto-fill) ────────────────
+  fastify.post('/passengers/lookup-by-email', async (request, reply) => {
+    try {
+      const { email } = request.body as { email?: string };
+      if (!email || !email.includes('@')) {
+        return reply.code(400).send({ error: 'A valid email is required' });
+      }
+
+      const emailLower = email.toLowerCase().trim();
+
+      // 1. Check BookingPassenger table (most detailed — has passport info)
+      const bookingPax = await prisma.bookingPassenger.findFirst({
+        where: { email: { equals: emailLower, mode: 'insensitive' } },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (bookingPax) {
+        return {
+          found: true,
+          source: 'booking',
+          data: {
+            firstName: bookingPax.firstName,
+            middleName: bookingPax.middleName ?? '',
+            lastName: bookingPax.lastName,
+            phone: bookingPax.phone ?? '',
+            gender: bookingPax.gender ?? '',
+            dateOfBirth: bookingPax.dateOfBirth
+              ? bookingPax.dateOfBirth.toISOString().split('T')[0]
+              : '',
+            nationality: bookingPax.nationality ?? '',
+            passportCountry: bookingPax.passportCountry ?? '',
+            passportNumber: bookingPax.passportNumber ?? '',
+            passportExpiry: bookingPax.passportExpiry
+              ? bookingPax.passportExpiry.toISOString().split('T')[0]
+              : '',
+          },
+        };
+      }
+
+      // 2. Fallback: check User table (has name + phone, but no passport)
+      const user = await prisma.user.findUnique({
+        where: { email: emailLower },
+      });
+
+      if (user) {
+        return {
+          found: true,
+          source: 'user',
+          data: {
+            firstName: user.firstName,
+            middleName: '',
+            lastName: user.lastName,
+            phone: user.phone ?? '',
+            gender: '',
+            dateOfBirth: '',
+            nationality: '',
+            passportCountry: '',
+            passportNumber: '',
+            passportExpiry: '',
+          },
+        };
+      }
+
+      return { found: false };
+    } catch (err) {
+      fastify.log.error({ err }, '[checkout] POST /passengers/lookup-by-email error');
+      reply.code(500).send({ error: 'Internal server error' });
+    }
+  });
+
+  // ── Passenger Lookup: by name (Traveler 2+ auto-fill) ─────────────────────
+  fastify.post('/passengers/lookup-by-name', async (request, reply) => {
+    try {
+      const { firstName, lastName } = request.body as { firstName?: string; lastName?: string };
+      if (!firstName || !lastName || firstName.length < 2 || lastName.length < 2) {
+        return reply.code(400).send({ error: 'firstName and lastName (min 2 chars each) are required' });
+      }
+
+      const bookingPax = await prisma.bookingPassenger.findFirst({
+        where: {
+          firstName: { equals: firstName.trim(), mode: 'insensitive' },
+          lastName: { equals: lastName.trim(), mode: 'insensitive' },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (bookingPax) {
+        return {
+          found: true,
+          data: {
+            middleName: bookingPax.middleName ?? '',
+            email: bookingPax.email ?? '',
+            phone: bookingPax.phone ?? '',
+            gender: bookingPax.gender ?? '',
+            dateOfBirth: bookingPax.dateOfBirth
+              ? bookingPax.dateOfBirth.toISOString().split('T')[0]
+              : '',
+            nationality: bookingPax.nationality ?? '',
+            passportCountry: bookingPax.passportCountry ?? '',
+            passportNumber: bookingPax.passportNumber ?? '',
+            passportExpiry: bookingPax.passportExpiry
+              ? bookingPax.passportExpiry.toISOString().split('T')[0]
+              : '',
+          },
+        };
+      }
+
+      return { found: false };
+    } catch (err) {
+      fastify.log.error({ err }, '[checkout] POST /passengers/lookup-by-name error');
       reply.code(500).send({ error: 'Internal server error' });
     }
   });
