@@ -62,6 +62,8 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
   const [cancelQuote, setCancelQuote] = useState<any>(null);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [cancelQuoteError, setCancelQuoteError] = useState<string | null>(null);
+  const [cancelStep, setCancelStep] = useState<'review' | 'confirming' | 'success' | 'error'>('review');
+  const [cancelSuccess, setCancelSuccess] = useState<any>(null);
 
   useEffect(() => {
     if (showCancelDialog && booking?.id) {
@@ -138,27 +140,28 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
   }
 
   async function handleCancellation() {
+    if (!cancelQuote?.quoteId || !booking?.id) return;
     setSaving(true);
+    setCancelStep('confirming');
     setActionMsg(null);
     try {
-      const res = await fetch('/api/agent/cancellation-request', {
+      const res = await fetch(apiUrl(`/api/manage-booking/${booking.id}/cancel/confirm`), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
-        body: JSON.stringify({ bookingReference: fbr, reason: cancelReason }),
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ quoteId: cancelQuote.quoteId, refundMethod: 'ORIGINAL_PAYMENT' }),
       });
       const data = await res.json();
       if (res.ok) {
-        setShowCancelDialog(false);
-        setActionMsg({ type: 'success', text: data.message });
+        setCancelSuccess(data);
+        setCancelStep('success');
         fetchBooking();
       } else {
-        // Close dialog so the error message is visible
-        setShowCancelDialog(false);
-        setActionMsg({ type: 'error', text: data.error || 'Cancellation request failed.' });
+        setCancelQuoteError(data.error || 'The airline could not process the cancellation. Please contact support.');
+        setCancelStep('error');
       }
     } catch {
-      setShowCancelDialog(false);
-      setActionMsg({ type: 'error', text: 'Network error.' });
+      setCancelQuoteError('Network error. Please try again.');
+      setCancelStep('error');
     } finally {
       setSaving(false);
     }
@@ -244,10 +247,10 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
             </button>
             {!['CANCELLED', 'CANCEL_REQUESTED', 'FAILED'].includes(booking.bookingStatus) && (
               <button
-                onClick={() => setShowCancelDialog(true)}
+                onClick={() => { setCancelStep('review'); setCancelQuoteError(null); setCancelSuccess(null); setShowCancelDialog(true); }}
                 className="flex items-center gap-1.5 px-3 py-2 rounded-xl text-xs font-semibold text-red-400 hover:text-red-300 bg-red-500/[0.06] hover:bg-red-500/[0.12] border border-red-500/20 transition-all"
               >
-                <XCircle className="w-3.5 h-3.5" /> Request Cancel
+                <XCircle className="w-3.5 h-3.5" /> Cancel Booking
               </button>
             )}
           </div>
@@ -593,177 +596,244 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
       {showCancelDialog && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
-            {/* Header */}
-            <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/[0.06]">
-              <div className="flex items-center gap-2.5">
-                <div className="w-8 h-8 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center">
-                  <XCircle className="w-4 h-4 text-red-400" />
-                </div>
-                <h3 className="text-white font-bold text-sm">Cancel Booking</h3>
-              </div>
-              <button onClick={() => setShowCancelDialog(false)} className="text-slate-500 hover:text-white transition-colors p-1">
-                <XCircle className="w-4 h-4" />
-              </button>
-            </div>
 
-            <div className="px-5 py-4 space-y-4">
-              {loadingQuote && (
-                <div className="flex items-center gap-2 py-4 justify-center">
-                  <Loader2 className="w-5 h-5 text-[#1ABC9C] animate-spin" />
-                  <span className="text-xs text-slate-400">Loading cancellation details...</span>
-                </div>
-              )}
-
-              {!loadingQuote && cancelQuoteError && (
-                <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4 space-y-3">
-                  <div className="flex items-center gap-2">
-                    <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
-                    <span className="text-xs font-bold text-red-400">Unable to Process Cancellation</span>
+            {/* ── Success State ── */}
+            {cancelStep === 'success' && cancelSuccess && (
+              <>
+                <div className="px-5 pt-6 pb-4 text-center">
+                  <div className="w-16 h-16 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/30 flex items-center justify-center mx-auto mb-4">
+                    <Check className="w-7 h-7 text-[#1ABC9C]" />
                   </div>
-                  <p className="text-xs text-slate-400 leading-relaxed">{cancelQuoteError}</p>
+                  <h3 className="text-white font-black text-xl mb-1">Booking Cancelled</h3>
+                  <p className="text-slate-400 text-sm">
+                    Ref: <span className="font-mono font-bold text-white">{cancelSuccess.bookingReference}</span>
+                  </p>
+                </div>
+
+                {/* Refund card */}
+                <div className="mx-5 mb-4 bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 rounded-2xl p-4 text-center">
+                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Estimated Refund</p>
+                  <p className="text-3xl font-black text-[#1ABC9C]">
+                    {cancelSuccess.refundAmount > 0
+                      ? new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelSuccess.refundCurrency || 'USD' }).format(cancelSuccess.refundAmount)
+                      : 'Non-refundable'}
+                  </p>
+                  {cancelSuccess.refundAmount > 0 && (
+                    <div className="flex items-center justify-center gap-1.5 mt-2 text-xs text-slate-400">
+                      <Clock className="w-3 h-3" />
+                      <span>{cancelSuccess.refundTimeline || '5–10 business days'}</span>
+                      <span>·</span>
+                      <span>Original Payment Method</span>
+                    </div>
+                  )}
+                </div>
+
+                <p className="text-center text-xs text-slate-500 mb-4 px-5">
+                  Cancellation confirmation has been sent to the customer, agent, and admin.
+                </p>
+
+                <div className="px-5 pb-5">
                   <button
-                    onClick={() => setShowCancelDialog(false)}
-                    className="w-full py-2 rounded-lg text-sm font-medium text-white bg-slate-800 hover:bg-slate-700 border border-white/10 transition-colors"
+                    onClick={() => { setShowCancelDialog(false); setCancelStep('review'); setCancelSuccess(null); }}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#1ABC9C] hover:bg-[#16a085] text-white font-bold text-sm transition-all"
                   >
-                    Close
+                    Done
                   </button>
                 </div>
-              )}
+              </>
+            )}
 
-              {!loadingQuote && !cancelQuoteError && cancelQuote && (
-                <>
-                  {/* Booking Details */}
-                  <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
-                    <div className="px-4 py-3 space-y-2 text-sm">
-                      <div className="flex justify-between">
-                        <span className="text-slate-400">FareMind Reference</span>
-                        <span className="text-white font-bold font-mono">{cancelQuote.bookingReference}</span>
-                      </div>
-                      {cancelQuote.airlinePnr && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Airline PNR</span>
-                          <span className="text-white font-bold font-mono">{cancelQuote.airlinePnr}</span>
-                        </div>
-                      )}
-                      {cancelQuote.route && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Route</span>
-                          <span className="text-white font-medium">{cancelQuote.route}</span>
-                        </div>
-                      )}
-                      {cancelQuote.departureDate && (
-                        <div className="flex justify-between">
-                          <span className="text-slate-400">Departure</span>
-                          <span className="text-white font-medium">{new Date(cancelQuote.departureDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
-                        </div>
-                      )}
+            {/* ── Review / Confirming / Error States ── */}
+            {cancelStep !== 'success' && (
+              <>
+                {/* Header */}
+                <div className="flex items-center justify-between px-5 pt-5 pb-4 border-b border-white/[0.06]">
+                  <div className="flex items-center gap-2.5">
+                    <div className="w-8 h-8 rounded-lg bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                      <XCircle className="w-4 h-4 text-red-400" />
                     </div>
+                    <h3 className="text-white font-bold text-sm">Cancel Booking</h3>
                   </div>
+                  <button onClick={() => { if (cancelStep !== 'confirming') setShowCancelDialog(false); }} className="text-slate-500 hover:text-white transition-colors p-1">
+                    <XCircle className="w-4 h-4" />
+                  </button>
+                </div>
 
-                  {/* Refund Estimate */}
-                  <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
-                    <div className="px-4 py-3 border-b border-white/[0.05] flex items-center justify-between">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Refund Estimate</span>
-                      <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        cancelQuote.refundability === 'FULL_REFUND'
-                          ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : cancelQuote.refundability === 'PARTIAL_REFUND'
-                            ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
-                            : 'bg-red-500/10 text-red-400 border border-red-500/20'
-                      }`}>
-                        {cancelQuote.refundability === 'FULL_REFUND'
-                          ? 'Fully Refundable'
-                          : cancelQuote.refundability === 'PARTIAL_REFUND'
-                            ? 'Partially Refundable'
-                            : 'Non-refundable'}
-                      </span>
-                    </div>
-                    <div className="px-4 py-3 space-y-2.5 text-sm">
-                      <div className="flex justify-between text-xs text-slate-400">
-                        <span>Original Fare</span>
-                        <span className="text-white font-medium">
-                          {new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.originalAmount)}
-                        </span>
+                <div className="relative min-h-[200px] overflow-hidden">
+                  {/* Processing overlay */}
+                  {cancelStep === 'confirming' && (
+                    <div className="absolute inset-0 z-10 bg-slate-900/90 backdrop-blur-sm flex flex-col items-center justify-center gap-3">
+                      <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center">
+                        <Loader2 className="w-6 h-6 text-red-400 animate-spin" />
                       </div>
-                      {cancelQuote.airlinePenalty > 0 && (
-                        <div className="flex justify-between text-xs text-slate-400">
-                          <span>Airline Penalty</span>
-                          <span className="text-red-400 font-medium">
-                            −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.airlinePenalty)}
-                          </span>
-                        </div>
-                      )}
-                      {cancelQuote.fareMindFee > 0 && (
-                        <div className="flex justify-between text-xs text-slate-400">
-                          <span>FAREMIND Service Fee</span>
-                          <span className="text-red-400 font-medium">
-                            −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.fareMindFee)}
-                          </span>
-                        </div>
-                      )}
-                      <div className="flex justify-between items-center pt-2 border-t border-white/[0.05]">
-                        <span className="text-white font-bold text-xs">Estimated Refund</span>
-                        <span className={`font-black text-sm ${cancelQuote.estimatedRefund > 0 ? 'text-[#1ABC9C]' : 'text-red-400 italic'}`}>
-                          {cancelQuote.estimatedRefund > 0
-                            ? new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.refundCurrency || cancelQuote.currency }).format(cancelQuote.estimatedRefund)
-                            : 'Non-refundable'}
-                        </span>
-                      </div>
-                    </div>
-                  </div>
-
-                  {/* Payment method & timeline */}
-                  <div className="flex items-center gap-2 text-xs text-slate-400">
-                    <CreditCard className="w-3 h-3 text-slate-500 shrink-0" />
-                    <span>
-                      {cancelQuote.estimatedRefund > 0
-                        ? `Original Payment · ${cancelQuote.refundTimeline || '5–10 business days'}`
-                        : 'No refund will be issued for this non-refundable ticket'}
-                    </span>
-                  </div>
-
-                  {/* Warning */}
-                  {cancelQuote.warningMessage && (
-                    <div className="flex items-start gap-2.5 bg-amber-500/5 border border-amber-500/20 rounded-xl px-3 py-2.5">
-                      <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
-                      <p className="text-amber-200/70 text-xs leading-relaxed">{cancelQuote.warningMessage}</p>
+                      <p className="text-white font-bold text-base">Processing Cancellation</p>
+                      <p className="text-slate-400 text-xs">Contacting the airline — please wait…</p>
+                      <p className="text-slate-600 text-[10px] mt-2">Do not close this window</p>
                     </div>
                   )}
 
-                  {/* Confirm text */}
-                  <p className="text-xs text-slate-400 text-center">
-                    Please confirm that you want to cancel booking <span className="text-white font-bold">{cancelQuote.bookingReference}</span>.
-                  </p>
+                  <div className={`px-5 py-4 space-y-4 ${cancelStep === 'confirming' ? 'opacity-30 pointer-events-none' : ''}`}>
+                    {loadingQuote && (
+                      <div className="flex items-center gap-2 py-4 justify-center">
+                        <Loader2 className="w-5 h-5 text-[#1ABC9C] animate-spin" />
+                        <span className="text-xs text-slate-400">Loading cancellation details...</span>
+                      </div>
+                    )}
 
-                  {/* Reason */}
-                  <textarea
-                    value={cancelReason}
-                    onChange={(e) => setCancelReason(e.target.value)}
-                    placeholder="Reason for cancellation (optional)"
-                    className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-white/10 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-red-500/50 resize-none h-20"
-                  />
-                </>
-              )}
-            </div>
+                    {!loadingQuote && (cancelQuoteError || cancelStep === 'error') && (
+                      <div className="bg-red-500/5 border border-red-500/20 rounded-xl p-4 space-y-3">
+                        <div className="flex items-center gap-2">
+                          <AlertCircle className="w-4 h-4 text-red-400 shrink-0" />
+                          <span className="text-xs font-bold text-red-400">Unable to Process Cancellation</span>
+                        </div>
+                        <p className="text-xs text-slate-400 leading-relaxed">{cancelQuoteError}</p>
+                        <button
+                          onClick={() => setShowCancelDialog(false)}
+                          className="w-full py-2 rounded-lg text-sm font-medium text-white bg-slate-800 hover:bg-slate-700 border border-white/10 transition-colors"
+                        >
+                          Close
+                        </button>
+                      </div>
+                    )}
 
-            {/* Footer buttons */}
-            {!loadingQuote && !cancelQuoteError && (
-              <div className="flex items-center justify-end gap-2 px-5 pb-5">
-                <button
-                  onClick={() => setShowCancelDialog(false)}
-                  className="px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition-colors"
-                >
-                  Keep Booking
-                </button>
-                <button
-                  onClick={handleCancellation}
-                  disabled={saving || loadingQuote}
-                  className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-50"
-                >
-                  {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
-                  Confirm Cancellation
-                </button>
-              </div>
+                    {!loadingQuote && !cancelQuoteError && cancelStep !== 'error' && cancelQuote && (
+                      <>
+                        {/* Booking Details */}
+                        <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
+                          <div className="px-4 py-3 space-y-2 text-sm">
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">FareMind Reference</span>
+                              <span className="text-white font-bold font-mono">{cancelQuote.bookingReference}</span>
+                            </div>
+                            {cancelQuote.airlinePnr && (
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">Airline PNR</span>
+                                <span className="text-white font-bold font-mono">{cancelQuote.airlinePnr}</span>
+                              </div>
+                            )}
+                            {cancelQuote.route && (
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">Route</span>
+                                <span className="text-white font-medium">{cancelQuote.route}</span>
+                              </div>
+                            )}
+                            {cancelQuote.departureDate && (
+                              <div className="flex justify-between">
+                                <span className="text-slate-400">Departure</span>
+                                <span className="text-white font-medium">{new Date(cancelQuote.departureDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                              </div>
+                            )}
+                          </div>
+                        </div>
+
+                        {/* Refund Estimate */}
+                        <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
+                          <div className="px-4 py-3 border-b border-white/[0.05] flex items-center justify-between">
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Refund Estimate</span>
+                            <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
+                              cancelQuote.refundability === 'FULL_REFUND'
+                                ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
+                                : cancelQuote.refundability === 'PARTIAL_REFUND'
+                                  ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
+                                  : 'bg-red-500/10 text-red-400 border border-red-500/20'
+                            }`}>
+                              {cancelQuote.refundability === 'FULL_REFUND'
+                                ? 'Fully Refundable'
+                                : cancelQuote.refundability === 'PARTIAL_REFUND'
+                                  ? 'Partially Refundable'
+                                  : 'Non-refundable'}
+                            </span>
+                          </div>
+                          <div className="px-4 py-3 space-y-2.5 text-sm">
+                            <div className="flex justify-between text-xs text-slate-400">
+                              <span>Original Fare</span>
+                              <span className="text-white font-medium">
+                                {new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.originalAmount)}
+                              </span>
+                            </div>
+                            {cancelQuote.airlinePenalty > 0 && (
+                              <div className="flex justify-between text-xs text-slate-400">
+                                <span>Airline Penalty</span>
+                                <span className="text-red-400 font-medium">
+                                  −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.airlinePenalty)}
+                                </span>
+                              </div>
+                            )}
+                            {cancelQuote.fareMindFee > 0 && (
+                              <div className="flex justify-between text-xs text-slate-400">
+                                <span>FAREMIND Service Fee</span>
+                                <span className="text-red-400 font-medium">
+                                  −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.fareMindFee)}
+                                </span>
+                              </div>
+                            )}
+                            <div className="flex justify-between items-center pt-2 border-t border-white/[0.05]">
+                              <span className="text-white font-bold text-xs">Estimated Refund</span>
+                              <span className={`font-black text-sm ${cancelQuote.estimatedRefund > 0 ? 'text-[#1ABC9C]' : 'text-red-400 italic'}`}>
+                                {cancelQuote.estimatedRefund > 0
+                                  ? new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.refundCurrency || cancelQuote.currency }).format(cancelQuote.estimatedRefund)
+                                  : 'Non-refundable'}
+                              </span>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Payment method & timeline */}
+                        <div className="flex items-center gap-2 text-xs text-slate-400">
+                          <CreditCard className="w-3 h-3 text-slate-500 shrink-0" />
+                          <span>
+                            {cancelQuote.estimatedRefund > 0
+                              ? `Original Payment · ${cancelQuote.refundTimeline || '5–10 business days'}`
+                              : 'No refund will be issued for this non-refundable ticket'}
+                          </span>
+                        </div>
+
+                        {/* Warning */}
+                        {cancelQuote.warningMessage && (
+                          <div className="flex items-start gap-2.5 bg-amber-500/5 border border-amber-500/20 rounded-xl px-3 py-2.5">
+                            <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0 mt-0.5" />
+                            <p className="text-amber-200/70 text-xs leading-relaxed">{cancelQuote.warningMessage}</p>
+                          </div>
+                        )}
+
+                        {/* Confirm text */}
+                        <p className="text-xs text-slate-400 text-center">
+                          Please confirm that you want to cancel booking <span className="text-white font-bold">{cancelQuote.bookingReference}</span>.
+                        </p>
+
+                        {/* Reason */}
+                        <textarea
+                          value={cancelReason}
+                          onChange={(e) => setCancelReason(e.target.value)}
+                          placeholder="Reason for cancellation (optional)"
+                          className="w-full px-4 py-3 rounded-xl bg-slate-800/50 border border-white/10 text-white text-sm placeholder-slate-500 focus:outline-none focus:border-red-500/50 resize-none h-20"
+                        />
+                      </>
+                    )}
+                  </div>
+                </div>
+
+                {/* Footer buttons */}
+                {!loadingQuote && !cancelQuoteError && cancelStep !== 'error' && (
+                  <div className={`flex items-center justify-end gap-2 px-5 pb-5 ${cancelStep === 'confirming' ? 'opacity-30 pointer-events-none' : ''}`}>
+                    <button
+                      onClick={() => setShowCancelDialog(false)}
+                      disabled={cancelStep === 'confirming'}
+                      className="px-4 py-2 rounded-lg text-sm font-medium text-slate-400 hover:text-white transition-colors"
+                    >
+                      Keep Booking
+                    </button>
+                    <button
+                      onClick={handleCancellation}
+                      disabled={saving || loadingQuote || cancelStep === 'confirming'}
+                      className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-50"
+                    >
+                      {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
+                      Confirm Cancellation
+                    </button>
+                  </div>
+                )}
+              </>
             )}
           </div>
         </div>

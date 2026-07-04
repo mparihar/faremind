@@ -258,6 +258,49 @@ export async function sendAdminCancellationEmail(data: {
   );
 }
 
+export async function sendAgentCancellationEmail(data: {
+  agentEmail: string;
+  agentName: string;
+  bookingRef: string;
+  customerName: string;
+  customerEmail: string;
+  route: string;
+  originalAmount: string;
+  penaltyAmount: string;
+  refundAmount: string;
+  refundMethod: string;
+  pnrs: string;
+  cancellationId: string;
+}) {
+  const html = wrap('Booking Cancelled', `
+    <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking Cancelled</h2>
+    <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">
+      Hi <strong style="color:#0f172a">${data.agentName}</strong>, the following booking has been successfully cancelled.
+    </p>
+    <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:24px;">
+      <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
+        <tr><td style="padding:4px 0;color:#64748b;width:160px;">Booking Reference</td><td style="padding:4px 0;font-weight:700;color:#0f172a;">${data.bookingRef}</td></tr>
+        <tr><td style="padding:4px 0;color:#64748b;">Customer</td><td style="padding:4px 0;color:#0f172a;">${data.customerName} &lt;${data.customerEmail}&gt;</td></tr>
+        <tr><td style="padding:4px 0;color:#64748b;">Route</td><td style="padding:4px 0;color:#0f172a;">${data.route}</td></tr>
+        <tr><td style="padding:4px 0;color:#64748b;">PNR(s)</td><td style="padding:4px 0;font-family:monospace;color:#0f172a;">${data.pnrs}</td></tr>
+        <tr><td style="padding:4px 0;color:#64748b;">Original Fare</td><td style="padding:4px 0;font-weight:700;color:#0f172a;">${data.originalAmount}</td></tr>
+        <tr><td style="padding:4px 0;color:#64748b;">Penalty / Fees</td><td style="padding:4px 0;font-weight:700;color:#ef4444;">${data.penaltyAmount}</td></tr>
+        <tr style="border-top:1px solid #e2e8f0;"><td style="padding:10px 0 0;font-weight:700;color:#0f172a;">Refund Amount</td><td style="padding:10px 0 0;font-weight:900;font-size:16px;color:#1abc9c;">${data.refundAmount}</td></tr>
+        <tr><td style="padding:4px 0;color:#64748b;">Refund Method</td><td style="padding:4px 0;color:#0f172a;">${data.refundMethod}</td></tr>
+        <tr><td style="padding:4px 0;color:#64748b;">Cancellation ID</td><td style="padding:4px 0;font-family:monospace;font-size:11px;color:#64748b;">${data.cancellationId}</td></tr>
+        <tr><td style="padding:4px 0;color:#64748b;">Timestamp</td><td style="padding:4px 0;color:#0f172a;">${new Date().toISOString()}</td></tr>
+      </table>
+    </div>
+    <p style="margin:0;color:#64748b;font-size:12px;">The customer has been notified. If you have any questions, please contact support.</p>
+  `);
+
+  await sendEmail(
+    { email: data.agentEmail, name: data.agentName },
+    `Booking ${data.bookingRef} Cancelled — Refund ${data.refundAmount}`,
+    `Booking ${data.bookingRef} (${data.customerName}) cancelled. Refund: ${data.refundAmount} via ${data.refundMethod}.`,
+    html
+  );
+}
 export async function sendSeatChangedEmail(data: {
   email: string;
   name: string;

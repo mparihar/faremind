@@ -652,6 +652,36 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             pnrs: booking.pnrs.map(p => p.pnrCode).join(', '),
             cancellationId: result.cancellationId,
           }).catch((err: unknown) => fastify.log.warn({ err }, '[manage-booking] admin cancel email failed'));
+
+          // ── Agent notification ──────────────────────────────────────
+          // If this booking was made by an agent, notify them too
+          if ((booking as any).agentUserId) {
+            try {
+              const agentUser = await prisma.user.findUnique({
+                where: { id: (booking as any).agentUserId },
+                select: { email: true, firstName: true, lastName: true },
+              });
+              if (agentUser?.email) {
+                const agentName = [agentUser.firstName, agentUser.lastName].filter(Boolean).join(' ') || 'Agent';
+                emails.sendAgentCancellationEmail({
+                  agentEmail: agentUser.email,
+                  agentName,
+                  bookingRef: booking.masterBookingReference,
+                  customerName: booking.customerName ?? '',
+                  customerEmail: booking.customerEmail ?? '',
+                  route,
+                  originalAmount: fmtOrig,
+                  penaltyAmount: fmtPenalty,
+                  refundAmount: fmtRef,
+                  refundMethod: resolvedRefundMethod === 'AIRLINE_CREDIT' ? 'Airline Credit' : 'Original Payment Method',
+                  pnrs: booking.pnrs.map(p => p.pnrCode).join(', '),
+                  cancellationId: result.cancellationId,
+                }).catch((err: unknown) => fastify.log.warn({ err }, '[manage-booking] agent cancel email failed'));
+              }
+            } catch (agentErr) {
+              fastify.log.warn({ agentErr }, '[manage-booking] Failed to look up agent for cancellation notification');
+            }
+          }
         } catch (notifErr) {
           fastify.log.error(notifErr, '[manage-booking/cancel/confirm] Background notification error');
         }

@@ -30,11 +30,11 @@ export const GET = withAgent(async (_req: NextRequest, { agent }) => {
     // Pending passenger updates (no dedicated model yet — use 0)
     0,
 
-    // Cancellation requests
+    // Cancelled bookings
     prisma.masterBooking.count({
       where: {
         OR: [{ agentUserId: agent.id }, { userId: agent.id }],
-        bookingStatus: 'CANCEL_REQUESTED',
+        bookingStatus: 'CANCELLED',
       },
     }).catch(() => 0),
 

@@ -89,7 +89,7 @@ export default function AgentDashboardPage() {
     { label: 'Total Bookings', value: stats.totalBookings, icon: LayoutDashboard, color: 'from-[#1ABC9C] to-[#009CA6]' },
     { label: 'Upcoming Trips', value: stats.upcomingTrips, icon: PlaneTakeoff, color: 'from-blue-500 to-blue-600' },
     { label: 'Pending Updates', value: stats.pendingUpdates, icon: UserCog, color: 'from-amber-500 to-amber-600' },
-    { label: 'Cancel Requests', value: stats.cancellationRequests, icon: XCircle, color: 'from-orange-500 to-orange-600' },
+    { label: 'Cancelled', value: stats.cancellationRequests, icon: XCircle, color: 'from-orange-500 to-orange-600' },
     { label: 'Failed Bookings', value: stats.failedBookings, icon: AlertTriangle, color: 'from-red-500 to-red-600' },
   ] : [];
 
