@@ -252,7 +252,7 @@ function DateChangeModal({ bookingId, booking, onClose }: { bookingId: string; b
               <AlertCircle size={13} className="shrink-0 mt-0.5" />
               <span>{changeFeeMsg}</span>
             </div>
-            {dateChangeError && <div className="flex items-center gap-2 text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2"><AlertCircle size={14} />{dateChangeError}</div>}
+            {dateChangeError && <div className="flex items-start gap-2 text-amber-400 text-sm bg-amber-400/10 border border-amber-400/20 rounded-lg px-3 py-2.5"><AlertCircle size={14} className="shrink-0 mt-0.5" /><span>Please contact FareMind Support, and our team will review available options with the airline/provider.</span></div>}
             <div className="flex gap-3">
               <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/[0.04] transition-all">Cancel</button>
               <button onClick={handleSubmit} disabled={!depDate || dateChangeLoading} className="flex-1 py-3 rounded-xl bg-purple-500 hover:bg-purple-600 text-white font-bold text-sm disabled:opacity-50 transition-all">
