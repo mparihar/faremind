@@ -430,7 +430,7 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                                 <Armchair className="w-2 h-2" />
                               </div>
                             </div>
-                            <p className="text-[8px] text-slate-400 uppercase tracking-tight">Seat pitch: 31 in · 3-3-3</p>
+                            <p className="text-[8px] text-slate-400 uppercase tracking-tight">Seat pitch varies by aircraft</p>
                           </div>
                         </div>
                       </PanelSection>
@@ -473,10 +473,18 @@ export default function RoundTripDetailModal({ option, aiEnabled, onClose, onBoo
                       <PanelSection title="Baggage Allowance">
                         <div className="space-y-2">
                           {option.baggage.carryOn > 0 && (
-                            <BagRow label={`${option.baggage.carryOn} Carry-on · 7 kg (15 lbs)`} />
+                            <BagRow label={
+                              option.baggage.carryOnWeight
+                                ? `${option.baggage.carryOn} Carry-on · ${option.baggage.carryOnWeight} kg (${Math.round(option.baggage.carryOnWeight * 2.205)} lbs)`
+                                : `${option.baggage.carryOn} Carry-on included`
+                            } />
                           )}
                           {option.baggage.checked > 0 && (
-                            <BagRow label={`${option.baggage.checked} Checked bag${option.baggage.checked !== 1 ? 's' : ''} · 23 kg (50 lbs) each`} />
+                            <BagRow label={
+                              option.baggage.checkedWeight
+                                ? `${option.baggage.checked} Checked bag${option.baggage.checked !== 1 ? 's' : ''} · ${option.baggage.checkedWeight} kg (${Math.round(option.baggage.checkedWeight * 2.205)} lbs) each`
+                                : `${option.baggage.checked} Checked bag${option.baggage.checked !== 1 ? 's' : ''} included`
+                            } />
                           )}
                           {option.baggage.carryOn === 0 && option.baggage.checked === 0 && (
                             <p className="text-[10px] text-slate-400 px-0.5">No free baggage included.</p>

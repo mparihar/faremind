@@ -171,11 +171,17 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
   // Baggage
   const baggageStr = firstSeg?.Baggage || firstSeg?.baggage || '';
   let checked = 0;
+  let checkedWeight: number | undefined;
   if (baggageStr) {
     const pcMatch = baggageStr.match(/(\d+)P/i);
     const kgMatch = baggageStr.match(/(\d+)K/i);
-    if (pcMatch) checked = parseInt(pcMatch[1]);
-    else if (kgMatch) checked = parseInt(kgMatch[1]) >= 20 ? 1 : 0;
+    if (pcMatch) {
+      checked = parseInt(pcMatch[1]);
+    } else if (kgMatch) {
+      const weightKg = parseInt(kgMatch[1]);
+      checkedWeight = weightKg;
+      checked = weightKg >= 20 ? 1 : 0;
+    }
   }
 
   // Fare conditions
@@ -205,6 +211,6 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
       refundable: isRefundable,
       changeable: undefined as unknown as boolean, // Mystifly search API doesn't provide changeability
     },
-    baggage: { carryOn: 1, checked },
+    baggage: { carryOn: 1, checked, checkedWeight },
   };
 }
