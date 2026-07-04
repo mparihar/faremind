@@ -124,7 +124,7 @@ function PriceBreakdownCard({
           <div key={p.passengerId} className="space-y-1">
             <div className="flex justify-between text-sm">
               <span className="text-slate-700 font-medium">
-                Traveler {i + 1} ({p.type === 'adult' ? 'Adult' : 'Child'})
+                Traveler {i + 1} ({p.type === 'adult' ? 'Adult' : p.type === 'infant' ? 'Infant' : 'Child'})
               </span>
               <span className="font-semibold text-slate-900">{fmt(p.subtotal)}</span>
             </div>
