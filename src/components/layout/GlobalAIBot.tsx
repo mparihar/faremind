@@ -31,8 +31,8 @@ export default function GlobalAIBot() {
     setIsAgentMode(isAgentPath || hasAgentCtx);
   }, [pathname]);
 
-  // Hide on admin, auth pages, and /search (full bot renders there)
-  const hiddenPaths = ['/admin', '/auth'];
+  // Hide on admin, auth pages, agent login, and /search (full bot renders there)
+  const hiddenPaths = ['/admin', '/auth', '/agent/login'];
   const shouldHide = hiddenPaths.some(p => pathname.startsWith(p)) || pathname === '/search';
 
   if (shouldHide) return null;
