@@ -4,7 +4,12 @@ import { prisma } from '@/lib/db';
 
 export const GET = withAdmin(async (_req: NextRequest) => {
   const now = new Date();
-  const dayStart = new Date(now); dayStart.setHours(0, 0, 0, 0);
+  // Calculate "today" in US Central time (where the admin operates)
+  const centralNow = new Date(now.toLocaleString('en-US', { timeZone: 'America/Chicago' }));
+  const dayStart = new Date(centralNow); dayStart.setHours(0, 0, 0, 0);
+  // Convert back to UTC for DB queries
+  const offset = now.getTime() - centralNow.getTime();
+  const dayStartUTC = new Date(dayStart.getTime() + offset);
   const weekStart = new Date(now); weekStart.setDate(now.getDate() - 7);
   const monthStart = new Date(now); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
 
@@ -21,8 +26,8 @@ export const GET = withAdmin(async (_req: NextRequest) => {
     openSupportTickets,
   ] = await Promise.all([
     prisma.masterBooking.count(),
-    prisma.masterBooking.count({ where: { bookingStatus: 'CONFIRMED', createdAt: { gte: dayStart } } }),
-    prisma.masterBooking.count({ where: { bookingStatus: 'CANCELLED', updatedAt: { gte: dayStart } } }),
+    prisma.masterBooking.count({ where: { bookingStatus: 'CONFIRMED', createdAt: { gte: dayStartUTC } } }),
+    prisma.masterBooking.count({ where: { bookingStatus: 'CANCELLED', updatedAt: { gte: dayStartUTC } } }),
     prisma.changeRequest.count({ where: { status: { in: ['NEW', 'QUOTED', 'CUSTOMER_PAYMENT_PENDING'] } } }),
     prisma.cancellationRecord.count({ where: { status: { in: ['CANCEL_REQUESTED', 'IN_PROGRESS'] } } }),
     prisma.bookingPayment.aggregate({

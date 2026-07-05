@@ -10,15 +10,15 @@ import { prisma } from '@/lib/db';
  */
 export const POST = withAdmin(async (_req: NextRequest) => {
   const [changesUpdated, cancelsUpdated] = await Promise.all([
-    // Mark stale changeRequest records as EXPIRED (they were never actioned)
+    // Mark stale changeRequest records as CANCELLED (they were never actioned)
     prisma.changeRequest.updateMany({
       where: { status: { in: ['NEW', 'QUOTED', 'CUSTOMER_PAYMENT_PENDING'] } },
-      data: { status: 'EXPIRED' },
+      data: { status: 'CANCELLED' },
     }),
-    // Mark stale cancellationRecord records as COMPLETED (cancellations already went through provider)
+    // Mark stale cancellationRecord records as CANCELLED (cancellations already went through provider)
     prisma.cancellationRecord.updateMany({
       where: { status: { in: ['CANCEL_REQUESTED', 'IN_PROGRESS'] } },
-      data: { status: 'COMPLETED' },
+      data: { status: 'CANCELLED' },
     }),
   ]);
 
