@@ -18,6 +18,7 @@ export const GET = withAdmin(async (_req: NextRequest) => {
     monthRevenue,
     recentBookingsMaster,
     openAlerts,
+    openSupportTickets,
   ] = await Promise.all([
     prisma.masterBooking.count(),
     prisma.masterBooking.count({ where: { bookingStatus: 'CONFIRMED', createdAt: { gte: dayStart } } }),
@@ -42,6 +43,7 @@ export const GET = withAdmin(async (_req: NextRequest) => {
       },
     }),
     prisma.priceAlert.count({ where: { status: 'NEW' } }),
+    prisma.supportTicket.count({ where: { status: { in: ['OPEN', 'IN_PROGRESS'] } } }),
   ]);
 
   const recentBookings = recentBookingsMaster.map(mb => {
@@ -75,6 +77,7 @@ export const GET = withAdmin(async (_req: NextRequest) => {
       pendingChanges,
       pendingCancellations,
       openAlerts,
+      openSupportTickets,
       weekRevenue: Number(weekRevenue._sum.amount ?? 0),
       monthRevenue: Number(monthRevenue._sum.amount ?? 0),
     },

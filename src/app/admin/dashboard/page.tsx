@@ -18,6 +18,7 @@ interface Stats {
   pendingChanges: number;
   pendingCancellations: number;
   openAlerts: number;
+  openSupportTickets: number;
   weekRevenue: number;
   monthRevenue: number;
 }
@@ -130,7 +131,7 @@ export default function AdminDashboardPage() {
         <StatCard label="Week Revenue"     value={fmt(stats?.weekRevenue ?? 0)}     icon={DollarSign}    color="bg-[#1ABC9C]/10 text-[#1ABC9C]" sub="last 7 days" />
         <StatCard label="Month Revenue"    value={fmt(stats?.monthRevenue ?? 0)}    icon={DollarSign}    color="bg-purple-400/10 text-purple-400" sub="this month" />
         <StatCard label="Price Alerts"     value={stats?.openAlerts ?? 0}           icon={Bell}          color="bg-orange-400/10 text-orange-400" sub="open alerts" />
-        <StatCard label="Support Tickets" value={(stats?.pendingChanges ?? 0) + (stats?.pendingCancellations ?? 0)} icon={GitMerge} color="bg-sky-400/10 text-sky-400" href="/admin/support-queue" />
+        <StatCard label="Support Tickets" value={stats?.openSupportTickets ?? 0} icon={GitMerge} color="bg-sky-400/10 text-sky-400" href="/admin/support-queue" />
       </div>
 
       {/* Quick actions */}
