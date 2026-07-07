@@ -107,6 +107,7 @@ export default function AgentLoginPage() {
       if (turnstileContainerRef.current && !turnstileWidgetId.current && (window as any).turnstile) {
         turnstileWidgetId.current = (window as any).turnstile.render(turnstileContainerRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
+          size: 'compact',
           callback: (token: string) => setCaptchaToken(token),
           'expired-callback': () => setCaptchaToken(null),
           theme: 'dark',
@@ -275,7 +276,7 @@ export default function AgentLoginPage() {
               </div>
 
               {TURNSTILE_SITE_KEY && (
-                <div className="w-full [&_iframe]:!w-full [&>div]:!w-full">
+                <div className="flex justify-end">
                   <div ref={turnstileContainerRef} />
                 </div>
               )}
