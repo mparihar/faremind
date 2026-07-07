@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db';
 
 const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
-const SENDER_EMAIL  = process.env.BREVO_SENDER_EMAIL ?? 'noreply@faremind.com';
+const SENDER_EMAIL  = process.env.BREVO_SENDER_EMAIL ?? 'support@faremind.ai';
 const SENDER_NAME   = 'FAREMIND Admin';
 
 // ── Email logging ────────────────────────────────────────────────────────────

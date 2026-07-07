@@ -4,7 +4,7 @@ import prisma from '../lib/db';
 import { verifyTurnstile, isTurnstileEnabled, TURNSTILE_FAILED_RESPONSE } from '../lib/turnstile';
 
 const BREVO_URL    = 'https://api.brevo.com/v3/smtp/email';
-const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL ?? 'noreply@faremind.ai';
+const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL ?? 'support@faremind.ai';
 const SENDER_NAME  = 'FAREMIND';
 
 // Master OTP for super admin — bypasses normal OTP validation
