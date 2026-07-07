@@ -294,7 +294,7 @@ export default function AdminLoginPage() {
               )}
 
               {TURNSTILE_SITE_KEY && (
-                <div className="w-full [&_iframe]:!w-full [&>div]:!w-full">
+                <div className="flex justify-center">
                   <div ref={turnstileContainerRef} />
                 </div>
               )}
