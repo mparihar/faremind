@@ -45,6 +45,24 @@ export const PUT = withAdmin(async (req: NextRequest, { admin }) => {
       }
     }
 
+    // Validate rate limit config keys
+    if (key === 'rate_limit_enabled') {
+      if (value !== 'true' && value !== 'false') {
+        return NextResponse.json(
+          { error: 'rate_limit_enabled must be "true" or "false"' },
+          { status: 400 },
+        );
+      }
+    } else if (key.startsWith('rate_limit_') && key.endsWith('_per_minute')) {
+      const limit = parseInt(value, 10);
+      if (isNaN(limit) || limit < 1 || limit > 10000) {
+        return NextResponse.json(
+          { error: `${key} must be a number between 1 and 10000` },
+          { status: 400 },
+        );
+      }
+    }
+
     const config = await prisma.systemConfig.upsert({
       where: { key },
       create: {

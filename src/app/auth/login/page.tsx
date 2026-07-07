@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useRef, useEffect, Suspense } from 'react';
+import { useState, useRef, useEffect, useCallback, Suspense } from 'react';
 import type { KeyboardEvent as RKE, ClipboardEvent as RCE } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -133,6 +133,56 @@ function LoginPageContent() {
   const [phone, setPhone]         = useState('');
   const [localLoading, setLocalLoading] = useState(false);
   const [success, setSuccess]   = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaWidgetId = useRef<number | null>(null);
+  const captchaContainerRef = useRef<HTMLDivElement>(null);
+
+  const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_GOOGLE_RECAPTCHA_SITE_KEY;
+
+  // Load reCAPTCHA script and render widget
+  useEffect(() => {
+    if (!RECAPTCHA_SITE_KEY) return;
+
+    // Define the global callback before loading the script
+    (window as any).__onRecaptchaLoad_user = () => {
+      if (captchaContainerRef.current && captchaWidgetId.current === null) {
+        captchaWidgetId.current = (window as any).grecaptcha.render(captchaContainerRef.current, {
+          sitekey: RECAPTCHA_SITE_KEY,
+          callback: (token: string) => setCaptchaToken(token),
+          'expired-callback': () => setCaptchaToken(null),
+          theme: 'dark',
+        });
+      }
+    };
+
+    // Check if script is already loaded
+    if ((window as any).grecaptcha?.render) {
+      (window as any).__onRecaptchaLoad_user();
+      return;
+    }
+
+    // Load script if not already present
+    if (!document.querySelector('script[src*="recaptcha/api.js"]')) {
+      const script = document.createElement('script');
+      script.src = 'https://www.google.com/recaptcha/api.js?onload=__onRecaptchaLoad_user&render=explicit';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    return () => {
+      delete (window as any).__onRecaptchaLoad_user;
+    };
+  }, [RECAPTCHA_SITE_KEY]);
+
+  function resetCaptcha() {
+    setCaptchaToken(null);
+    try {
+      if (captchaWidgetId.current !== null && (window as any).grecaptcha) {
+        (window as any).grecaptcha.reset(captchaWidgetId.current);
+      }
+    } catch { /* ignore */ }
+  }
 
   const isLoading = localLoading || authLoading;
   const prevOtpLenRef = useRef(0);
@@ -156,7 +206,7 @@ function LoginPageContent() {
       const res  = await fetch(apiUrl('/api/auth/check-user'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email }),
+        body: JSON.stringify({ email, captchaToken }),
       });
       const data = await res.json();
       if (res.ok && data.exists) {
@@ -173,7 +223,7 @@ function LoginPageContent() {
         setError('Error checking user. Try again.');
       }
     } catch { setError('Network error'); }
-    finally { setLocalLoading(false); }
+    finally { setLocalLoading(false); resetCaptcha(); }
   }
 
   async function handleRegister(e: { preventDefault(): void }) {
@@ -291,7 +341,13 @@ function LoginPageContent() {
                   </div>
                 )}
 
-                <button type="submit" disabled={isLoading || !email} className={btnCls}>
+                {RECAPTCHA_SITE_KEY && (
+                  <div className="flex justify-center">
+                    <div ref={captchaContainerRef} />
+                  </div>
+                )}
+
+                <button type="submit" disabled={isLoading || !email || (!!RECAPTCHA_SITE_KEY && !captchaToken)} className={btnCls}>
                   {isLoading
                     ? <><Loader2 size={16} className="animate-spin" /> Sending OTP…</>
                     : <><ArrowRight size={16} /> Send OTP</>}

@@ -93,6 +93,51 @@ export default function AgentLoginPage() {
   const [otp, setOtp] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaWidgetId = useRef<number | null>(null);
+  const captchaContainerRef = useRef<HTMLDivElement>(null);
+
+  const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_GOOGLE_RECAPTCHA_SITE_KEY;
+
+  // Load reCAPTCHA script and render widget
+  useEffect(() => {
+    if (!RECAPTCHA_SITE_KEY) return;
+
+    (window as any).__onRecaptchaLoad_agent = () => {
+      if (captchaContainerRef.current && captchaWidgetId.current === null) {
+        captchaWidgetId.current = (window as any).grecaptcha.render(captchaContainerRef.current, {
+          sitekey: RECAPTCHA_SITE_KEY,
+          callback: (token: string) => setCaptchaToken(token),
+          'expired-callback': () => setCaptchaToken(null),
+          theme: 'dark',
+        });
+      }
+    };
+
+    if ((window as any).grecaptcha?.render) {
+      (window as any).__onRecaptchaLoad_agent();
+      return;
+    }
+
+    if (!document.querySelector('script[src*="recaptcha/api.js"]')) {
+      const script = document.createElement('script');
+      script.src = 'https://www.google.com/recaptcha/api.js?onload=__onRecaptchaLoad_agent&render=explicit';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    return () => { delete (window as any).__onRecaptchaLoad_agent; };
+  }, [RECAPTCHA_SITE_KEY]);
+
+  function resetCaptcha() {
+    setCaptchaToken(null);
+    try {
+      if (captchaWidgetId.current !== null && (window as any).grecaptcha) {
+        (window as any).grecaptcha.reset(captchaWidgetId.current);
+      }
+    } catch { /* ignore */ }
+  }
 
   // If already logged in as agent, redirect
   useEffect(() => {
@@ -115,7 +160,7 @@ export default function AgentLoginPage() {
       const checkRes = await fetch(apiUrl('/api/auth/check-user'), {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), captchaToken }),
       });
       const checkData = await checkRes.json();
 
@@ -142,6 +187,7 @@ export default function AgentLoginPage() {
       setError('Network error. Please try again.');
     } finally {
       setLoading(false);
+      resetCaptcha();
     }
   }
 
@@ -226,9 +272,15 @@ export default function AgentLoginPage() {
                 </div>
               </div>
 
+              {RECAPTCHA_SITE_KEY && (
+                <div className="flex justify-center">
+                  <div ref={captchaContainerRef} />
+                </div>
+              )}
+
               <button
                 onClick={handleSendOtp}
-                disabled={loading || !email.trim()}
+                disabled={loading || !email.trim() || (!!RECAPTCHA_SITE_KEY && !captchaToken)}
                 className="w-full py-4 rounded-xl bg-gradient-to-r from-[#1ABC9C] to-[#009CA6] hover:from-[#16A085] hover:to-[#008B94] text-white font-bold text-base shadow-lg shadow-[#1ABC9C]/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (

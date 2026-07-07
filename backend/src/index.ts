@@ -13,6 +13,7 @@ import Fastify, { type FastifyError } from 'fastify';
 import cors from '@fastify/cors';
 import compress from '@fastify/compress';
 import rateLimit from '@fastify/rate-limit';
+import { getClientIp, getRouteRateLimit, getCachedLimit, buildRateLimitErrorResponse } from './lib/rate-limit';
 
 // ─── Route plugins ────────────────────────────────────────────────────────────
 import healthPlugin        from './routes/health';
@@ -79,11 +80,46 @@ async function main() {
 
   await fastify.register(compress, { global: true });
 
-  await fastify.register(rateLimit, {
-    global: false,
-    max: 120,
-    timeWindow: '1 minute',
-  });
+  // ─── Rate Limiting ──────────────────────────────────────────────────────────
+  // Limits are dynamically configurable via the admin console (SystemConfig table).
+  // DB values are cached for 60s — changes take effect without restart.
+  // Priority: DB → env var → hardcoded default.
+  // Set RATE_LIMIT_ENABLED=false in env, or toggle via admin console, to disable.
+  // See backend/src/lib/rate-limit.ts for full configuration and docs.
+  const isRateLimitEnabledAtBoot = (process.env.RATE_LIMIT_ENABLED ?? 'true') !== 'false';
+
+  if (isRateLimitEnabledAtBoot) {
+    await fastify.register(rateLimit, {
+      global: true,
+      // Dynamic global max — reads from DB cache, so admin changes take effect live
+      max: () => getCachedLimit('GLOBAL'),
+      timeWindow: '1 minute',
+      keyGenerator: (request) => getClientIp(request),
+      errorResponseBuilder: buildRateLimitErrorResponse,
+    });
+
+    // Inject per-route rate limit configs based on URL pattern matching.
+    // The `max` on each config is an async function that reads from the
+    // DB-backed cache, so admin console changes take effect within 60s.
+    fastify.addHook('onRoute', (routeOptions) => {
+      const config = getRouteRateLimit(routeOptions.url);
+      if (config) {
+        routeOptions.config = {
+          ...routeOptions.config,
+          rateLimit: config,
+        };
+      }
+    });
+  } else {
+    // Rate limiting disabled at boot — register with global:false so the plugin
+    // is loaded (routes that reference rateLimit config won't break)
+    // but no limits are enforced.
+    await fastify.register(rateLimit, {
+      global: false,
+      max: 120,
+      timeWindow: '1 minute',
+    });
+  }
 
 
   // ─── Routes ─────────────────────────────────────────────────────────────────

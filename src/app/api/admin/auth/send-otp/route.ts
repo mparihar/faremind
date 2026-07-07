@@ -2,14 +2,24 @@ import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 import { createOtp } from '@/lib/admin-auth';
 import { sendAdminOtp } from '@/lib/email';
+import { verifyCaptcha, isRecaptchaEnabled, CAPTCHA_FAILED_RESPONSE } from '@/lib/recaptcha';
 
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
     const email = (body?.email ?? '').trim().toLowerCase();
+    const captchaToken = body?.captchaToken;
 
     if (!email || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
       return NextResponse.json({ error: 'Valid email is required' }, { status: 400 });
+    }
+
+    // Verify reCAPTCHA before proceeding (skipped when RECAPTCHA_ENABLED !== "true")
+    if (isRecaptchaEnabled()) {
+      const captchaValid = await verifyCaptcha(captchaToken);
+      if (!captchaValid) {
+        return NextResponse.json(CAPTCHA_FAILED_RESPONSE, { status: 403 });
+      }
     }
 
     // Step 1 – find admin

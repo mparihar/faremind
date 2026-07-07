@@ -124,6 +124,51 @@ export default function AdminLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError]   = useState('');
   const [success, setSuccess] = useState(false);
+  const [captchaToken, setCaptchaToken] = useState<string | null>(null);
+  const captchaWidgetId = useRef<number | null>(null);
+  const captchaContainerRef = useRef<HTMLDivElement>(null);
+
+  const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_GOOGLE_RECAPTCHA_SITE_KEY;
+
+  // Load reCAPTCHA script and render widget
+  useEffect(() => {
+    if (!RECAPTCHA_SITE_KEY) return;
+
+    (window as any).__onRecaptchaLoad_admin = () => {
+      if (captchaContainerRef.current && captchaWidgetId.current === null) {
+        captchaWidgetId.current = (window as any).grecaptcha.render(captchaContainerRef.current, {
+          sitekey: RECAPTCHA_SITE_KEY,
+          callback: (token: string) => setCaptchaToken(token),
+          'expired-callback': () => setCaptchaToken(null),
+          theme: 'dark',
+        });
+      }
+    };
+
+    if ((window as any).grecaptcha?.render) {
+      (window as any).__onRecaptchaLoad_admin();
+      return;
+    }
+
+    if (!document.querySelector('script[src*="recaptcha/api.js"]')) {
+      const script = document.createElement('script');
+      script.src = 'https://www.google.com/recaptcha/api.js?onload=__onRecaptchaLoad_admin&render=explicit';
+      script.async = true;
+      script.defer = true;
+      document.head.appendChild(script);
+    }
+
+    return () => { delete (window as any).__onRecaptchaLoad_admin; };
+  }, [RECAPTCHA_SITE_KEY]);
+
+  function resetCaptcha() {
+    setCaptchaToken(null);
+    try {
+      if (captchaWidgetId.current !== null && (window as any).grecaptcha) {
+        (window as any).grecaptcha.reset(captchaWidgetId.current);
+      }
+    } catch { /* ignore */ }
+  }
 
   // ── Step 1: Send OTP ────────────────────────────────────────────────────────
 
@@ -135,7 +180,7 @@ export default function AdminLoginPage() {
       const res = await fetch('/api/admin/auth/send-otp', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email.trim().toLowerCase() }),
+        body: JSON.stringify({ email: email.trim().toLowerCase(), captchaToken }),
       });
       const data = await res.json();
       if (!res.ok) { setError(data.error ?? 'Failed to send OTP'); return; }
@@ -145,6 +190,7 @@ export default function AdminLoginPage() {
       setError('Network error — please check your connection and retry');
     } finally {
       setLoading(false);
+      resetCaptcha();
     }
   }
 
@@ -245,9 +291,15 @@ export default function AdminLoginPage() {
                 </p>
               )}
 
+              {RECAPTCHA_SITE_KEY && (
+                <div className="flex justify-center">
+                  <div ref={captchaContainerRef} />
+                </div>
+              )}
+
               <button
                 type="submit"
-                disabled={loading || !email}
+                disabled={loading || !email || (!!RECAPTCHA_SITE_KEY && !captchaToken)}
                 className="w-full py-3 bg-[#1ABC9C] hover:bg-[#1ABC9C]/90 text-white font-bold rounded-xl transition-all disabled:opacity-60 flex items-center justify-center gap-2"
               >
                 {loading

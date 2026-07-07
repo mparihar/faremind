@@ -4,7 +4,7 @@ import { useEffect, useState } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/store/useAdminStore';
 import { useAdminStore } from '@/store/useAdminStore';
-import { Plus, RefreshCw, X, Shield, Eye, EyeOff, Clock, Save, Check } from 'lucide-react';
+import { Plus, RefreshCw, X, Shield, Eye, EyeOff, Clock, Save, Check, Zap } from 'lucide-react';
 
 const ROLES = ['SUPER_ADMIN', 'OPS_ADMIN', 'SUPPORT', 'FINANCE', 'READ_ONLY'];
 const ROLE_COLORS: Record<string, string> = {
@@ -192,6 +192,269 @@ function BookingTimerConfig() {
   );
 }
 
+// ─── Rate Limit Config Card ──────────────────────────────────────────────────
+
+/**
+ * Rate limit endpoint definitions.
+ * Each maps to a SystemConfig key (rate_limit_{key}_per_minute) in the DB.
+ */
+const RATE_LIMIT_ENDPOINTS = [
+  { key: 'login',           label: 'Login / Auth',        defaultVal: 10,  description: 'check-user, verify-otp' },
+  { key: 'signup',          label: 'Signup',              defaultVal: 5,   description: 'register' },
+  { key: 'otp',             label: 'OTP Send / Resend',   defaultVal: 5,   description: 'send-otp, resend-otp' },
+  { key: 'forgot_password', label: 'Forgot Password',     defaultVal: 5,   description: 'password reset' },
+  { key: 'flight_search',   label: 'Flight Search',       defaultVal: 60,  description: 'search, flex-search, fares' },
+  { key: 'booking',         label: 'Booking / Checkout',  defaultVal: 20,  description: 'book, checkout, cancel' },
+  { key: 'payment',         label: 'Payment',             defaultVal: 10,  description: 'payment-intent, confirm' },
+  { key: 'contact',         label: 'Contact / Support',   defaultVal: 10,  description: 'contact form' },
+];
+
+function RateLimitConfig() {
+  const [enabled, setEnabled] = useState(true);
+  const [limits, setLimits] = useState<Record<string, string>>({});
+  const [original, setOriginal] = useState<{ enabled: boolean; limits: Record<string, string> }>({ enabled: true, limits: {} });
+  const [updatedBy, setUpdatedBy] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  async function loadConfig() {
+    setLoading(true);
+    try {
+      const res = await adminFetch('/api/admin/system-config');
+      if (!res.ok) { setLoading(false); return; }
+      const data = await res.json();
+      const configs: any[] = data.configs ?? [];
+
+      // Read enabled flag
+      const enabledConfig = configs.find((c: any) => c.key === 'rate_limit_enabled');
+      const isEnabled = enabledConfig ? enabledConfig.value === 'true' : true;
+      setEnabled(isEnabled);
+
+      // Read per-endpoint limits
+      const loadedLimits: Record<string, string> = {};
+      let latestUpdatedBy: string | null = null;
+      let latestUpdatedAt: string | null = null;
+
+      for (const ep of RATE_LIMIT_ENDPOINTS) {
+        const dbKey = `rate_limit_${ep.key}_per_minute`;
+        const config = configs.find((c: any) => c.key === dbKey);
+        loadedLimits[ep.key] = config ? config.value : String(ep.defaultVal);
+
+        if (config?.updatedAt) {
+          if (!latestUpdatedAt || new Date(config.updatedAt) > new Date(latestUpdatedAt)) {
+            latestUpdatedAt = config.updatedAt;
+            latestUpdatedBy = config.updatedBy ?? null;
+          }
+        }
+      }
+
+      // Check if enabled config has a more recent update
+      if (enabledConfig?.updatedAt) {
+        if (!latestUpdatedAt || new Date(enabledConfig.updatedAt) > new Date(latestUpdatedAt)) {
+          latestUpdatedAt = enabledConfig.updatedAt;
+          latestUpdatedBy = enabledConfig.updatedBy ?? null;
+        }
+      }
+
+      setLimits(loadedLimits);
+      setOriginal({ enabled: isEnabled, limits: { ...loadedLimits } });
+      setUpdatedBy(latestUpdatedBy);
+      setUpdatedAt(latestUpdatedAt);
+    } catch {
+      // ignore
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { loadConfig(); }, []);
+
+  function hasChanges(): boolean {
+    if (enabled !== original.enabled) return true;
+    for (const ep of RATE_LIMIT_ENDPOINTS) {
+      if (limits[ep.key] !== original.limits[ep.key]) return true;
+    }
+    return false;
+  }
+
+  async function saveAll() {
+    setError('');
+    setSaving(true);
+    setSaved(false);
+
+    try {
+      // Save enabled flag
+      if (enabled !== original.enabled) {
+        const res = await adminFetch('/api/admin/system-config', {
+          method: 'PUT',
+          body: JSON.stringify({
+            key: 'rate_limit_enabled',
+            value: String(enabled),
+            description: 'Global rate limiting toggle',
+          }),
+        });
+        if (!res.ok) {
+          const data = await res.json();
+          setError(data.error ?? 'Failed to save enabled flag');
+          setSaving(false);
+          return;
+        }
+      }
+
+      // Save changed limits
+      for (const ep of RATE_LIMIT_ENDPOINTS) {
+        if (limits[ep.key] !== original.limits[ep.key]) {
+          const res = await adminFetch('/api/admin/system-config', {
+            method: 'PUT',
+            body: JSON.stringify({
+              key: `rate_limit_${ep.key}_per_minute`,
+              value: limits[ep.key],
+              description: `Rate limit: ${ep.label} (requests per minute)`,
+            }),
+          });
+          if (!res.ok) {
+            const data = await res.json();
+            setError(data.error ?? `Failed to save ${ep.label}`);
+            setSaving(false);
+            return;
+          }
+        }
+      }
+
+      // Refresh from DB to get latest updatedBy/updatedAt
+      await loadConfig();
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to save');
+    }
+    setSaving(false);
+  }
+
+  if (loading) {
+    return (
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-6">
+        <div className="flex items-center justify-center py-6">
+          <RefreshCw size={20} className="text-[#1ABC9C] animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-700/50 flex items-center justify-between">
+        <div className="flex items-center gap-3">
+          <Zap size={16} className="text-amber-400" />
+          <h2 className="text-white font-bold text-sm">API Rate Limiting</h2>
+        </div>
+        {/* Global toggle */}
+        <button
+          onClick={() => setEnabled(!enabled)}
+          className={`relative w-11 h-6 rounded-full transition-colors duration-200 ${
+            enabled ? 'bg-[#1ABC9C]' : 'bg-slate-600'
+          }`}
+        >
+          <span
+            className={`absolute top-0.5 left-0.5 w-5 h-5 bg-white rounded-full shadow transition-transform duration-200 ${
+              enabled ? 'translate-x-5' : 'translate-x-0'
+            }`}
+          />
+        </button>
+      </div>
+
+      <div className="px-5 py-5 space-y-4">
+        <p className="text-xs text-slate-400 leading-relaxed">
+          Configure per-endpoint rate limits (requests per minute per IP).
+          Changes take effect within 60 seconds on the backend without restart.
+        </p>
+
+        {!enabled && (
+          <div className="bg-amber-400/10 border border-amber-400/20 rounded-lg px-3 py-2">
+            <p className="text-amber-400 text-xs font-medium">
+              ⚠ Rate limiting is disabled. All API endpoints are unprotected.
+            </p>
+          </div>
+        )}
+
+        {/* Endpoint limits table */}
+        <div className={`space-y-0 rounded-xl border border-slate-700/50 overflow-hidden ${!enabled ? 'opacity-50 pointer-events-none' : ''}`}>
+          {RATE_LIMIT_ENDPOINTS.map((ep, i) => (
+            <div
+              key={ep.key}
+              className={`flex items-center justify-between px-4 py-3 ${
+                i < RATE_LIMIT_ENDPOINTS.length - 1 ? 'border-b border-slate-700/30' : ''
+              } hover:bg-white/[0.02] transition-colors`}
+            >
+              <div className="flex-1 min-w-0">
+                <p className="text-white text-sm font-semibold">{ep.label}</p>
+                <p className="text-slate-500 text-[10px] mt-0.5">{ep.description}</p>
+              </div>
+              <div className="flex items-center gap-2 ml-4">
+                <input
+                  type="number"
+                  min={1}
+                  max={10000}
+                  value={limits[ep.key] ?? ep.defaultVal}
+                  onChange={e => {
+                    const v = e.target.value;
+                    setLimits(prev => ({ ...prev, [ep.key]: v }));
+                  }}
+                  className="w-20 px-2 py-1.5 bg-slate-700 border border-slate-600 rounded-lg text-white text-sm font-bold text-center focus:outline-none focus:border-[#1ABC9C] transition-all tabular-nums"
+                />
+                <span className="text-slate-500 text-[10px] font-medium whitespace-nowrap">/min</span>
+              </div>
+            </div>
+          ))}
+        </div>
+
+        {/* Save button + defaults hint */}
+        <div className="flex items-center justify-between pt-1">
+          <p className="text-[10px] text-slate-600">Default values are OTA-standard relaxed limits</p>
+          <button
+            onClick={saveAll}
+            disabled={saving || !hasChanges()}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              saved
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                : hasChanges()
+                  ? 'bg-[#1ABC9C] hover:bg-[#1ABC9C]/90 text-white'
+                  : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            {saved ? (
+              <><Check size={14} /> Saved</>
+            ) : saving ? (
+              <><RefreshCw size={14} className="animate-spin" /> Saving…</>
+            ) : (
+              <><Save size={14} /> Save Changes</>
+            )}
+          </button>
+        </div>
+
+        {/* Error */}
+        {error && (
+          <p className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        {/* Last updated info */}
+        {updatedBy && (
+          <div className="flex items-center gap-2 text-[11px] text-slate-500 pt-1">
+            <span>Last updated by <span className="text-slate-400 font-medium">{updatedBy}</span></span>
+            {updatedAt && (
+              <span>· {new Date(updatedAt).toLocaleString()}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Main Page ────────────────────────────────────────────────────────────────
 
 export default function SettingsPage() {
@@ -252,6 +515,11 @@ export default function SettingsPage() {
       {/* Booking Timer Configuration */}
       <div className="mb-6">
         <BookingTimerConfig />
+      </div>
+
+      {/* Rate Limit Configuration */}
+      <div className="mb-6">
+        <RateLimitConfig />
       </div>
 
       {/* New user modal */}
