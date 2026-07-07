@@ -292,8 +292,10 @@ export default function AdminLoginPage() {
               )}
 
               {RECAPTCHA_SITE_KEY && (
-                <div className="w-full rounded-xl overflow-hidden">
-                  <div ref={captchaContainerRef} className="flex justify-center [&>div]:!w-full [&_iframe]:!w-full" />
+                <div className="flex justify-center">
+                  <div className="rounded-xl overflow-hidden">
+                    <div ref={captchaContainerRef} />
+                  </div>
                 </div>
               )}
 
