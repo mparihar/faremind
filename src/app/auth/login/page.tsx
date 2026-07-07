@@ -88,13 +88,24 @@ function OtpInput({ value, onChange, disabled }: {
 
 // ── Resend Timer ──────────────────────────────────────────────────────────────
 
-function ResendTimer({ onResend }: { onResend: () => void }) {
+function ResendTimer({ onResend }: { onResend: () => Promise<void> | void }) {
   const [secs, setSecs] = useState(30);
+  const [resending, setResending] = useState(false);
+  const [resent, setResent] = useState(false);
 
   useEffect(() => {
+    if (secs <= 0) return;
     const id = setInterval(() => setSecs(s => Math.max(0, s - 1)), 1000);
     return () => clearInterval(id);
-  }, []);
+  }, [secs]);
+
+  if (resent) {
+    return (
+      <p className="text-[#1ABC9C] text-sm text-center font-semibold">
+        ✓ OTP resent successfully
+      </p>
+    );
+  }
 
   if (secs > 0) {
     return (
@@ -107,11 +118,21 @@ function ResendTimer({ onResend }: { onResend: () => void }) {
   return (
     <button
       type="button"
-      onClick={onResend}
-      className="flex items-center gap-1.5 mx-auto text-[#1ABC9C] text-sm font-bold hover:underline transition-all"
+      disabled={resending}
+      onClick={async () => {
+        setResending(true);
+        try { await onResend(); } catch { /* silent */ }
+        setResending(false);
+        setResent(true);
+        setTimeout(() => { setResent(false); setSecs(30); }, 3000);
+      }}
+      className="flex items-center gap-1.5 mx-auto text-[#1ABC9C] text-sm font-bold hover:underline transition-all disabled:opacity-60"
     >
-      <RefreshCw size={13} />
-      Resend OTP
+      {resending ? (
+        <><Loader2 size={13} className="animate-spin" /> Resending…</>
+      ) : (
+        <><RefreshCw size={13} /> Resend OTP</>
+      )}
     </button>
   );
 }
