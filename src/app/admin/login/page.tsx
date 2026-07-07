@@ -138,7 +138,6 @@ export default function AdminLoginPage() {
       if (turnstileContainerRef.current && !turnstileWidgetId.current && (window as any).turnstile) {
         turnstileWidgetId.current = (window as any).turnstile.render(turnstileContainerRef.current, {
           sitekey: TURNSTILE_SITE_KEY,
-          size: 'compact',
           callback: (token: string) => setCaptchaToken(token),
           'expired-callback': () => setCaptchaToken(null),
           theme: 'dark',
@@ -295,7 +294,7 @@ export default function AdminLoginPage() {
               )}
 
               {TURNSTILE_SITE_KEY && (
-                <div className="flex justify-end">
+                <div className="w-full [&_iframe]:!w-full [&>div]:!w-full">
                   <div ref={turnstileContainerRef} />
                 </div>
               )}
