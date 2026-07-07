@@ -1,7 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { createHash, randomBytes } from 'crypto';
 import prisma from '../lib/db';
-import { verifyCaptcha, isRecaptchaEnabled, CAPTCHA_FAILED_RESPONSE } from '../lib/recaptcha';
+import { verifyTurnstile, isTurnstileEnabled, TURNSTILE_FAILED_RESPONSE } from '../lib/turnstile';
 
 const BREVO_URL    = 'https://api.brevo.com/v3/smtp/email';
 const SENDER_EMAIL = process.env.BREVO_SENDER_EMAIL ?? 'noreply@faremind.ai';
@@ -95,11 +95,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const { email, captchaToken } = request.body as { email?: string; captchaToken?: string };
       if (!email) return reply.code(400).send({ error: 'Email is required' });
 
-      // Verify reCAPTCHA before proceeding (skipped when RECAPTCHA_ENABLED !== "true")
-      if (isRecaptchaEnabled()) {
-        const captchaValid = await verifyCaptcha(captchaToken);
-        if (!captchaValid) {
-          return reply.code(403).send(CAPTCHA_FAILED_RESPONSE);
+      // Verify Cloudflare Turnstile before proceeding (skipped when TURNSTILE_ENABLED !== "true")
+      if (isTurnstileEnabled()) {
+        const turnstileValid = await verifyTurnstile(captchaToken);
+        if (!turnstileValid) {
+          return reply.code(400).send(TURNSTILE_FAILED_RESPONSE);
         }
       }
 

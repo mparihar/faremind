@@ -94,47 +94,49 @@ export default function AgentLoginPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [captchaToken, setCaptchaToken] = useState<string | null>(null);
-  const captchaWidgetId = useRef<number | null>(null);
-  const captchaContainerRef = useRef<HTMLDivElement>(null);
+  const turnstileWidgetId = useRef<string | null>(null);
+  const turnstileContainerRef = useRef<HTMLDivElement>(null);
 
-  const RECAPTCHA_SITE_KEY = process.env.NEXT_PUBLIC_GOOGLE_RECAPTCHA_SITE_KEY;
+  const TURNSTILE_SITE_KEY = process.env.NEXT_PUBLIC_TURNSTILE_SITE_KEY;
 
-  // Load reCAPTCHA script and render widget
+  // Load Cloudflare Turnstile script and render widget
   useEffect(() => {
-    if (!RECAPTCHA_SITE_KEY) return;
+    if (!TURNSTILE_SITE_KEY) return;
 
-    (window as any).__onRecaptchaLoad_agent = () => {
-      if (captchaContainerRef.current && captchaWidgetId.current === null) {
-        captchaWidgetId.current = (window as any).grecaptcha.render(captchaContainerRef.current, {
-          sitekey: RECAPTCHA_SITE_KEY,
+    function renderWidget() {
+      if (turnstileContainerRef.current && !turnstileWidgetId.current && (window as any).turnstile) {
+        turnstileWidgetId.current = (window as any).turnstile.render(turnstileContainerRef.current, {
+          sitekey: TURNSTILE_SITE_KEY,
           callback: (token: string) => setCaptchaToken(token),
           'expired-callback': () => setCaptchaToken(null),
           theme: 'dark',
         });
       }
-    };
+    }
 
-    if ((window as any).grecaptcha?.render) {
-      (window as any).__onRecaptchaLoad_agent();
+    if ((window as any).turnstile) {
+      renderWidget();
       return;
     }
 
-    if (!document.querySelector('script[src*="recaptcha/api.js"]')) {
+    (window as any).__onTurnstileLoad_agent = renderWidget;
+
+    if (!document.querySelector('script[src*="challenges.cloudflare.com/turnstile"]')) {
       const script = document.createElement('script');
-      script.src = 'https://www.google.com/recaptcha/api.js?onload=__onRecaptchaLoad_agent&render=explicit';
+      script.src = 'https://challenges.cloudflare.com/turnstile/v0/api.js?onload=__onTurnstileLoad_agent&render=explicit';
       script.async = true;
       script.defer = true;
       document.head.appendChild(script);
     }
 
-    return () => { delete (window as any).__onRecaptchaLoad_agent; };
-  }, [RECAPTCHA_SITE_KEY]);
+    return () => { delete (window as any).__onTurnstileLoad_agent; };
+  }, [TURNSTILE_SITE_KEY]);
 
   function resetCaptcha() {
     setCaptchaToken(null);
     try {
-      if (captchaWidgetId.current !== null && (window as any).grecaptcha) {
-        (window as any).grecaptcha.reset(captchaWidgetId.current);
+      if (turnstileWidgetId.current && (window as any).turnstile) {
+        (window as any).turnstile.reset(turnstileWidgetId.current);
       }
     } catch { /* ignore */ }
   }
@@ -272,17 +274,15 @@ export default function AgentLoginPage() {
                 </div>
               </div>
 
-              {RECAPTCHA_SITE_KEY && (
+              {TURNSTILE_SITE_KEY && (
                 <div className="flex justify-center">
-                  <div className="rounded-xl overflow-hidden">
-                    <div ref={captchaContainerRef} />
-                  </div>
+                  <div ref={turnstileContainerRef} />
                 </div>
               )}
 
               <button
                 onClick={handleSendOtp}
-                disabled={loading || !email.trim() || (!!RECAPTCHA_SITE_KEY && !captchaToken)}
+                disabled={loading || !email.trim() || (!!TURNSTILE_SITE_KEY && !captchaToken)}
                 className="w-full py-4 rounded-xl bg-gradient-to-r from-[#1ABC9C] to-[#009CA6] hover:from-[#16A085] hover:to-[#008B94] text-white font-bold text-base shadow-lg shadow-[#1ABC9C]/25 transition-all flex items-center justify-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {loading ? (
