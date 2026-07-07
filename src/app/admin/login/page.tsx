@@ -295,9 +295,7 @@ export default function AdminLoginPage() {
 
               {TURNSTILE_SITE_KEY && (
                 <div className="flex justify-center">
-                  <div className="bg-slate-800 rounded-xl overflow-hidden">
-                    <div ref={turnstileContainerRef} />
-                  </div>
+                  <div ref={turnstileContainerRef} />
                 </div>
               )}
 
