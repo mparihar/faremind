@@ -342,7 +342,7 @@ function LoginPageContent() {
                 )}
 
                 {RECAPTCHA_SITE_KEY && (
-                  <div className="w-full rounded-xl overflow-hidden" style={{ background: 'linear-gradient(to right, #1ABC9C, #009CA6)' }}>
+                  <div className="w-full rounded-xl overflow-hidden">
                     <div ref={captchaContainerRef} className="flex justify-center [&>div]:!w-full [&_iframe]:!w-full" />
                   </div>
                 )}
