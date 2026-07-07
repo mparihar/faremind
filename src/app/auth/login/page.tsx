@@ -339,7 +339,7 @@ function LoginPageContent() {
                 )}
 
                 {TURNSTILE_SITE_KEY && (
-                  <div className="flex justify-center">
+                  <div className="w-full [&_iframe]:!w-full [&>div]:!w-full">
                     <div ref={turnstileContainerRef} />
                   </div>
                 )}
