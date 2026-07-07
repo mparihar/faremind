@@ -340,7 +340,9 @@ function LoginPageContent() {
 
                 {TURNSTILE_SITE_KEY && (
                   <div className="flex justify-center">
-                    <div ref={turnstileContainerRef} />
+                    <div className="bg-slate-800 rounded-xl overflow-hidden">
+                      <div ref={turnstileContainerRef} />
+                    </div>
                   </div>
                 )}
 
