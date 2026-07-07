@@ -273,10 +273,8 @@ export default function AgentLoginPage() {
               </div>
 
               {RECAPTCHA_SITE_KEY && (
-                <div className="w-full rounded-xl bg-gradient-to-r from-[#1ABC9C] to-[#009CA6] p-[2px] overflow-hidden">
-                  <div className="w-full rounded-[10px] bg-gradient-to-r from-[#1ABC9C]/20 to-[#009CA6]/20 flex items-center justify-center py-2">
-                    <div ref={captchaContainerRef} style={{ transform: 'scale(0.95)', transformOrigin: 'center' }} />
-                  </div>
+                <div className="w-full rounded-xl overflow-hidden" style={{ background: 'linear-gradient(to right, #1ABC9C, #009CA6)' }}>
+                  <div ref={captchaContainerRef} className="flex justify-center [&>div]:!w-full [&_iframe]:!w-full" />
                 </div>
               )}
 
