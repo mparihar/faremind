@@ -292,8 +292,10 @@ export default function AdminLoginPage() {
               )}
 
               {RECAPTCHA_SITE_KEY && (
-                <div className="flex justify-center">
-                  <div ref={captchaContainerRef} />
+                <div className="w-full rounded-xl bg-gradient-to-r from-[#1ABC9C] to-[#009CA6] p-[2px] overflow-hidden">
+                  <div className="w-full rounded-[10px] bg-gradient-to-r from-[#1ABC9C]/20 to-[#009CA6]/20 flex items-center justify-center py-2">
+                    <div ref={captchaContainerRef} style={{ transform: 'scale(0.95)', transformOrigin: 'center' }} />
+                  </div>
                 </div>
               )}
 
