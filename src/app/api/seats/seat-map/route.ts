@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getSeatMaps } from '@/lib/providers/duffel';
+import { getSeatMaps, getOffer } from '@/lib/providers/duffel';
 import type {
   DuffelSeatMap,
   DuffelSeatMapCabin,
@@ -16,7 +16,11 @@ import type {
 
 // ── In-memory cache (5-min TTL) ───────────────────────────────────────────────
 
-interface CachedSeatData { seatMaps: SegmentSeatMap[]; seatSelectionSupported: boolean }
+interface CachedSeatData {
+  seatMaps: SegmentSeatMap[];
+  seatSelectionSupported: boolean;
+  wheelchairSupported: boolean;
+}
 const cache = new Map<string, { data: CachedSeatData; expiresAt: number }>();
 
 function getCached(key: string): CachedSeatData | null {
@@ -157,6 +161,28 @@ function checkSeatSelectionFromMaps(seatMaps: SegmentSeatMap[]): boolean {
   return false;
 }
 
+// ── Wheelchair / assistance service detection ────────────────────────────────
+// Duffel's available_services may include wheelchair or assistance type services.
+// We check the offer to see if the provider supports these through the API.
+
+const WHEELCHAIR_SERVICE_TYPES = new Set([
+  'wheelchair', 'assistance', 'special_assistance',
+  'wheelchair_assistance', 'mobility', 'ssr',
+]);
+
+async function checkWheelchairSupported(offerId: string): Promise<boolean> {
+  try {
+    const offer = await getOffer(offerId);
+    const services = offer.available_services ?? [];
+    return services.some(
+      s => WHEELCHAIR_SERVICE_TYPES.has(s.type?.toLowerCase() ?? ''),
+    );
+  } catch {
+    // If we can't check (e.g. offer expired), assume not supported
+    return false;
+  }
+}
+
 // ── Route ─────────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -178,23 +204,26 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const raw = await getSeatMaps(id, type);
+    // Fetch seat maps and (for offers) check wheelchair support in parallel
+    const [raw, wheelchairSupported] = await Promise.all([
+      getSeatMaps(id, type),
+      type === 'offer' ? checkWheelchairSupported(id) : Promise.resolve(false),
+    ]);
+
     const seatMaps = raw.map(transformSeatMap);
 
     // Determine seat selection support from the actual seat map data.
-    // If any seat has available_services, the airline supports seat selection.
     const seatSelectionSupported = seatMaps.length > 0 && checkSeatSelectionFromMaps(seatMaps);
 
-    const result: CachedSeatData = { seatMaps, seatSelectionSupported };
+    const result: CachedSeatData = { seatMaps, seatSelectionSupported, wheelchairSupported };
     setCached(cacheKey, result);
     return NextResponse.json({ ...result, cached: false });
   } catch (error) {
     const errMsg = (error as Error).message;
     console.error(`[Seat Map] API error for ${type} ${id}: ${errMsg}`);
-    // Return empty array — seats page shows preference-selector fallback
     return NextResponse.json(
-      { seatMaps: [], seatSelectionSupported: false, error: `Seat map unavailable: ${errMsg}` },
-      { status: 200 }, // 200 so the frontend can handle gracefully
+      { seatMaps: [], seatSelectionSupported: false, wheelchairSupported: false, error: `Seat map unavailable: ${errMsg}` },
+      { status: 200 },
     );
   }
 }

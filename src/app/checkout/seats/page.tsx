@@ -612,6 +612,8 @@ export default function SeatsPage() {
   const [seatMaps, setSeatMaps]             = useState<SegmentSeatMap[]>([]);
   const [loadingMap, setLoadingMap]         = useState(true);
   const [mapError, setMapError]             = useState<string | null>(null);
+  const [seatSelectionSupported, setSeatSelectionSupported] = useState(true);
+  const [wheelchairSupported, setWheelchairSupported] = useState(false);
   const [activeSegIdx, setActiveSegIdx]     = useState(0);
   const [activePaxIdx, setActivePaxIdx]     = useState(0);
   const [activeCabinIdx, setActiveCabinIdx] = useState(0);
@@ -634,8 +636,10 @@ export default function SeatsPage() {
     setLoadingMap(true);
     fetch(`/api/seats/seat-map?offer_id=${encodeURIComponent(selectedFare.offerId)}`)
       .then(r => r.json())
-      .then((data: { seatMaps: SegmentSeatMap[]; error?: string }) => {
+      .then((data: { seatMaps: SegmentSeatMap[]; seatSelectionSupported?: boolean; wheelchairSupported?: boolean; error?: string }) => {
         setSeatMaps(data.seatMaps ?? []);
+        setSeatSelectionSupported(data.seatSelectionSupported ?? true);
+        setWheelchairSupported(data.wheelchairSupported ?? false);
         if (data.error) setMapError(data.error);
       })
       .catch(() => setMapError('Could not load seat map.'))
@@ -648,9 +652,9 @@ export default function SeatsPage() {
   const currency = selectedFare.currency ?? 'USD';
   const activeSeg = segments[activeSegIdx];
 
-  // Does this segment have a real seat map?
+  // Does this segment have a real, bookable seat map?
   const activeSeatMap = seatMaps[activeSegIdx];
-  const hasSeatMap = !loadingMap && !!activeSeatMap?.cabins?.[0]?.rows?.length;
+  const hasSeatMap = !loadingMap && seatSelectionSupported && !!activeSeatMap?.cabins?.[0]?.rows?.length;
 
   // ── Auto-advance to next segment when all passengers are done ───────────────
   const autoAdvanceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -931,13 +935,20 @@ export default function SeatsPage() {
               {/* Seat map unavailable — show preference selector */}
               {!loadingMap && !hasSeatMap && activeSeg && (
                 <div className="space-y-5">
-                  {mapError && (
+                  {!seatSelectionSupported ? (
+                    <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs">
+                      <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
+                      <span>
+                        <span className="font-semibold">Seat selection is not available</span> for this airline/fare through our booking system.
+                        Your seat will be assigned by the airline — you can select or change your seat during online check-in or at the airport.
+                      </span>
+                    </div>
+                  ) : mapError ? (
                     <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50 border border-amber-200 text-amber-700 text-xs">
                       <AlertCircle className="w-4 h-4 shrink-0 mt-0.5" />
                       <span>Interactive seat map is not available for this flight. Select your preference below.</span>
                     </div>
-                  )}
-                  {!mapError && (
+                  ) : (
                     <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-[#FEF2F2] border border-[#FCA5A5] text-[#B91C1C] text-xs">
                       <Info className="w-4 h-4 shrink-0 mt-0.5" />
                       <span>Seat map not available. Choose your seating preference and the airline will assign a matching seat.</span>
@@ -1033,13 +1044,37 @@ export default function SeatsPage() {
             </div>
 
             {/* Wheelchair Assistance — per segment */}
-            {activeSeg && !loadingMap && (
+            {activeSeg && !loadingMap && wheelchairSupported && (
               <WheelchairAssistancePanel
                 segment={activeSeg}
                 passengers={seatEligiblePax}
                 wheelchairSelections={wheelchairSelections}
                 onSelect={updateWheelchairSelection}
               />
+            )}
+
+            {/* Wheelchair Not Available message */}
+            {activeSeg && !loadingMap && !wheelchairSupported && (
+              <div className="rounded-2xl border border-slate-200 bg-white shadow-sm overflow-hidden">
+                <div className="px-5 py-4 flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-xl bg-slate-100 flex items-center justify-center shrink-0">
+                    <span className="text-lg">♿</span>
+                  </div>
+                  <div>
+                    <p className="text-sm font-bold text-slate-900">Wheelchair Assistance</p>
+                    <p className="text-xs text-slate-400">Not available through our booking system</p>
+                  </div>
+                </div>
+                <div className="px-5 pb-4">
+                  <div className="flex items-start gap-2.5 p-3.5 rounded-xl bg-amber-50 border border-amber-200">
+                    <Info className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+                    <p className="text-xs text-amber-700 leading-relaxed">
+                      Wheelchair and special assistance requests are not available through our booking system for this airline.
+                      Please contact the airline directly or request assistance during online check-in.
+                    </p>
+                  </div>
+                </div>
+              </div>
             )}
 
             {/* Info banner */}
