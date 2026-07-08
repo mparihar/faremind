@@ -210,9 +210,9 @@ export default function SupportPage() {
               <p className="text-white font-bold text-base">Direct Contact</p>
             </div>
             <div className="space-y-2">
-              <a href="tel:+19726971532" className="flex items-center gap-2 text-[#1ABC9C] font-bold text-sm hover:underline">
+              <a href="tel:+19453695543" className="flex items-center gap-2 text-[#1ABC9C] font-bold text-sm hover:underline">
                 <Phone size={14} />
-                +1 (972) 697-1532
+                +1 (945) 369-5543
               </a>
               <a href="mailto:support@faremind.ai" className="flex items-center gap-2 text-[#1ABC9C] font-bold text-sm hover:underline">
                 <Mail size={14} />

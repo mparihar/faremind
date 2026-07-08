@@ -309,7 +309,7 @@ export default function AiContactSupportFlow({ onExit }: Props) {
         setStep('review');
       }
     } catch {
-      setError('Network error. Please try again or call +1 (972) 697-1532.');
+      setError('Network error. Please try again or call +1 (945) 369-5543.');
       setStep('review');
     }
   }
@@ -720,7 +720,7 @@ export default function AiContactSupportFlow({ onExit }: Props) {
                 <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200 text-left">
                   <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
                   <p className="text-[10px] text-amber-700 leading-snug">
-                    For the fastest response, you can also reach us directly at <strong>+1 (972) 697-1532</strong>.
+                    For the fastest response, you can also reach us directly at <strong>+1 (945) 369-5543</strong>.
                   </p>
                 </div>
               )}

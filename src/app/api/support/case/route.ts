@@ -130,7 +130,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error('[support/case] POST error:', err);
     return NextResponse.json(
-      { error: 'Failed to create support case. Please try again or call +1 (972) 697-1532 directly.' },
+      { error: 'Failed to create support case. Please try again or call +1 (945) 369-5543 directly.' },
       { status: 500 }
     );
   }

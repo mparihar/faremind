@@ -20,7 +20,7 @@ function stripPhone(raw: string): string {
   return raw.replace(/[^\d+]/g, '');
 }
 
-/** Format phone for display: +1 (972) 697-1532 style */
+/** Format phone for display: +1 (945) 369-5543 style */
 function formatPhoneDisplay(raw: string): string {
   const stripped = stripPhone(raw);
   if (stripped.startsWith('+1') && stripped.length >= 12) {
@@ -141,7 +141,7 @@ export default function WhatsAppUrgentSupport({ defaultName, defaultEmail }: Pro
         setError(data.error || 'Something went wrong. Please try again.');
       }
     } catch {
-      setError('Network error. Please try again or call +1 (972) 697-1532.');
+      setError('Network error. Please try again or call +1 (945) 369-5543.');
     }
     setSending(false);
   }

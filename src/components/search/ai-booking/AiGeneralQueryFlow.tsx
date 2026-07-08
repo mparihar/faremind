@@ -188,7 +188,7 @@ export default function AiGeneralQueryFlow({ onExit, onContactSupport }: Props) 
       } else {
         const botMsg: ChatMessage = {
           role: 'assistant',
-          content: 'I apologize, I\'m temporarily unavailable. Please try again or contact FareMind Support at +1 (972) 697-1532.',
+          content: 'I apologize, I\'m temporarily unavailable. Please try again or contact FareMind Support at +1 (945) 369-5543.',
         };
         setMessages(prev => [...prev, botMsg]);
       }
@@ -238,14 +238,14 @@ export default function AiGeneralQueryFlow({ onExit, onContactSupport }: Props) 
       } else {
         const errMsg: ChatMessage = {
           role: 'assistant',
-          content: 'Sorry, I couldn\'t create a support case right now. Please contact FareMind Support directly at +1 (972) 697-1532.',
+          content: 'Sorry, I couldn\'t create a support case right now. Please contact FareMind Support directly at +1 (945) 369-5543.',
         };
         setMessages(prev => [...prev, errMsg]);
       }
     } catch {
       const errMsg: ChatMessage = {
         role: 'assistant',
-        content: 'Network error while creating support case. Please try again or call +1 (972) 697-1532.',
+        content: 'Network error while creating support case. Please try again or call +1 (945) 369-5543.',
       };
       setMessages(prev => [...prev, errMsg]);
     }

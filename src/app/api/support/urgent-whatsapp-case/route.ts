@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
-const FALLBACK_WHATSAPP_NUMBER = '19726971532';
+const FALLBACK_WHATSAPP_NUMBER = '19453695543';
 
 /**
  * Public API — no auth required.
@@ -106,7 +106,7 @@ export async function POST(req: NextRequest) {
   } catch (err: any) {
     console.error('[urgent-whatsapp-case] POST error:', err);
     return NextResponse.json(
-      { error: 'Failed to create urgent support case. Please call +1 (972) 697-1532 directly.' },
+      { error: 'Failed to create urgent support case. Please call +1 (945) 369-5543 directly.' },
       { status: 500 }
     );
   }
