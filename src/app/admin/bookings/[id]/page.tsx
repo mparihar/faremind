@@ -11,7 +11,6 @@ import {
   Shield, Armchair, UtensilsCrossed, AlertTriangle,
 } from 'lucide-react';
 import { format } from 'date-fns';
-import ProviderSupportCard from '@/components/admin/ProviderSupportCard';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -1856,9 +1855,6 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           )}
         </div>
       )}
-
-      {/* ── Provider Support (Duffel Assistant) — internal only ── */}
-      <ProviderSupportCard booking={booking} />
 
     </div>
   );

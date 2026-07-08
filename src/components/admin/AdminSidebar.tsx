@@ -6,7 +6,7 @@ import { useAdminStore } from '@/store/useAdminStore';
 import {
   LayoutDashboard, BookOpen, Users2, DollarSign,
   ScrollText, Bell, Settings, LogOut, Shield, ChevronRight,
-  Brain, UserRoundSearch, AlertTriangle, Headset, Mail,
+  Brain, UserRoundSearch, AlertTriangle, Headset, Mail, MessageCircle,
 } from 'lucide-react';
 import type { AdminRole } from '@/store/useAdminStore';
 
@@ -28,6 +28,7 @@ const NAV: NavItem[] = [
   { href: '/admin/ai-settings',          label: 'AI Settings',          icon: Brain,      minRole: 'OPS_ADMIN' },
   { href: '/admin/audit-logs',           label: 'Audit Logs',           icon: ScrollText, minRole: 'SUPPORT' },
   { href: '/admin/support-queue',        label: 'Support Queue',        icon: Headset, minRole: 'SUPPORT' },
+  { href: '/admin/duffel-assistant',      label: 'Duffel Assistant',     icon: MessageCircle, minRole: 'SUPPORT' },
   { href: '/admin/email-history',        label: 'Email History',        icon: Mail, minRole: 'SUPPORT' },
   { href: '/admin/admin-users',          label: 'Admin Users',          icon: Shield, minRole: 'SUPER_ADMIN' },
   { href: '/admin/settings',             label: 'Settings',             icon: Settings, minRole: 'SUPER_ADMIN' },
