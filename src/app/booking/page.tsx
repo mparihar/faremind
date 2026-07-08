@@ -381,10 +381,54 @@ const MEAL_OPTS: { key: MealPref; label: string; desc: string }[] = [
   { key: 'none',       label: 'No Meal',    desc: 'Skip in-flight service' },
 ];
 
-function MealStep({ segs, prefs, onSet, onNext }: {
-  segs: DisplaySegment[]; prefs: Record<string, MealPref>;
+function MealStep({ segs, prefs, offerId, onSet, onNext }: {
+  segs: DisplaySegment[]; prefs: Record<string, MealPref>; offerId?: string;
   onSet: (k: string, p: MealPref) => void; onNext: () => void;
 }) {
+  const [mealsSupported, setMealsSupported] = useState<boolean | null>(null); // null = loading
+
+  useEffect(() => {
+    if (!offerId) { setMealsSupported(false); return; }
+    fetch(`/api/meals?offer_id=${encodeURIComponent(offerId)}&provider=duffel`)
+      .then(r => r.json())
+      .then((data: { mealsSupported?: boolean }) => setMealsSupported(data.mealsSupported ?? false))
+      .catch(() => setMealsSupported(false));
+  }, [offerId]);
+
+  // Loading state
+  if (mealsSupported === null) {
+    return (
+      <div className={CARD_CLS}>
+        <div className="flex justify-center py-12"><Loader2 className="w-6 h-6 text-[#1ABC9C] animate-spin" /></div>
+      </div>
+    );
+  }
+
+  // Not supported by provider
+  if (!mealsSupported) {
+    return (
+      <>
+        <div className={CARD_CLS}>
+          <h2 className="text-lg font-bold text-slate-900 mb-1">Meal Preferences</h2>
+          <div className="flex flex-col items-center py-8">
+            <div className="w-12 h-12 rounded-2xl bg-slate-100 flex items-center justify-center mb-3">
+              <Utensils className="w-6 h-6 text-slate-400" />
+            </div>
+            <p className="text-sm font-semibold text-slate-700 mb-1">Meal Selection Not Available</p>
+            <p className="text-xs text-slate-500 text-center max-w-sm">
+              This airline does not offer meal selection through our booking system.
+              Complimentary snacks and beverages may be available on board.
+            </p>
+          </div>
+        </div>
+        <button onClick={onNext} className={CTA_CLS}>
+          Continue to Add-ons <ChevronRight className="w-4 h-4" />
+        </button>
+      </>
+    );
+  }
+
+  // Provider supports meals — show preference tiles
   return (
     <>
       <div className={CARD_CLS}>
@@ -431,11 +475,33 @@ function MealStep({ segs, prefs, onSet, onNext }: {
 
 // ─── Step 3: Extras ───────────────────────────────────────────────────────────
 
-function ExtrasStep({ base, currency, extraBags, protection, protectionFee, onSetBags, onToggle, onNext }: {
-  base: number; currency: string; extraBags: number;
+interface ProviderBag {
+  label: string;
+  amount: number;
+  currency: string;
+  providerServiceId: string;
+}
+
+function ExtrasStep({ base, currency, offerId, extraBags, protection, protectionFee, onSetBags, onToggle, onNext }: {
+  base: number; currency: string; offerId?: string; extraBags: number;
   protection: boolean; protectionFee: number;
   onSetBags: (n: number) => void; onToggle: () => void; onNext: () => void;
 }) {
+  const [bagsAvailable, setBagsAvailable] = useState<ProviderBag[]>([]);
+  const [bagsLoading, setBagsLoading] = useState(true);
+
+  useEffect(() => {
+    if (!offerId) { setBagsLoading(false); return; }
+    fetch(`/api/ancillaries?offer_id=${encodeURIComponent(offerId)}`)
+      .then(r => r.json())
+      .then((data: { baggage?: any[] }) => {
+        const purchasable = (data.baggage ?? []).filter((b: any) => !b.included && b.amount > 0);
+        setBagsAvailable(purchasable);
+      })
+      .catch(() => setBagsAvailable([]))
+      .finally(() => setBagsLoading(false));
+  }, [offerId]);
+
   return (
     <>
       <div className={cn(CARD_CLS, 'space-y-5')}>
@@ -444,37 +510,51 @@ function ExtrasStep({ base, currency, extraBags, protection, protectionFee, onSe
           <p className="text-sm text-slate-500">Customize your journey with extras.</p>
         </div>
 
-        <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
-          <div className="flex items-center gap-3">
-            <Luggage className="w-5 h-5 text-slate-400 shrink-0" />
-            <div className="flex-1">
-              <p className="text-sm font-semibold text-slate-900">Extra Checked Bags</p>
-              <p className="text-xs text-slate-500 mt-0.5">$35 per bag · 23 kg (50 lbs) max each</p>
-            </div>
+        {bagsLoading ? (
+          <div className="flex justify-center py-6"><Loader2 className="w-5 h-5 text-slate-400 animate-spin" /></div>
+        ) : bagsAvailable.length > 0 ? (
+          <div className="p-4 rounded-2xl bg-slate-50 border border-slate-200">
             <div className="flex items-center gap-3">
-              <button
-                onClick={() => onSetBags(Math.max(0, extraBags - 1))}
-                disabled={extraBags === 0}
-                className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-all disabled:opacity-30"
-              >
-                <Minus className="w-3 h-3" />
-              </button>
-              <span className="w-4 text-center text-sm font-bold text-slate-900">{extraBags}</span>
-              <button
-                onClick={() => onSetBags(Math.min(2, extraBags + 1))}
-                disabled={extraBags === 2}
-                className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-all disabled:opacity-30"
-              >
-                <Plus className="w-3 h-3" />
-              </button>
+              <Luggage className="w-5 h-5 text-slate-400 shrink-0" />
+              <div className="flex-1">
+                <p className="text-sm font-semibold text-slate-900">Extra Checked Bags</p>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  {formatPrice(bagsAvailable[0].amount, bagsAvailable[0].currency || currency)} per bag · Prices from airline
+                </p>
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => onSetBags(Math.max(0, extraBags - 1))}
+                  disabled={extraBags === 0}
+                  className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-all disabled:opacity-30"
+                >
+                  <Minus className="w-3 h-3" />
+                </button>
+                <span className="w-4 text-center text-sm font-bold text-slate-900">{extraBags}</span>
+                <button
+                  onClick={() => onSetBags(Math.min(2, extraBags + 1))}
+                  disabled={extraBags === 2}
+                  className="w-7 h-7 rounded-full bg-white border border-slate-200 flex items-center justify-center text-slate-600 hover:bg-slate-100 transition-all disabled:opacity-30"
+                >
+                  <Plus className="w-3 h-3" />
+                </button>
+              </div>
             </div>
+            {extraBags > 0 && (
+              <p className="text-xs text-emerald-600 mt-2 ml-8">
+                +{formatPrice(extraBags * bagsAvailable[0].amount, bagsAvailable[0].currency || currency)} for {extraBags} extra bag{extraBags > 1 ? 's' : ''}
+              </p>
+            )}
           </div>
-          {extraBags > 0 && (
-            <p className="text-xs text-emerald-600 mt-2 ml-8">
-              +{formatPrice(extraBags * 35, currency)} for {extraBags} extra bag{extraBags > 1 ? 's' : ''}
+        ) : (
+          <div className="flex items-start gap-2.5 p-4 rounded-xl bg-amber-50 border border-amber-200">
+            <Info className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
+            <p className="text-xs text-amber-700 leading-relaxed">
+              Extra bag purchases are not available for this fare through our booking system.
+              You can purchase additional bags directly with the airline during online check-in or at the airport.
             </p>
-          )}
-        </div>
+          </div>
+        )}
 
         <div
           className={cn(
@@ -1070,11 +1150,11 @@ function BookingContent() {
                   <SeatStep segs={displaySegs} prefs={seatPrefs} onSet={store.setSeatPref} onNext={() => store.setStep(2)} />
                 )}
                 {step === 2 && (
-                  <MealStep segs={displaySegs} prefs={mealPrefs} onSet={store.setMealPref} onNext={() => store.setStep(3)} />
+                  <MealStep segs={displaySegs} prefs={mealPrefs} offerId={selectedFare?.offerId} onSet={store.setMealPref} onNext={() => store.setStep(3)} />
                 )}
                 {step === 3 && (
                   <ExtrasStep
-                    base={base} currency={currency}
+                    base={base} currency={currency} offerId={selectedFare?.offerId}
                     extraBags={extraBags} protection={priceDropProtection}
                     protectionFee={selectedFare?.protectionFee ?? 0}
                     onSetBags={store.setExtraBags} onToggle={store.togglePriceDropProtection} onNext={() => store.setStep(4)}
