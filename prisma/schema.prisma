@@ -608,6 +608,12 @@ model MasterBooking {
   agentName              String?            @map("agent_name")
   agentEmail             String?            @map("agent_email")
 
+  // Provider Support (Duffel Assistant) — added for internal support tool
+  duffelCustomerUserId         String?    @map("duffel_customer_user_id")
+  lastProviderSupportOpenedAt  DateTime?  @map("last_provider_support_opened_at")
+  lastProviderSupportOpenedBy  String?    @map("last_provider_support_opened_by")
+  providerSupportSessionCount  Int        @default(0) @map("provider_support_session_count")
+
   @@index([masterBookingReference])
   @@index([masterPnr])
   @@index([customerEmail])
@@ -1189,8 +1195,8 @@ model WhatsAppSupportNumber {
   id                  String   @id @default(cuid())
   displayName         String   @map("display_name")
   countryCode         String   @map("country_code")       // e.g. "+1"
-  phoneNumber         String   @map("phone_number")       // e.g. "9726971532"
-  fullWhatsAppNumber  String   @map("full_whatsapp_number") // e.g. "19726971532"
+  phoneNumber         String   @map("phone_number")       // e.g. "9453695543"
+  fullWhatsAppNumber  String   @map("full_whatsapp_number") // e.g. "19453695543"
   roleType            String   @map("role_type")           // SUPPORT, ADMIN, SUPER_ADMIN, GENERAL_SUPPORT
   isPrimary           Boolean  @default(false) @map("is_primary")
   isActive            Boolean  @default(true) @map("is_active")
