@@ -16,16 +16,17 @@ import type {
 
 // ── In-memory cache (5-min TTL) ───────────────────────────────────────────────
 
-const cache = new Map<string, { data: SegmentSeatMap[]; expiresAt: number }>();
+interface CachedSeatData { seatMaps: SegmentSeatMap[]; seatSelectionSupported: boolean }
+const cache = new Map<string, { data: CachedSeatData; expiresAt: number }>();
 
-function getCached(key: string): SegmentSeatMap[] | null {
+function getCached(key: string): CachedSeatData | null {
   const entry = cache.get(key);
   if (!entry) return null;
   if (Date.now() > entry.expiresAt) { cache.delete(key); return null; }
   return entry.data;
 }
 
-function setCached(key: string, data: SegmentSeatMap[]): void {
+function setCached(key: string, data: CachedSeatData): void {
   cache.set(key, { data, expiresAt: Date.now() + 5 * 60 * 1000 });
 }
 
@@ -34,13 +35,18 @@ function setCached(key: string, data: SegmentSeatMap[]): void {
 const SEAT_TYPES = new Set(['seat', 'empty', 'lavatory', 'galley', 'stairs', 'bassinet']);
 
 function transformElement(el: DuffelSeatMapElement): SeatElement {
-  const isSeat = el.type === 'seat';
+  // Treat restricted_seat_* types (e.g. restricted_seat_general) as real seats
+  const isSeat = el.type === 'seat' || el.type.startsWith('restricted_seat');
   const services = el.available_services ?? [];
   const available = isSeat && services.length > 0;
   const svc = services[0];
 
-  const rawType = el.type === 'exit_row' ? 'empty' : el.type;
-  const type: SeatElementType = SEAT_TYPES.has(rawType) ? (rawType as SeatElementType) : 'empty';
+  // Map seat-like types → 'seat', exit_row → 'empty', known types → themselves, unknown → 'empty'
+  const type: SeatElementType = isSeat
+    ? 'seat'
+    : el.type === 'exit_row'
+      ? 'empty'
+      : SEAT_TYPES.has(el.type) ? (el.type as SeatElementType) : 'empty';
 
   // Collect ALL per-passenger service IDs (one per passenger on the offer)
   const serviceIds = services.map((s: any) => s.id as string).filter(Boolean);
@@ -128,6 +134,29 @@ export function transformSeatMap(sm: DuffelSeatMap): SegmentSeatMap {
   };
 }
 
+// ── Check if the airline actually supports seat selection ─────────────────────
+// Returns true when the seat map contains real seat elements (i.e. the airline
+// provided seat layout data). This does NOT check whether any seats are
+// currently available — a fully-booked flight still "supports" seat selection,
+// the grid just shows all seats as occupied.
+
+function checkSeatSelectionFromMaps(seatMaps: SegmentSeatMap[]): boolean {
+  for (const sm of seatMaps) {
+    for (const cabin of sm.cabins) {
+      for (const row of cabin.rows) {
+        for (const section of row.sections) {
+          for (const el of section.elements) {
+            if (el.type === 'seat' && el.designator) {
+              return true;
+            }
+          }
+        }
+      }
+    }
+  }
+  return false;
+}
+
 // ── Route ─────────────────────────────────────────────────────────────────────
 
 export async function GET(request: NextRequest) {
@@ -145,20 +174,26 @@ export async function GET(request: NextRequest) {
 
   const cached = getCached(cacheKey);
   if (cached) {
-    return NextResponse.json({ seatMaps: cached, cached: true });
+    return NextResponse.json({ ...cached, cached: true });
   }
 
   try {
     const raw = await getSeatMaps(id, type);
     const seatMaps = raw.map(transformSeatMap);
-    setCached(cacheKey, seatMaps);
-    return NextResponse.json({ seatMaps, cached: false });
+
+    // Determine seat selection support from the actual seat map data.
+    // If any seat has available_services, the airline supports seat selection.
+    const seatSelectionSupported = seatMaps.length > 0 && checkSeatSelectionFromMaps(seatMaps);
+
+    const result: CachedSeatData = { seatMaps, seatSelectionSupported };
+    setCached(cacheKey, result);
+    return NextResponse.json({ ...result, cached: false });
   } catch (error) {
     const errMsg = (error as Error).message;
     console.error(`[Seat Map] API error for ${type} ${id}: ${errMsg}`);
     // Return empty array — seats page shows preference-selector fallback
     return NextResponse.json(
-      { seatMaps: [], error: `Seat map unavailable: ${errMsg}` },
+      { seatMaps: [], seatSelectionSupported: false, error: `Seat map unavailable: ${errMsg}` },
       { status: 200 }, // 200 so the frontend can handle gracefully
     );
   }
