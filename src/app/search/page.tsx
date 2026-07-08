@@ -167,6 +167,14 @@ function SearchContent() {
   const [showFareModal, setShowFareModal] = useState(false);
   const [rtSortMode, setRtSortMode] = useState<RoundTripSortMode | null>(null);
 
+  // ── Flex-date cheapest-badge awareness ──────────────────────────────────────
+  // Tracks the global lowest price across ALL flex date tiles so we can strip
+  // the 'cheapest' badge from RT options that aren't actually the cheapest.
+  const [lowestFlexPrice, setLowestFlexPrice] = useState<number | null>(null);
+  const handleLowestFlexPrice = useCallback((price: number | null) => {
+    setLowestFlexPrice(price);
+  }, []);
+
   // ── Panel filter state ────────────────────────────────────────────────────
   const [selectedAirlines, setSelectedAirlines] = useState<Set<string>>(new Set());
   const [selectedClasses,  setSelectedClasses]  = useState<Set<string>>(new Set());
@@ -664,8 +672,20 @@ function SearchContent() {
         feat === 'refundable' ? rt.fareRules.refundable : feat === 'changeable' ? rt.fareRules.changeable : false
       )
     );
+    // Strip 'cheapest' badge from options when a flex-date tile has a lower price.
+    // This ensures the badge only appears on truly the cheapest option across all dates.
+    if (lowestFlexPrice !== null) {
+      const currentCheapest = f.length > 0 ? Math.min(...f.map(rt => rt.totalPrice)) : Infinity;
+      // Only strip if flex dates have a strictly cheaper price
+      if (currentCheapest > lowestFlexPrice * 1.01) {
+        f = f.map(rt => ({
+          ...rt,
+          badges: (rt.badges ?? []).filter(b => b !== 'cheapest') as typeof rt.badges,
+        }));
+      }
+    }
     return f;
-  }, [prefsFilteredRT, selectedAirlines, selectedClasses, selectedFeatures]);
+  }, [prefsFilteredRT, selectedAirlines, selectedClasses, selectedFeatures, lowestFlexPrice]);
 
   // Derive active cabin(s) from the class filter — when the user toggles one
   // or more classes in the filter panel, the flex-date strip should show the
@@ -1284,6 +1304,7 @@ function SearchContent() {
                     cabin={activeCabin}
                     tripParam={tripParam}
                     currentMinPrice={panelFilteredRT[0]?.totalPrice ?? null}
+                    onLowestFlexPrice={handleLowestFlexPrice}
                   />
                 )}
 
@@ -1517,6 +1538,7 @@ function SearchContent() {
                         cabin={activeCabin}
                         tripParam={tripParam}
                         currentMinPrice={panelFilteredRT[0]?.totalPrice ?? null}
+                        onLowestFlexPrice={handleLowestFlexPrice}
                       />
                     )}
                     <div className="flex items-center justify-between mb-5 gap-4 flex-wrap">

@@ -33,6 +33,9 @@ interface FlexibleDateStripProps {
   tripParam: string;
   /** Min price from the already-loaded full search — anchors the center tile price. */
   currentMinPrice?: number | null;
+  /** Callback: reports the lowest price across ALL flex tiles (including center) so the
+   *  parent can strip the 'cheapest' badge from results whose price exceeds this. */
+  onLowestFlexPrice?: (price: number | null) => void;
 }
 
 // ── Helpers ────────────────────────────────────────────────────────────────
@@ -64,7 +67,7 @@ const CENTER_IDX = 3;
 const NON_CENTER = [0, 1, 2, 4, 5, 6];
 
 export default function FlexibleDateStrip({
-  origin, destination, departureDate, returnDate, adults, children = '0', infants = '0', cabin, tripParam, currentMinPrice,
+  origin, destination, departureDate, returnDate, adults, children = '0', infants = '0', cabin, tripParam, currentMinPrice, onLowestFlexPrice,
 }: FlexibleDateStripProps) {
 
   // Build date pairs once from props
@@ -186,6 +189,13 @@ export default function FlexibleDateStrip({
 
   const validNonCenter = effectivePrices.filter((p, i) => i !== CENTER_IDX && p !== null) as number[];
   const lowestPrice = validNonCenter.length > 0 ? Math.min(...validNonCenter) : null;
+
+  // Report the global lowest flex price (across ALL tiles including center) to the parent
+  const allValidPrices = effectivePrices.filter(p => p !== null) as number[];
+  const globalLowestFlexPrice = allValidPrices.length > 0 ? Math.min(...allValidPrices) : null;
+  useEffect(() => {
+    onLowestFlexPrice?.(globalLowestFlexPrice);
+  }, [globalLowestFlexPrice, onLowestFlexPrice]);
 
   // ── Click → navigate immediately ──────────────────────────────────────
   const [clickedIdx, setClickedIdx] = useState<number | null>(null);
