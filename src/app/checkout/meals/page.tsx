@@ -3,8 +3,8 @@
 import { useEffect, useState, useMemo, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import {
-  ChevronRight, Check, Plane, Lock, Info,
-  Shield, Sparkles, ChevronDown,
+  ChevronRight, Check, Plane, Lock, Info, AlertCircle,
+  Shield, Sparkles, ChevronDown, UtensilsCrossed,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
 import { useOfferGuard } from '@/hooks/useOfferGuard';
@@ -477,6 +477,7 @@ function ItineraryPanel({
 interface SegmentMeals {
   meals: MealOptionDef[];
   recommended: string;
+  mealsSupported: boolean;
 }
 
 export default function MealsPage() {
@@ -499,6 +500,7 @@ export default function MealsPage() {
 
   const [segmentMeals, setSegmentMeals] = useState<(SegmentMeals | null)[]>([]);
   const [loading, setLoading] = useState(true);
+  const [mealsSupported, setMealsSupported] = useState(true);
 
   useEffect(() => {
     if (!selectedFare || !sessionId) router.replace('/');
@@ -509,27 +511,36 @@ export default function MealsPage() {
     [sourceFlight, sourceRoundTrip],
   );
 
-  // Fetch meal options for each segment
+  // Fetch meal options from the provider API
   useEffect(() => {
-    if (!segments.length) { setLoading(false); return; }
+    if (!segments.length || !selectedFare?.offerId) { setLoading(false); return; }
 
     setLoading(true);
-    const hasChildren = passengers.some(p => p.type === 'child' || p.type === 'infant');
 
-    Promise.all(
-      segments.map(seg =>
-        fetch(
-          `/api/meals?airline=${encodeURIComponent(seg.airlineCode)}&origin=${seg.from}&destination=${seg.to}&duration=${seg.durationMin}&children=${hasChildren}`,
-        )
-          .then(r => r.json())
-          .then((data: { meals: MealOptionDef[]; recommended: string }) => data)
-          .catch(() => null),
-      ),
-    ).then(results => {
-      setSegmentMeals(results);
-      setLoading(false);
-    });
-  }, [segments, passengers]); // eslint-disable-line react-hooks/exhaustive-deps
+    fetch(
+      `/api/meals?offer_id=${encodeURIComponent(selectedFare.offerId)}&provider=duffel`,
+    )
+      .then(r => r.json())
+      .then((data: { meals: MealOptionDef[]; recommended: string; mealsSupported: boolean }) => {
+        if (!data.mealsSupported || !data.meals?.length) {
+          setMealsSupported(false);
+          setSegmentMeals([]);
+        } else {
+          setMealsSupported(true);
+          // Apply the same meal options to all segments
+          setSegmentMeals(segments.map(() => ({
+            meals: data.meals,
+            recommended: data.recommended,
+            mealsSupported: true,
+          })));
+        }
+      })
+      .catch(() => {
+        setMealsSupported(false);
+        setSegmentMeals([]);
+      })
+      .finally(() => setLoading(false));
+  }, [segments, selectedFare?.offerId]); // eslint-disable-line react-hooks/exhaustive-deps
 
   if (!selectedFare || !sessionId) return null;
 
@@ -594,8 +605,31 @@ export default function MealsPage() {
             </div>
           ))}
 
+          {/* Meal Selection Not Available */}
+          {!loading && !mealsSupported && (
+            <div className="lg:col-span-2 flex flex-col items-center justify-center py-12 px-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
+                <UtensilsCrossed className="w-7 h-7 text-slate-400" strokeWidth={1.5} />
+              </div>
+              <h2 className="text-lg font-bold text-slate-900 mb-2">Meal Selection Not Available</h2>
+              <p className="text-sm text-slate-500 text-center max-w-md mb-1">
+                This airline does not offer meal selection through our booking system.
+              </p>
+              <p className="text-xs text-slate-400 text-center max-w-md">
+                Complimentary snacks and beverages may be available on board. For special meal requests,
+                please contact the airline directly or manage your preferences during online check-in.
+              </p>
+              <button
+                onClick={() => router.push('/checkout/addons')}
+                className="mt-6 flex items-center gap-2 px-6 py-3 rounded-2xl bg-[#1ABC9C] hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-[#1ABC9C]/20 transition-all"
+              >
+                Continue to Add-ons <ChevronRight className="w-4 h-4" />
+              </button>
+            </div>
+          )}
+
           {/* Meal cards — one per column */}
-          {!loading && segments.map((seg, i) => {
+          {!loading && mealsSupported && segments.map((seg, i) => {
             const sm = segmentMeals[i];
             if (!sm) return null;
             return (
@@ -623,7 +657,7 @@ export default function MealsPage() {
         </div>
 
         {/* Info strip — full width */}
-        {!loading && (
+        {!loading && mealsSupported && (
           <motion.div
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
