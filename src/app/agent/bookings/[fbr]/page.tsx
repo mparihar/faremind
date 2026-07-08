@@ -25,7 +25,6 @@ import {
   Calendar,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
-import AgentProviderSupportCard from '@/components/agent/AgentProviderSupportCard';
 
 const STATUS_COLORS: Record<string, string> = {
   CONFIRMED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
@@ -855,9 +854,6 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
       {showDateChangeDialog && booking && (
         <DateChangeModal bookingId={booking.id} booking={booking} onClose={() => setShowDateChangeDialog(false)} />
       )}
-
-      {/* ── Provider Support (Duffel Assistant) — internal only ── */}
-      <AgentProviderSupportCard booking={booking} />
     </div>
   );
 }

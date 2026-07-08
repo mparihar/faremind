@@ -13,6 +13,7 @@ import {
   LogOut,
   ChevronLeft,
   ChevronRight,
+  MessageCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -23,6 +24,7 @@ const AGENT_NAV = [
   { href: '/agent/bookings', label: 'My Bookings', icon: Briefcase },
   { href: '/agent/passenger-updates', label: 'Passenger Updates', icon: UserCog },
   { href: '/agent/cancellations', label: 'Cancellation Requests', icon: XCircle },
+  { href: '/agent/duffel-assistant', label: 'Duffel Assistant', icon: MessageCircle },
   { href: '/agent/notifications', label: 'Notifications', icon: Bell },
   { href: '/agent/profile', label: 'Profile', icon: User },
   { href: '__logout__', label: 'Sign Out', icon: LogOut },
