@@ -265,7 +265,7 @@ function ProviderBaggageSection({
               <div className="flex items-start gap-2.5 p-4 rounded-xl bg-amber-50 border border-amber-200">
                 <Info className="w-4 h-4 text-amber-500 mt-0.5 shrink-0" />
                 <p className="text-xs text-amber-700 leading-relaxed">
-                  Your fare already includes checked baggage. Extra bag purchases are not available for this fare through the provider. You can add additional bags directly with the airline at the airport or through their website.
+                  Your fare already includes the above baggage. Extra bag purchases are not available for this fare through our booking system. You can purchase additional bags directly with the airline during online check-in or at the airport.
                 </p>
               </div>
             ) : (
