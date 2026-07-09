@@ -49,6 +49,7 @@ import { assignBadges as assignBadgesNew, type BadgeCandidate } from './FlightBa
 import { generateReasons as generateReasonsNew } from './FlightReasonGenerator';
 import { DEFAULT_AI_RECOMMENDATION_LIMIT } from './FlightScoringConfig';
 import { validateComparableOffers, type ComparableCandidate } from './FlightComparableValidator';
+import { validateComparableNonstops, type NonstopComparableCandidate } from './FlightComparableNonstopValidator';
 import type { TravelDnaRecommendationContext } from '@/lib/services/travel-dna-service';
 
 // ── Internal intermediate type ────────────────────────────────────────────────
@@ -481,6 +482,29 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     console.log(`[AI Scoring] Comparable-offer adjustments: ${comparableResult.adjustments.length}`);
     for (const adj of comparableResult.adjustments) {
       console.log(`  ${adj.offerId}: ${adj.oldScore.toFixed(1)} → ${adj.newScore.toFixed(1)} | ${adj.reason}`);
+    }
+  }
+
+  // 8.55. Comparable nonstop low-fare validation
+  //       Ensures cheaper comparable nonstop flights rank above more expensive
+  //       ones when conditions (cabin, refundability, changeability, baggage)
+  //       are the same. Only for AI_PICK / BEST_VALUE / CHEAPEST modes.
+  const activeMode = scoringPrefs?.mode ?? 'AI_PICK';
+  const nonstopValidationModes = new Set(['AI_PICK', 'BEST_VALUE', 'CHEAPEST']);
+
+  if (nonstopValidationModes.has(activeMode)) {
+    const nonstopCandidates: NonstopComparableCandidate[] = tieBreakCandidates.map(c => ({
+      features: c.features,
+      score: c.score,
+      cabinClass: c.normalized.cabinClass || 'economy',
+    }));
+
+    const nonstopResult = validateComparableNonstops(nonstopCandidates);
+    if (nonstopResult.adjustments.length > 0) {
+      console.log(`[AI Scoring] Comparable nonstop adjustments: ${nonstopResult.adjustments.length}`);
+      for (const adj of nonstopResult.adjustments) {
+        console.log(`  ${adj.offerId}: ${adj.oldScore.toFixed(1)} → ${adj.newScore.toFixed(1)} | ${adj.reason}`);
+      }
     }
   }
 
