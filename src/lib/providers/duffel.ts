@@ -365,8 +365,29 @@ export async function searchFlights(params: DuffelSearchParams): Promise<DuffelO
     retries: 1, // Offer requests can be slow, don't over-retry
   });
 
-  const offers = offerRequest.offers || [];
-  console.log(`[Duffel] Search ${params.origin}→${params.destination}: ${offers.length} offers returned`);
+  let offers = offerRequest.offers || [];
+  console.log(`[Duffel] Search ${params.origin}→${params.destination}: ${offers.length} offers returned (inline)`);
+
+  // Duffel live API: airlines may not have responded yet when the offer_request
+  // is first created. If inline offers are empty, poll the listOffers endpoint
+  // with the offer_request ID to give airlines time to respond.
+  if (offers.length === 0 && offerRequest.id) {
+    const POLL_DELAYS = [2000, 3000, 5000]; // wait 2s, 3s, 5s between retries
+    for (let i = 0; i < POLL_DELAYS.length; i++) {
+      console.log(`[Duffel] No inline offers — polling attempt ${i + 1}/${POLL_DELAYS.length} (waiting ${POLL_DELAYS[i]}ms)...`);
+      await sleep(POLL_DELAYS[i]);
+      try {
+        const polledOffers = await listOffers(offerRequest.id, { limit: 200, sort: 'total_amount' });
+        if (polledOffers && polledOffers.length > 0) {
+          offers = polledOffers;
+          console.log(`[Duffel] Poll ${i + 1}: got ${offers.length} offers`);
+          break;
+        }
+      } catch (pollErr) {
+        console.warn(`[Duffel] Poll ${i + 1} failed:`, (pollErr as Error).message);
+      }
+    }
+  }
 
   return offers;
 }
