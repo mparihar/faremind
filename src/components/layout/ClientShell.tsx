@@ -31,7 +31,23 @@ export default function ClientShell({ children }: { children: React.ReactNode })
     }
     try {
       const ctx = sessionStorage.getItem('agentBookingContext');
-      setIsAgentBookingMode(!!ctx);
+      if (!ctx) {
+        setIsAgentBookingMode(false);
+        return;
+      }
+      // Verify there's still an active agent session — if the agent logged out
+      // or the session expired (inactivity timer), clear the stale booking context
+      const session = localStorage.getItem('faremind_session');
+      if (session) {
+        const parsed = JSON.parse(session);
+        if (parsed?.user?.role === 'FAREMIND_AGENT') {
+          setIsAgentBookingMode(true);
+          return;
+        }
+      }
+      // No active agent session → stale context, clean it up
+      sessionStorage.removeItem('agentBookingContext');
+      setIsAgentBookingMode(false);
     } catch {
       setIsAgentBookingMode(false);
     }
