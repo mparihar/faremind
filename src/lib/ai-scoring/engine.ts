@@ -50,6 +50,7 @@ import { generateReasons as generateReasonsNew } from './FlightReasonGenerator';
 import { DEFAULT_AI_RECOMMENDATION_LIMIT } from './FlightScoringConfig';
 import { validateComparableOffers, type ComparableCandidate } from './FlightComparableValidator';
 import { validateComparableNonstops, type NonstopComparableCandidate } from './FlightComparableNonstopValidator';
+import { validateRefundablePriority, type RefundablePriorityCandidate } from './FlightRefundablePriorityValidator';
 import type { TravelDnaRecommendationContext } from '@/lib/services/travel-dna-service';
 
 // ── Internal intermediate type ────────────────────────────────────────────────
@@ -503,6 +504,28 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     if (nonstopResult.adjustments.length > 0) {
       console.log(`[AI Scoring] Comparable nonstop adjustments: ${nonstopResult.adjustments.length}`);
       for (const adj of nonstopResult.adjustments) {
+        console.log(`  ${adj.offerId}: ${adj.oldScore.toFixed(1)} → ${adj.newScore.toFixed(1)} | ${adj.reason}`);
+      }
+    }
+  }
+
+  // 8.58. Fully Refundable Priority Validation
+  //       Ensures fully refundable nonstop fares rank above comparable
+  //       changeable-only fares. Tier: refundable > changeable > neither.
+  //       Only for AI_PICK / BEST_VALUE (NOT CHEAPEST — Lowest Price tab).
+  const refundableValidationModes = new Set(['AI_PICK', 'BEST_VALUE']);
+
+  if (refundableValidationModes.has(activeMode)) {
+    const refundableCandidates: RefundablePriorityCandidate[] = tieBreakCandidates.map(c => ({
+      features: c.features,
+      score: c.score,
+      cabinClass: c.normalized.cabinClass || 'economy',
+    }));
+
+    const refundableResult = validateRefundablePriority(refundableCandidates);
+    if (refundableResult.adjustments.length > 0) {
+      console.log(`[AI Scoring] Refundable priority adjustments: ${refundableResult.adjustments.length}`);
+      for (const adj of refundableResult.adjustments) {
         console.log(`  ${adj.offerId}: ${adj.oldScore.toFixed(1)} → ${adj.newScore.toFixed(1)} | ${adj.reason}`);
       }
     }
