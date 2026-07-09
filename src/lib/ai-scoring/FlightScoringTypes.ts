@@ -123,6 +123,7 @@ export interface ScoringFeatures {
   offerId: string;
   tripType: ScoringTripType;
   effectiveTotalPrice: number;
+  rawTotalPrice: number;           // actual displayed fare (used for Cheapest badge)
   totalDurationMinutes: number;
   totalStops: number;
   outboundStops: number;

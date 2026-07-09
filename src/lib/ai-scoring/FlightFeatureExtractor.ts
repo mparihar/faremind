@@ -69,6 +69,7 @@ export function extractScoringFeatures(
     offerId: offer.id,
     tripType,
     effectiveTotalPrice,
+    rawTotalPrice: offer.totalFare,
     totalDurationMinutes,
     totalStops,
     outboundStops,

@@ -33,6 +33,7 @@ export function assignBadges(
 
   // Compute set-wide extremes
   const minPrice    = Math.min(...candidates.map(c => c.features.effectiveTotalPrice));
+  const minRawPrice = Math.min(...candidates.map(c => c.features.rawTotalPrice));
   const minDuration = Math.min(...candidates.map(c => c.features.totalDurationMinutes));
   const minStops    = Math.min(...candidates.map(c => c.features.totalStops));
   const maxScore    = Math.max(...candidates.map(c => c.score.finalScore));
@@ -55,8 +56,9 @@ export function assignBadges(
       tags.push('AI Pick');
     }
 
-    // ── Cheapest ──
-    if (minPrice > 0 && features.effectiveTotalPrice <= minPrice * 1.01) {
+    // ── Cheapest: based on actual displayed fare (rawTotalPrice), not AI-adjusted price ──
+    // This ensures the badge matches what the customer sees on the card.
+    if (minRawPrice > 0 && features.rawTotalPrice <= minRawPrice * 1.01) {
       badges.push('Cheapest');
       tags.push('Cheapest');
     }
