@@ -317,6 +317,213 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       });
     }
   });
+
+  // ── Ticket Status (AirTicketOrderStatus) ───────────────────────────────────
+  // Returns the current ticketing status for a booking.
+  // Used by the ticketing reconciliation worker and admin UI.
+
+  fastify.post('/ticket-status', async (request, reply) => {
+    try {
+      const { uniqueId } = request.body as { uniqueId?: string };
+
+      if (!uniqueId) {
+        return reply.code(400).send({ error: 'uniqueId is required' });
+      }
+
+      console.log(`[Mystifly] Checking ticket status — MFRef: ${uniqueId}`);
+
+      const result = await mystifly.getTicketOrderStatus(uniqueId);
+
+      const error = result?.Data?.Error || result?.Error;
+      if (error?.ErrorCode && error.ErrorCode !== '0') {
+        console.warn(`[Mystifly] Ticket status check failed: ${error.ErrorMessage}`);
+        return reply.code(422).send({
+          error: error.ErrorMessage || 'Ticket status check failed',
+          errorCode: 'MYSTIFLY_TICKET_STATUS_FAILED',
+          raw: error,
+        });
+      }
+
+      // Extract status — Mystifly uses "TktStatus" or similar fields
+      const ticketStatus = result?.Data?.TktStatus || result?.Data?.Status || result?.Status || 'Unknown';
+      const ticketNumbers = result?.Data?.TicketNumbers || result?.Data?.ETicketNumbers || [];
+
+      console.log(`[Mystifly] Ticket status for ${uniqueId}: ${ticketStatus}`);
+
+      return {
+        success: true,
+        uniqueId,
+        ticketStatus,
+        ticketNumbers,
+        raw: result,
+      };
+    } catch (error: any) {
+      console.error('[Mystifly] Ticket status error:', error.message);
+      return reply.code(502).send({
+        error: `Mystifly ticket status check failed: ${error.message}`,
+        errorCode: 'MYSTIFLY_TICKET_STATUS_ERROR',
+      });
+    }
+  });
+
+  // ── Trip Details ───────────────────────────────────────────────────────────
+  // Returns full booking/trip details from Mystifly.
+  // Used to reconcile booking state and extract ticket numbers.
+
+  fastify.post('/trip-details', async (request, reply) => {
+    try {
+      const { uniqueId } = request.body as { uniqueId?: string };
+
+      if (!uniqueId) {
+        return reply.code(400).send({ error: 'uniqueId is required' });
+      }
+
+      console.log(`[Mystifly] Fetching trip details — MFRef: ${uniqueId}`);
+
+      const result = await mystifly.getTripDetails(uniqueId);
+
+      const error = result?.Data?.Error || result?.Error;
+      if (error?.ErrorCode && error.ErrorCode !== '0') {
+        console.warn(`[Mystifly] Trip details fetch failed: ${error.ErrorMessage}`);
+        return reply.code(422).send({
+          error: error.ErrorMessage || 'Trip details fetch failed',
+          errorCode: 'MYSTIFLY_TRIP_DETAILS_FAILED',
+          raw: error,
+        });
+      }
+
+      // Extract key info from trip details
+      const tripData = result?.Data || result;
+      const bookingStatus = tripData?.BookingStatus || tripData?.Status || 'Unknown';
+      const ticketNumbers: string[] = [];
+
+      // Extract ticket numbers from passengers
+      const travelers = tripData?.TravelItinerary?.ItineraryInfo?.CustomerInfos || [];
+      for (const traveler of travelers) {
+        const eTickets = traveler?.ETicketNumbers || traveler?.TicketDocumentInfo || [];
+        for (const ticket of eTickets) {
+          const num = ticket?.eTicketNumber || ticket?.TicketNumber || ticket;
+          if (num && typeof num === 'string') ticketNumbers.push(num);
+        }
+      }
+
+      console.log(`[Mystifly] Trip details for ${uniqueId}: status=${bookingStatus}, tickets=[${ticketNumbers.join(', ')}]`);
+
+      return {
+        success: true,
+        uniqueId,
+        bookingStatus,
+        ticketNumbers,
+        raw: result,
+      };
+    } catch (error: any) {
+      console.error('[Mystifly] Trip details error:', error.message);
+      return reply.code(502).send({
+        error: `Mystifly trip details failed: ${error.message}`,
+        errorCode: 'MYSTIFLY_TRIP_DETAILS_ERROR',
+      });
+    }
+  });
+
+  // ═══════════════════════════════════════════════
+  // Fare Rules — Agent Workspace
+  // ═══════════════════════════════════════════════
+
+  fastify.post('/fare-rules', async (request, reply) => {
+    try {
+      const { fareSourceCode } = request.body as { fareSourceCode?: string };
+      if (!fareSourceCode) {
+        return reply.code(400).send({ error: 'fareSourceCode is required' });
+      }
+
+      console.log(`[Mystifly] Fetching fare rules — FSC: ${fareSourceCode.slice(0, 20)}...`);
+      const result = await mystifly.getFareRules(fareSourceCode);
+
+      const error = result?.Data?.Error || result?.Error;
+      if (error?.ErrorCode && error.ErrorCode !== '0') {
+        return reply.code(422).send({
+          error: error.ErrorMessage || 'Fare rules fetch failed',
+          errorCode: 'MYSTIFLY_FARE_RULES_FAILED',
+          raw: error,
+        });
+      }
+
+      return { success: true, ...result };
+    } catch (error: any) {
+      console.error('[Mystifly] Fare rules error:', error.message);
+      return reply.code(502).send({
+        error: `Mystifly fare rules failed: ${error.message}`,
+        errorCode: 'MYSTIFLY_FARE_RULES_ERROR',
+      });
+    }
+  });
+
+  // ═══════════════════════════════════════════════
+  // Seat Map — Agent Workspace
+  // ═══════════════════════════════════════════════
+
+  fastify.post('/seat-map', async (request, reply) => {
+    try {
+      const { fareSourceCode } = request.body as { fareSourceCode?: string };
+      if (!fareSourceCode) {
+        return reply.code(400).send({ error: 'fareSourceCode is required' });
+      }
+
+      console.log(`[Mystifly] Fetching seat map — FSC: ${fareSourceCode.slice(0, 20)}...`);
+      const result = await mystifly.getSeatMap(fareSourceCode);
+
+      const error = result?.Data?.Error || result?.Error;
+      if (error?.ErrorCode && error.ErrorCode !== '0') {
+        return reply.code(422).send({
+          error: error.ErrorMessage || 'Seat map fetch failed',
+          errorCode: 'MYSTIFLY_SEAT_MAP_FAILED',
+          raw: error,
+        });
+      }
+
+      return { success: true, ...result };
+    } catch (error: any) {
+      console.error('[Mystifly] Seat map error:', error.message);
+      return reply.code(502).send({
+        error: `Mystifly seat map failed: ${error.message}`,
+        errorCode: 'MYSTIFLY_SEAT_MAP_ERROR',
+      });
+    }
+  });
+
+  // ═══════════════════════════════════════════════
+  // Booking Notes — Agent Workspace
+  // ═══════════════════════════════════════════════
+
+  fastify.post('/booking-notes', async (request, reply) => {
+    try {
+      const { uniqueId, notes } = request.body as { uniqueId?: string; notes?: string[] };
+      if (!uniqueId || !notes || notes.length === 0) {
+        return reply.code(400).send({ error: 'uniqueId and notes[] are required' });
+      }
+
+      console.log(`[Mystifly] Adding ${notes.length} booking note(s) — MFRef: ${uniqueId}`);
+      const result = await mystifly.addBookingNotes(uniqueId, notes);
+
+      const error = result?.Data?.Error || result?.Error;
+      if (error?.ErrorCode && error.ErrorCode !== '0') {
+        return reply.code(422).send({
+          error: error.ErrorMessage || 'Booking notes failed',
+          errorCode: 'MYSTIFLY_BOOKING_NOTES_FAILED',
+          raw: error,
+        });
+      }
+
+      return { success: true, ...result };
+    } catch (error: any) {
+      console.error('[Mystifly] Booking notes error:', error.message);
+      return reply.code(502).send({
+        error: `Mystifly booking notes failed: ${error.message}`,
+        errorCode: 'MYSTIFLY_BOOKING_NOTES_ERROR',
+      });
+    }
+  });
 };
 
 export default plugin;
+

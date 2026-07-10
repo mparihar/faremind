@@ -138,17 +138,39 @@ async function searchMystifly(params: {
   origin: string; destination: string; date: string;
   returnDate?: string; adults: number; children?: number;
   infants?: number; cabin?: string;
+  legs?: { origin: string; destination: string; departureDate: string }[];
 }): Promise<ProviderResult> {
   const start = Date.now();
   if (!isMystiflyConfigured()) {
     return { provider: 'mystifly', flights: [], responseTimeMs: 0, error: 'Mystifly API not configured', isMock: true };
   }
   try {
+    // Resolve search version and fare type from admin-configured rules
+    let searchVersion: string = 'v2.2';
+    let pricingSource: 'Public' | 'Private' | 'All' = 'All';
+    try {
+      const { resolveSearchConfig, toPricingSourceType } = await import('../providers/mystifly');
+      const config = await resolveSearchConfig({
+        origin: params.origin,
+        destination: params.destination,
+      });
+      searchVersion = config.version;
+      pricingSource = toPricingSourceType(config.fareType);
+      if (config.matchedRuleName) {
+        console.log(`[Mystifly] Route ${params.origin}→${params.destination} matched rule "${config.matchedRuleName}" → ${searchVersion}, ${pricingSource}`);
+      }
+    } catch {
+      // Fallback to defaults if resolver fails
+    }
+
     const response = await mystifly.searchFlights({
       origin: params.origin, destination: params.destination,
       departureDate: params.date, returnDate: params.returnDate,
       adults: params.adults, children: params.children,
       infants: params.infants, cabinClass: params.cabin || 'economy',
+      pricingSource,
+      searchVersion,
+      legs: params.legs,
     });
     const itineraries = response?.Data?.PricedItineraries || response?.PricedItineraries || [];
     const flights = (Array.isArray(itineraries) ? itineraries : [])
@@ -165,6 +187,7 @@ export async function searchFlights(params: {
   returnDate?: string; adults: number; children?: number;
   infants?: number; cabin?: string;
   providers?: ('duffel' | 'amadeus' | 'mystifly')[];
+  legs?: { origin: string; destination: string; departureDate: string }[];
 }): Promise<SearchResult> {
   const overallStart = Date.now();
   const searchId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;
@@ -173,14 +196,23 @@ export async function searchFlights(params: {
   const hasAmadeus = isAmadeusConfigured();
   const hasMystifly = shouldUseMystifly();
 
-  console.log(`[Search ${searchId}] Provider mode: ${providerMode} → duffel=${hasDuffel} amadeus=${hasAmadeus} mystifly=${hasMystifly}`);
+  const isMultiCity = params.legs && params.legs.length > 0;
+  console.log(`[Search ${searchId}] Provider mode: ${providerMode} → duffel=${hasDuffel} amadeus=${hasAmadeus} mystifly=${hasMystifly}${isMultiCity ? ` [MULTI-CITY: ${params.legs!.length} legs]` : ''}`);
 
   let providerResults: ProviderResult[];
   if (hasDuffel || hasAmadeus || hasMystifly) {
     const promises: Promise<ProviderResult>[] = [];
-    if (hasDuffel && (!params.providers || params.providers.includes('duffel'))) promises.push(searchDuffel(params));
-    if (hasAmadeus && (!params.providers || params.providers.includes('amadeus'))) promises.push(searchAmadeus(params));
-    if (hasMystifly && (!params.providers || params.providers.includes('mystifly'))) promises.push(searchMystifly(params));
+    // For multi-city, only Mystifly supports it currently
+    if (isMultiCity) {
+      if (hasMystifly && (!params.providers || params.providers.includes('mystifly'))) {
+        promises.push(searchMystifly(params));
+      }
+      // Duffel multi-city to be added later
+    } else {
+      if (hasDuffel && (!params.providers || params.providers.includes('duffel'))) promises.push(searchDuffel(params));
+      if (hasAmadeus && (!params.providers || params.providers.includes('amadeus'))) promises.push(searchAmadeus(params));
+      if (hasMystifly && (!params.providers || params.providers.includes('mystifly'))) promises.push(searchMystifly(params));
+    }
     providerResults = await Promise.all(promises);
   } else {
 

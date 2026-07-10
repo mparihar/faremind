@@ -27,14 +27,23 @@ export async function GET(request: NextRequest) {
   const cabin = searchParams.get('cabin') || 'economy';
   const trip = searchParams.get('trip') || 'one_way';
 
-  if (!origin || !destination || !date) {
-    return NextResponse.json({ error: 'Missing required parameters: origin, destination, date' }, { status: 400 });
-  }
-  if (origin.length !== 3 || destination.length !== 3) {
-    return NextResponse.json({ error: 'origin and destination must be 3-letter IATA codes' }, { status: 400 });
-  }
-  if (origin === destination) {
-    return NextResponse.json({ error: 'origin and destination must be different' }, { status: 400 });
+  const legs = searchParams.get('legs') || undefined;
+  const isMultiCity = trip === 'multi_city' && !!legs;
+
+  // Validation — relaxed for multi-city where origin/destination come from legs
+  if (!isMultiCity) {
+    if (!origin || !destination || !date) {
+      return NextResponse.json({ error: 'Missing required parameters: origin, destination, date' }, { status: 400 });
+    }
+    if (origin.length !== 3 || destination.length !== 3) {
+      return NextResponse.json({ error: 'origin and destination must be 3-letter IATA codes' }, { status: 400 });
+    }
+    if (origin === destination) {
+      return NextResponse.json({ error: 'origin and destination must be different' }, { status: 400 });
+    }
+  } else if (!origin || !destination || !date) {
+    // Multi-city still needs these as first/last leg values
+    return NextResponse.json({ error: 'Missing required parameters for multi-city search' }, { status: 400 });
   }
 
   try {
@@ -324,7 +333,7 @@ export async function GET(request: NextRequest) {
       });
     }
 
-    // ── One-way: proxy to backend for aggregated Duffel + Mystifly data ──────
+    // ── One-way / Multi-city: proxy to backend for aggregated Duffel + Mystifly data ──────
     let backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
     backendUrl = backendUrl.replace(/\/$/, '');
     const backendParams = new URLSearchParams({
@@ -333,10 +342,12 @@ export async function GET(request: NextRequest) {
       date: date!,
       adults: String(adults),
       cabin: cabin || 'economy',
+      trip,
     });
     if (returnDate) backendParams.set('returnDate', returnDate);
     if (children) backendParams.set('children', String(children));
     if (infants) backendParams.set('infants', String(infants));
+    if (isMultiCity && legs) backendParams.set('legs', legs);
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 90_000); // 90s timeout

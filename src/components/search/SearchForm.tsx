@@ -19,6 +19,8 @@ import {
   X,
   Sparkles,
   Check,
+  Plus,
+  Trash2,
 } from 'lucide-react';
 import { cn, getTomorrow, getNextWeek } from '@/lib/utils';
 import { AIRPORTS } from '@/lib/mock-data';
@@ -160,6 +162,44 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
   const [tripType, setTripType] = useState<TripType>(initialTripType ?? 'round_trip');
   const [dateMode, setDateMode] = useState<'specific' | 'flexible'>('specific');
 
+  // ── Multi-city legs state ───────────────────────────────────────────────
+  interface MultiCityLeg {
+    id: string;
+    origin: string;
+    originCode: string;
+    destination: string;
+    destCode: string;
+    departureDate: string;
+    showOriginDropdown: boolean;
+    showDestDropdown: boolean;
+  }
+  const createLeg = (overrides?: Partial<MultiCityLeg>): MultiCityLeg => ({
+    id: `leg_${Date.now()}_${Math.random().toString(36).substr(2, 4)}`,
+    origin: '', originCode: '', destination: '', destCode: '',
+    departureDate: getTomorrow(),
+    showOriginDropdown: false, showDestDropdown: false,
+    ...overrides,
+  });
+  const [multiCityLegs, setMultiCityLegs] = useState<MultiCityLeg[]>([
+    createLeg(), createLeg(),
+  ]);
+  const updateLeg = (idx: number, updates: Partial<MultiCityLeg>) => {
+    setMultiCityLegs(prev => prev.map((l, i) => i === idx ? { ...l, ...updates } : l));
+  };
+  const addLeg = () => {
+    if (multiCityLegs.length >= 6) return;
+    const prev = multiCityLegs[multiCityLegs.length - 1];
+    setMultiCityLegs(p => [...p, createLeg({
+      origin: prev?.destination || '',
+      originCode: prev?.destCode || '',
+      departureDate: prev?.departureDate || getTomorrow(),
+    })]);
+  };
+  const removeLeg = (idx: number) => {
+    if (multiCityLegs.length <= 2) return;
+    setMultiCityLegs(prev => prev.filter((_, i) => i !== idx));
+  };
+
   const [showOriginDropdown, setShowOriginDropdown] = useState(false);
   const [showDestDropdown, setShowDestDropdown] = useState(false);
   const [showPassengers, setShowPassengers] = useState(false);
@@ -276,6 +316,53 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
     // Immediately clear offer session timer — stops the clock on new search
     useOfferSessionStore.getState().clearSession();
 
+    // ── Multi-city search ──────────────────────────────────────────────────
+    if (tripType === 'multi_city') {
+      const invalidLegs = multiCityLegs.filter(l => !l.originCode || !l.destCode || !l.departureDate);
+      if (invalidLegs.length > 0) return;
+
+      const legs = multiCityLegs.map(l => ({
+        origin: l.originCode,
+        destination: l.destCode,
+        departureDate: l.departureDate,
+      }));
+
+      setQuery({
+        origin: legs[0].origin,
+        destination: legs[legs.length - 1].destination,
+        departureDate: legs[0].departureDate,
+        passengers,
+        cabinClass,
+        tripType: 'multi_city',
+      });
+      setLoading(true);
+
+      const params = new URLSearchParams({
+        origin: legs[0].origin,
+        destination: legs[legs.length - 1].destination,
+        date: legs[0].departureDate,
+        adults: passengers.adults.toString(),
+        children: passengers.children.toString(),
+        infants: passengers.infants.toString(),
+        cabin: cabinClass,
+        trip: 'multi_city',
+        legs: JSON.stringify(legs),
+      });
+
+      const prefQP = prefs.toQueryParams();
+      Object.entries(prefQP).forEach(([key, val]) => {
+        if (val) params.set(key, val);
+      });
+      if (prefs.sort === 'any') { params.set('sort', 'value'); prefs.setSort('value'); }
+      if (additionalSearchParams) {
+        Object.entries(additionalSearchParams).forEach(([key, val]) => { if (val) params.set(key, val); });
+      }
+      onBeforeSearch?.(params);
+      router.push(`/search?${params.toString()}`);
+      return;
+    }
+
+    // ── Standard one-way / round-trip search ─────────────────────────────
     const hasOriginError = origin.trim().length > 0 && !originCode;
     const hasDestError = destination.trim().length > 0 && !destCode;
     setOriginError(hasOriginError || (!originCode && !origin.trim()));
@@ -452,9 +539,11 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
 
   const gridCols = isCompact
     ? 'grid-cols-1 sm:grid-cols-2 lg:grid-cols-[1fr_1fr_auto_auto_auto]'
-    : tripType === 'round_trip'
-      ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-[1fr_auto_1fr_1fr_1fr_auto_auto]'
-      : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-[1fr_auto_1fr_1fr_auto_auto]';
+    : tripType === 'multi_city'
+      ? 'grid-cols-1' // Multi-city uses stacked layout
+      : tripType === 'round_trip'
+        ? 'grid-cols-1 md:grid-cols-2 lg:grid-cols-[1fr_auto_1fr_1fr_1fr_auto_auto]'
+        : 'grid-cols-1 md:grid-cols-2 lg:grid-cols-[1fr_auto_1fr_1fr_auto_auto]';
 
   return (
     <div className={cn('w-full overflow-visible', isCompact ? '' : 'max-w-7xl mx-auto')}>
@@ -468,16 +557,19 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
           {/* Left: Trip type + Cabin */}
           <div className="flex items-center gap-2 flex-wrap">
             <div className="flex rounded-xl bg-gray-100 p-1">
-              {(['round_trip', 'one_way'] as TripType[]).map((type) => (
+              {(['round_trip', 'one_way', 'multi_city'] as TripType[]).map((type) => (
                 <button
                   key={type}
-                  onClick={() => setTripType(type)}
+                  onClick={() => {
+                    setTripType(type);
+                    if (type === 'multi_city') setDateMode('specific');
+                  }}
                   className={cn(
                     'px-5 py-2 rounded-lg text-sm font-semibold transition-all whitespace-nowrap',
                     tripType === type ? 'bg-[#1a1a2e] text-white shadow-md' : 'text-gray-600 hover:text-gray-900'
                   )}
                 >
-                  {type === 'round_trip' ? 'Round Trip' : 'One Way'}
+                  {type === 'round_trip' ? 'Round Trip' : type === 'one_way' ? 'One Way' : 'Multi-city'}
                 </button>
               ))}
             </div>
@@ -513,7 +605,8 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
             </div>
           </div>
 
-          {/* Right: Specific dates / Flexible */}
+          {/* Right: Specific dates / Flexible — hidden for multi-city */}
+          {tripType !== 'multi_city' && (
           <div className="flex rounded-xl bg-gray-100 p-1 shrink-0">
             <button
               onClick={() => { setDateMode('specific'); onDateModeChange?.('specific'); }}
@@ -537,9 +630,213 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
               Flexible
             </button>
           </div>
+          )}
         </div>
 
         {/* Search inputs row */}
+        {tripType === 'multi_city' ? (
+          /* ── Multi-city legs editor ─────────────────────────────── */
+          <div className="space-y-2">
+            {multiCityLegs.map((leg, idx) => (
+              <div key={leg.id} className="grid grid-cols-1 md:grid-cols-[auto_1fr_1fr_1fr_auto] gap-2 items-center">
+                {/* Leg number */}
+                <div className="hidden md:flex items-center justify-center w-8 h-8 rounded-lg bg-[#1ABC9C]/10 text-[#1ABC9C] text-xs font-black">
+                  {idx + 1}
+                </div>
+                {/* Origin */}
+                <div className="relative">
+                  <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#F97316]" />
+                  <input
+                    type="text"
+                    placeholder={`Flight ${idx + 1} — From`}
+                    value={leg.origin}
+                    autoComplete="off"
+                    onChange={(e) => { updateLeg(idx, { origin: e.target.value, originCode: '', showOriginDropdown: true }); }}
+                    onFocus={() => { if (leg.originCode) updateLeg(idx, { origin: '', originCode: '' }); updateLeg(idx, { showOriginDropdown: true }); }}
+                    onBlur={() => setTimeout(() => updateLeg(idx, { showOriginDropdown: false }), 200)}
+                    className="w-full pl-11 pr-4 py-2.5 rounded-xl bg-gray-50 text-[#0F172A] placeholder-gray-500 text-[15px] font-semibold focus:outline-none focus:ring-4 focus:bg-white transition-all shadow-sm border border-gray-200 focus:border-[#F97316] focus:ring-[#F97316]/10"
+                  />
+                  {leg.showOriginDropdown && leg.origin.length >= 1 && (() => {
+                    const results = filteredAirports(leg.origin);
+                    return results.length > 0 ? (
+                      <div className="absolute top-full mt-2 left-0 w-[calc(100vw-2rem)] sm:min-w-[360px] sm:w-auto bg-white rounded-2xl border border-gray-200/80 p-2 z-[200] shadow-2xl max-h-48 overflow-y-auto">
+                        {results.map((airport) => (
+                          <button
+                            key={airport.code}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => updateLeg(idx, {
+                              origin: `${airport.city}${airport.state ? ', ' + airport.state : ''} (${airport.code})`,
+                              originCode: airport.code,
+                              showOriginDropdown: false,
+                            })}
+                            className="w-full text-left px-4 py-3 rounded-xl hover:bg-orange-50 transition-all"
+                          >
+                            <p className="text-base font-bold text-[#F97316]">{airport.code}</p>
+                            <p className="text-sm font-semibold text-[#0F172A] mt-0.5 leading-tight">{airport.name}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">{[airport.city, airport.state, airport.country].filter(Boolean).join(', ')}</p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+                {/* Destination */}
+                <div className="relative">
+                  <MapPin className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-[#1ABC9C]" />
+                  <input
+                    type="text"
+                    placeholder={`Flight ${idx + 1} — To`}
+                    value={leg.destination}
+                    autoComplete="off"
+                    onChange={(e) => { updateLeg(idx, { destination: e.target.value, destCode: '', showDestDropdown: true }); }}
+                    onFocus={() => { if (leg.destCode) updateLeg(idx, { destination: '', destCode: '' }); updateLeg(idx, { showDestDropdown: true }); }}
+                    onBlur={() => setTimeout(() => updateLeg(idx, { showDestDropdown: false }), 200)}
+                    className="w-full pl-11 pr-4 py-2.5 rounded-xl bg-gray-50 text-[#0F172A] placeholder-gray-500 text-[15px] font-semibold focus:outline-none focus:ring-4 focus:bg-white transition-all shadow-sm border border-gray-200 focus:border-[#1ABC9C] focus:ring-[#1ABC9C]/10"
+                  />
+                  {leg.showDestDropdown && leg.destination.length >= 1 && (() => {
+                    const results = filteredAirports(leg.destination);
+                    return results.length > 0 ? (
+                      <div className="absolute top-full mt-2 left-0 w-[calc(100vw-2rem)] sm:min-w-[360px] sm:w-auto bg-white rounded-2xl border border-gray-200/80 p-2 z-[200] shadow-2xl max-h-48 overflow-y-auto">
+                        {results.map((airport) => (
+                          <button
+                            key={airport.code}
+                            onMouseDown={(e) => e.preventDefault()}
+                            onClick={() => {
+                              updateLeg(idx, {
+                                destination: `${airport.city}${airport.state ? ', ' + airport.state : ''} (${airport.code})`,
+                                destCode: airport.code,
+                                showDestDropdown: false,
+                              });
+                              // Auto-fill next leg's origin
+                              if (idx < multiCityLegs.length - 1) {
+                                updateLeg(idx + 1, {
+                                  origin: `${airport.city}${airport.state ? ', ' + airport.state : ''} (${airport.code})`,
+                                  originCode: airport.code,
+                                });
+                              }
+                            }}
+                            className="w-full text-left px-4 py-3 rounded-xl hover:bg-teal-50 transition-all"
+                          >
+                            <p className="text-base font-bold text-[#1ABC9C]">{airport.code}</p>
+                            <p className="text-sm font-semibold text-[#0F172A] mt-0.5 leading-tight">{airport.name}</p>
+                            <p className="text-xs text-gray-400 mt-0.5">{[airport.city, airport.state, airport.country].filter(Boolean).join(', ')}</p>
+                          </button>
+                        ))}
+                      </div>
+                    ) : null;
+                  })()}
+                </div>
+                {/* Date */}
+                <div className="relative">
+                  <Calendar className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400 pointer-events-none" />
+                  <input
+                    type="date"
+                    value={leg.departureDate}
+                    onChange={(e) => {
+                      updateLeg(idx, { departureDate: e.target.value });
+                      // Ensure subsequent legs are not before this date
+                      multiCityLegs.forEach((l, i) => {
+                        if (i > idx && l.departureDate < e.target.value) {
+                          updateLeg(i, { departureDate: e.target.value });
+                        }
+                      });
+                    }}
+                    min={idx > 0 ? multiCityLegs[idx - 1].departureDate : getTomorrow()}
+                    className="w-full pl-12 pr-4 py-2.5 rounded-xl bg-gray-50 border border-gray-100 text-gray-900 text-[15px] font-semibold focus:outline-none focus:border-orange-300 focus:ring-4 focus:ring-orange-100 focus:bg-white transition-all shadow-sm"
+                  />
+                </div>
+                {/* Remove button */}
+                <div className="flex items-center">
+                  {multiCityLegs.length > 2 ? (
+                    <button
+                      onClick={() => removeLeg(idx)}
+                      className="w-10 h-10 rounded-xl bg-red-50 border border-red-200 text-red-400 hover:text-red-600 hover:bg-red-100 transition-all flex items-center justify-center"
+                      title="Remove this flight"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  ) : (
+                    <div className="w-10 h-10" /> /* spacer */
+                  )}
+                </div>
+              </div>
+            ))}
+            {/* Add leg + passengers + search */}
+            <div className="flex flex-wrap items-center gap-2 pt-1">
+              {multiCityLegs.length < 6 && (
+                <button
+                  onClick={addLeg}
+                  className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-gray-100 border border-gray-200 text-gray-600 hover:text-[#1ABC9C] hover:border-[#1ABC9C]/30 text-sm font-semibold transition-all"
+                >
+                  <Plus className="w-4 h-4" />
+                  Add Flight
+                </button>
+              )}
+              <div className="flex-1" />
+              {/* Passengers */}
+              <div ref={passRef} className="relative">
+                <button
+                  onClick={() => setShowPassengers(!showPassengers)}
+                  className="flex items-center gap-3 pl-5 pr-4 py-2.5 rounded-xl bg-gray-50 border border-gray-100 text-[15px] font-semibold text-gray-900 hover:bg-white transition-all shadow-sm"
+                >
+                  <Users className="w-5 h-5 text-gray-400 shrink-0" />
+                  <span>{totalPassengers} Traveler{totalPassengers > 1 ? 's' : ''}</span>
+                  <ChevronDown className="w-4 h-4 text-gray-400" />
+                </button>
+                {showPassengers && (
+                  <motion.div
+                    initial={{ opacity: 0, y: -8 }}
+                    animate={{ opacity: 1, y: 0 }}
+                    className="absolute top-full mt-2 right-0 w-64 bg-white rounded-2xl border border-gray-200 p-4 z-50 shadow-xl"
+                  >
+                    {[
+                      { key: 'adults' as const, label: 'Adults', sub: '12+' },
+                      { key: 'children' as const, label: 'Children', sub: '2–11' },
+                      { key: 'infants' as const, label: 'Infants', sub: 'Under 2' },
+                    ].map((item) => (
+                      <div key={item.key} className="flex items-center justify-between py-3 border-b border-gray-100 last:border-0">
+                        <div>
+                          <p className="text-sm font-semibold text-gray-800">{item.label}</p>
+                          <p className="text-xs text-gray-400">{item.sub}</p>
+                        </div>
+                        <div className="flex items-center gap-3">
+                          <button
+                            onClick={() => setPassengers((p: typeof passengers) => ({ ...p, [item.key]: Math.max(item.key === 'adults' ? 1 : 0, p[item.key] - 1) }))}
+                            className="w-8 h-8 rounded-lg bg-gray-100 border border-gray-200 text-gray-500 hover:text-gray-800 hover:bg-gray-200 transition-all flex items-center justify-center text-lg font-bold"
+                          >−</button>
+                          <span className="w-5 text-center text-sm font-bold text-gray-800">{passengers[item.key]}</span>
+                          <button
+                            onClick={() => setPassengers((p: typeof passengers) => ({ ...p, [item.key]: Math.min(9, p[item.key] + 1) }))}
+                            className="w-8 h-8 rounded-lg bg-gray-100 border border-gray-200 text-gray-500 hover:text-gray-800 hover:bg-gray-200 transition-all flex items-center justify-center text-lg font-bold"
+                          >+</button>
+                        </div>
+                      </div>
+                    ))}
+                  </motion.div>
+                )}
+              </div>
+              {/* Search button */}
+              {(() => {
+                const allLegsReady = multiCityLegs.every(l => l.originCode && l.destCode && l.departureDate);
+                return (
+                  <button
+                    onClick={handleSearch}
+                    disabled={!allLegsReady}
+                    className={cn(
+                      'px-8 py-2.5 rounded-xl text-base font-black text-white transition-all flex items-center gap-3 whitespace-nowrap shadow-xl active:scale-[0.98]',
+                      allLegsReady
+                        ? 'bg-[#1ABC9C] hover:brightness-110 shadow-[#1ABC9C]/30'
+                        : 'bg-gray-300 text-gray-100 cursor-not-allowed shadow-none'
+                    )}
+                  >
+                    <Plane className={cn('w-5 h-5', loading ? 'animate-pulse' : 'rotate-[-30deg]')} />
+                    Search Flights
+                  </button>
+                );
+              })()}
+            </div>
+          </div>
+        ) : (
         <div className={cn('grid gap-2', gridCols)}>
 
           {/* Origin */}
@@ -780,6 +1077,7 @@ const SearchForm = forwardRef<SearchFormHandle, SearchFormProps>(function Search
             })()}
           </div>
         </div>
+        )}{/* end tripType !== multi_city */}
       </div>
 
       {/* Flexible Month Grid */}

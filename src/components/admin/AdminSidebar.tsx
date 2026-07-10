@@ -7,6 +7,7 @@ import {
   LayoutDashboard, BookOpen, Users2, DollarSign,
   ScrollText, Bell, Settings, LogOut, Shield, ChevronRight,
   Brain, UserRoundSearch, AlertTriangle, Headset, Mail, MessageCircle,
+  Activity, Plug2, Tag, BarChart3, ToggleRight, CreditCard, BookMarked,
 } from 'lucide-react';
 import type { AdminRole } from '@/store/useAdminStore';
 
@@ -21,15 +22,22 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: '/admin/dashboard',            label: 'Dashboard',            icon: LayoutDashboard },
   { href: '/admin/bookings',             label: 'Bookings',             icon: BookOpen },
+  { href: '/admin/operations',           label: 'Operations',           icon: Activity, minRole: 'SUPPORT' },
+  { href: '/admin/providers',            label: 'Providers',            icon: Plug2, minRole: 'OPS_ADMIN' },
+  { href: '/admin/fare-management',      label: 'Fare Management',      icon: Tag, minRole: 'OPS_ADMIN' },
   { href: '/admin/customers',            label: 'Customer Users',       icon: UserRoundSearch, minRole: 'SUPPORT' },
   { href: '/admin/partners',             label: 'Partners',             icon: Users2, minRole: 'OPS_ADMIN' },
   { href: '/admin/finance',              label: 'Finance',              icon: DollarSign, minRole: 'FINANCE' },
+  { href: '/admin/finance/payments',     label: 'Payments',             icon: CreditCard, minRole: 'FINANCE' },
+  { href: '/admin/finance/ledger',       label: 'Ledger',               icon: BookMarked, minRole: 'FINANCE' },
+  { href: '/admin/reports',              label: 'Reports',              icon: BarChart3, minRole: 'FINANCE' },
   { href: '/admin/commercial-settings',  label: 'Commercial Settings',  icon: DollarSign, minRole: 'OPS_ADMIN' },
   { href: '/admin/ai-settings',          label: 'AI Settings',          icon: Brain,      minRole: 'OPS_ADMIN' },
   { href: '/admin/audit-logs',           label: 'Audit Logs',           icon: ScrollText, minRole: 'SUPPORT' },
   { href: '/admin/support-queue',        label: 'Support Queue',        icon: Headset, minRole: 'SUPPORT' },
   { href: '/admin/duffel-assistant',      label: 'Duffel Assistant',     icon: MessageCircle, minRole: 'SUPPORT' },
   { href: '/admin/email-history',        label: 'Email History',        icon: Mail, minRole: 'SUPPORT' },
+  { href: '/admin/system/feature-flags', label: 'Feature Flags',        icon: ToggleRight, minRole: 'SUPER_ADMIN' },
   { href: '/admin/admin-users',          label: 'Admin Users',          icon: Shield, minRole: 'SUPER_ADMIN' },
   { href: '/admin/settings',             label: 'Settings',             icon: Settings, minRole: 'SUPER_ADMIN' },
 ];

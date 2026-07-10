@@ -463,6 +463,12 @@ export function fromCabinType(cabinType: string): string {
 // Flight Search
 // ═══════════════════════════════════════════════
 
+export interface MultiCityLeg {
+  origin: string;
+  destination: string;
+  departureDate: string; // YYYY-MM-DD
+}
+
 export interface MystiflySearchParams {
   origin: string;
   destination: string;
@@ -474,44 +480,68 @@ export interface MystiflySearchParams {
   cabinClass?: string;
   maxStops?: MystiflyMaxStops;
   maxResults?: MystiflyRequestOptions;
+  pricingSource?: MystiflyPricingSource;
+  searchVersion?: string; // 'v1' | 'v2' | 'v2.2'
+  /** Multi-city legs — when provided, origin/destination/departureDate/returnDate are ignored */
+  legs?: MultiCityLeg[];
+}
+
+/**
+ * Determine the Mystifly AirTripType from the legs.
+ *   - 1 leg: OneWay
+ *   - 2 legs where leg2 is reverse of leg1: Return
+ *   - N legs where last destination = first origin: Circle
+ *   - Otherwise: OpenJaw
+ */
+function resolveAirTripType(legs: MultiCityLeg[]): MystiflyAirTripType {
+  if (legs.length <= 1) return 'OneWay';
+  if (legs.length === 2) {
+    const isReturn = legs[1].origin === legs[0].destination && legs[1].destination === legs[0].origin;
+    if (isReturn) return 'Return';
+  }
+  const isCircle = legs[legs.length - 1].destination === legs[0].origin;
+  return isCircle ? 'Circle' : 'OpenJaw';
 }
 
 /**
  * Search for flights via Mystifly.
  *
- * Uses v2.2 endpoint for latest search capabilities.
+ * Supports one-way, round-trip, and multi-city (Circle/OpenJaw).
  * Returns the raw Mystifly response — normalizer converts to UnifiedFlight.
  */
 export async function searchFlights(params: MystiflySearchParams): Promise<any> {
-  const originDestinations: MystiflyOriginDestination[] = [
-    {
-      DepartureDateTime: `${params.departureDate}T00:00:00`,
-      OriginLocationCode: params.origin,
-      DestinationLocationCode: params.destination,
-    },
-  ];
-
-  if (params.returnDate) {
-    originDestinations.push({
-      DepartureDateTime: `${params.returnDate}T00:00:00`,
-      OriginLocationCode: params.destination,
-      DestinationLocationCode: params.origin,
-    });
+  // Build legs array — either from explicit legs or from origin/destination/returnDate
+  let legs: MultiCityLeg[];
+  if (params.legs && params.legs.length > 0) {
+    legs = params.legs;
+  } else {
+    legs = [{ origin: params.origin, destination: params.destination, departureDate: params.departureDate }];
+    if (params.returnDate) {
+      legs.push({ origin: params.destination, destination: params.origin, departureDate: params.returnDate });
+    }
   }
+
+  const originDestinations: MystiflyOriginDestination[] = legs.map(leg => ({
+    DepartureDateTime: `${leg.departureDate}T00:00:00`,
+    OriginLocationCode: leg.origin,
+    DestinationLocationCode: leg.destination,
+  }));
 
   const passengerQuantities: MystiflyPassengerTypeQuantity[] = [];
   if (params.adults > 0) passengerQuantities.push({ Code: 'ADT', Quantity: params.adults });
   if ((params.children || 0) > 0) passengerQuantities.push({ Code: 'CHD', Quantity: params.children! });
   if ((params.infants || 0) > 0) passengerQuantities.push({ Code: 'INF', Quantity: params.infants! });
 
+  const airTripType = resolveAirTripType(legs);
+
   const searchRQ: MystiflySearchRQ = {
     OriginDestinationInformations: originDestinations,
     TravelPreferences: {
       MaxStopsQuantity: params.maxStops || 'All',
       CabinPreference: toCabinType(params.cabinClass || 'economy'),
-      AirTripType: params.returnDate ? 'Return' : 'OneWay',
+      AirTripType: airTripType,
     },
-    PricingSourceType: 'All',
+    PricingSourceType: params.pricingSource || 'All',
     IsRefundable: false,
     PassengerTypeQuantities: passengerQuantities,
     RequestOptions: params.maxResults || 'TwoHundred',
@@ -521,15 +551,22 @@ export async function searchFlights(params: MystiflySearchParams): Promise<any> 
     IsInfantWithSeat: false,
   };
 
+  // Determine search API version (default v2.2)
+  const version = params.searchVersion || 'v2.2';
+  const searchPath = `/api/${version}/Search/Flight`;
+  const routeDesc = legs.map(l => `${l.origin}→${l.destination}`).join(', ');
+  console.log(`[Mystifly] Search via ${searchPath} — ${routeDesc}, trip=${airTripType}, pricing=${searchRQ.PricingSourceType}`);
+
   const result = await mystiflyRequest<any>({
     method: 'POST',
-    path: '/api/v2.2/Search/Flight',
+    path: searchPath,
     body: searchRQ as unknown as Record<string, unknown>,
-    retries: 1, // Search can be slow
+    retries: 1,
   });
 
   return result;
 }
+
 
 // ═══════════════════════════════════════════════
 // Revalidate (Price/Availability Check)
@@ -781,6 +818,92 @@ export async function getStructuredFareRule(sfrKey: string): Promise<any> {
 // ═══════════════════════════════════════════════
 // Exports
 // ═══════════════════════════════════════════════
+// Post-Ticketing Requests (PTR)
+// ═══════════════════════════════════════════════
+
+export type PtrType = 'VoidQuote' | 'Void' | 'RefundQuote' | 'Refund' | 'ReIssueQuote' | 'ReIssue';
+
+export interface MystiflyPtrRQ {
+  UniqueID: string;
+  Target: MystiflyTarget;
+  Remarks?: string;
+  // For ReIssue/ReIssueQuote
+  NewFareSourceCode?: string;
+}
+
+/**
+ * Submit a Post-Ticketing Request to Mystifly.
+ *
+ * Supports: VoidQuote, Void, RefundQuote, Refund, ReIssueQuote, ReIssue.
+ * Returns the raw Mystifly PTR response.
+ */
+export async function postTicketingRequest(
+  uniqueId: string,
+  ptrType: PtrType,
+  remarks?: string,
+  newFareSourceCode?: string,
+): Promise<any> {
+  const rq: MystiflyPtrRQ = {
+    UniqueID: uniqueId,
+    Target: MYSTIFLY_TARGET,
+    ...(remarks ? { Remarks: remarks } : {}),
+    ...(newFareSourceCode ? { NewFareSourceCode: newFareSourceCode } : {}),
+  };
+
+  console.log(`[Mystifly] PTR ${ptrType} — UniqueID: ${uniqueId}`);
+
+  const result = await mystiflyRequest<any>({
+    method: 'POST',
+    path: `/api/PostTicketingRequest`,
+    body: {
+      ...rq,
+      PostTicketingRequestType: ptrType,
+    } as unknown as Record<string, unknown>,
+    retries: 0,
+  });
+
+  return result;
+}
+
+/**
+ * Search for Post-Ticketing Requests by UniqueID.
+ */
+export async function searchPtrStatus(uniqueId: string): Promise<any> {
+  console.log(`[Mystifly] Searching PTR status — UniqueID: ${uniqueId}`);
+
+  const result = await mystiflyRequest<any>({
+    method: 'POST',
+    path: `/api/Search/PostTicketingRequest`,
+    body: {
+      UniqueID: uniqueId,
+      Target: MYSTIFLY_TARGET,
+    } as unknown as Record<string, unknown>,
+    retries: 1,
+  });
+
+  return result;
+}
+
+/**
+ * Mark a PTR notification as read.
+ */
+export async function markPtrAsRead(uniqueId: string): Promise<any> {
+  console.log(`[Mystifly] Marking PTR as read — UniqueID: ${uniqueId}`);
+
+  const result = await mystiflyRequest<any>({
+    method: 'POST',
+    path: `/api/MarkAsRead`,
+    body: {
+      UniqueID: uniqueId,
+      Target: MYSTIFLY_TARGET,
+    } as unknown as Record<string, unknown>,
+    retries: 0,
+  });
+
+  return result;
+}
+
+// ═══════════════════════════════════════════════
 
 export default {
   searchFlights,
@@ -794,6 +917,10 @@ export default {
   getSeatMap,
   addBookingNotes,
   getStructuredFareRule,
+  // PTR
+  postTicketingRequest,
+  searchPtrStatus,
+  markPtrAsRead,
   // Helpers
   toCabinType,
   fromCabinType,
@@ -801,3 +928,4 @@ export default {
   CABIN_MAP,
   CABIN_REVERSE_MAP,
 };
+

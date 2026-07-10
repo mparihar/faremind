@@ -14,6 +14,10 @@ import {
   ChevronLeft,
   ChevronRight,
   MessageCircle,
+  Wrench,
+  Ticket,
+  Users,
+  RotateCcw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -21,9 +25,12 @@ import { useAuthStore } from '@/store/useAuthStore';
 const AGENT_NAV = [
   { href: '/agent/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/agent/new-booking', label: 'New Booking', icon: PlaneTakeoff },
+  { href: '/agent/booking-workspace', label: 'Booking Workspace', icon: Wrench },
   { href: '/agent/bookings', label: 'My Bookings', icon: Briefcase },
+  { href: '/agent/ticket-queue', label: 'Ticket Queue', icon: Ticket },
   { href: '/agent/passenger-updates', label: 'Passenger Updates', icon: UserCog },
-  { href: '/agent/cancellations', label: 'Cancellation Requests', icon: XCircle },
+  { href: '/agent/post-booking', label: 'Post-Booking', icon: RotateCcw },
+  { href: '/agent/cancellations', label: 'Cancellations', icon: XCircle },
   { href: '/agent/duffel-assistant', label: 'Duffel Assistant', icon: MessageCircle },
   { href: '/agent/notifications', label: 'Notifications', icon: Bell },
   { href: '/agent/profile', label: 'Profile', icon: User },

@@ -21,26 +21,61 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     const cabin       = q.cabin || 'economy';
     const trip        = q.trip || 'one_way';
 
-    if (!origin || !destination || !date) {
-      return reply.code(400).send({ error: 'Missing required parameters: origin, destination, date' });
-    }
-    if (origin.length !== 3 || destination.length !== 3) {
-      return reply.code(400).send({ error: 'origin and destination must be 3-letter IATA codes' });
-    }
-    if (origin === destination) {
-      return reply.code(400).send({ error: 'origin and destination must be different' });
+    // Parse multi-city legs (JSON-encoded array)
+    let legs: { origin: string; destination: string; departureDate: string }[] | undefined;
+    if (q.legs) {
+      try {
+        legs = JSON.parse(q.legs);
+        if (!Array.isArray(legs) || legs.length < 2) {
+          return reply.code(400).send({ error: 'Multi-city requires at least 2 legs' });
+        }
+        for (const leg of legs) {
+          if (!leg.origin || !leg.destination || !leg.departureDate) {
+            return reply.code(400).send({ error: 'Each leg must have origin, destination, and departureDate' });
+          }
+          if (leg.origin.length !== 3 || leg.destination.length !== 3) {
+            return reply.code(400).send({ error: 'origin and destination must be 3-letter IATA codes' });
+          }
+        }
+      } catch {
+        return reply.code(400).send({ error: 'Invalid legs JSON format' });
+      }
     }
 
+    const isMultiCity = trip === 'multi_city' && legs && legs.length >= 2;
+
+    // For non-multi-city, require origin/destination/date
+    if (!isMultiCity) {
+      if (!origin || !destination || !date) {
+        return reply.code(400).send({ error: 'Missing required parameters: origin, destination, date' });
+      }
+      if (origin.length !== 3 || destination.length !== 3) {
+        return reply.code(400).send({ error: 'origin and destination must be 3-letter IATA codes' });
+      }
+      if (origin === destination) {
+        return reply.code(400).send({ error: 'origin and destination must be different' });
+      }
+    }
+
+    // For multi-city, use first leg for origin/destination in cache key + logging
+    const effectiveOrigin = isMultiCity ? legs![0].origin.toUpperCase() : origin;
+    const effectiveDestination = isMultiCity ? legs![legs!.length - 1].destination.toUpperCase() : destination;
+    const effectiveDate = isMultiCity ? legs![0].departureDate : date;
+
     // ── Redis cache check (cabin-agnostic key) ───────────────────────────────
-    const cacheKey = searchKey(origin, destination, date, returnDate, adults, children, infants);
+    const cacheKey = isMultiCity
+      ? searchKey(effectiveOrigin, effectiveDestination, effectiveDate, undefined, adults, children, infants) + ':mc'
+      : searchKey(origin, destination, date, returnDate, adults, children, infants);
     const cached = await cacheGet<object>(cacheKey);
     if (cached) return cached;
 
     try {
-      // Single cabin-agnostic search — Duffel returns offers for ALL available
-      // cabin classes when cabin_class is omitted.  This avoids rate-limiting
-      // (429) that occurs when firing 4 parallel per-cabin requests.
-      const result = await searchFlights({ origin, destination, date, returnDate, adults, children, infants });
+      const result = await searchFlights({
+        origin: effectiveOrigin, destination: effectiveDestination,
+        date: effectiveDate, returnDate,
+        adults, children, infants,
+        ...(isMultiCity ? { legs } : {}),
+      });
 
       const mergedFlights = result.flights;
       const totalTimeMs = result.totalTimeMs;
@@ -51,11 +86,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const lowestPrice = mergedFlights.length > 0 ? Math.min(...mergedFlights.map((f) => f.totalPrice)) : undefined;
       logSearch({
-        origin, destination, departureDate: new Date(date),
+        origin: effectiveOrigin, destination: effectiveDestination, departureDate: new Date(effectiveDate),
         returnDate: returnDate ? new Date(returnDate) : undefined,
         adults, children, infants,
         cabinClass: cabin.toUpperCase() as any,
-        tripType: trip === 'round_trip' ? 'ROUND_TRIP' : 'ONE_WAY',
+        tripType: isMultiCity ? 'MULTI_CITY' : trip === 'round_trip' ? 'ROUND_TRIP' : 'ONE_WAY',
         resultsCount: mergedFlights.length, lowestPrice, currency: 'USD',
         searchDurationMs: totalTimeMs,
       }).catch(() => {});

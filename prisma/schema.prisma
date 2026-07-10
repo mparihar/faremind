@@ -614,6 +614,21 @@ model MasterBooking {
   lastProviderSupportOpenedBy  String?    @map("last_provider_support_opened_by")
   providerSupportSessionCount  Int        @default(0) @map("provider_support_session_count")
 
+  // ── Mystifly / Provider Lifecycle Fields ──
+  searchFareSourceCode         String?    @map("search_fare_source_code")      // Original FSC from search
+  revalidatedFareSourceCode    String?    @map("revalidated_fare_source_code") // FSC returned by revalidation
+  mystiflyMfRef                String?    @map("mystifly_mf_ref")              // Mystifly booking UniqueID
+  providerBookingStatus        String?    @map("provider_booking_status")      // Raw provider status text
+  providerEnvironment          String?    @map("provider_environment")         // 'Test' | 'Production'
+  providerApiVersion           String?    @map("provider_api_version")         // 'v1' | 'v2' | 'v2.2'
+  bookingAttemptKey            String?    @unique @map("booking_attempt_key")  // Idempotency key
+
+  // Relations — reconciliation
+  revalidationSnapshots        RevalidationSnapshot[]
+  bookingAttempts              BookingAttempt[]
+  ticketingReconciliations     TicketingReconciliation[]
+  postTicketingRequests        PostTicketingRequest[]
+
   @@index([masterBookingReference])
   @@index([masterPnr])
   @@index([customerEmail])
@@ -621,6 +636,8 @@ model MasterBooking {
   @@index([departureDate])
   @@index([bookingStatus])
   @@index([agentUserId])
+  @@index([mystiflyMfRef])
+  @@index([bookingAttemptKey])
   @@map("master_bookings")
 }
 
@@ -1746,12 +1763,18 @@ enum MbTripType {
 
 enum MbBookingStatus {
   CREATED
+  PAYMENT_CAPTURED
+  PROVIDER_BOOKING_IN_PROGRESS
+  PROVIDER_BOOKED
   CONFIRMED
+  TICKETING_PENDING
   TICKETED
   CANCEL_REQUESTED
   CANCELLED
   COMPLETED
   FAILED
+  PROVIDER_BOOKING_FAILED
+  NOT_BOOKED
 }
 
 enum MbPaymentStatus {
@@ -1766,6 +1789,7 @@ enum MbPaymentStatus {
 enum MbTicketingStatus {
   NOT_STARTED
   IN_PROGRESS
+  TICKETING_PENDING
   ISSUED
   PARTIALLY_ISSUED
   FAILED
@@ -2414,3 +2438,245 @@ model EmailLog {
   @@map("email_logs")
 }
 
+// ═══════════════════════════════════════════════
+// MYSTIFLY — REVALIDATION SNAPSHOTS
+// ═══════════════════════════════════════════════
+
+model RevalidationSnapshot {
+  id                        String   @id @default(cuid())
+  bookingId                 String?  @map("booking_id")
+  searchFareSourceCode      String   @map("search_fare_source_code") @db.Text
+  revalidatedFareSourceCode String?  @map("revalidated_fare_source_code") @db.Text
+  searchTotalFare           Decimal? @map("search_total_fare") @db.Decimal(10, 2)
+  revalidatedTotalFare      Decimal? @map("revalidated_total_fare") @db.Decimal(10, 2)
+  searchCurrency            String?  @map("search_currency")
+  revalidatedCurrency       String?  @map("revalidated_currency")
+  priceChanged              Boolean  @default(false) @map("price_changed")
+  priceDifference           Decimal? @map("price_difference") @db.Decimal(10, 2)
+  accepted                  Boolean  @default(false)
+  rawRequest                Json?    @map("raw_request")
+  rawResponse               Json?    @map("raw_response")
+  provider                  String   @default("MYSTIFLY")
+  createdAt                 DateTime @default(now()) @map("created_at")
+
+  booking MasterBooking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([createdAt])
+  @@map("revalidation_snapshots")
+}
+
+// ═══════════════════════════════════════════════
+// MYSTIFLY — BOOKING ATTEMPT IDEMPOTENCY
+// ═══════════════════════════════════════════════
+
+model BookingAttempt {
+  id                    String   @id @default(cuid())
+  bookingId             String?  @map("booking_id")
+  idempotencyKey        String   @unique @map("idempotency_key")
+  provider              String   @default("MYSTIFLY")
+  fareSourceCode        String   @map("fare_source_code") @db.Text
+  status                BookingAttemptStatus @default(PENDING)
+  providerUniqueId      String?  @map("provider_unique_id")
+  providerStatus        String?  @map("provider_status")
+  paymentIntentId       String?  @map("payment_intent_id")
+  paymentCaptured       Boolean  @default(false) @map("payment_captured")
+  refundInitiated       Boolean  @default(false) @map("refund_initiated")
+  refundId              String?  @map("refund_id")
+  errorMessage          String?  @map("error_message") @db.Text
+  rawRequest            Json?    @map("raw_request")
+  rawResponse           Json?    @map("raw_response")
+  attemptNumber         Int      @default(1) @map("attempt_number")
+  lockedAt              DateTime? @map("locked_at")
+  lockedUntil           DateTime? @map("locked_until")
+  completedAt           DateTime? @map("completed_at")
+  failedAt              DateTime? @map("failed_at")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  booking MasterBooking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([idempotencyKey])
+  @@index([status])
+  @@index([lockedUntil])
+  @@map("booking_attempts")
+}
+
+enum BookingAttemptStatus {
+  PENDING
+  LOCKED
+  PAYMENT_CAPTURED
+  PROVIDER_BOOKING_SENT
+  PROVIDER_BOOKING_SUCCESS
+  PROVIDER_BOOKING_FAILED
+  TICKETING_SENT
+  TICKETING_SUCCESS
+  TICKETING_PENDING
+  COMPLETED
+  FAILED
+  REFUNDED
+}
+
+// ═══════════════════════════════════════════════
+// MYSTIFLY — TICKETING RECONCILIATION QUEUE
+// ═══════════════════════════════════════════════
+
+model TicketingReconciliation {
+  id                    String   @id @default(cuid())
+  bookingId             String   @map("booking_id")
+  provider              String   @default("MYSTIFLY")
+  providerUniqueId      String   @map("provider_unique_id")
+  fareSourceCode        String?  @map("fare_source_code") @db.Text
+  status                TicketReconStatus @default(PENDING)
+  pollCount             Int      @default(0) @map("poll_count")
+  lastPollAt            DateTime? @map("last_poll_at")
+  nextPollAt            DateTime? @map("next_poll_at")
+  lastProviderStatus    String?  @map("last_provider_status")
+  lastProviderResponse  Json?    @map("last_provider_response")
+  tripDetailsResponse   Json?    @map("trip_details_response")
+  ticketNumbers         String[] @map("ticket_numbers")
+  resolvedAt            DateTime? @map("resolved_at")
+  resolvedBy            String?  @map("resolved_by")
+  resolutionNotes       String?  @map("resolution_notes") @db.Text
+  escalatedAt           DateTime? @map("escalated_at")
+  errorMessage          String?  @map("error_message") @db.Text
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  booking MasterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([status])
+  @@index([nextPollAt, status])
+  @@index([providerUniqueId])
+  @@map("ticketing_reconciliations")
+}
+
+enum TicketReconStatus {
+  PENDING
+  POLLING
+  TICKETED
+  NOT_BOOKED
+  MANUAL_REVIEW
+  ESCALATED
+  RESOLVED
+  FAILED
+}
+
+// ═══════════════════════════════════════════════
+// PROVIDER FARE INVENTORY RULES
+// ═══════════════════════════════════════════════
+
+model ProviderFareInventoryRule {
+  id                    String   @id @default(cuid())
+  provider              String   @default("MYSTIFLY")
+  ruleName              String   @map("rule_name")
+  fareType              String   @map("fare_type")
+  originAirport         String?  @map("origin_airport")
+  destinationAirport    String?  @map("destination_airport")
+  airlineCode           String?  @map("airline_code")
+  airlineName           String?  @map("airline_name")
+  searchVersion         String   @default("v2.2") @map("search_version")
+  target                String   @default("Test")
+  isActive              Boolean  @default(true) @map("is_active")
+  priority              Int      @default(1)
+  holdAllowed           Boolean  @default(false) @map("hold_allowed")
+  holdDurationMinutes   Int?     @map("hold_duration_minutes")
+  notes                 String?  @db.Text
+  createdByAdminId      String?  @map("created_by_admin_id")
+  createdByAdminEmail   String?  @map("created_by_admin_email")
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@index([provider, fareType])
+  @@index([originAirport, destinationAirport])
+  @@index([airlineCode])
+  @@index([isActive])
+  @@map("provider_fare_inventory_rules")
+}
+
+// ═══════════════════════════════════════════════
+// PROVIDER HOLD RULES
+// ═══════════════════════════════════════════════
+
+model ProviderHoldRule {
+  id                    String   @id @default(cuid())
+  provider              String   @default("MYSTIFLY")
+  fareType              String?  @map("fare_type")
+  airlineCode           String?  @map("airline_code")
+  originAirport         String?  @map("origin_airport")
+  destinationAirport    String?  @map("destination_airport")
+  holdAllowed           Boolean  @default(false) @map("hold_allowed")
+  holdDurationMinutes   Int      @default(60) @map("hold_duration_minutes")
+  isActive              Boolean  @default(true) @map("is_active")
+  priority              Int      @default(1)
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  @@index([provider, isActive])
+  @@map("provider_hold_rules")
+}
+
+// ═══════════════════════════════════════════════
+// POST-TICKETING REQUESTS (Void / Refund / Reissue)
+// ═══════════════════════════════════════════════
+
+model PostTicketingRequest {
+  id                    String   @id @default(cuid())
+  bookingId             String   @map("booking_id")
+  provider              String   @default("MYSTIFLY")
+  providerUniqueId      String   @map("provider_unique_id")
+  requestType           PtrRequestType @map("request_type")
+  status                PtrStatus @default(QUOTE_PENDING)
+  fareSourceCode        String?  @map("fare_source_code") @db.Text
+  ticketNumbers         String[] @map("ticket_numbers")
+  quoteTotalAmount      Decimal? @map("quote_total_amount") @db.Decimal(10, 2)
+  quotePenaltyAmount    Decimal? @map("quote_penalty_amount") @db.Decimal(10, 2)
+  quoteRefundAmount     Decimal? @map("quote_refund_amount") @db.Decimal(10, 2)
+  quoteCurrency         String?  @map("quote_currency")
+  quoteExpiresAt        DateTime? @map("quote_expires_at")
+  providerRequestId     String?  @map("provider_request_id")
+  providerQuoteResponse Json?    @map("provider_quote_response")
+  providerExecResponse  Json?    @map("provider_exec_response")
+  providerStatus        String?  @map("provider_status")
+  requestedBy           String   @map("requested_by")
+  requestedByRole       String?  @map("requested_by_role")
+  approvedBy            String?  @map("approved_by")
+  approvedAt            DateTime? @map("approved_at")
+  executedAt            DateTime? @map("executed_at")
+  failedAt              DateTime? @map("failed_at")
+  failureReason         String?  @map("failure_reason") @db.Text
+  notes                 String?  @db.Text
+  createdAt             DateTime @default(now()) @map("created_at")
+  updatedAt             DateTime @updatedAt @map("updated_at")
+
+  booking MasterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([bookingId])
+  @@index([requestType, status])
+  @@index([providerUniqueId])
+  @@index([status])
+  @@map("post_ticketing_requests")
+}
+
+enum PtrRequestType {
+  VOID_QUOTE
+  VOID
+  REFUND_QUOTE
+  REFUND
+  REISSUE_QUOTE
+  REISSUE
+}
+
+enum PtrStatus {
+  QUOTE_PENDING
+  QUOTE_RECEIVED
+  QUOTE_EXPIRED
+  AWAITING_APPROVAL
+  APPROVED
+  EXECUTING
+  COMPLETED
+  FAILED
+  CANCELLED
+}

@@ -242,6 +242,7 @@ function SearchContent() {
   const cabin = searchParams.get('cabin') || 'economy';
   const returnDateParam = searchParams.get('return') || '';
   const tripParam = searchParams.get('trip') || 'one_way';
+  const legsParam = searchParams.get('legs') || '';
   const dnaAutoTrigger = searchParams.get('dna') === '1';
 
   const originAirport = useMemo(() => AIRPORTS.find((a) => a.code === origin), [origin]);
@@ -296,6 +297,7 @@ function SearchContent() {
       setDnaAiSnapshotRT(null);
     }
 
+
     const params = new URLSearchParams({
       origin, destination, date, adults, cabin,
       children: childrenParam,
@@ -303,6 +305,7 @@ function SearchContent() {
       trip: tripParam,
       ...(returnDateParam ? { returnDate: returnDateParam } : {}),
       ...(searchParams.get('fromFlex') === '1' ? { fromFlex: '1' } : {}),
+      ...(legsParam ? { legs: legsParam } : {}),
     });
     fetch(`/api/search?${params}`)
       .then((res) => res.json())
@@ -1016,6 +1019,36 @@ function SearchContent() {
 
                 {/* main route row */}
                 <div className="flex items-center gap-3 flex-wrap">
+                  {tripParam === 'multi_city' && legsParam ? (() => {
+                    try {
+                      const parsedLegs = JSON.parse(legsParam) as { origin: string; destination: string; departureDate: string }[];
+                      const allCodes: string[] = [];
+                      parsedLegs.forEach((l, i) => {
+                        if (i === 0) allCodes.push(l.origin);
+                        allCodes.push(l.destination);
+                      });
+                      return allCodes.map((code, i) => (
+                        <span key={`${code}-${i}`} className="flex items-center gap-2">
+                          <div className="flex flex-col leading-none">
+                            <span className="text-[#00ff41] text-base sm:text-xl font-black tracking-[0.1em] leading-tight" style={{ textShadow: '0 0 12px rgba(0,255,65,0.6)' }}>
+                              {code}
+                            </span>
+                            <span className="hidden sm:block text-[9px] text-[#00ff41]/55 uppercase tracking-widest mt-0.5">
+                              {(AIRPORTS.find(a => a.code === code)?.city || code).toUpperCase()}
+                            </span>
+                          </div>
+                          {i < allCodes.length - 1 && (
+                            <div className="flex items-center gap-1 text-[#00ff41]/40 pb-0.5">
+                              <span className="text-xs tracking-[-2px]">──</span>
+                              <Plane className="w-3 h-3 text-[#00ff41]/70" style={{ filter: 'drop-shadow(0 0 4px rgba(0,255,65,0.5))' }} />
+                              <span className="text-xs tracking-[-2px]">──</span>
+                            </div>
+                          )}
+                        </span>
+                      ));
+                    } catch { return null; }
+                  })() : (
+                    <>
                   {/* origin */}
                   <div className="flex flex-col leading-none">
                     <span className="text-[8px] text-[#00ff41]/40 uppercase tracking-[0.2em]">from</span>
@@ -1044,6 +1077,8 @@ function SearchContent() {
                       {(destAirport?.city || destination).toUpperCase()}
                     </span>
                   </div>
+                    </>
+                  )}
 
                   {/* divider */}
                   <div className="hidden sm:block w-px h-9 bg-[#00ff41]/15 mx-1 self-center" />
@@ -1073,6 +1108,12 @@ function SearchContent() {
                         <>
                           <span className="text-[#00ff41]/25">·</span>
                           <span className="text-[#00ff41]/70 font-bold">RT</span>
+                        </>
+                      )}
+                      {tripParam === 'multi_city' && (
+                        <>
+                          <span className="text-[#00ff41]/25">·</span>
+                          <span className="text-[#00ff41]/70 font-bold">MULTI</span>
                         </>
                       )}
                     </div>

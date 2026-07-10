@@ -985,8 +985,12 @@ export async function POST(req: NextRequest) {
     // ══════════════════════════════════════════════════════════════════════════
     // PHASE 2b — MYSTIFLY Order Creation
     // ══════════════════════════════════════════════════════════════════════════
-    // Mystifly uses a 3-step flow: Revalidate → Book → OrderTicket
+    // Mystifly uses a 4-step flow: Revalidate → Stripe Capture → BookFlight → OrderTicket
     // FareSourceCode is the offer identifier (stored as providerOfferId).
+    //
+    // FINANCIAL SAFETY: Stripe capture BEFORE BookFlight.
+    // Mystifly debits agency balance at BookFlight, so we must guarantee
+    // customer payment before creating the provider booking.
     else if (isMystifly) {
       try {
         if (!fareSourceCode) {
@@ -998,13 +1002,17 @@ export async function POST(req: NextRequest) {
         }
 
         const primaryPaxForMystifly = passengers[0] ?? {};
+        // Track both the original search FSC and the revalidated one
+        const searchFareSourceCode = fareSourceCode;
+        let revalidatedFareSourceCode: string | null = null;
+        let mystiflyPaymentCaptured = false;
 
         // ── Step 1: Revalidate fare ──────────────────────────────────────
-        console.log(`[Mystifly] Step 1/3: Revalidating fare...`);
+        console.log(`[Mystifly] Step 1/4: Revalidating fare...`);
         const revalRes = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fareSourceCode }),
+          body: JSON.stringify({ fareSourceCode: searchFareSourceCode }),
         });
         const revalData = await revalRes.json();
 
@@ -1023,6 +1031,11 @@ export async function POST(req: NextRequest) {
             { status: 422 }
           );
         }
+
+        // Capture revalidated FareSourceCode if provider returns a new one
+        revalidatedFareSourceCode = revalData.fareSourceCode || revalData.revalidatedFareSourceCode || null;
+        // Use revalidated FSC for booking if available, otherwise use original
+        const bookingFareSourceCode = revalidatedFareSourceCode || searchFareSourceCode;
 
         // Price-change guard: compare revalidated fare with stored fare
         if (revalData.totalFare != null) {
@@ -1046,15 +1059,45 @@ export async function POST(req: NextRequest) {
           providerCurrency = revalData.currency || currency;
         }
 
-        console.log(`[Mystifly] ✅ Revalidation passed — fare: $${providerPayableAmount}`);
+        console.log(`[Mystifly] ✅ Revalidation passed — fare: $${providerPayableAmount}, FSC updated: ${revalidatedFareSourceCode ? 'YES' : 'NO'}`);
 
-        // ── Step 2: Create booking (PNR) ─────────────────────────────────
-        console.log(`[Mystifly] Step 2/3: Creating booking...`);
+        // ── Step 2: Stripe Capture (BEFORE BookFlight) ───────────────────
+        // Secure customer payment BEFORE debiting agency balance at Mystifly.
+        console.log(`[Mystifly] Step 2/4: Capturing Stripe payment...`);
+        if (stripeVerified && paymentIntentId) {
+          try {
+            const captured = await stripe.paymentIntents.capture(paymentIntentId);
+            mystiflyPaymentCaptured = true;
+            console.log(
+              `[Stripe] ✅ Payment captured: ${captured.id} — $${(captured.amount / 100).toFixed(2)} ${captured.currency}`
+            );
+          } catch (captureErr: any) {
+            console.error(`[Stripe] ❌ Payment capture failed: ${captureErr.message}`);
+            // Payment failed — do NOT proceed to BookFlight
+            const customerMessage = 'Payment could not be processed. Your card was not charged. Please try a different payment method.';
+            await logBookingFailure({
+              passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
+              paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
+              currency, errorCode: 'STRIPE_CAPTURE_FAILED',
+              errorMessage: captureErr.message, customerMessage,
+              failureStage: 'STRIPE_CAPTURE_BEFORE_BOOKING',
+            });
+            return NextResponse.json(
+              { error: 'Payment processing failed.', errorCode: 'PAYMENT_CAPTURE_FAILED', customerMessage },
+              { status: 402 }
+            );
+          }
+        }
+
+        // ── Step 3: Create booking (PNR) ─────────────────────────────────
+        // Payment is captured — now create the booking at Mystifly.
+        // If this fails, we MUST refund the Stripe capture.
+        console.log(`[Mystifly] Step 3/4: Creating booking...`);
         const bookRes = await fetch(`${BACKEND_URL}/api/mystifly/book`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
-            fareSourceCode,
+            fareSourceCode: bookingFareSourceCode,
             passengers: passengers.map((p: any) => ({
               firstName: p.firstName,
               lastName: p.lastName,
@@ -1074,15 +1117,27 @@ export async function POST(req: NextRequest) {
         const bookData = await bookRes.json();
 
         if (!bookRes.ok || !bookData.success || !bookData.uniqueId) {
-          await cancelStripeAuth('Mystifly booking failed');
+          // BookFlight failed AFTER payment capture — must refund
           const errMsg = bookData.error || 'Booking creation failed';
-          const customerMessage = `${errMsg}. Booking could not be completed at this time. Your card was not charged. Please try again.`;
+          console.error(`[Mystifly] ❌ BookFlight failed after payment capture: ${errMsg}`);
+
+          if (mystiflyPaymentCaptured && paymentIntentId) {
+            try {
+              const refund = await stripe.refunds.create({ payment_intent: paymentIntentId });
+              console.log(`[Stripe] ✅ Refund issued after BookFlight failure: ${refund.id}`);
+            } catch (refundErr: any) {
+              console.error(`[Stripe] ❌ CRITICAL: Refund failed after BookFlight failure: ${refundErr.message}`);
+              // This requires manual intervention — log prominently
+            }
+          }
+
+          const customerMessage = `${errMsg}. Your card has been refunded. Please try again.`;
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
             currency, errorCode: 'MYSTIFLY_BOOKING_FAILED',
             errorMessage: errMsg, customerMessage,
-            failureStage: 'MYSTIFLY_BOOKING',
+            failureStage: 'MYSTIFLY_BOOKING_AFTER_CAPTURE',
           });
           return NextResponse.json(
             { error: errMsg, errorCode: 'PROVIDER_ORDER_FAILED', customerMessage },
@@ -1097,53 +1152,75 @@ export async function POST(req: NextRequest) {
 
         console.log(`[Mystifly] ✅ Booking created — MFRef: ${mystiflyBookingResult.uniqueId}`);
 
-        // ── Stripe Capture ───────────────────────────────────────────────
-        // PNR is created — now charge the card.
-        if (stripeVerified && paymentIntentId) {
-          try {
-            const captured = await stripe.paymentIntents.capture(paymentIntentId);
-            console.log(
-              `[Stripe] ✅ Payment captured: ${captured.id} — $${(captured.amount / 100).toFixed(2)} ${captured.currency}`
-            );
-          } catch (captureErr: any) {
-            console.error(
-              `[Stripe] ❌ CRITICAL: Capture failed for ${paymentIntentId} after Mystifly booking ${mystiflyBookingResult.uniqueId}: ${captureErr.message}`
-            );
-            // Continue — the booking exists. A background job should retry capture.
-          }
-        }
-
-        // ── Step 3: Issue ticket ─────────────────────────────────────────
-        // Ticket issuance after payment. Non-blocking — if it fails,
-        // the booking still exists and ticketing can be retried by admin.
-        console.log(`[Mystifly] Step 3/3: Issuing ticket...`);
+        // ── Step 4: Issue ticket ─────────────────────────────────────────
+        // Ticket issuance after successful booking. Non-blocking — if it fails
+        // or returns "Ticket-in Process", the booking exists and will be
+        // reconciled by the ticketing worker.
+        console.log(`[Mystifly] Step 4/4: Issuing ticket...`);
+        let ticketingStatus: 'ISSUED' | 'TICKETING_PENDING' | 'FAILED' = 'FAILED';
         try {
           const ticketRes = await fetch(`${BACKEND_URL}/api/mystifly/order-ticket`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
               uniqueId: mystiflyBookingResult.uniqueId,
-              fareSourceCode,
+              fareSourceCode: bookingFareSourceCode,
               clientReferenceNo: sessionId || undefined,
             }),
           });
           const ticketData = await ticketRes.json();
 
           if (ticketRes.ok && ticketData.success) {
-            console.log(`[Mystifly] ✅ Ticket issued for MFRef: ${mystiflyBookingResult.uniqueId}`);
+            // Check if truly ticketed or just "Ticket-in Process"
+            const rawStatus = (ticketData.status || ticketData.ticketStatus || '').toLowerCase();
+            if (rawStatus.includes('ticket-in process') || rawStatus.includes('in process')) {
+              ticketingStatus = 'TICKETING_PENDING';
+              console.log(`[Mystifly] ⏳ Ticket-in-Process for MFRef: ${mystiflyBookingResult.uniqueId} — queuing for reconciliation`);
+            } else {
+              ticketingStatus = 'ISSUED';
+              console.log(`[Mystifly] ✅ Ticket issued for MFRef: ${mystiflyBookingResult.uniqueId}`);
+            }
           } else {
-            console.warn(`[Mystifly] ⚠️ Ticketing failed (non-blocking): ${ticketData.error || 'unknown'}`);
-            // Don't fail the booking — ticketing can be retried by admin
+            ticketingStatus = 'TICKETING_PENDING';
+            console.warn(`[Mystifly] ⚠️ Ticketing returned error (non-blocking): ${ticketData.error || 'unknown'} — queuing for reconciliation`);
           }
         } catch (ticketErr: any) {
-          console.warn(`[Mystifly] ⚠️ Ticketing error (non-blocking): ${ticketErr.message}`);
+          ticketingStatus = 'TICKETING_PENDING';
+          console.warn(`[Mystifly] ⚠️ Ticketing error (non-blocking): ${ticketErr.message} — queuing for reconciliation`);
+        }
+
+        // Queue for reconciliation if ticketing didn't complete immediately
+        if (ticketingStatus === 'TICKETING_PENDING') {
+          try {
+            const { queueForReconciliation } = await import('@/../../backend/src/workers/ticketing-reconciliation');
+            // Dynamic import to avoid circular dependencies at module load
+            // This is fire-and-forget — doesn't block checkout
+            queueForReconciliation({
+              bookingId: '', // Will be set after MasterBooking is created below
+              providerUniqueId: mystiflyBookingResult.uniqueId,
+              fareSourceCode: bookingFareSourceCode,
+            }).catch((err: any) => {
+              console.error(`[Mystifly] Failed to queue reconciliation: ${err.message}`);
+            });
+          } catch (importErr: any) {
+            console.error(`[Mystifly] Failed to import reconciliation worker: ${importErr.message}`);
+          }
         }
 
       } catch (mystiflyErr: any) {
         console.error('[Mystifly] ❌ Order creation failed:', mystiflyErr.message);
-        await cancelStripeAuth(`Mystifly order failed: ${mystiflyErr.message}`);
 
-        const customerMessage = `The airline was unable to process this booking. Your card was not charged. Please try again.`;
+        // If payment was captured, try to refund
+        if (stripeVerified && paymentIntentId) {
+          try {
+            await stripe.refunds.create({ payment_intent: paymentIntentId });
+            console.log(`[Stripe] ✅ Refund issued after Mystifly failure`);
+          } catch (refundErr: any) {
+            console.error(`[Stripe] ❌ CRITICAL: Refund failed: ${refundErr.message}`);
+          }
+        }
+
+        const customerMessage = `The airline was unable to process this booking. Your payment has been refunded. Please try again.`;
         await logBookingFailure({
           passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
           paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
@@ -1162,6 +1239,7 @@ export async function POST(req: NextRequest) {
         );
       }
     } // end else if (isMystifly)
+
 
     // Use real provider PNR if available, otherwise generate local reference
     const masterBookingReference = generateRef();
