@@ -303,7 +303,7 @@ export function scoreFlightOffer(
   const features = extractScoringFeatures(offer, tripType, searchContext);
 
   // 3. Get adjusted weights
-  const weights = getAdjustedWeights(tripType, prefs);
+  const weights = getAdjustedWeights(tripType, prefs, offer.isInternational);
 
   // 4. Score all 8 dimensions
   const effectivePriceScoreVal      = scoreEffectivePrice(features, stats);

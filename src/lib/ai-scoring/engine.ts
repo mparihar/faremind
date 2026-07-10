@@ -75,12 +75,26 @@ function tieBreakSort<T>(
     const priceDiff = a.norm.price - b.norm.price;
     if (Math.abs(priceDiff) / Math.max(a.norm.price, 1) > 0.02) return priceDiff;
 
-    // Tie-break 2: shorter total duration
-    const durDiff = a.norm.durationMinutes - b.norm.durationMinutes;
-    if (Math.abs(durDiff) > 30) return durDiff;
+    // International vs domestic: different tie-break priorities
+    // International: duration matters more (1-2 stops is normal on long-haul)
+    // Domestic: fewer stops matters more (nonstop is expected)
+    const isIntl = a.norm.isInternational || b.norm.isInternational;
 
-    // Tie-break 3: fewer stops
-    if (a.norm.stops !== b.norm.stops) return a.norm.stops - b.norm.stops;
+    if (isIntl) {
+      // Tie-break 2 (intl): shorter total duration first
+      const durDiff = a.norm.durationMinutes - b.norm.durationMinutes;
+      if (Math.abs(durDiff) > 30) return durDiff;
+
+      // Tie-break 3 (intl): fewer stops
+      if (a.norm.stops !== b.norm.stops) return a.norm.stops - b.norm.stops;
+    } else {
+      // Tie-break 2 (domestic): fewer stops first
+      if (a.norm.stops !== b.norm.stops) return a.norm.stops - b.norm.stops;
+
+      // Tie-break 3 (domestic): shorter total duration
+      const durDiff = a.norm.durationMinutes - b.norm.durationMinutes;
+      if (Math.abs(durDiff) > 30) return durDiff;
+    }
 
     // Tie-break 4: better baggage
     const bagA = a.norm.baggageCarryOn + a.norm.baggageChecked * 2;
@@ -456,9 +470,21 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     if (aCrit !== bCrit) return aCrit - bCrit;
     const priceDiff = a.features.effectiveTotalPrice - b.features.effectiveTotalPrice;
     if (Math.abs(priceDiff) / Math.max(a.features.effectiveTotalPrice, 1) > 0.02) return priceDiff;
-    const durDiff = a.features.totalDurationMinutes - b.features.totalDurationMinutes;
-    if (Math.abs(durDiff) > 30) return durDiff;
-    if (a.features.totalStops !== b.features.totalStops) return a.features.totalStops - b.features.totalStops;
+
+    // International vs domestic: different tie-break priorities
+    const isIntl = a.features.isInternational || b.features.isInternational;
+    if (isIntl) {
+      // International: duration matters more (1-2 stops is normal)
+      const durDiff = a.features.totalDurationMinutes - b.features.totalDurationMinutes;
+      if (Math.abs(durDiff) > 30) return durDiff;
+      if (a.features.totalStops !== b.features.totalStops) return a.features.totalStops - b.features.totalStops;
+    } else {
+      // Domestic: fewer stops matters more (nonstop is expected)
+      if (a.features.totalStops !== b.features.totalStops) return a.features.totalStops - b.features.totalStops;
+      const durDiff = a.features.totalDurationMinutes - b.features.totalDurationMinutes;
+      if (Math.abs(durDiff) > 30) return durDiff;
+    }
+
     return a.features.schedule.outboundDepartureHour - b.features.schedule.outboundDepartureHour;
   });
 

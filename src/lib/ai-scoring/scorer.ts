@@ -230,7 +230,7 @@ export function computeScore(
   prefs:    AiUserPreferences,
   tripType?: 'one_way' | 'round_trip',
 ): AiScoreBreakdown {
-  const weights = getWeights(prefs.weightPreset, tripType);
+  const weights = getWeights(prefs.weightPreset, tripType, norm.isInternational);
 
   const priceScoreVal              = scorePrice(norm, stats);
   const durationScoreVal           = scoreDuration(norm, stats);

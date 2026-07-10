@@ -152,16 +152,62 @@ const MODE_ADJUSTMENTS: Record<ScoringMode, WeightAdjustment> = {
   },
 };
 
+// ── International Weight Overrides ───────────────────────────────────────────
+//
+// International flights differ fundamentally from domestic:
+//   - 1–2 stops is standard (stops less penalised)
+//   - Duration varies hugely (16h vs 30h+) — high impact on traveler experience
+//   - Layover quality matters more (long layovers, overnight connections)
+//   - Baggage is critical (no checked bag on intl = surprise fees)
+//   - Fare flexibility more valued (expensive tickets, date uncertainty)
+//
+// These base weights are used instead of the domestic ones when the route
+// is detected as international. Mode adjustments still apply on top.
+
+const INTERNATIONAL_BASE_WEIGHTS: Record<'ONE_WAY' | 'ROUND_TRIP', ScoreWeights> = {
+  ONE_WAY: {
+    effectivePriceScore:      0.30,
+    durationScore:            0.28,
+    stopsScore:               0.10,
+    baggageValueScore:        0.12,
+    layoverScore:             0.10,
+    scheduleScore:            0.04,
+    fareFlexibilityScore:     0.04,
+    providerReliabilityScore: 0.02,
+  },
+  ROUND_TRIP: {
+    effectivePriceScore:      0.28,
+    durationScore:            0.26,
+    stopsScore:               0.10,
+    baggageValueScore:        0.13,
+    layoverScore:             0.10,
+    scheduleScore:            0.05,
+    fareFlexibilityScore:     0.05,
+    providerReliabilityScore: 0.03,
+  },
+};
+
 /**
  * Compute adjusted weights by applying the user's scoring mode
  * on top of the trip-type base weights. The result is re-normalized
  * to sum to 1.0.
+ *
+ * For international routes, uses INTERNATIONAL_BASE_WEIGHTS which
+ * boost duration/layover/baggage and reduce stops penalty.
  */
 export function getAdjustedWeights(
   tripType: ScoringTripType,
   prefs?: ScoringUserPreferences | null,
+  isInternational?: boolean,
 ): ScoreWeights {
-  const base = { ...FLIGHT_SCORING_CONFIG[tripType].weights };
+  // Select base weights: international or domestic
+  let base: ScoreWeights;
+  if (isInternational && (tripType === 'ONE_WAY' || tripType === 'ROUND_TRIP')) {
+    base = { ...INTERNATIONAL_BASE_WEIGHTS[tripType] };
+  } else {
+    base = { ...FLIGHT_SCORING_CONFIG[tripType].weights };
+  }
+
   const mode = prefs?.mode ?? 'AI_PICK';
   const adj = MODE_ADJUSTMENTS[mode] ?? {};
 
