@@ -1,0 +1,57 @@
+{
+  "profileId": "international_default_v1",
+  "tripType": "international",
+  "weights": {
+    "price": 28,
+    "duration": 18,
+    "stops": 14,
+    "schedule": 10,
+    "flexibility": 10,
+    "comfort": 8,
+    "baggage": 5,
+    "brand": 3,
+    "reliability": 2,
+    "airportExperience": 2
+  },
+  "version": "1.0.0",
+  "durationPenaltyRange": 720,
+  "scheduleBand": {
+    "idealDepartureStart": 8,
+    "idealDepartureEnd": 23,
+    "penaltyArrivalStart": 0,
+    "penaltyArrivalEnd": 5
+  },
+  "layoverThresholds": {
+    "highRiskMinutes": 60,
+    "goodRangeStart": 90,
+    "goodRangeEnd": 240,
+    "acceptableRangeEnd": 420
+  },
+  "flexibilityThresholds": [
+    { "maxPremiumPercent": 12,  "valueScore": 100 },
+    { "maxPremiumPercent": 25,  "valueScore": 90  },
+    { "maxPremiumPercent": 40,  "valueScore": 75  },
+    { "maxPremiumPercent": 60,  "valueScore": 55  },
+    { "maxPremiumPercent": 90,  "valueScore": 35  },
+    { "maxPremiumPercent": 999, "valueScore": 10  }
+  ],
+  "tieBreakOrder": [
+    "duration",
+    "stops",
+    "baggage",
+    "flexibility",
+    "price",
+    "comfort",
+    "reliability"
+  ],
+  "enabledRules": [
+    "dominance",
+    "small_premium_big_value",
+    "expensive_feature_penalty",
+    "risky_connection",
+    "long_haul_comfort",
+    "family_traveler",
+    "business_traveler",
+    "budget_traveler"
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "_comment": "Configurable airline brand reputation scores. Update via admin config. Default neutral = 70.",
+  "defaultScore": 70,
+  "airlines": {
+    "QR": { "airlineName": "Qatar Airways",          "score": 92, "tier": "premium" },
+    "SQ": { "airlineName": "Singapore Airlines",     "score": 93, "tier": "premium" },
+    "EK": { "airlineName": "Emirates",               "score": 90, "tier": "premium" },
+    "NH": { "airlineName": "ANA",                    "score": 90, "tier": "premium" },
+    "CX": { "airlineName": "Cathay Pacific",         "score": 88, "tier": "premium" },
+    "EY": { "airlineName": "Etihad Airways",         "score": 87, "tier": "premium" },
+    "JL": { "airlineName": "Japan Airlines",         "score": 88, "tier": "premium" },
+    "TK": { "airlineName": "Turkish Airlines",       "score": 85, "tier": "preferred" },
+    "LH": { "airlineName": "Lufthansa",              "score": 84, "tier": "preferred" },
+    "BA": { "airlineName": "British Airways",        "score": 83, "tier": "preferred" },
+    "AF": { "airlineName": "Air France",             "score": 82, "tier": "preferred" },
+    "KL": { "airlineName": "KLM",                    "score": 82, "tier": "preferred" },
+    "DL": { "airlineName": "Delta Air Lines",        "score": 82, "tier": "preferred" },
+    "UA": { "airlineName": "United Airlines",        "score": 78, "tier": "preferred" },
+    "AA": { "airlineName": "American Airlines",      "score": 77, "tier": "preferred" },
+    "AS": { "airlineName": "Alaska Airlines",        "score": 80, "tier": "preferred" },
+    "WN": { "airlineName": "Southwest Airlines",     "score": 78, "tier": "preferred" },
+    "AC": { "airlineName": "Air Canada",             "score": 80, "tier": "preferred" },
+    "QF": { "airlineName": "Qantas",                 "score": 86, "tier": "preferred" },
+    "AI": { "airlineName": "Air India",              "score": 68, "tier": "standard" },
+    "6E": { "airlineName": "IndiGo",                 "score": 72, "tier": "standard" },
+    "ET": { "airlineName": "Ethiopian Airlines",     "score": 73, "tier": "standard" },
+    "NK": { "airlineName": "Spirit Airlines",        "score": 55, "tier": "low_confidence" },
+    "FR": { "airlineName": "Ryanair",                "score": 58, "tier": "low_confidence" },
+    "W6": { "airlineName": "Wizz Air",               "score": 57, "tier": "low_confidence" }
+  }
+}
