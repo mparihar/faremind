@@ -311,6 +311,8 @@ function SearchContent() {
           alert(`Search Error: ${data.error}\nDetails: ${data.details || 'Check logs'}`);
         } else if (data.roundTripOptions) {
           setRoundTripOptions(data.roundTripOptions);
+          // DEBUG: trace API order
+          console.log('[DEBUG RT ORDER] API roundTripOptions top 6:', (data.roundTripOptions as any[]).slice(0, 6).map((rt: any, i: number) => `#${i+1} $${rt.totalPrice} score=${rt.score} ${rt.airlines?.[0] || ''}`));
           // Start offer expiry timer from the earliest Duffel offer timestamp
           // BUT skip if DNA Search is active — DNA re-ranks existing offers without
           // fetching new ones, so the timer should continue from the original search.
@@ -448,6 +450,14 @@ function SearchContent() {
     return sortedRoundTrip;
   }, [prefs.aiIntelligence, roundTripOptions, rtSortMode, sortedRoundTrip]);
 
+  // DEBUG: trace effectiveRT order
+  useEffect(() => {
+    if (effectiveRT.length > 0) {
+      console.log('[DEBUG RT ORDER] effectiveRT top 6:', effectiveRT.slice(0, 6).map((rt, i) => `#${i+1} $${rt.totalPrice} score=${(rt as any).score} ${rt.airlines?.[0] || ''}`));
+      console.log('[DEBUG RT ORDER] aiIntelligence=', prefs.aiIntelligence, 'rtSortMode=', rtSortMode);
+    }
+  }, [effectiveRT, prefs.aiIntelligence, rtSortMode]);
+
   // Reset manual sort when AI is toggled back ON so AI takes over
   useEffect(() => {
     if (prefs.aiIntelligence) setRtSortMode(null);
@@ -558,6 +568,13 @@ function SearchContent() {
     }
     return filtered;
   }, [effectiveRT, prefs.budgetActive, prefs.budgetMin, prefs.budgetMax, prefs.maxDuration, prefs.stops, prefs.departureWindow]);
+
+  // DEBUG: trace prefsFilteredRT order
+  useEffect(() => {
+    if (prefsFilteredRT.length > 0) {
+      console.log('[DEBUG RT ORDER] prefsFilteredRT top 6:', prefsFilteredRT.slice(0, 6).map((rt, i) => `#${i+1} $${rt.totalPrice} score=${(rt as any).score} ${rt.airlines?.[0] || ''}`));
+    }
+  }, [prefsFilteredRT]);
 
   // ── Filter panel options (computed from prefs-filtered results) ──
 
@@ -678,6 +695,14 @@ function SearchContent() {
     }
     return f;
   }, [prefsFilteredRT, selectedAirlines, selectedClasses, selectedFeatures, lowestFlexPrice]);
+
+  // DEBUG: trace panelFilteredRT order
+  useEffect(() => {
+    if (panelFilteredRT.length > 0) {
+      console.log('[DEBUG RT ORDER] panelFilteredRT top 6:', panelFilteredRT.slice(0, 6).map((rt, i) => `#${i+1} $${rt.totalPrice} score=${(rt as any).score} ${rt.airlines?.[0] || ''}`));
+      console.log('[DEBUG RT ORDER] selectedAirlines=', [...selectedAirlines], 'selectedClasses=', [...selectedClasses]);
+    }
+  }, [panelFilteredRT, selectedAirlines, selectedClasses]);
 
   // Derive active cabin(s) from the class filter — when the user toggles one
   // or more classes in the filter panel, the flex-date strip should show the
