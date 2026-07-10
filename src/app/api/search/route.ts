@@ -2,6 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import { searchRoundTripFlights, searchFlights, getProviderStatus } from '@/lib/providers/orchestrator';
 import { logSearch } from '@/lib/db-queries';
 import { rankFlightOffers } from '@/lib/ai-scoring';
+import { rankFlightOffers as rankFlightOffersV3 } from '@/lib/ranking/core/rankOffers';
+import type { RankingOffer } from '@/lib/ranking/types';
 import { applyMarkupToOffers, applyMarkupToRoundTripOptions } from '@/lib/services/markup-service';
 import type { AiUserPreferences, WeightPresetName, AiSortMode } from '@/lib/ai-scoring/types';
 import type { RoundTripUserPrefs } from '@/lib/round-trip-types';
@@ -168,32 +170,19 @@ export async function GET(request: NextRequest) {
             destination: destination!,
             departureDate: date!,
             returnDate,
-            tripType: 'round_trip',
-            cabin: cabin.toLowerCase(),
+            tripType: 'round_trip' as const,
+            cabin: cabin.toLowerCase() as any,
             currency: 'USD',
             passengers: { adults, children, infants },
-            travelerProfile: 'default',
+            travelerProfile: 'default' as const,
           },
-          offers: rankingOffers,
+          offers: rankingOffers as RankingOffer[],
         };
 
-        // Call backend ranking engine
-        let backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
-        backendUrl = backendUrl.replace(/\/$/, '');
-
-        const rankResponse = await fetch(`${backendUrl}/api/ranking`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify(rankingInput),
-          signal: AbortSignal.timeout(15000), // 15s timeout
-        });
-
-        if (!rankResponse.ok) {
-          throw new Error(`Ranking engine returned ${rankResponse.status}`);
-        }
-
-        const rankResult = await rankResponse.json();
+        // Direct in-process ranking — no HTTP call needed
+        const rankResult = rankFlightOffersV3(rankingInput);
         rankingMetadata = rankResult.audit;
+        console.log(`[Search] V3 engine: ${rankResult.rankedOffers.length} offers, profile=${rankResult.profileId}, top=$${rankResult.rankedOffers[0]?.finalScore}`);
 
         // Map backend ranking output → frontend format
         // Build a lookup: offerId → RankedOffer
