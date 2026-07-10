@@ -1303,7 +1303,7 @@ function SearchContent() {
                     infants={infantsParam}
                     cabin={activeCabin}
                     tripParam={tripParam}
-                    currentMinPrice={panelFilteredRT[0]?.totalPrice ?? null}
+                    currentMinPrice={panelFilteredRT.length > 0 ? Math.min(...panelFilteredRT.map(rt => rt.totalPrice)) : null}
                     onLowestFlexPrice={handleLowestFlexPrice}
                   />
                 )}
@@ -1537,7 +1537,7 @@ function SearchContent() {
                         infants={infantsParam}
                         cabin={activeCabin}
                         tripParam={tripParam}
-                        currentMinPrice={panelFilteredRT[0]?.totalPrice ?? null}
+                        currentMinPrice={panelFilteredRT.length > 0 ? Math.min(...panelFilteredRT.map(rt => rt.totalPrice)) : null}
                         onLowestFlexPrice={handleLowestFlexPrice}
                       />
                     )}
