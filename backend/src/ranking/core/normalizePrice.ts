@@ -80,14 +80,13 @@ export function computePriceScores(prices: number[]): number[] {
   // A $200 cheapest → range caps at $300.
   const focusedMax = minPrice * 1.50;
 
-  // Also compute P90 as an upper bound safety net.
-  // If P90 is lower than focusedMax, use P90 to avoid
-  // giving artificially high scores to mid-range prices.
+  // Also compute P90 — if all prices cluster tightly (P90 < focusedMax),
+  // use P90 for an even tighter range. Otherwise cap at focusedMax.
   const p90Price = percentile(sorted, 90);
 
-  // Use the LARGER of focusedMax and P90 to ensure the range
-  // is wide enough to produce meaningful spread.
-  let effectiveMaxPrice = Math.max(focusedMax, p90Price);
+  // Use the SMALLER of focusedMax and P90 to keep the range tight.
+  // This ensures price differences produce meaningful score separation.
+  let effectiveMaxPrice = Math.min(focusedMax, p90Price);
 
   // Minimum range guard: ensure at least 10% of min price
   // so near-identical prices don't produce extreme 100 vs 0.
