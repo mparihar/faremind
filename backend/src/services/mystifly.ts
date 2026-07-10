@@ -231,14 +231,15 @@ class MystiflyAuthService {
   private token: string | null = null;
   private tokenExpiry: number = 0;
   private refreshPromise: Promise<string> | null = null;
+  private staticIdFailed: boolean = false; // Track if static ID has expired
 
   // Mystifly session tokens typically last ~30 minutes.
   // We refresh proactively at 25 minutes.
   private readonly TOKEN_TTL_MS = 25 * 60 * 1000;
 
   async getToken(): Promise<string> {
-    // Mode 1: Use static session ID from env (no CreateSession needed)
-    if (MYSTIFLY_SESSION_ID) {
+    // Mode 1: Use static session ID from env (unless it's already failed/expired)
+    if (MYSTIFLY_SESSION_ID && !this.staticIdFailed) {
       return MYSTIFLY_SESSION_ID;
     }
 
@@ -264,12 +265,13 @@ class MystiflyAuthService {
 
   /**
    * Force-refresh the token (e.g. after a 401 response).
-   * If using a static session ID, this is a no-op.
+   * If using a static session ID, marks it as expired and falls back
+   * to dynamic CreateSession using credentials.
    */
   async forceRefresh(): Promise<string> {
-    if (MYSTIFLY_SESSION_ID) {
-      console.warn('[Mystifly] Static session ID in use — cannot refresh. Update MYSTIFLY_SESSION_ID env var if expired.');
-      return MYSTIFLY_SESSION_ID;
+    if (MYSTIFLY_SESSION_ID && !this.staticIdFailed) {
+      console.warn('[Mystifly] Static session ID expired — falling back to dynamic CreateSession');
+      this.staticIdFailed = true;
     }
     this.token = null;
     this.tokenExpiry = 0;
