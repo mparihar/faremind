@@ -76,15 +76,15 @@ function StopsLabel({ stops, duration, layover }: { stops: number; duration: num
 }
 
 
-// ─── Static fallback routes (shown when backend is unavailable) ──────────────
+// ─── Route shells (no prices — only used for layout while loading) ──────────
 
-const FALLBACK_ROUTES: LiveRoute[] = [
-  { from: 'JFK', to: 'LAX', fromCity: 'New York',    toCity: 'Los Angeles',  price: 189,  currency: 'USD', stops: 0, duration: 330, layover: null, isMock: true },
-  { from: 'JFK', to: 'LHR', fromCity: 'New York',    toCity: 'London',       price: 449,  currency: 'USD', stops: 0, duration: 420, layover: null, isMock: true },
-  { from: 'LAX', to: 'NRT', fromCity: 'Los Angeles', toCity: 'Tokyo',        price: 599,  currency: 'USD', stops: 1, duration: 660, layover: 90,   isMock: true },
-  { from: 'ORD', to: 'CDG', fromCity: 'Chicago',     toCity: 'Paris',        price: 399,  currency: 'USD', stops: 0, duration: 510, layover: null, isMock: true },
-  { from: 'MIA', to: 'CUN', fromCity: 'Miami',       toCity: 'Cancun',       price: 129,  currency: 'USD', stops: 0, duration: 105, layover: null, isMock: true },
-  { from: 'SFO', to: 'SIN', fromCity: 'San Francisco', toCity: 'Singapore',  price: 699,  currency: 'USD', stops: 1, duration: 900, layover: 120,  isMock: true },
+const ROUTE_SHELLS: LiveRoute[] = [
+  { from: 'JFK', to: 'LAX', fromCity: 'New York',        toCity: 'Los Angeles',  price: null, currency: 'USD', stops: null, duration: null, layover: null, isMock: false },
+  { from: 'SFO', to: 'ORD', fromCity: 'San Francisco',   toCity: 'Chicago',      price: null, currency: 'USD', stops: null, duration: null, layover: null, isMock: false },
+  { from: 'MIA', to: 'JFK', fromCity: 'Miami',           toCity: 'New York',     price: null, currency: 'USD', stops: null, duration: null, layover: null, isMock: false },
+  { from: 'LAX', to: 'LHR', fromCity: 'Los Angeles',     toCity: 'London',       price: null, currency: 'USD', stops: null, duration: null, layover: null, isMock: false },
+  { from: 'JFK', to: 'CDG', fromCity: 'New York',        toCity: 'Paris',        price: null, currency: 'USD', stops: null, duration: null, layover: null, isMock: false },
+  { from: 'SFO', to: 'NRT', fromCity: 'San Francisco',   toCity: 'Tokyo',        price: null, currency: 'USD', stops: null, duration: null, layover: null, isMock: false },
 ];
 
 // ─── Page data constants ──────────────────────────
@@ -109,8 +109,8 @@ export default function HomePage() {
   const { resetAll } = usePreferencesStore();
   const { clearResults } = useSearchStore();
   const { user } = useAuthStore();
-  const [routes, setRoutes] = useState<LiveRoute[]>(FALLBACK_ROUTES);
-  const [routesLoading] = useState(false);
+  const [routes, setRoutes] = useState<LiveRoute[]>(ROUTE_SHELLS);
+  const [routesLoading, setRoutesLoading] = useState(true);
   const [dateMode, setDateMode] = useState<'specific' | 'flexible'>('specific');
   const setSearchFormRef = useVoiceStore((s) => s.setSearchFormRef);
   // Force fresh form on every homepage visit
@@ -160,28 +160,18 @@ export default function HomePage() {
 
   useEffect(() => {
     const controller = new AbortController();
-    const timeout = setTimeout(() => controller.abort(), 8000); // 8s timeout
+    const timeout = setTimeout(() => controller.abort(), 12000); // 12s timeout
 
+    setRoutesLoading(true);
     fetch('/api/popular-routes', { signal: controller.signal })
       .then((r) => r.json())
       .then((data) => {
         if (data.routes?.length) {
-          // Merge: use live prices where available, keep fallback prices where null
-          setRoutes(prev =>
-            data.routes.map((live: LiveRoute, i: number) => ({
-              ...live,
-              // If live price is null (backend had no results), keep fallback price
-              price:    live.price ?? prev[i]?.price ?? null,
-              stops:    live.stops ?? prev[i]?.stops ?? null,
-              duration: live.duration ?? prev[i]?.duration ?? null,
-              layover:  live.layover ?? prev[i]?.layover ?? null,
-              isMock:   live.price != null ? false : true,
-            }))
-          );
+          setRoutes(data.routes);
         }
       })
-      .catch(() => { /* keep static fallback */ })
-      .finally(() => clearTimeout(timeout));
+      .catch(() => { /* keep shells — no fake prices */ })
+      .finally(() => { setRoutesLoading(false); clearTimeout(timeout); });
 
     return () => { controller.abort(); clearTimeout(timeout); };
   }, []);
