@@ -159,12 +159,31 @@ export default function HomePage() {
   }, []);
 
   useEffect(() => {
-    fetch('/api/popular-routes')
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 8000); // 8s timeout
+
+    fetch('/api/popular-routes', { signal: controller.signal })
       .then((r) => r.json())
       .then((data) => {
-        if (data.routes?.length) setRoutes(data.routes);
+        if (data.routes?.length) {
+          // Merge: use live prices where available, keep fallback prices where null
+          setRoutes(prev =>
+            data.routes.map((live: LiveRoute, i: number) => ({
+              ...live,
+              // If live price is null (backend had no results), keep fallback price
+              price:    live.price ?? prev[i]?.price ?? null,
+              stops:    live.stops ?? prev[i]?.stops ?? null,
+              duration: live.duration ?? prev[i]?.duration ?? null,
+              layover:  live.layover ?? prev[i]?.layover ?? null,
+              isMock:   live.price != null ? false : true,
+            }))
+          );
+        }
       })
-      .catch(() => { /* keep static fallback */ });
+      .catch(() => { /* keep static fallback */ })
+      .finally(() => clearTimeout(timeout));
+
+    return () => { controller.abort(); clearTimeout(timeout); };
   }, []);
 
   const searchDate = new Date(Date.now() + 14 * 86400000).toISOString().split('T')[0];
