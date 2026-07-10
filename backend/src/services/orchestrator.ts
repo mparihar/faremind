@@ -172,8 +172,99 @@ async function searchMystifly(params: {
       searchVersion,
       legs: params.legs,
     });
-    const itineraries = response?.Data?.PricedItineraries || response?.PricedItineraries || [];
-    const flights = (Array.isArray(itineraries) ? itineraries : [])
+
+    const rawData = response?.Data || response || {};
+    const itineraries = rawData?.PricedItineraries || response?.PricedItineraries || [];
+
+    // ── v2.2 denormalization ──────────────────────────────
+    // v2.2 uses reference-based structure: each itinerary has SegmentRef, FareRef,
+    // ItineraryRef pointing to separate lists. We denormalize here into the flat
+    // v1 format that normalizeMystiflyOffer expects.
+    const segmentList  = rawData?.FlightSegmentList || [];
+    const faresList    = rawData?.FlightFaresList || [];
+    const itinRefList  = rawData?.ItineraryReferenceList || [];
+    const isV2Format   = segmentList.length > 0 && faresList.length > 0;
+
+    let denormalized: any[];
+
+    if (isV2Format) {
+      // Build lookup maps by ref index
+      const segMap  = new Map<number, any>();
+      for (const s of segmentList) segMap.set(s.SegmentRef, s);
+      const fareMap = new Map<number, any>();
+      for (const f of faresList) fareMap.set(f.FareRef, f);
+      const itinRefMap = new Map<number, any>();
+      for (const r of itinRefList) itinRefMap.set(r.ItineraryRef, r);
+
+      denormalized = itineraries.map((itin: any) => {
+        try {
+          const ods = itin.OriginDestinations || [];
+          const fare = fareMap.get(itin.FareRef);
+
+          // Group segments by LegIndicator (0 = outbound, 1 = return, etc.)
+          const legGroups = new Map<string, any[]>();
+          for (const od of ods) {
+            const leg = od.LegIndicator || '0';
+            if (!legGroups.has(leg)) legGroups.set(leg, []);
+            const seg = segMap.get(od.SegmentRef);
+            const itinRef = itinRefMap.get(od.ItineraryRef);
+            if (seg) {
+              // Merge itinerary reference data (cabin, baggage) onto segment
+              legGroups.get(leg)!.push({
+                ...seg,
+                MarketingAirlineCode: seg.MarketingCarriercode || seg.MarketingCarrierCode || '',
+                FlightNumber: seg.MarketingFlightNumber || '',
+                OperatingAirline: { Code: seg.OperatingCarrierCode || '' },
+                CabinClassCode: itinRef?.CabinClassCode || 'Y',
+                Baggage: itinRef?.CheckinBaggage?.[0]?.Value || '',
+                SeatsRemaining: itinRef?.SeatsRemaining,
+                FareBasisCode: itinRef?.FareBasisCodes || '',
+                FareFamily: itinRef?.FareFamily || '',
+              });
+            }
+          }
+
+          // Build OriginDestinationOptions (what normalizer expects)
+          const originDestinationOptions: any[] = [];
+          const sortedLegs = [...legGroups.entries()].sort((a, b) => Number(a[0]) - Number(b[0]));
+          for (const [, segs] of sortedLegs) {
+            originDestinationOptions.push({ FlightSegments: segs });
+          }
+
+          // Build pricing in v1 format
+          let totalAmount = 0;
+          let currency = fare?.Currency || 'USD';
+          if (fare?.PassengerFare) {
+            for (const pf of fare.PassengerFare) {
+              totalAmount += parseFloat(pf.TotalFare || '0') * (pf.Quantity || 1);
+            }
+          }
+
+          return {
+            FareSourceCode: itin.FareSourceCode,
+            ValidatingAirlineCode: itin.ValidatingCarrier || '',
+            OriginDestinationOptions: originDestinationOptions,
+            AirItineraryPricingInfo: {
+              ItinTotalFare: {
+                TotalFare: { Amount: String(totalAmount), CurrencyCode: currency },
+              },
+              IsRefundable: false,
+            },
+            IsRefundable: false,
+            Provider: itin.Provider || 'MYSTIFLY',
+          };
+        } catch {
+          return null;
+        }
+      }).filter(Boolean);
+
+      console.log(`[Mystifly] v2.2 denormalized: ${denormalized.length} itineraries (from ${itineraries.length} raw, ${segmentList.length} segments, ${faresList.length} fares)`);
+    } else {
+      // v1 format — already flat, pass through as-is
+      denormalized = Array.isArray(itineraries) ? itineraries : [];
+    }
+
+    const flights = denormalized
       .map((itin: any) => { try { return normalizeMystiflyOffer(itin); } catch { return null; } })
       .filter(Boolean) as UnifiedFlight[];
     return { provider: 'mystifly', flights, responseTimeMs: Date.now() - start, isMock: false };
