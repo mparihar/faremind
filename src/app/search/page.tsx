@@ -420,10 +420,10 @@ function SearchContent() {
     return rankFlightOffers(scoredResults, 'ONE_WAY', aiPrefs, false, selectedClasses.size > 0 ? selectedClasses : undefined);
   }, [prefs.aiIntelligence, scoredResults, aiPrefs, tripParam, selectedClasses]);
 
-  const aiRTResult = useMemo(() => {
-    if (!prefs.aiIntelligence || tripParam !== 'round_trip' || !roundTripOptions.length) return null;
-    return rankFlightOffers(roundTripOptions, 'ROUND_TRIP', aiPrefs, false, selectedClasses.size > 0 ? selectedClasses : undefined);
-  }, [prefs.aiIntelligence, roundTripOptions, aiPrefs, tripParam, selectedClasses]);
+  // NOTE: No client-side re-ranking for RT. The API already ranks using the V2
+  // pipeline with full server context (Travel DNA, provider info). Client-side
+  // re-ranking produced divergent results because it lacked that context.
+  // The API's order in roundTripOptions IS the authoritative AI ranking.
 
   const effectiveOneWay = useMemo<UnifiedFlight[]>(() => {
     if (!aiOneWayResult) return scoredResults;
@@ -437,20 +437,16 @@ function SearchContent() {
     return [...ranked, ...unranked];
   }, [aiOneWayResult, scoredResults]);
 
-  // When AI is ON and no explicit user sort, use AI ranking; otherwise use manual sort
+  // When AI is ON and no explicit user sort, use the API's ranked order directly.
+  // The API already sorted by AI score (ranked first, filtered-out appended).
+  // When user picks a manual sort (cheapest/fastest/etc), use sortedRoundTrip.
   const effectiveRT = useMemo<RoundTripOption[]>(() => {
-    if (aiRTResult && rtSortMode === null) {
-      const ranked = aiRTResult.ranked.map(r => r.option);
-      const unranked = aiRTResult.filteredOut.map(r => ({
-        ...r.option,
-        score: 0,
-        scoreBreakdown: undefined,
-        badges: [],
-      }));
-      return [...ranked, ...unranked];
+    if (prefs.aiIntelligence && rtSortMode === null) {
+      // API order is the authoritative AI ranking — use as-is
+      return roundTripOptions;
     }
     return sortedRoundTrip;
-  }, [aiRTResult, rtSortMode, sortedRoundTrip]);
+  }, [prefs.aiIntelligence, roundTripOptions, rtSortMode, sortedRoundTrip]);
 
   // Reset manual sort when AI is toggled back ON so AI takes over
   useEffect(() => {
@@ -464,31 +460,27 @@ function SearchContent() {
     );
   }, [aiOneWayResult]);
 
+  // Build AI metadata map from API-embedded data on each option.
+  // The API attaches score, aiReasons, rankingTags, scoreBreakdown, badges
+  // directly to each option object (see route.ts lines 110-133).
   const aiRTMap = useMemo(() => {
-    if (!aiRTResult) return null;
+    if (!prefs.aiIntelligence || tripParam !== 'round_trip' || !roundTripOptions.length) return null;
     const map = new Map<string, AiScoredOption<RoundTripOption>>();
-    // Include all ranked options (have full AI scores + reasons)
-    for (const r of aiRTResult.ranked) {
-      map.set(r.option.id, r);
-    }
-    // Include filtered-out options with stub reasons so DNA-reordered cards
-    // still show AI recommendations (DNA may elevate quality-filtered options)
-    for (const f of aiRTResult.filteredOut) {
-      if (!map.has(f.option.id)) {
-        map.set(f.option.id, {
-          option: f.option,
-          aiScore: 0,
-          aiScoreRaw: 0,
-          labels: [],
-          rankingTags: [],
-          aiReasons: [f.reason || 'This option did not rank highly in AI scoring'],
-          layoverPenalty: 0,
-          filtered: false,
-        });
-      }
+    for (const rt of roundTripOptions) {
+      const rtAny = rt as any;
+      map.set(rt.id, {
+        option: rt,
+        aiScore: rtAny.score ?? rtAny.aiScoreDisplay ?? 0,
+        aiScoreRaw: rtAny.aiScoreRaw ?? rtAny.score ?? 0,
+        labels: [],
+        rankingTags: rtAny.rankingTags ?? [],
+        aiReasons: rtAny.aiReasons ?? (rtAny.score === 0 ? ['This option did not rank highly in AI scoring'] : []),
+        layoverPenalty: 0,
+        filtered: false,
+      });
     }
     return map;
-  }, [aiRTResult]);
+  }, [prefs.aiIntelligence, roundTripOptions, tripParam]);
 
   useEffect(() => {
     function handler(e: MouseEvent) {
