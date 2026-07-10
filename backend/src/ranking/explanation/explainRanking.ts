@@ -27,8 +27,9 @@ export async function explainRanking(
     const { system, user } = buildExplanationMessages(rankedOffer, searchContext, journeyType);
 
     // Attempt GPT call using the project's existing OpenAI SDK
-    const OpenAI = await import('openai').then(m => m.default || m);
-    const client = new OpenAI();
+    const mod = await import('openai');
+    const OpenAI = (mod as any).default ?? mod;
+    const client = new (OpenAI as any)();
 
     const response = await client.chat.completions.create({
       model: 'gpt-4.1-mini',

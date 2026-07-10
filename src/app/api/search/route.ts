@@ -96,43 +96,214 @@ export async function GET(request: NextRequest) {
         flexCacheSet(fKey, rtResult.options);
       }
 
-      // ── Unified AI Ranking (ROUND_TRIP) ───────────────────────────────────
-      const rtAiPrefs: AiUserPreferences = {
-        sortMode: (searchParams.get('sort') as AiSortMode) || 'best_value',
-        weightPreset: ((searchParams.get('sort') || 'best_ai_pick') as WeightPresetName),
-        stops: (searchParams.get('stops') as AiUserPreferences['stops']) || undefined,
-        departureWindow: (searchParams.get('departure_window') as AiUserPreferences['departureWindow']) || undefined,
-      };
+      // ── New AI Ranking Engine (replaces V2 pipeline) ──────────────────────
+      // Call the backend ranking engine at POST /api/ranking.
+      // This uses the 10-dimension scoring engine built today.
+      // Falls back to V2 pipeline if backend is unreachable.
 
-      const rtRankResult = rankFlightOffers(rtResult.options, 'ROUND_TRIP', rtAiPrefs, true, undefined, travelDnaContext);
+      let allRankedRT: any[];
+      let rankingMetadata: any = null;
 
-      // Map ranked results to the format the frontend expects
-      const ranked = rtRankResult.ranked.map((r) => ({
-        ...r.option,
-        score: r.aiScore,
-        aiScoreRaw: r.aiScoreRaw,
-        aiScoreDisplay: r.aiScore,
-        aiReasons: r.aiReasons,
-        rankingTags: r.rankingTags,
-        scoreBreakdown: r.scoreBreakdown,
-        badges: r.rankingTags
-          .filter((t: string) => ['Cheapest', 'Fastest', 'Fewest Stops', 'Best Value', 'Recommended', 'AI Pick'].includes(t))
-          .map((t: string) => t.toLowerCase().replace(/\s+/g, '_')),
-      }));
+      try {
+        // Convert RoundTripOption[] → RankingOffer[] for the new engine
+        const rankingOffers = rtResult.options.map((rt) => {
+          const allSegments = [
+            ...rt.outboundJourney.segments.map(s => ({
+              departureAirport: s.departure.airport,
+              arrivalAirport: s.arrival.airport,
+              departureTime: s.departure.time,
+              arrivalTime: s.arrival.time,
+              durationMinutes: s.duration,
+              airline: s.airline?.code || rt.airlineCodes[0] || '',
+              flightNumber: s.flightNumber || '',
+              departureTerminal: s.departure.terminal,
+              arrivalTerminal: s.arrival.terminal,
+            })),
+            ...rt.returnJourney.segments.map(s => ({
+              departureAirport: s.departure.airport,
+              arrivalAirport: s.arrival.airport,
+              departureTime: s.departure.time,
+              arrivalTime: s.arrival.time,
+              durationMinutes: s.duration,
+              airline: s.airline?.code || rt.airlineCodes[0] || '',
+              flightNumber: s.flightNumber || '',
+              departureTerminal: s.departure.terminal,
+              arrivalTerminal: s.arrival.terminal,
+            })),
+          ];
 
-      // Append filtered-out options
-      const unscoredRT = rtRankResult.filteredOut.map((r) => ({
-        ...r.option,
-        score: 0,
-        aiScoreRaw: 0,
-        aiScoreDisplay: 0,
-        aiReasons: [],
-        rankingTags: [],
-        scoreBreakdown: undefined,
-        badges: [],
-      }));
+          return {
+            offerId: rt.id,
+            provider: rt.provider || rt.bookingProvider || 'unknown',
+            airline: rt.airlines[0] || '',
+            airlineCode: rt.airlineCodes[0] || '',
+            totalPrice: rt.totalPrice,
+            currency: rt.currency,
+            durationMinutes: rt.totalDurationMinutes,
+            segments: allSegments,
+            baggage: {
+              carryOn: rt.baggage?.carryOn ?? 0,
+              checked: rt.baggage?.checked ?? 0,
+            },
+            fareRules: {
+              refundable: rt.fareRules?.refundable ?? false,
+              changeable: rt.fareRules?.changeable ?? false,
+              cancellationFee: rt.fareRules?.cancellationFee,
+              changeFee: rt.fareRules?.changeFee,
+            },
+            comfort: {
+              cabinClass: (rt.cabinClass || 'economy').toLowerCase(),
+              fareClassName: undefined,
+            },
+            ancillaries: {
+              mealService: allSegments.some(s => (s as any).amenities?.meal),
+            },
+            stops: rt.totalStops,
+          };
+        });
 
-      const allRankedRT = [...ranked, ...unscoredRT];
+        const rankingInput = {
+          searchContext: {
+            origin: origin!,
+            destination: destination!,
+            departureDate: date!,
+            returnDate,
+            tripType: 'round_trip',
+            cabin: cabin.toLowerCase(),
+            currency: 'USD',
+            passengers: { adults, children, infants },
+            travelerProfile: 'default',
+          },
+          offers: rankingOffers,
+        };
+
+        // Call backend ranking engine
+        let backendUrl = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
+        backendUrl = backendUrl.replace(/\/$/, '');
+
+        const rankResponse = await fetch(`${backendUrl}/api/ranking`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(rankingInput),
+          signal: AbortSignal.timeout(15000), // 15s timeout
+        });
+
+        if (!rankResponse.ok) {
+          throw new Error(`Ranking engine returned ${rankResponse.status}`);
+        }
+
+        const rankResult = await rankResponse.json();
+        rankingMetadata = rankResult.audit;
+
+        // Map backend ranking output → frontend format
+        // Build a lookup: offerId → RankedOffer
+        const rankedMap = new Map<string, any>();
+        for (const ro of rankResult.rankedOffers) {
+          rankedMap.set(ro.offerId, ro);
+        }
+
+        // Determine badge-worthy offers
+        const cheapestPrice = Math.min(...rtResult.options.map(o => o.totalPrice));
+        const fastestDuration = Math.min(...rtResult.options.map(o => o.totalDurationMinutes));
+        const fewestStops = Math.min(...rtResult.options.map(o => o.totalStops));
+
+        // Build ranked list in the engine's order
+        const ranked: any[] = [];
+        const unranked: any[] = [];
+
+        for (const ro of rankResult.rankedOffers) {
+          const original = rtResult.options.find(o => o.id === ro.offerId);
+          if (!original) continue;
+
+          // Build badges from the new engine's data
+          const badges: string[] = [];
+          if (original.totalPrice === cheapestPrice) badges.push('cheapest');
+          if (original.totalDurationMinutes === fastestDuration) badges.push('fastest');
+          if (original.totalStops === fewestStops) badges.push('fewest_stops');
+          if (original.fareRules?.refundable || original.fareRules?.changeable) badges.push('flexible');
+          if (ro.rank <= 3) badges.push('ai_pick');
+
+          // Build AI reasons from machine reasons + tradeoffs
+          const aiReasons: string[] = [
+            ...ro.machineReasons.map((r: string) => `✓ ${r}`),
+            ...ro.tradeoffs.map((t: string) => `✗ ${t}`),
+          ];
+
+          ranked.push({
+            ...original,
+            score: ro.finalScore,
+            aiScoreRaw: ro.finalScore,
+            aiScoreDisplay: Math.round(ro.finalScore),
+            aiReasons,
+            rankingTags: [
+              ...(original.totalPrice === cheapestPrice ? ['Cheapest'] : []),
+              ...(original.totalDurationMinutes === fastestDuration ? ['Fastest'] : []),
+              ...(original.totalStops === fewestStops ? ['Fewest Stops'] : []),
+              ...(ro.rank <= 3 ? ['AI Pick'] : []),
+            ],
+            scoreBreakdown: {
+              ...ro.scoreBreakdown,
+              finalScore: ro.finalScore,
+            },
+            badges,
+          });
+        }
+
+        // Any offers not ranked by the engine (quality-filtered)
+        const rankedIds = new Set(rankResult.rankedOffers.map((r: any) => r.offerId));
+        for (const opt of rtResult.options) {
+          if (!rankedIds.has(opt.id)) {
+            unranked.push({
+              ...opt,
+              score: 0,
+              aiScoreRaw: 0,
+              aiScoreDisplay: 0,
+              aiReasons: [],
+              rankingTags: [],
+              scoreBreakdown: undefined,
+              badges: [],
+            });
+          }
+        }
+
+        allRankedRT = [...ranked, ...unranked];
+        console.log(`[Search] New ranking engine: ${ranked.length} ranked, ${unranked.length} unranked, top=${ranked[0]?.airlines?.[0]} $${ranked[0]?.totalPrice}`);
+
+      } catch (rankError: any) {
+        // Fallback to V2 pipeline if backend ranking fails
+        console.warn(`[Search] New ranking engine failed, falling back to V2: ${rankError.message}`);
+
+        const rtAiPrefs: AiUserPreferences = {
+          sortMode: (searchParams.get('sort') as AiSortMode) || 'best_value',
+          weightPreset: ((searchParams.get('sort') || 'best_ai_pick') as WeightPresetName),
+          stops: (searchParams.get('stops') as AiUserPreferences['stops']) || undefined,
+          departureWindow: (searchParams.get('departure_window') as AiUserPreferences['departureWindow']) || undefined,
+        };
+
+        const rtRankResult = rankFlightOffers(rtResult.options, 'ROUND_TRIP', rtAiPrefs, true, undefined, travelDnaContext);
+        rankingMetadata = rtRankResult.metadata;
+
+        const ranked = rtRankResult.ranked.map((r) => ({
+          ...r.option,
+          score: r.aiScore,
+          aiScoreRaw: r.aiScoreRaw,
+          aiScoreDisplay: r.aiScore,
+          aiReasons: r.aiReasons,
+          rankingTags: r.rankingTags,
+          scoreBreakdown: r.scoreBreakdown,
+          badges: r.rankingTags
+            .filter((t: string) => ['Cheapest', 'Fastest', 'Fewest Stops', 'Best Value', 'Recommended', 'AI Pick'].includes(t))
+            .map((t: string) => t.toLowerCase().replace(/\s+/g, '_')),
+        }));
+
+        const unscoredRT = rtRankResult.filteredOut.map((r) => ({
+          ...r.option,
+          score: 0, aiScoreRaw: 0, aiScoreDisplay: 0,
+          aiReasons: [], rankingTags: [], scoreBreakdown: undefined, badges: [],
+        }));
+
+        allRankedRT = [...ranked, ...unscoredRT];
+      }
 
       logSearch({
         origin: origin!, destination: destination!,
@@ -158,7 +329,7 @@ export async function GET(request: NextRequest) {
             mystifly: providerStatus.mystifly?.configured ? 'connected' : 'not_configured',
             providerMode: providerStatus.providerMode || 'BOTH',
           },
-          rankingMetadata: rtRankResult.metadata,
+          rankingMetadata,
         },
       });
     }
