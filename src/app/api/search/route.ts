@@ -256,9 +256,7 @@ export async function GET(request: NextRequest) {
         }
 
         allRankedRT = [...ranked, ...unranked];
-        console.log(`[Search] New ranking engine: ${ranked.length} ranked, ${unranked.length} unranked, top=${ranked[0]?.airlines?.[0]} $${ranked[0]?.totalPrice}`);
-        console.log('[DEBUG API] Engine ranked top 8:', ranked.slice(0, 8).map((r: any, i: number) => `#${i+1} $${r.totalPrice} score=${r.score} ${r.airlines?.[0] || ''}`));
-        console.log('[DEBUG API] allRankedRT top 8:', allRankedRT.slice(0, 8).map((r: any, i: number) => `#${i+1} $${r.totalPrice} score=${r.score} ${r.airlines?.[0] || ''}`));
+
 
       } catch (rankError: any) {
         // Fallback to V2 pipeline if backend ranking fails
@@ -294,8 +292,7 @@ export async function GET(request: NextRequest) {
         }));
 
         allRankedRT = [...ranked, ...unscoredRT];
-        console.log('[DEBUG API] ⚠️ USING V2 FALLBACK — backend ranking failed');
-        console.log('[DEBUG API] V2 fallback top 8:', allRankedRT.slice(0, 8).map((r: any, i: number) => `#${i+1} $${r.totalPrice} score=${r.score} ${r.airlines?.[0] || ''}`));
+
       }
 
       logSearch({
