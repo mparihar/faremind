@@ -166,18 +166,21 @@ const MODE_ADJUSTMENTS: Record<ScoringMode, WeightAdjustment> = {
 
 const INTERNATIONAL_BASE_WEIGHTS: Record<'ONE_WAY' | 'ROUND_TRIP', ScoreWeights> = {
   ONE_WAY: {
-    effectivePriceScore:      0.30,
-    durationScore:            0.28,
+    // International OW: same price-dominant philosophy as RT.
+    effectivePriceScore:      0.35,
+    durationScore:            0.21,
     stopsScore:               0.10,
     baggageValueScore:        0.12,
     layoverScore:             0.10,
     scheduleScore:            0.04,
-    fareFlexibilityScore:     0.04,
-    providerReliabilityScore: 0.02,
+    fareFlexibilityScore:     0.05,
+    providerReliabilityScore: 0.03,
   },
   ROUND_TRIP: {
-    effectivePriceScore:      0.28,
-    durationScore:            0.26,
+    // International RT: price dominates — travelers expect long durations,
+    // saving $500-1000 on a $2000+ ticket outweighs 10-15h extra travel.
+    effectivePriceScore:      0.35,
+    durationScore:            0.19,
     stopsScore:               0.10,
     baggageValueScore:        0.13,
     layoverScore:             0.10,
