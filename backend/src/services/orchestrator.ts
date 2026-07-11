@@ -183,6 +183,7 @@ async function searchMystifly(params: {
     const segmentList  = rawData?.FlightSegmentList || [];
     const faresList    = rawData?.FlightFaresList || [];
     const itinRefList  = rawData?.ItineraryReferenceList || [];
+    const penaltiesList = rawData?.PenaltiesInfoList || [];
     const isV2Format   = segmentList.length > 0 && faresList.length > 0;
 
     let denormalized: any[];
@@ -195,11 +196,14 @@ async function searchMystifly(params: {
       for (const f of faresList) fareMap.set(f.FareRef, f);
       const itinRefMap = new Map<number, any>();
       for (const r of itinRefList) itinRefMap.set(r.ItineraryRef, r);
+      const penaltiesMap = new Map<number, any>();
+      for (const p of penaltiesList) penaltiesMap.set(p.PenaltiesInfoRef, p);
 
       denormalized = itineraries.map((itin: any) => {
         try {
           const ods = itin.OriginDestinations || [];
           const fare = fareMap.get(itin.FareRef);
+          const penalties = penaltiesMap.get(itin.PenaltiesInfoRef);
 
           // Group segments by LegIndicator (0 = outbound, 1 = return, etc.)
           const legGroups = new Map<string, any[]>();
@@ -216,7 +220,9 @@ async function searchMystifly(params: {
                 FlightNumber: seg.MarketingFlightNumber || '',
                 OperatingAirline: { Code: seg.OperatingCarrierCode || '' },
                 CabinClassCode: itinRef?.CabinClassCode || 'Y',
+                // Pass through EXACT API baggage value — no interpretation here
                 Baggage: itinRef?.CheckinBaggage?.[0]?.Value || '',
+                CabinBaggage: itinRef?.CabinBaggage?.[0]?.Value || '',
                 SeatsRemaining: itinRef?.SeatsRemaining,
                 FareBasisCode: itinRef?.FareBasisCodes || '',
                 FareFamily: itinRef?.FareFamily || '',
@@ -240,6 +246,14 @@ async function searchMystifly(params: {
             }
           }
 
+          // Extract LIVE penalties from API — no guessing
+          const penaltyDetail = penalties?.Penaltydetails?.[0];
+          const refundAllowed = penaltyDetail?.RefundAllowed === true;
+          const changeAllowed = penaltyDetail?.ChangeAllowed === true;
+          const changePenaltyAmount = parseFloat(penaltyDetail?.ChangePenaltyAmount || '0');
+          const refundPenaltyAmount = parseFloat(penaltyDetail?.RefundPenaltyAmount || '0');
+          const penaltyCurrency = penaltyDetail?.Currency || '';
+
           return {
             FareSourceCode: itin.FareSourceCode,
             ValidatingAirlineCode: itin.ValidatingCarrier || '',
@@ -248,9 +262,18 @@ async function searchMystifly(params: {
               ItinTotalFare: {
                 TotalFare: { Amount: String(totalAmount), CurrencyCode: currency },
               },
-              IsRefundable: false,
+              // LIVE from API — not hardcoded
+              IsRefundable: refundAllowed,
             },
-            IsRefundable: false,
+            IsRefundable: refundAllowed,
+            // Pass live penalty data to normalizer
+            _penalties: {
+              refundAllowed,
+              changeAllowed,
+              changePenaltyAmount,
+              refundPenaltyAmount,
+              penaltyCurrency,
+            },
             Provider: itin.Provider || 'MYSTIFLY',
           };
         } catch {

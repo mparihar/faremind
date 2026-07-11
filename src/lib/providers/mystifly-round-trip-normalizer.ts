@@ -168,21 +168,11 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
   const totalPrice = parseFloat(totalFare.Amount || totalFare.amount || '0');
   const currency = totalFare.CurrencyCode || totalFare.currencyCode || 'USD';
 
-  // Fare family / brand detection
-  const fareFamily = (firstSeg?.FareFamily || firstSeg?.fareFamily || '').toUpperCase();
-  const fareBasisCode = (firstSeg?.FareBasisCode || firstSeg?.fareBasisCode || '').toUpperCase();
-  const isBasicFare = fareFamily.includes('BASIC') ||
-    fareFamily.includes('LITE') ||
-    fareFamily.includes('LIGHT') ||
-    fareBasisCode.startsWith('G') ||
-    fareBasisCode.startsWith('N');
-
-  // Baggage — Mystifly reports route max, not fare-brand-specific allowance
+  // Baggage — API data flows through as-is from backend
   const baggageStr = firstSeg?.Baggage || firstSeg?.baggage || '';
   let checked = 0;
   let checkedWeight: number | undefined;
-  if (baggageStr && !isBasicFare) {
-    // Only credit checked bag if fare is NOT a basic/lite brand
+  if (baggageStr) {
     const pcMatch = baggageStr.match(/(\d+)P/i);
     const kgMatch = baggageStr.match(/(\d+)K/i);
     if (pcMatch) {
@@ -193,13 +183,25 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
       checked = weightKg >= 20 ? 1 : 0;
     }
   }
-  // Basic fares: checked = 0 regardless of what Mystifly reports
 
-  // Fare conditions
-  const isRefundable = itinerary.IsRefundable === true ||
-    itinerary.isRefundable === true ||
-    pricingInfo.IsRefundable === true;
-  const isChangeable = !isBasicFare;
+  // Fare conditions — use live penalties data if available
+  const penalties = itinerary._penalties;
+  let isRefundable: boolean;
+  let isChangeable: boolean;
+  let changeFee: number | undefined;
+  let cancellationFee: number | undefined;
+
+  if (penalties) {
+    isRefundable = penalties.refundAllowed === true;
+    isChangeable = penalties.changeAllowed === true;
+    changeFee = penalties.changePenaltyAmount > 0 ? penalties.changePenaltyAmount : undefined;
+    cancellationFee = penalties.refundPenaltyAmount > 0 ? penalties.refundPenaltyAmount : undefined;
+  } else {
+    isRefundable = itinerary.IsRefundable === true ||
+      itinerary.isRefundable === true ||
+      pricingInfo.IsRefundable === true;
+    isChangeable = false; // Unknown — don't guess
+  }
 
   // Filter out invalid itineraries
   if (totalPrice <= 0) return null;
@@ -222,6 +224,8 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
     fareRules: {
       refundable: isRefundable,
       changeable: isChangeable,
+      changeFee,
+      cancellationFee,
     },
     baggage: { carryOn: 1, checked, checkedWeight },
   };
