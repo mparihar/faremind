@@ -271,8 +271,8 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
               <Sparkles className="w-3 h-3" /> Why FAREMIND AI recommends this
             </p>
             {aiReasons.slice(0, 5).map((reason, i) => {
-              const cleanReason = reason.replace(/^[✓✔×•\-*]\s*/g, '');
-              const isAlert = reason.trimStart().startsWith('×') || [
+              const cleanReason = reason.replace(/^[✓✔×✗•\-*]\s*/g, '');
+              const isAlert = reason.trimStart().startsWith('×') || reason.trimStart().startsWith('✗') || [
                 'longer journey', 'significantly longer', 'longer than',
                 'layover — may be less convenient',
                 'risk of missed transfer', 'Inconvenient flight times', 'No checked baggage',

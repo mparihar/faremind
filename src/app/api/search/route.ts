@@ -215,16 +215,17 @@ export async function GET(request: NextRequest) {
 
           // Build badges from the new engine's data
           const badges: string[] = [];
-          if (original.totalPrice === cheapestPrice) badges.push('cheapest');
-          if (original.totalDurationMinutes === fastestDuration) badges.push('fastest');
+          if (cheapestPrice > 0 && (original.totalPrice - cheapestPrice) / cheapestPrice <= 0.01) badges.push('cheapest');
+          if (original.totalDurationMinutes <= fastestDuration + 5) badges.push('fastest');
           if (original.totalStops === fewestStops) badges.push('fewest_stops');
           if (original.fareRules?.refundable || original.fareRules?.changeable) badges.push('flexible');
           if (ro.rank <= 3) badges.push('ai_pick');
 
           // Build AI reasons from machine reasons + tradeoffs
+          // DO NOT prefix with ✓/✗ — the card component renders its own Check/X icons
           const aiReasons: string[] = [
-            ...ro.machineReasons.map((r: string) => `✓ ${r}`),
-            ...ro.tradeoffs.map((t: string) => `✗ ${t}`),
+            ...ro.machineReasons,
+            ...ro.tradeoffs.map((t: string) => `× ${t}`),
           ];
 
           ranked.push({
@@ -234,8 +235,8 @@ export async function GET(request: NextRequest) {
             aiScoreDisplay: Math.round(ro.finalScore),
             aiReasons,
             rankingTags: [
-              ...(original.totalPrice === cheapestPrice ? ['Cheapest'] : []),
-              ...(original.totalDurationMinutes === fastestDuration ? ['Fastest'] : []),
+              ...(cheapestPrice > 0 && (original.totalPrice - cheapestPrice) / cheapestPrice <= 0.01 ? ['Cheapest'] : []),
+              ...(original.totalDurationMinutes <= fastestDuration + 5 ? ['Fastest'] : []),
               ...(original.totalStops === fewestStops ? ['Fewest Stops'] : []),
               ...(ro.rank <= 3 ? ['AI Pick'] : []),
             ],
