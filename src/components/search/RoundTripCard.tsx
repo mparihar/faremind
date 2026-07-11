@@ -329,12 +329,14 @@ export default function RoundTripCard({ option, index, onSelect, onHover, isHove
               <Sparkles className="w-3 h-3" /> Why FAREMIND AI recommends this
             </p>
             {aiReasons.slice(0, 5).map((reason, i) => {
-              const isAlert = [
-                'longer journey', 'significantly longer', 'layover — may be less convenient',
+              const cleanReason = reason.replace(/^[✓✔×•\-*]\s*/g, '');
+              const isAlert = reason.trimStart().startsWith('×') || [
+                'longer journey', 'significantly longer', 'longer than',
+                'layover — may be less convenient',
                 'risk of missed transfer', 'Inconvenient flight times', 'No checked baggage',
                 'additional fee may apply', 'Non-refundable and non-changeable', 'Consider trade-offs',
-                'Higher than', 'Higher fare'
-              ].some(a => reason.includes(a));
+                'Higher than', 'Higher fare', 'Non-refundable', 'not refundable',
+              ].some(a => cleanReason.toLowerCase().includes(a.toLowerCase()));
               return (
                 <div key={i} className="flex items-start gap-1.5">
                   {isAlert ? (
@@ -342,8 +344,8 @@ export default function RoundTripCard({ option, index, onSelect, onHover, isHove
                   ) : (
                     <Check className="w-3 h-3 text-[#1ABC9C] shrink-0 mt-0.5" />
                   )}
-                  <span className={cn("text-[11px] leading-relaxed", isAlert ? "text-amber-700/80" : "text-slate-600")}>
-                    {reason.replace(/^[✓✔×•\-*]\s*/g, '')}
+                  <span className={cn("text-[11px] leading-relaxed", isAlert ? "text-amber-600" : "text-slate-600")}>
+                    {cleanReason}
                   </span>
                 </div>
               );
