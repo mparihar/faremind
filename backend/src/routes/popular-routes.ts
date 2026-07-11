@@ -5,7 +5,7 @@ import type { UnifiedFlight } from '../lib/types';
 const ROUTES = [
   { from: 'JFK', to: 'LAX', fromCity: 'New York',        toCity: 'Los Angeles'  },
   { from: 'SFO', to: 'ORD', fromCity: 'San Francisco',   toCity: 'Chicago'      },
-  { from: 'MIA', to: 'JFK', fromCity: 'Miami',           toCity: 'New York'     },
+  { from: 'DEN', to: 'MIA', fromCity: 'Denver',           toCity: 'Miami'        },
   { from: 'LAX', to: 'LHR', fromCity: 'Los Angeles',     toCity: 'London'       },
   { from: 'JFK', to: 'CDG', fromCity: 'New York',        toCity: 'Paris'        },
   { from: 'SFO', to: 'NRT', fromCity: 'San Francisco',   toCity: 'Tokyo'        },

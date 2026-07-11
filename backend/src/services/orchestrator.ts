@@ -276,7 +276,8 @@ async function searchMystifly(params: {
             },
             Provider: itin.Provider || 'MYSTIFLY',
           };
-        } catch {
+        } catch (e) {
+          console.warn(`[Mystifly] Denorm failed for itin:`, (e as Error).message);
           return null;
         }
       }).filter(Boolean);
@@ -288,7 +289,7 @@ async function searchMystifly(params: {
     }
 
     const flights = denormalized
-      .map((itin: any) => { try { return normalizeMystiflyOffer(itin); } catch { return null; } })
+      .map((itin: any, idx: number) => { try { return normalizeMystiflyOffer(itin); } catch (e) { console.warn(`[Mystifly] Normalizer failed for itin #${idx}:`, (e as Error).message); return null; } })
       .filter(Boolean) as UnifiedFlight[];
     return { provider: 'mystifly', flights, responseTimeMs: Date.now() - start, isMock: false };
   } catch (error) {
