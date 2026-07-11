@@ -68,6 +68,11 @@ function isAmadeusConfigured(): boolean {
 }
 
 function isMystiflyConfigured(): boolean {
+  // If BACKEND_URL is set, Mystifly is available via the backend proxy
+  // (credentials live on the backend, not the frontend)
+  const backendUrl = process.env.BACKEND_URL || '';
+  if (backendUrl.length > 0 && !backendUrl.includes('localhost')) return true;
+
   const sessionId = process.env.MYSTIFLY_SESSION_ID || '';
   if (sessionId.length > 0) return true;
   const user = process.env.MYSTIFLY_USERNAME || '';
