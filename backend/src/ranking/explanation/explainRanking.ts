@@ -75,9 +75,9 @@ function parseExplanation(content: string, rankedOffer: RankedOffer): Explanatio
       continue;
     }
 
-    // Detect bullet points
-    if (trimmed.startsWith('-') || trimmed.startsWith('•') || trimmed.startsWith('*') || /^\d+\./.test(trimmed)) {
-      bullets.push(trimmed.replace(/^[-•*]\s*/, '').replace(/^\d+\.\s*/, '').trim());
+    // Detect bullet points (strip common prefixes including checkmarks)
+    if (trimmed.startsWith('-') || trimmed.startsWith('•') || trimmed.startsWith('*') || trimmed.startsWith('✓') || trimmed.startsWith('✔') || /^\d+\./.test(trimmed)) {
+      bullets.push(trimmed.replace(/^[-•*✓✔]\s*/, '').replace(/^\d+\.\s*/, '').trim());
       continue;
     }
 

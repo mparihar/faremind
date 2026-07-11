@@ -285,7 +285,7 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
                     <Check className="w-3 h-3 text-[#1ABC9C] shrink-0 mt-0.5" />
                   )}
                   <span className={cn("text-[11px] leading-relaxed", isAlert ? "text-amber-700/80" : "text-slate-600")}>
-                    {reason}
+                    {reason.replace(/^[✓✔×•\-*]\s*/g, '')}
                   </span>
                 </div>
               );
