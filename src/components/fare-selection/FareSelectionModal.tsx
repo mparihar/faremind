@@ -145,7 +145,7 @@ export default function FareSelectionModal({ onClose }: Props) {
     const raw = sessionStorage.getItem('fm_fare_context');
     if (!raw) { onClose(); return; }
 
-    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; durationMinutes?: number; layoverMinutes?: number[]; trip?: string; fareRules?: { changeable?: boolean; changeFee?: number; refundable?: boolean; cancellationFee?: number } };
+    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; durationMinutes?: number; layoverMinutes?: number[]; trip?: string; fareRules?: { changeable?: boolean; changeFee?: number; refundable?: boolean; cancellationFee?: number }; baggage?: { carryOn?: number; checked?: number } };
     try { ctx = JSON.parse(raw); } catch { onClose(); return; }
     setFareContext({ origin: ctx.origin, destination: ctx.destination, trip: ctx.trip || 'one_way' });
 
@@ -163,6 +163,10 @@ export default function FareSelectionModal({ onClose }: Props) {
       if (fr.changeFee !== undefined) providerParams += `&provider_change_fee=${fr.changeFee}`;
       if (fr.refundable !== undefined) providerParams += `&provider_refundable=${fr.refundable}`;
       if (fr.cancellationFee !== undefined) providerParams += `&provider_refund_fee=${fr.cancellationFee}`;
+    }
+    // Pass provider baggage data so fare tiers use live API data
+    if (ctx.baggage?.checked !== undefined) {
+      providerParams += `&provider_checked_bags=${ctx.baggage.checked}`;
     }
     apiFetch<FareSelectionPayload>(
       `/api/fares/options?offer_id=${encodeURIComponent(ctx.offerId)}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${encodeURIComponent(ctx.origin)}&destination=${encodeURIComponent(ctx.destination)}&stops=${ctx.stops}&duration_minutes=${ctx.durationMinutes ?? 0}${layoverParam}${tripParam}${providerParams}`

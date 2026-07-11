@@ -75,6 +75,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const providerRefundable  = q.provider_refundable;  // 'true' | 'false' | undefined
       const providerRefundFee   = q.provider_refund_fee;  // numeric string or undefined
 
+      // Provider-sourced baggage — the base fare's checked bag count from live API
+      const providerCheckedBags = q.provider_checked_bags; // numeric string or undefined
+
       if (!base_price) return reply.code(400).send({ error: 'base_price is required' });
 
       const basePriceNum = parseFloat(base_price);
@@ -107,11 +110,21 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const resolvedChangeFee   = providerChangeFee !== undefined && providerChangeFee !== '' ? parseFloat(providerChangeFee) : null;
       const resolvedRefundable  = providerRefundable !== undefined ? providerRefundable === 'true'  : undefined;
       const resolvedRefundFee   = providerRefundFee !== undefined && providerRefundFee !== '' ? parseFloat(providerRefundFee) : null;
+      const resolvedCheckedBags = providerCheckedBags !== undefined ? parseInt(providerCheckedBags, 10) : null;
 
-      const fareInputs: FareInput[] = FARE_TEMPLATES.map((t, i) => ({
+      // When provider gives base checked bags, use it for the cheapest tier.
+      // Higher tiers get at least as many bags, but can have more per template.
+      const fareInputs: FareInput[] = FARE_TEMPLATES.map((t, i) => {
+        let effectiveChecked = t.checked;
+        if (resolvedCheckedBags !== null) {
+          // For the cheapest tier (index 0 / multiplier 1.0), use exact provider value
+          // For higher tiers, use max(template value, provider value) so upgrades are always ≥ base
+          effectiveChecked = i === 0 ? resolvedCheckedBags : Math.max(t.checked, resolvedCheckedBags);
+        }
+        return {
         id: `fare_${i}_${offer_id || 'mock'}`,
         totalPrice: Math.round(basePriceNum * t.priceMultiplier / travelers),
-        checked: t.checked,
+        checked: effectiveChecked,
         // Use provider values for refundable/changeable (provider is sole source of truth)
         refundable: resolvedRefundable ?? t.refundable,
         refundFeeUsd: resolvedRefundFee !== null ? resolvedRefundFee : t.refundFeeUsd,
@@ -119,7 +132,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         changeFeeUsd: resolvedChangeFee !== null ? resolvedChangeFee : t.changeFeeUsd,
         seatSelection: t.seatSelection, cabin: t.cabin, name: t.name,
         priorityBoarding: t.priorityBoarding, loungeAccess: t.loungeAccess, milesEarning: t.milesEarning,
-      }));
+      }});
 
       const scored   = computeAiScores(fareInputs, ctx);
       const scoreMap = new Map(scored.map((s) => [s.id, s]));
@@ -141,7 +154,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return {
           id, offerId: offer_id, cabin: t.cabin, name: t.name,
           basePrice: perPerson, totalPrice: allPaxTotal, currency,
-          baggage: { carryOn: t.carryOn, carryOnPieces: t.carryOnPieces, carryOnWeightKg: t.carryOnWeightKg, checked: t.checked, checkedWeightKg: t.checkedWeightKg, extraBagFeeUsd: t.extraBagFeeUsd },
+          baggage: { carryOn: t.carryOn, carryOnPieces: t.carryOnPieces, carryOnWeightKg: t.carryOnWeightKg, checked: resolvedCheckedBags !== null ? (i === 0 ? resolvedCheckedBags : Math.max(t.checked, resolvedCheckedBags)) : t.checked, checkedWeightKg: t.checkedWeightKg, extraBagFeeUsd: t.extraBagFeeUsd },
           policy: { refundable: effectiveRefundable, refundFeeUsd: effectiveRefundFee, changeable: effectiveChangeable, changeFeeUsd: effectiveChangeFee, seatSelection: t.seatSelection, seatSelectionFeeUsd: t.seatSelectionFeeUsd, upgradeable: t.upgradeable, loungeAccess: t.loungeAccess, priorityBoarding: t.priorityBoarding, milesEarning: t.milesEarning },
           aiScore: s.breakdown.finalScore, aiBadges: s.badges as AiBadge[], aiExplanation: s.explanation,
           aiScoreBreakdown: s.breakdown, seatsRemaining: Math.floor(Math.random() * 8) + 1,

@@ -100,7 +100,7 @@ export default function FareSelectionPage() {
     const raw = sessionStorage.getItem('fm_fare_context');
     if (!raw) { router.replace('/search'); return; }
 
-    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; trip?: string; fareRules?: { changeable?: boolean; changeFee?: number; refundable?: boolean; cancellationFee?: number } };
+    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; trip?: string; fareRules?: { changeable?: boolean; changeFee?: number; refundable?: boolean; cancellationFee?: number }; baggage?: { carryOn?: number; checked?: number } };
     try { ctx = JSON.parse(raw); } catch { router.replace('/search'); return; }
 
     store.setLoading(true);
@@ -112,6 +112,9 @@ export default function FareSelectionPage() {
       if (fr.changeFee !== undefined) providerParams += `&provider_change_fee=${fr.changeFee}`;
       if (fr.refundable !== undefined) providerParams += `&provider_refundable=${fr.refundable}`;
       if (fr.cancellationFee !== undefined) providerParams += `&provider_refund_fee=${fr.cancellationFee}`;
+    }
+    if (ctx.baggage?.checked !== undefined) {
+      providerParams += `&provider_checked_bags=${ctx.baggage.checked}`;
     }
     apiFetch<FareSelectionPayload>(
       `/api/fares/options?offer_id=${ctx.offerId}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${ctx.origin}&destination=${ctx.destination}&stops=${ctx.stops}${tripParam}${providerParams}`

@@ -289,6 +289,9 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
         if (fr.refundable !== undefined) providerParams += `&provider_refundable=${fr.refundable}`;
         if (fr.cancellationFee !== undefined) providerParams += `&provider_refund_fee=${fr.cancellationFee}`;
       }
+      if (flight.baggage?.checked !== undefined) {
+        providerParams += `&provider_checked_bags=${flight.baggage.checked}`;
+      }
       const payload = await apiFetch<FareSelectionPayload>(
         `/api/fares/options?offer_id=${encodeURIComponent(flight.providerOfferId)}&base_price=${flight.totalPrice}&traveler_count=1&currency=${flight.currency || 'USD'}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&stops=${flight.stops}&duration_minutes=${flight.totalDuration ?? 0}${providerParams}`
       );

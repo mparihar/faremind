@@ -653,6 +653,7 @@ function SearchContent() {
       trip: tripParam,
       returnDate: returnDateParam,
       fareRules: flight.fareRules,
+      baggage: flight.baggage,
     }));
     setShowFareModal(true);
   }, [fareStore, searchParams, adults, childrenParam, infantsParam, date, cabin, tripParam, returnDateParam]);
@@ -1238,6 +1239,7 @@ function SearchContent() {
                       trip: tripParam,
                       returnDate: returnDateParam,
                       fareRules: rt.fareRules,
+                      baggage: rt.baggage,
                     }));
                     setShowFareModal(true);
                   }
@@ -1783,6 +1785,7 @@ function SearchContent() {
               trip: tripParam,
               returnDate: returnDateParam,
               fareRules: selectedRoundTrip.fareRules,
+              baggage: selectedRoundTrip.baggage,
             }));
             setSelectedRoundTrip(null);
             setShowFareModal(true);
