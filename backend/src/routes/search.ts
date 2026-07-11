@@ -159,8 +159,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         },
       };
 
-      // Cache for 120s
-      await cacheSet(cacheKey, response, 120);
+      // Only cache results that have flights — never cache empty results
+      // (prevents stale 0-result responses from normalizer bugs or transient API failures)
+      if (rankedFlights.length > 0) {
+        await cacheSet(cacheKey, response, 120);
+      }
       return response;
     } catch (error) {
       reply.code(500).send({ error: 'Search failed. Please try again.' });
