@@ -332,7 +332,7 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
     baggage: { carryOn: 1, checked },
     totalDuration,
     stops,
-    valueScore: calculateValueScore(totalPrice, totalDuration, stops, refundable),
+    valueScore: calculateValueScore(totalPrice, totalDuration, stops, isRefundable),
     fareClass: firstSegRaw?.BookingClass || firstSegRaw?.bookingClass || undefined,
   };
 }
