@@ -168,11 +168,21 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
   const totalPrice = parseFloat(totalFare.Amount || totalFare.amount || '0');
   const currency = totalFare.CurrencyCode || totalFare.currencyCode || 'USD';
 
-  // Baggage
+  // Fare family / brand detection
+  const fareFamily = (firstSeg?.FareFamily || firstSeg?.fareFamily || '').toUpperCase();
+  const fareBasisCode = (firstSeg?.FareBasisCode || firstSeg?.fareBasisCode || '').toUpperCase();
+  const isBasicFare = fareFamily.includes('BASIC') ||
+    fareFamily.includes('LITE') ||
+    fareFamily.includes('LIGHT') ||
+    fareBasisCode.startsWith('G') ||
+    fareBasisCode.startsWith('N');
+
+  // Baggage — Mystifly reports route max, not fare-brand-specific allowance
   const baggageStr = firstSeg?.Baggage || firstSeg?.baggage || '';
   let checked = 0;
   let checkedWeight: number | undefined;
-  if (baggageStr) {
+  if (baggageStr && !isBasicFare) {
+    // Only credit checked bag if fare is NOT a basic/lite brand
     const pcMatch = baggageStr.match(/(\d+)P/i);
     const kgMatch = baggageStr.match(/(\d+)K/i);
     if (pcMatch) {
@@ -183,11 +193,13 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
       checked = weightKg >= 20 ? 1 : 0;
     }
   }
+  // Basic fares: checked = 0 regardless of what Mystifly reports
 
   // Fare conditions
   const isRefundable = itinerary.IsRefundable === true ||
     itinerary.isRefundable === true ||
     pricingInfo.IsRefundable === true;
+  const isChangeable = !isBasicFare;
 
   // Filter out invalid itineraries
   if (totalPrice <= 0) return null;
@@ -209,7 +221,7 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
     cabinClass,
     fareRules: {
       refundable: isRefundable,
-      changeable: undefined as unknown as boolean, // Mystifly search API doesn't provide changeability
+      changeable: isChangeable,
     },
     baggage: { carryOn: 1, checked, checkedWeight },
   };

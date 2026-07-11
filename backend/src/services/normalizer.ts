@@ -277,22 +277,37 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
   // ── Stops ──
   const stops = Math.max(0, segments.length - sliceCount);
 
+  // ── Fare family / brand detection ──
+  const fareFamily = (firstSegRaw?.FareFamily || firstSegRaw?.fareFamily || '').toUpperCase();
+  const fareBasisCode = (firstSegRaw?.FareBasisCode || firstSegRaw?.fareBasisCode || '').toUpperCase();
+  const isBasicFare = fareFamily.includes('BASIC') ||
+    fareFamily.includes('LITE') ||
+    fareFamily.includes('LIGHT') ||
+    fareBasisCode.startsWith('G') || // Common basic economy fare basis prefix
+    fareBasisCode.startsWith('N');   // Another common basic economy prefix
+
   // ── Baggage ──
+  // IMPORTANT: Mystifly's CheckinBaggage reports the route's maximum allowance,
+  // NOT what's included in the specific fare brand. For "Basic" economy fares
+  // (e.g. DELTA MAIN BASIC, UA BASIC ECONOMY), checked bags are NOT included
+  // even though Mystifly may report "1PC".
   const baggageStr = firstSegRaw?.Baggage || firstSegRaw?.baggage || '';
   let checked = 0;
-  if (baggageStr) {
-    // Mystifly baggage can be "25K", "2P", "30K", etc.
+  if (baggageStr && !isBasicFare) {
+    // Only credit checked bag if fare is NOT a basic/lite brand
     const kgMatch = baggageStr.match(/(\d+)K/i);
     const pcMatch = baggageStr.match(/(\d+)P/i);
     if (pcMatch) checked = parseInt(pcMatch[1]);
     else if (kgMatch) checked = parseInt(kgMatch[1]) >= 20 ? 1 : 0;
   }
+  // Basic fares: checked = 0 regardless of what Mystifly reports
 
   // ── Fare conditions ──
   const isRefundable = itinerary.IsRefundable === true ||
     itinerary.isRefundable === true ||
     pricingInfo.IsRefundable === true;
-  const isChangeable = true; // Mystifly doesn't explicitly state changeability in search
+  // Basic fares are typically not changeable without fee
+  const isChangeable = !isBasicFare;
 
   const refundable = isRefundable;
 
