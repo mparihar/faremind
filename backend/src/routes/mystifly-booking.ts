@@ -208,6 +208,28 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const totalFare = itinerary?.AirItineraryPricingInfo?.ItinTotalFare?.TotalFare?.Amount;
       const currency = itinerary?.AirItineraryPricingInfo?.ItinTotalFare?.TotalFare?.CurrencyCode ?? 'USD';
 
+      // ── Extract IsValid and HoldAllowed from revalidation response ──
+      // These fields determine the correct booking flow:
+      //   HoldAllowed=true  → Hold booking: BookFlight → OrderTicket (payment at OrderTicket)
+      //   HoldAllowed=false → Webfare:      BookFlight (payment at BookFlight, no OrderTicket)
+      const isValidRaw = result?.Data?.IsValid ?? result?.IsValid ?? itinerary?.IsValid;
+      const isValid = isValidRaw === true || isValidRaw === 'true' || isValidRaw === 'True';
+      const holdAllowedRaw = result?.Data?.HoldAllowed ?? result?.HoldAllowed ?? itinerary?.HoldAllowed;
+      const holdAllowed = holdAllowedRaw === true || holdAllowedRaw === 'true' || holdAllowedRaw === 'True';
+
+      console.log(`[Mystifly] Revalidation flags — IsValid: ${isValidRaw} (${isValid}), HoldAllowed: ${holdAllowedRaw} (${holdAllowed})`);
+
+      // ── Block booking if IsValid is explicitly false ──
+      if (isValidRaw !== undefined && !isValid) {
+        console.error(`[Mystifly] ❌ Revalidation returned IsValid=false — fare is no longer available`);
+        return reply.code(422).send({
+          error: 'Fare is no longer valid. Please select an alternate flight.',
+          errorCode: 'REVALIDATION_INVALID',
+          searchFscHash,
+          raw: result,
+        });
+      }
+
       // Use the FIRST non-search FSC found in deep search, or the first FSC found
       let revalidatedFareSourceCode: string | null = null;
       for (const found of allFscs) {
@@ -239,10 +261,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const revalFscHash = hashFsc(revalidatedFareSourceCode);
       console.log(`[FSC-Trace] REVALIDATED FSC — len=${revalidatedFareSourceCode.length}, sha256=${revalFscHash}`);
       console.log(`[FSC-Trace] FSC comparison — search=${searchFscHash} vs reval=${revalFscHash}, match=${searchFscHash === revalFscHash}`);
-      console.log(`[Mystifly] Revalidation success — fare: ${totalFare} ${currency}`);
+      console.log(`[Mystifly] Revalidation success — fare: ${totalFare} ${currency}, holdAllowed: ${holdAllowed}`);
 
       return {
         success: true,
+        isValid,
+        holdAllowed,
         totalFare: totalFare ? parseFloat(totalFare) : null,
         currency,
         fareSourceCode: revalidatedFareSourceCode,
@@ -272,6 +296,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         phone,
         countryCode,
         clientReferenceNo,
+        holdBooking,
       } = request.body as {
         fareSourceCode?: string;
         passengers?: any[];
@@ -279,6 +304,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         phone?: string;
         countryCode?: string;
         clientReferenceNo?: string;
+        holdBooking?: boolean;
       };
 
       if (!fareSourceCode) {
@@ -311,7 +337,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         email,
         countryCode: toIsoCountry(countryCode),
         clientReferenceNo,
-        holdBooking: false,
+        holdBooking: holdBooking ?? false,
       });
 
       // Log full Book response for debugging

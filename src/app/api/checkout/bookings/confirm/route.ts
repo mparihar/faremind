@@ -1007,8 +1007,8 @@ export async function POST(req: NextRequest) {
         let revalidatedFareSourceCode: string | null = null;
         let mystiflyPaymentCaptured = false;
 
-        // ── Step 1: Revalidate fare ──────────────────────────────────────
-        console.log(`[Mystifly] Step 1/4: Revalidating fare...`);
+        // ── Step 1/6: Revalidate fare ────────────────────────────────────
+        console.log(`[Mystifly] Step 1/6: Revalidating fare...`);
         const revalRes = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1028,6 +1028,28 @@ export async function POST(req: NextRequest) {
           });
           return NextResponse.json(
             { error: revalData.error || 'Fare revalidation failed', errorCode: 'REVALIDATION_FAILED', customerMessage },
+            { status: 422 }
+          );
+        }
+
+        // ── Extract IsValid and HoldAllowed ──────────────────────────────
+        const isValid = revalData.isValid;
+        const holdAllowed = revalData.holdAllowed === true;
+        console.log(`[Mystifly] Revalidation flags — IsValid: ${isValid}, HoldAllowed: ${holdAllowed}`);
+
+        // Block if IsValid is explicitly false
+        if (isValid === false) {
+          await cancelStripeAuth('Mystifly revalidation IsValid=false');
+          const customerMessage = 'This fare is no longer valid. Please select an alternate flight. Your card was not charged.';
+          await logBookingFailure({
+            passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
+            paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
+            currency, errorCode: 'REVALIDATION_INVALID',
+            errorMessage: 'Revalidation returned IsValid=false',
+            customerMessage, failureStage: 'MYSTIFLY_REVALIDATION',
+          });
+          return NextResponse.json(
+            { error: 'Fare is no longer valid. Please select an alternate flight.', errorCode: 'REVALIDATION_INVALID', customerMessage },
             { status: 422 }
           );
         }
@@ -1078,11 +1100,30 @@ export async function POST(req: NextRequest) {
           providerCurrency = revalData.currency || currency;
         }
 
-        console.log(`[Mystifly] ✅ Revalidation passed — fare: $${providerPayableAmount}, bookingFSC hash: ${revalData.revalFscHash || 'N/A'}`);
+        console.log(`[Mystifly] ✅ Revalidation passed — fare: $${providerPayableAmount}, holdAllowed: ${holdAllowed}, bookingFSC hash: ${revalData.revalFscHash || 'N/A'}`);
 
-        // ── Step 2: Stripe Capture (BEFORE BookFlight) ───────────────────
+        // ── Step 2/6: FareRules (fire-and-forget) ────────────────────────
+        // Called between Revalidate and BookFlight per Mystifly guidelines.
+        // Non-blocking — logged for audit trail but doesn't delay checkout.
+        console.log(`[Mystifly] Step 2/6: Fetching FareRules (fire-and-forget)...`);
+        fetch(`${BACKEND_URL}/api/mystifly/fare-rules`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ fareSourceCode: bookingFareSourceCode }),
+        }).then(async (res) => {
+          const data = await res.json().catch(() => ({}));
+          if (res.ok) {
+            console.log(`[Mystifly] ✅ FareRules fetched successfully for booking FSC`);
+          } else {
+            console.warn(`[Mystifly] ⚠️ FareRules fetch returned error: ${data.error || 'unknown'} (non-blocking)`);
+          }
+        }).catch((err: any) => {
+          console.warn(`[Mystifly] ⚠️ FareRules fetch failed: ${err.message} (non-blocking)`);
+        });
+
+        // ── Step 3/6: Stripe Capture (BEFORE BookFlight) ─────────────────
         // Secure customer payment BEFORE debiting agency balance at Mystifly.
-        console.log(`[Mystifly] Step 2/4: Capturing Stripe payment...`);
+        console.log(`[Mystifly] Step 3/6: Capturing Stripe payment...`);
         if (stripeVerified && paymentIntentId) {
           try {
             const captured = await stripe.paymentIntents.capture(paymentIntentId);
@@ -1108,15 +1149,20 @@ export async function POST(req: NextRequest) {
           }
         }
 
-        // ── Step 3: Create booking (PNR) ─────────────────────────────────
+        // ── Step 4/6: Create booking (PNR) ───────────────────────────────
         // Payment is captured — now create the booking at Mystifly.
         // If this fails, we MUST refund the Stripe capture.
-        console.log(`[Mystifly] Step 3/4: Creating booking...`);
+        //
+        // Flow branching based on HoldAllowed:
+        //   HoldAllowed=true  → holdBooking=true  (Hold booking, payment at OrderTicket)
+        //   HoldAllowed=false → holdBooking=false  (Webfare, payment at BookFlight)
+        console.log(`[Mystifly] Step 4/6: Creating booking (holdBooking=${holdAllowed})...`);
         const bookRes = await fetch(`${BACKEND_URL}/api/mystifly/book`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             fareSourceCode: bookingFareSourceCode,
+            holdBooking: holdAllowed,
             passengers: passengers.map((p: any) => ({
               firstName: p.firstName,
               lastName: p.lastName,
@@ -1171,41 +1217,48 @@ export async function POST(req: NextRequest) {
 
         console.log(`[Mystifly] ✅ Booking created — MFRef: ${mystiflyBookingResult.uniqueId}`);
 
-        // ── Step 4: Issue ticket ─────────────────────────────────────────
-        // Ticket issuance after successful booking. Non-blocking — if it fails
-        // or returns "Ticket-in Process", the booking exists and will be
-        // reconciled by the ticketing worker.
-        console.log(`[Mystifly] Step 4/4: Issuing ticket...`);
-        let ticketingStatus: 'ISSUED' | 'TICKETING_PENDING' | 'FAILED' = 'FAILED';
-        try {
-          const ticketRes = await fetch(`${BACKEND_URL}/api/mystifly/order-ticket`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              uniqueId: mystiflyBookingResult.uniqueId,
-              fareSourceCode: bookingFareSourceCode,
-              clientReferenceNo: sessionId || undefined,
-            }),
-          });
-          const ticketData = await ticketRes.json();
+        // ── Step 5/6: Issue ticket (ONLY for Hold bookings) ──────────────
+        // HoldAllowed=true  → OrderTicket is required (payment debited here)
+        // HoldAllowed=false → Webfare: payment was debited at BookFlight, skip OrderTicket
+        let ticketingStatus: 'ISSUED' | 'TICKETING_PENDING' | 'SKIPPED_WEBFARE' | 'FAILED' = 'FAILED';
 
-          if (ticketRes.ok && ticketData.success) {
-            // Check if truly ticketed or just "Ticket-in Process"
-            const rawStatus = (ticketData.status || ticketData.ticketStatus || '').toLowerCase();
-            if (rawStatus.includes('ticket-in process') || rawStatus.includes('in process')) {
-              ticketingStatus = 'TICKETING_PENDING';
-              console.log(`[Mystifly] ⏳ Ticket-in-Process for MFRef: ${mystiflyBookingResult.uniqueId} — queuing for reconciliation`);
+        if (holdAllowed) {
+          // Hold booking — must call OrderTicket to issue ticket and debit payment
+          console.log(`[Mystifly] Step 5/6: Issuing ticket (Hold booking — OrderTicket required)...`);
+          try {
+            const ticketRes = await fetch(`${BACKEND_URL}/api/mystifly/order-ticket`, {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                uniqueId: mystiflyBookingResult.uniqueId,
+                fareSourceCode: bookingFareSourceCode,
+                clientReferenceNo: sessionId || undefined,
+              }),
+            });
+            const ticketData = await ticketRes.json();
+
+            if (ticketRes.ok && ticketData.success) {
+              // Check if truly ticketed or just "Ticket-in Process"
+              const rawStatus = (ticketData.status || ticketData.ticketStatus || '').toLowerCase();
+              if (rawStatus.includes('ticket-in process') || rawStatus.includes('in process')) {
+                ticketingStatus = 'TICKETING_PENDING';
+                console.log(`[Mystifly] ⏳ Ticket-in-Process for MFRef: ${mystiflyBookingResult.uniqueId} — queuing for reconciliation`);
+              } else {
+                ticketingStatus = 'ISSUED';
+                console.log(`[Mystifly] ✅ Ticket issued for MFRef: ${mystiflyBookingResult.uniqueId}`);
+              }
             } else {
-              ticketingStatus = 'ISSUED';
-              console.log(`[Mystifly] ✅ Ticket issued for MFRef: ${mystiflyBookingResult.uniqueId}`);
+              ticketingStatus = 'TICKETING_PENDING';
+              console.warn(`[Mystifly] ⚠️ Ticketing returned error (non-blocking): ${ticketData.error || 'unknown'} — queuing for reconciliation`);
             }
-          } else {
+          } catch (ticketErr: any) {
             ticketingStatus = 'TICKETING_PENDING';
-            console.warn(`[Mystifly] ⚠️ Ticketing returned error (non-blocking): ${ticketData.error || 'unknown'} — queuing for reconciliation`);
+            console.warn(`[Mystifly] ⚠️ Ticketing error (non-blocking): ${ticketErr.message} — queuing for reconciliation`);
           }
-        } catch (ticketErr: any) {
-          ticketingStatus = 'TICKETING_PENDING';
-          console.warn(`[Mystifly] ⚠️ Ticketing error (non-blocking): ${ticketErr.message} — queuing for reconciliation`);
+        } else {
+          // Webfare — payment was debited at BookFlight, no OrderTicket needed
+          ticketingStatus = 'SKIPPED_WEBFARE';
+          console.log(`[Mystifly] Step 5/6: Skipping OrderTicket — Webfare (HoldAllowed=false), payment debited at BookFlight`);
         }
 
         // Queue for reconciliation if ticketing didn't complete immediately
@@ -1224,6 +1277,40 @@ export async function POST(req: NextRequest) {
           } catch (importErr: any) {
             console.error(`[Mystifly] Failed to import reconciliation worker: ${importErr.message}`);
           }
+        }
+
+        // ── Step 6/6: TripDetails (confirm booking + extract ticket numbers) ──
+        // Called at the end of the flow per Mystifly guidelines to confirm the
+        // booking and extract ticket numbers for the DB record.
+        console.log(`[Mystifly] Step 6/6: Fetching TripDetails for MFRef: ${mystiflyBookingResult.uniqueId}...`);
+        try {
+          const tripRes = await fetch(`${BACKEND_URL}/api/mystifly/trip-details`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ uniqueId: mystiflyBookingResult.uniqueId }),
+          });
+          const tripData = await tripRes.json();
+
+          if (tripRes.ok && tripData.success) {
+            console.log(`[Mystifly] ✅ TripDetails — status: ${tripData.bookingStatus}, tickets: [${(tripData.ticketNumbers || []).join(', ')}]`);
+
+            // If we got ticket numbers, update the booking result
+            if (tripData.ticketNumbers?.length > 0) {
+              (mystiflyBookingResult as any).ticketNumbers = tripData.ticketNumbers;
+              // If ticketing was pending but TripDetails shows tickets, update status
+              if (ticketingStatus === 'TICKETING_PENDING' || ticketingStatus === 'SKIPPED_WEBFARE') {
+                ticketingStatus = 'ISSUED';
+                console.log(`[Mystifly] ✅ TripDetails confirmed tickets issued — upgrading ticketingStatus to ISSUED`);
+              }
+            }
+            if (tripData.bookingStatus) {
+              (mystiflyBookingResult as any).confirmedStatus = tripData.bookingStatus;
+            }
+          } else {
+            console.warn(`[Mystifly] ⚠️ TripDetails returned error (non-blocking): ${tripData.error || 'unknown'}`);
+          }
+        } catch (tripErr: any) {
+          console.warn(`[Mystifly] ⚠️ TripDetails fetch failed (non-blocking): ${tripErr.message}`);
         }
 
       } catch (mystiflyErr: any) {
