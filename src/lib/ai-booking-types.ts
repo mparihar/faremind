@@ -39,6 +39,8 @@ export interface AiFareDetails {
   name: string;                // e.g. "Economy Basic"
   basePrice: number;
   totalPrice: number;
+  providerBaseFare?: number;   // Actual provider base fare (before taxes)
+  providerTaxAmount?: number;  // Actual provider tax amount
   currency: string;
 
   // Baggage

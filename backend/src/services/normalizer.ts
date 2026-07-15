@@ -95,6 +95,8 @@ export function normalizeDuffelOffer(offer: DuffelOffer): UnifiedFlight {
     },
     segments,
     totalPrice,
+    baseFare: offer.base_amount ? parseFloat(offer.base_amount) : undefined,
+    taxAmount: offer.tax_amount ? parseFloat(offer.tax_amount) : undefined,
     currency: offer.total_currency,
     cabinClass,
     fareRules: {
@@ -264,6 +266,12 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
   const totalPrice = parseFloat(totalFare.Amount || totalFare.amount || '0');
   const currency = totalFare.CurrencyCode || totalFare.currencyCode || 'USD';
 
+  // Extract actual base fare and taxes from Mystifly API
+  const baseFareObj = itinTotalFare.BaseFare || itinTotalFare.baseFare || {};
+  const taxesObj = itinTotalFare.Taxes || itinTotalFare.taxes || itinTotalFare.TotalTax || itinTotalFare.totalTax || {};
+  const providerBaseFare = parseFloat(baseFareObj.Amount || baseFareObj.amount || '0') || undefined;
+  const providerTaxAmount = parseFloat(taxesObj.Amount || taxesObj.amount || '0') || undefined;
+
   // ── Parse cabin class ──
   const firstSegRaw = odOptions[0]?.FlightSegments?.[0] || odOptions[0]?.flightSegments?.[0];
   const cabinCode = firstSegRaw?.CabinClassCode || firstSegRaw?.cabinClassCode || 'Y';
@@ -327,6 +335,8 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
     },
     segments,
     totalPrice,
+    baseFare: providerBaseFare,
+    taxAmount: providerTaxAmount,
     providerTotalFare: totalPrice, // Raw Mystifly fare — used by confirm route price-change guard
     currency,
     cabinClass,

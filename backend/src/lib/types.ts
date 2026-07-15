@@ -62,6 +62,8 @@ export interface UnifiedFlight {
   airline: AirlineInfo;
   segments: FlightSegment[];
   totalPrice: number;
+  baseFare?: number;    // Provider base fare (before taxes) — from Mystifly BaseFare / Duffel base_amount
+  taxAmount?: number;   // Provider tax amount — from Mystifly Taxes / Duffel tax_amount
   currency: string;
   cabinClass: CabinClass;
   fareRules: FareRules;

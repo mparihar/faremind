@@ -101,10 +101,11 @@ function computePriceSummary(
 
   const paxCount = Math.max(1, passengerCount);
 
-  // The provider fare (totalPrice) ALREADY INCLUDES taxes.
-  // Split it into base + taxes for display only — do NOT add taxes on top.
-  const baseFarePerPax = fareDetails.basePrice;
-  const taxesPerPax = fareDetails.totalPrice - fareDetails.basePrice;
+  // Use actual provider base fare / tax split when available (from Mystifly/Duffel API).
+  // Falls back to estimated split when provider didn't supply the breakdown.
+  const hasProviderSplit = fareDetails.providerBaseFare != null && fareDetails.providerTaxAmount != null;
+  const baseFarePerPax = hasProviderSplit ? fareDetails.providerBaseFare! : fareDetails.basePrice;
+  const taxesPerPax = hasProviderSplit ? fareDetails.providerTaxAmount! : (fareDetails.totalPrice - fareDetails.basePrice);
   const baseFare = baseFarePerPax * paxCount;
   const taxes = taxesPerPax * paxCount;
 
@@ -232,6 +233,9 @@ export function buildFareDetails(
     name: FARE_CLASS_NAMES[fareClass],
     basePrice,
     totalPrice,
+    // Scale provider base fare / tax proportionally for the fare tier
+    providerBaseFare: flight.baseFare ? Math.round(flight.baseFare * multiplier) : undefined,
+    providerTaxAmount: flight.taxAmount ? Math.round(flight.taxAmount * multiplier) : undefined,
     currency: flight.currency || 'USD',
     carryOnPieces: flight.baggage.carryOn || 1,
     checkedBags,
@@ -406,13 +410,30 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
   },
 
   selectFareFromOption: (fare: FareOption) => {
-    const { passengerCount, passengerProtections, protectionFee, addOns, passengerSeats } = get();
+    const { passengerCount, passengerProtections, protectionFee, addOns, passengerSeats, selectedFlight } = get();
+
+    // Scale provider base fare / tax proportionally for this fare tier
+    // e.g. if provider had baseFare=100, tax=20 (total=120) and this fare tier is 150,
+    // scale to baseFare=125, tax=25 (total=150)
+    const flight = selectedFlight;
+    let providerBaseFare: number | undefined;
+    let providerTaxAmount: number | undefined;
+    if (flight?.baseFare && flight.taxAmount && flight.totalPrice > 0) {
+      const ratio = fare.totalPrice / flight.totalPrice;
+      providerBaseFare = Math.round(flight.baseFare * ratio);
+      providerTaxAmount = Math.round(flight.taxAmount * ratio);
+      // Ensure they sum to totalPrice (fix rounding)
+      const diff = fare.totalPrice - (providerBaseFare + providerTaxAmount);
+      if (diff !== 0) providerTaxAmount += diff;
+    }
 
     const fareDetails: AiFareDetails = {
       fareClass: 'standard',
       name: fare.name,
       basePrice: fare.basePrice,
       totalPrice: fare.totalPrice,
+      providerBaseFare,
+      providerTaxAmount,
       currency: fare.currency,
       carryOnPieces: fare.baggage.carryOnPieces,
       checkedBags: fare.baggage.checked,

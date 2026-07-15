@@ -99,6 +99,8 @@ export interface UnifiedFlight {
   airline: AirlineInfo;
   segments: FlightSegment[];
   totalPrice: number;
+  baseFare?: number;    // Provider base fare (before taxes)
+  taxAmount?: number;   // Provider tax amount
   currency: string;
   cabinClass: CabinClass;
   fareRules: FareRules;
