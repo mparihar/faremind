@@ -553,10 +553,10 @@ export async function searchFlights(params: MystiflySearchParams): Promise<any> 
     IsInfantWithSeat: false,
   };
 
-  // Determine search API version (default v2)
-  // NOTE: v2.2 search FSCs are incompatible with v1 Book (ERBUK103).
-  // v2 search should produce FSCs compatible with v1 Book/Revalidate.
-  const version = params.searchVersion || 'v2';
+  // Determine search API version (default v2.2)
+  // Mixed versions (Search v2.2 → Revalidate v1 → Book v1) are the published
+  // Mystifly workflow. ERBUK103 is caused by FSC lifecycle issues, not version mismatch.
+  const version = params.searchVersion || 'v2.2';
   const searchPath = `/api/${version}/Search/Flight`;
   const routeDesc = legs.map(l => `${l.origin}→${l.destination}`).join(', ');
   console.log(`[Mystifly] Search via ${searchPath} — ${routeDesc}, trip=${airTripType}, pricing=${searchRQ.PricingSourceType}`);

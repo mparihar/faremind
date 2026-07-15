@@ -1032,10 +1032,29 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        // Capture revalidated FareSourceCode if provider returns a new one
+        // ── Point 5: Require revalidated FSC — NO fallback to search FSC ──
         revalidatedFareSourceCode = revalData.fareSourceCode || revalData.revalidatedFareSourceCode || null;
-        // Use revalidated FSC for booking if available, otherwise use original
-        const bookingFareSourceCode = revalidatedFareSourceCode || searchFareSourceCode;
+        console.log(`[FSC-Trace] Confirm route — searchFSC hash: ${revalData.searchFscHash || 'N/A'}, revalFSC hash: ${revalData.revalFscHash || 'N/A'}`);
+
+        // ── Point 10: Block booking when revalidation does not return a valid FSC ──
+        if (!revalidatedFareSourceCode) {
+          await cancelStripeAuth('Revalidation returned no FareSourceCode');
+          const customerMessage = 'Fare validation issue. Please search again. Your card was not charged.';
+          await logBookingFailure({
+            passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
+            paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
+            currency, errorCode: 'REVALIDATION_NO_FSC',
+            errorMessage: 'Revalidation returned no FareSourceCode',
+            customerMessage, failureStage: 'MYSTIFLY_REVALIDATION',
+          });
+          return NextResponse.json(
+            { error: 'Fare revalidation returned no booking code. Please search again.', errorCode: 'REVALIDATION_NO_FSC', customerMessage },
+            { status: 422 }
+          );
+        }
+
+        // ── Point 6: Book v1 FSC must EXACTLY equal the Revalidate output ──
+        const bookingFareSourceCode = revalidatedFareSourceCode;
 
         // Price-change guard: compare revalidated fare with stored fare
         if (revalData.totalFare != null) {
@@ -1059,7 +1078,7 @@ export async function POST(req: NextRequest) {
           providerCurrency = revalData.currency || currency;
         }
 
-        console.log(`[Mystifly] ✅ Revalidation passed — fare: $${providerPayableAmount}, FSC updated: ${revalidatedFareSourceCode ? 'YES' : 'NO'}`);
+        console.log(`[Mystifly] ✅ Revalidation passed — fare: $${providerPayableAmount}, bookingFSC hash: ${revalData.revalFscHash || 'N/A'}`);
 
         // ── Step 2: Stripe Capture (BEFORE BookFlight) ───────────────────
         // Secure customer payment BEFORE debiting agency balance at Mystifly.
