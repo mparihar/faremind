@@ -255,13 +255,19 @@ export async function POST(req: NextRequest) {
     }
 
     const offerId = selectedFare?.offerId || selectedFare?.id || selectedFare?.duffelOfferId
+      || selectedFare?.fareSourceCode || selectedFare?.fareId
       || sourceFlight?.providerOfferId || sourceRoundTrip?.providerOfferId;
     if (!offerId) {
-      console.error('[Checkout] ❌ No offer ID found from any source:', {
+      const provider = sourceFlight?.provider ?? sourceRoundTrip?.provider ?? 'unknown';
+      console.error(`[Checkout] ❌ No offer ID found from any source (provider: ${provider}):`, {
         'selectedFare.offerId': selectedFare?.offerId,
         'selectedFare.id': selectedFare?.id,
+        'selectedFare.fareId': selectedFare?.fareId,
+        'selectedFare.fareSourceCode': (selectedFare as any)?.fareSourceCode,
         'sourceFlight.providerOfferId': sourceFlight?.providerOfferId,
         'sourceRoundTrip.providerOfferId': sourceRoundTrip?.providerOfferId,
+        'selectedFare keys': selectedFare ? Object.keys(selectedFare) : 'null',
+        'sourceFlight keys': sourceFlight ? Object.keys(sourceFlight).slice(0, 10) : 'null',
       });
       return NextResponse.json(
         { error: 'No offer ID found. Please select a fare and try again.', errorCode: 'MISSING_OFFER_ID' },

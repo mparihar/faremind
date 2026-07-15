@@ -57,6 +57,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     try {
       const q = request.query as Record<string, string>;
       const offer_id         = q.offer_id || '';
+      if (!offer_id) {
+        console.warn('[fare-options] ⚠️ offer_id is EMPTY — all fares will have empty offerId. Bookings for these fares will fail at checkout!');
+      }
       const base_price       = q.base_price;
       const traveler_count   = q.traveler_count || '1';
       const currency         = q.currency || 'USD';

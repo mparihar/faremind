@@ -148,6 +148,10 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
   if (odOptions.length < 2) return null;
 
   const fareSourceCode = itinerary.FareSourceCode || '';
+  if (!fareSourceCode) {
+    console.warn(`[Mystifly RT] Rejecting itinerary: missing FareSourceCode. Keys: ${Object.keys(itinerary).join(', ')}`);
+    return null;
+  }
   const validatingAirline = itinerary.ValidatingAirlineCode || '';
 
   const outbound = odToJourney(odOptions[0], 'outbound', validatingAirline);

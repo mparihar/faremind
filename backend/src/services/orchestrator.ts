@@ -205,6 +205,24 @@ async function searchMystifly(params: {
           const fare = fareMap.get(itin.FareRef);
           const penalties = penaltiesMap.get(itin.PenaltiesInfoRef);
 
+          // ── Resolve FareSourceCode (critical for booking) ─────────────
+          // v2.2 may use different field names than v1. Check all known
+          // variations, including fare-level FSC and OfferID.
+          const resolvedFSC =
+            itin.FareSourceCode       // v1 standard
+            || itin.fareSourceCode    // camelCase variant
+            || itin.OfferID           // v2.2 alternate
+            || itin.offerId           // camelCase alternate
+            || fare?.FareSourceCode   // FSC on the fare reference
+            || fare?.fareSourceCode   // camelCase on fare ref
+            || fare?.OfferID          // v2.2 fare-level offer ID
+            || '';
+
+          if (!resolvedFSC) {
+            // Log the actual keys so we can identify the correct field
+            console.warn(`[Mystifly] ⚠️ No FareSourceCode found on v2.2 itinerary. Keys: ${Object.keys(itin).join(', ')}${fare ? `, fare keys: ${Object.keys(fare).join(', ')}` : ''}`);
+          }
+
           // Group segments by LegIndicator (0 = outbound, 1 = return, etc.)
           const legGroups = new Map<string, any[]>();
           for (const od of ods) {
@@ -255,7 +273,7 @@ async function searchMystifly(params: {
           const penaltyCurrency = penaltyDetail?.Currency || '';
 
           return {
-            FareSourceCode: itin.FareSourceCode,
+            FareSourceCode: resolvedFSC,
             ValidatingAirlineCode: itin.ValidatingCarrier || '',
             OriginDestinationOptions: originDestinationOptions,
             AirItineraryPricingInfo: {
@@ -283,6 +301,22 @@ async function searchMystifly(params: {
       }).filter(Boolean);
 
       console.log(`[Mystifly] v2.2 denormalized: ${denormalized.length} itineraries (from ${itineraries.length} raw, ${segmentList.length} segments, ${faresList.length} fares)`);
+
+      // Diagnostic: report FSC presence — empty FSC = booking will fail
+      const fscPresent = denormalized.filter((d: any) => d.FareSourceCode && d.FareSourceCode.length > 0).length;
+      const fscMissing = denormalized.length - fscPresent;
+      if (fscMissing > 0) {
+        console.error(`[Mystifly] ❌ ${fscMissing}/${denormalized.length} itineraries have EMPTY FareSourceCode — bookings for these will fail!`);
+        // Log the first missing itinerary's keys to diagnose field names
+        const firstMissing = denormalized.find((d: any) => !d.FareSourceCode);
+        if (firstMissing) {
+          const rawItin = itineraries.find((i: any) => !i.FareSourceCode && !i.fareSourceCode && !i.OfferID && !i.offerId);
+          if (rawItin) {
+            console.error(`[Mystifly] ❌ Raw v2.2 itin keys: ${Object.keys(rawItin).join(', ')}`);
+            console.error(`[Mystifly] ❌ Raw v2.2 itin sample: ${JSON.stringify(rawItin).slice(0, 500)}`);
+          }
+        }
+      }
     } else {
       // v1 format — already flat, pass through as-is
       denormalized = Array.isArray(itineraries) ? itineraries : [];
