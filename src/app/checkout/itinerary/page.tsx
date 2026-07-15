@@ -264,11 +264,14 @@ export default function CheckoutItineraryPage() {
         }),
       });
       checkoutStore.setSessionId(data.sessionId);
-      router.push('/checkout/passengers');
     } catch {
-      // Session creation failed — send back to home
-      router.replace('/');
+      // Session creation failed — continue with a local session ID.
+      // The backend session is for price-protection tracking, not a booking blocker.
+      const localSessionId = `local_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+      checkoutStore.setSessionId(localSessionId);
+      console.warn(`[Itinerary] select-fare failed, using local session: ${localSessionId}`);
     }
+    router.push('/checkout/passengers');
   };
 
   // ── Init on mount ──────────────────────────────────────────────────────────
