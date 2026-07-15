@@ -93,7 +93,78 @@ export async function GET(request: NextRequest) {
       return NextResponse.json({ ...result, cached: false });
     }
 
-    // Non-Duffel providers: return empty for now
+    // ── Mystifly: Meals from Revalidation ExtraServices ──
+    if (provider === 'mystifly') {
+      const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
+      const revalRes = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fareSourceCode: offerId }),
+      });
+
+      if (!revalRes.ok) {
+        console.warn('[Meals] Mystifly revalidation failed for meal check');
+        const result: MealResult = { meals: [], recommended: '', mealsSupported: false };
+        setCached(cacheKey, result);
+        return NextResponse.json({ ...result, cached: false });
+      }
+
+      const revalData = await revalRes.json();
+      const extraServices = revalData?.raw?.Data?.ExtraServices ?? revalData?.raw?.ExtraServices ?? [];
+
+      console.log(`[Meals] Mystifly ExtraServices count: ${Array.isArray(extraServices) ? extraServices.length : 'N/A'}`);
+      if (Array.isArray(extraServices) && extraServices.length > 0) {
+        console.log(`[Meals] Mystifly ExtraServices sample:`, JSON.stringify(extraServices.slice(0, 3), null, 2));
+      }
+
+      // Parse meal-type services from ExtraServices
+      // Mystifly ExtraServices structure: { ServiceType, ServiceCode, Description, Amount, Currency, ... }
+      const MEAL_CODES = new Set([
+        'MEAL', 'MLML', 'AVML', 'HNML', 'VGML', 'VLML', 'DBML', 'BLML',
+        'CHML', 'FPML', 'GFML', 'KSML', 'LCML', 'LFML', 'LSML', 'MOML',
+        'NLML', 'ORML', 'SFML', 'SPML', 'VOML', 'BBML', 'RVML',
+      ]);
+
+      const mealServices = Array.isArray(extraServices)
+        ? extraServices.filter((s: any) => {
+            const type = (s.ServiceType || s.Type || '').toUpperCase();
+            const code = (s.ServiceCode || s.Code || '').toUpperCase();
+            return type === 'MEAL' || type === 'MEALS' || type === 'CATERING' ||
+                   MEAL_CODES.has(code) || MEAL_CODES.has(code.slice(0, 4));
+          })
+        : [];
+
+      if (mealServices.length === 0) {
+        const result: MealResult = { meals: [], recommended: '', mealsSupported: false };
+        setCached(cacheKey, result);
+        return NextResponse.json({ ...result, cached: false });
+      }
+
+      const meals: MealOptionDef[] = mealServices.map((s: any) => {
+        const code = (s.ServiceCode || s.Code || 'STANDARD').toUpperCase();
+        const price = parseFloat(s.Amount || s.TotalAmount || s.Price || '0');
+        return resolveMeal(code, price);
+      });
+
+      // Deduplicate by code
+      const seen = new Set<string>();
+      const uniqueMeals = meals.filter(m => {
+        if (seen.has(m.code)) return false;
+        seen.add(m.code);
+        return true;
+      });
+
+      if (!uniqueMeals.some(m => m.code === 'NONE')) {
+        uniqueMeals.push(resolveMeal('NONE', 0));
+      }
+
+      const recommended = uniqueMeals[0]?.code ?? 'STANDARD';
+      const result: MealResult = { meals: uniqueMeals, recommended, mealsSupported: true };
+      setCached(cacheKey, result);
+      return NextResponse.json({ ...result, cached: false });
+    }
+
+    // Other providers: return empty for now
     const result: MealResult = { meals: [], recommended: '', mealsSupported: false };
     setCached(cacheKey, result);
     return NextResponse.json({ ...result, cached: false });
