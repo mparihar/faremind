@@ -1436,7 +1436,7 @@ function SearchContent() {
                             scoreOverride={prefs.aiIntelligence ? aiOneWayMap?.get(flight.id)?.aiScore : (flight as any).aiScoreDisplay ?? undefined}
                             aiReasons={aiAssistResult?.reasoning?.[flight.id] ?? (flight as any).aiReasons}
                             isAiHighlighted={!!aiAssistResult && aiAssistResult.rankedIds[0] === flight.id}
-                            aiBadge={aiAssistResult?.badges?.[flight.id]}
+                            aiBadge={aiAssistResult?.badges?.[flight.id] ?? (prefs.aiIntelligence && i < 30 ? (i === 0 ? '✨ Best AI Pick' : '✨ AI Pick') : undefined)}
                             dnaScore={dnaSearchActive ? dnaData?.dnaScore : undefined}
                             dnaMatchLabel={dnaSearchActive ? dnaData?.dnaMatchLabel : undefined}
                             dnaMatchReasons={dnaSearchActive && i < (dnaFlightCount || 25) ? dnaData?.matchReasons : undefined}
@@ -1684,7 +1684,7 @@ function SearchContent() {
                         scoreOverride={prefs.aiIntelligence ? aiOneWayMap?.get(flight.id)?.aiScore : (flight as any).aiScoreDisplay ?? undefined}
                         aiReasons={aiAssistResult?.reasoning?.[flight.id] ?? (flight as any).aiReasons}
                         isAiHighlighted={!!aiAssistResult && aiAssistResult.rankedIds[0] === flight.id}
-                        aiBadge={aiAssistResult?.badges?.[flight.id]}
+                        aiBadge={aiAssistResult?.badges?.[flight.id] ?? (prefs.aiIntelligence && i < 30 ? (i === 0 ? '✨ Best AI Pick' : '✨ AI Pick') : undefined)}
                         dnaScore={dnaSearchActive ? dnaData?.dnaScore : undefined}
                         dnaMatchLabel={dnaSearchActive ? dnaData?.dnaMatchLabel : undefined}
                         dnaMatchReasons={dnaSearchActive && i < (dnaFlightCount || 25) ? dnaData?.matchReasons : undefined}

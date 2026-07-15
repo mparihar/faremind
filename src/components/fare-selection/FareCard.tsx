@@ -18,8 +18,8 @@ interface FareCardProps {
 
 const BADGE_CONFIG = {
   cheapest:        { label: 'Lowest Price',     color: 'bg-orange-100 text-[#F97316]',    icon: DollarSign },
-  best_value:      { label: 'AI Best Choice',   color: 'bg-[#1ABC9C]/15 text-[#1ABC9C]',  icon: Zap },
-  ai_pick:         { label: 'AI Best Choice',   color: 'bg-[#1ABC9C]/15 text-[#1ABC9C]',  icon: Zap },
+  best_value:      { label: 'Best AI Pick',     color: 'bg-[#1ABC9C]/15 text-[#1ABC9C]',  icon: Zap },
+  ai_pick:         { label: 'Best AI Pick',     color: 'bg-[#1ABC9C]/15 text-[#1ABC9C]',  icon: Zap },
   most_flexible:   { label: 'Best Flexibility', color: 'bg-purple-100 text-purple-700',   icon: Repeat2 },
   premium_upgrade: { label: 'Premium Upgrade',  color: 'bg-amber-100 text-amber-700',     icon: Star },
   best_comfort:    { label: 'Best Comfort',     color: 'bg-sky-100 text-sky-700',         icon: Armchair },
