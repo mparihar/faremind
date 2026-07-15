@@ -1163,17 +1163,63 @@ export async function POST(req: NextRequest) {
           body: JSON.stringify({
             fareSourceCode: bookingFareSourceCode,
             holdBooking: holdAllowed,
-            passengers: passengers.map((p: any) => ({
-              firstName: p.firstName,
-              lastName: p.lastName,
-              gender: p.gender,
-              dateOfBirth: p.dateOfBirth,
-              type: p.type,
-              nationality: p.nationality,
-              passportNumber: p.passportNumber,
-              passportExpiry: p.passportExpiry,
-              passportCountry: p.passportCountry,
-            })),
+            passengers: passengers.map((p: any, pIdx: number) => {
+              // Base passenger fields
+              const pax: any = {
+                firstName: p.firstName,
+                lastName: p.lastName,
+                gender: p.gender,
+                dateOfBirth: p.dateOfBirth,
+                type: p.type,
+                nationality: p.nationality,
+                passportNumber: p.passportNumber,
+                passportExpiry: p.passportExpiry,
+                passportCountry: p.passportCountry,
+              };
+
+              // ── SSR: Meal preference ──
+              // mealSelections is an array of { passengerId, mealCode } or similar
+              const mealForPax = Array.isArray(mealSelections)
+                ? mealSelections.find((m: any) => m.passengerId === p.id || m.passengerIndex === pIdx)
+                : null;
+              if (mealForPax?.mealCode || mealForPax?.code) {
+                pax.mealPreference = mealForPax.mealCode || mealForPax.code;
+              }
+
+              // ── SSR: Seat preference ──
+              // seatSelections is an array of { passengerId, seatPreference, seatSelectionKey } or similar
+              const seatForPax = Array.isArray(seatSelections)
+                ? seatSelections.find((s: any) => s.passengerId === p.id || s.passengerIndex === pIdx)
+                : null;
+              if (seatForPax?.seatPreference) {
+                pax.seatPreference = seatForPax.seatPreference; // 'A' (aisle), 'W' (window)
+              }
+              if (seatForPax?.seatSelectionKey || seatForPax?.seatSelectionKeys) {
+                pax.seatSelectionKeys = Array.isArray(seatForPax.seatSelectionKeys)
+                  ? seatForPax.seatSelectionKeys
+                  : [seatForPax.seatSelectionKey];
+              }
+
+              // ── Extra baggage services ──
+              // selectedAncillaries contains NormalizedAncillary[] with providerServiceId like 'baggage-123'
+              const baggageForPax = Array.isArray(selectedAncillaries)
+                ? selectedAncillaries.filter((a: any) =>
+                    (a.ancillaryType === 'EXTRA_CHECKED_BAG' || a.ancillaryType === 'CHECKED_BAG') &&
+                    a.provider === 'MYSTIFLY' &&
+                    !a.included &&
+                    (a.passengerId === p.id || !a.passengerId) // Per-pax or global
+                  )
+                : [];
+              if (baggageForPax.length > 0) {
+                pax.extraServices = baggageForPax.map((a: any) => ({
+                  extraServiceId: parseInt(a.providerServiceId?.replace('baggage-', '') || '0', 10),
+                  quantity: a.quantity || 1,
+                  key: a.rawProviderData?.Key || a.rawProviderData?.ServiceKey || undefined,
+                }));
+              }
+
+              return pax;
+            }),
             email: primaryPaxForMystifly.email || 'guest@faremind.ai',
             phone: primaryPaxForMystifly.phone || '0000000000',
             clientReferenceNo: sessionId || undefined,

@@ -20,6 +20,9 @@ import type {
   MystiflyPassengerType,
   MystiflyGender,
   MystiflyPassengerTitle,
+  MystiflyMealPreference,
+  MystiflySeatPreference,
+  MystiflyExtraService,
 } from '../services/mystifly';
 
 // ═══════════════════════════════════════════════
@@ -134,24 +137,59 @@ function toIsoCountry(value: string | undefined): string {
 
 /**
  * Convert checkout passengers to Mystifly's AirTraveler format.
+ * Supports SSR fields: mealPreference, seatPreference, extraServices, seatSelectionKeys.
  */
 function toMystiflyTravelers(passengers: any[]): MystiflyAirTraveler[] {
-  return passengers.map((p) => ({
-    PassengerType: toMystiflyPaxType(p.type),
-    Gender: toMystiflyGender(p.gender),
-    PassengerName: {
-      PassengerTitle: toMystiflyTitle(p.gender, p.type),
-      PassengerFirstName: (p.firstName || 'Unknown').toUpperCase(),
-      PassengerLastName: (p.lastName || 'Traveler').toUpperCase(),
-    },
-    DateOfBirth: p.dateOfBirth || '1990-01-01',
-    Passport: p.passportNumber ? {
-      PassportNumber: p.passportNumber,
-      ExpiryDate: p.passportExpiry || '',
-      Country: toIsoCountry(p.passportCountry || p.nationality),
-    } : undefined,
-    PassengerNationality: toIsoCountry(p.nationality),
-  }));
+  return passengers.map((p) => {
+    const traveler: MystiflyAirTraveler = {
+      PassengerType: toMystiflyPaxType(p.type),
+      Gender: toMystiflyGender(p.gender),
+      PassengerName: {
+        PassengerTitle: toMystiflyTitle(p.gender, p.type),
+        PassengerFirstName: (p.firstName || 'Unknown').toUpperCase(),
+        PassengerLastName: (p.lastName || 'Traveler').toUpperCase(),
+      },
+      DateOfBirth: p.dateOfBirth || '1990-01-01',
+      Passport: p.passportNumber ? {
+        PassportNumber: p.passportNumber,
+        ExpiryDate: p.passportExpiry || '',
+        Country: toIsoCountry(p.passportCountry || p.nationality),
+      } : undefined,
+      PassengerNationality: toIsoCountry(p.nationality),
+    };
+
+    // ── SSR / Ancillary fields ──
+    // Build SpecialServiceRequest if meal or seat preference is provided
+    const hasMeal = p.mealPreference && p.mealPreference !== 'Any';
+    const hasSeat = p.seatPreference && p.seatPreference !== 'Any';
+    if (hasMeal || hasSeat) {
+      traveler.SpecialServiceRequest = {};
+      if (hasMeal) {
+        traveler.SpecialServiceRequest.MealPreference = p.mealPreference as MystiflyMealPreference;
+      }
+      if (hasSeat) {
+        traveler.SpecialServiceRequest.SeatPreference = p.seatPreference as MystiflySeatPreference;
+      }
+    }
+
+    // Extra services (e.g., extra baggage)
+    if (p.extraServices && Array.isArray(p.extraServices) && p.extraServices.length > 0) {
+      traveler.ExtraServices = p.extraServices.map((svc: any) => ({
+        ExtraServiceId: svc.extraServiceId ?? svc.ExtraServiceId,
+        Quantity: svc.quantity ?? svc.Quantity ?? 1,
+        Key: svc.key ?? svc.Key,
+      }));
+    }
+
+    // Seat selection keys (from SeatMap)
+    if (p.seatSelectionKeys && Array.isArray(p.seatSelectionKeys) && p.seatSelectionKeys.length > 0) {
+      traveler.Seats = {
+        SeatSelectionKey: p.seatSelectionKeys,
+      };
+    }
+
+    return traveler;
+  });
 }
 
 // ═══════════════════════════════════════════════
@@ -690,6 +728,74 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       return reply.code(502).send({
         error: `Mystifly booking notes failed: ${error.message}`,
         errorCode: 'MYSTIFLY_BOOKING_NOTES_ERROR',
+      });
+    }
+  });
+
+  // ═══════════════════════════════════════════════
+  // Ancillary Services — Post-Booking
+  // ═══════════════════════════════════════════════
+
+  fastify.post('/ancillary-services', async (request, reply) => {
+    try {
+      const { uniqueId, baggage, meal, seatMap } = request.body as {
+        uniqueId?: string;
+        baggage?: boolean;
+        meal?: boolean;
+        seatMap?: boolean;
+      };
+
+      if (!uniqueId) {
+        return reply.code(400).send({ error: 'uniqueId (MFRef) is required' });
+      }
+
+      console.log(
+        `[Mystifly] Fetching ancillary services — MFRef: ${uniqueId}, ` +
+        `baggage: ${baggage ?? true}, meal: ${meal ?? true}, seatMap: ${seatMap ?? false}`
+      );
+
+      const result = await mystifly.getAncillaryServices(uniqueId, {
+        baggage: baggage ?? true,
+        meal: meal ?? true,
+        seatMap: seatMap ?? false,
+      });
+
+      // Check for Mystifly errors
+      const error = result?.Data?.Error || result?.Error;
+      if (error?.ErrorCode && error.ErrorCode !== '0') {
+        console.warn(`[Mystifly] Ancillary services error: ${error.ErrorMessage}`);
+        return reply.code(422).send({
+          error: error.ErrorMessage || 'Ancillary services fetch failed',
+          errorCode: 'MYSTIFLY_ANCILLARY_FAILED',
+          raw: error,
+        });
+      }
+
+      // Extract service lists from response
+      const data = result?.Data || result;
+      const baggageServices = data?.BaggageServices || data?.ExtraBaggageList || [];
+      const mealServices = data?.MealServices || data?.MealList || [];
+      const seatMapData = data?.SeatMapData || data?.SeatMap || null;
+
+      console.log(
+        `[Mystifly] Ancillary services for ${uniqueId}: ` +
+        `${baggageServices.length} baggage, ${mealServices.length} meals, ` +
+        `seatMap: ${seatMapData ? 'available' : 'none'}`
+      );
+
+      return {
+        success: true,
+        uniqueId,
+        baggage: baggageServices,
+        meals: mealServices,
+        seatMap: seatMapData,
+        raw: result,
+      };
+    } catch (error: any) {
+      console.error('[Mystifly] Ancillary services error:', error.message);
+      return reply.code(502).send({
+        error: `Mystifly ancillary services failed: ${error.message}`,
+        errorCode: 'MYSTIFLY_ANCILLARY_ERROR',
       });
     }
   });

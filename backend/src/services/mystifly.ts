@@ -112,6 +112,42 @@ export interface MystiflyPassport {
   Country: string;
 }
 
+// Meal preference SSR codes (IATA standard)
+export type MystiflyMealPreference =
+  | 'Any' | 'AVML' | 'BBML' | 'BLML' | 'CHML' | 'FPML' | 'GFML'
+  | 'HFML' | 'KSML' | 'LFML' | 'LPML' | 'LSML' | 'MOML' | 'NLML'
+  | 'ORML' | 'PRML' | 'RVML' | 'SFML' | 'VGML' | 'VJML' | 'VLML'
+  | 'VOML' | 'VVML';
+
+// Seat preference
+export type MystiflySeatPreference = 'Any' | 'A' | 'W'; // Any, Aisle, Window
+
+// SSR for booking
+export interface MystiflySpecialServiceRequest {
+  SeatPreference?: MystiflySeatPreference;
+  MealPreference?: MystiflyMealPreference;
+  RequestedSegments?: Array<{
+    Origin?: string;
+    Destination?: string;
+    FlightNumber?: string;
+    DepartureDateTime?: string;
+    SSRCode?: string;
+    FreeText?: string;
+  }>;
+}
+
+// Extra services (baggage add-ons)
+export interface MystiflyExtraService {
+  ExtraServiceId: number;
+  Quantity: number;
+  Key?: string;
+}
+
+// Seat selection
+export interface MystiflySeatSelectionRQ {
+  SeatSelectionKey: string[];
+}
+
 export interface MystiflyAirTraveler {
   PassengerType: MystiflyPassengerType;
   Gender: MystiflyGender;
@@ -121,6 +157,11 @@ export interface MystiflyAirTraveler {
   FrequentFlyerNumber?: string;
   PassengerNationality?: string;
   NationalID?: string;
+  // ── SSR / Ancillary fields ──
+  SpecialServiceRequest?: MystiflySpecialServiceRequest;
+  ExtraServices?: MystiflyExtraService[];
+  ExtraServices1_1?: MystiflyExtraService[];  // v1.1 format
+  Seats?: MystiflySeatSelectionRQ;
 }
 
 export interface MystiflyTravelerInfo {
@@ -192,6 +233,19 @@ export interface MystiflyBookingNotesRQ {
   Notes: string[];
   Target: MystiflyTarget;
   ConversationId?: string;
+}
+
+// ── Ancillary Service Request ──
+
+export interface MystiflyAncillaryServiceRQ {
+  MFRef: string;
+  isBaggage: boolean;
+  isMeal: boolean;
+  isSeatMap: boolean;
+  isConfirmed?: boolean;
+  isCancel?: boolean;
+  SeatMapKey?: string;
+  ServiceKey?: string;
 }
 
 // ═══════════════════════════════════════════════
@@ -781,6 +835,41 @@ export async function getSeatMap(fareSourceCode: string): Promise<any> {
 }
 
 // ═══════════════════════════════════════════════
+// Ancillary Services (Baggage, Meal, Seat)
+// ═══════════════════════════════════════════════
+
+/**
+ * Fetch available ancillary services (baggage, meals, seats) for a booking.
+ * Requires MFRef (booking reference) — only available after BookFlight.
+ *
+ * Use isBaggage/isMeal/isSeatMap flags to control which services to fetch.
+ */
+export async function getAncillaryServices(
+  mfRef: string,
+  options: { baggage?: boolean; meal?: boolean; seatMap?: boolean } = {}
+): Promise<any> {
+  const rq: MystiflyAncillaryServiceRQ = {
+    MFRef: mfRef,
+    isBaggage: options.baggage ?? true,
+    isMeal: options.meal ?? true,
+    isSeatMap: options.seatMap ?? false,
+    isConfirmed: false,
+    isCancel: false,
+  };
+
+  try {
+    return await mystiflyRequest<any>({
+      method: 'POST',
+      path: '/api/AncillaryServiceRequest',
+      body: rq as unknown as Record<string, unknown>,
+    });
+  } catch (error) {
+    console.warn('[Mystifly] Ancillary services fetch failed:', (error as Error).message);
+    return { error: (error as Error).message };
+  }
+}
+
+// ═══════════════════════════════════════════════
 // Booking Notes
 // ═══════════════════════════════════════════════
 
@@ -919,6 +1008,7 @@ export default {
   getTicketOrderStatus,
   getTripDetails,
   getSeatMap,
+  getAncillaryServices,
   addBookingNotes,
   getStructuredFareRule,
   // PTR
