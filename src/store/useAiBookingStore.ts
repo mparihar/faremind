@@ -23,7 +23,6 @@ import {
   FALLBACK_EXTRA_BAG_PRICE,
   FALLBACK_INSURANCE_RATE,
   FALLBACK_SERVICE_FEE_RATE,
-  FALLBACK_TAX_RATE,
 } from '@/lib/ai-booking-types';
 import { useCheckoutStore, makePassenger } from '@/store/useCheckoutStore';
 import type { SelectedFare, FareOption } from '@/lib/fare-types';
@@ -101,11 +100,10 @@ function computePriceSummary(
 
   const paxCount = Math.max(1, passengerCount);
 
-  // Use actual provider base fare / tax split when available (from Mystifly/Duffel API).
-  // Falls back to estimated split when provider didn't supply the breakdown.
-  const hasProviderSplit = fareDetails.providerBaseFare != null && fareDetails.providerTaxAmount != null;
-  const baseFarePerPax = hasProviderSplit ? fareDetails.providerBaseFare! : fareDetails.basePrice;
-  const taxesPerPax = hasProviderSplit ? fareDetails.providerTaxAmount! : (fareDetails.totalPrice - fareDetails.basePrice);
+  // Always use actual provider base fare / tax breakdown (from Mystifly/Duffel API).
+  // No estimated or cosmetic splits — only real provider data.
+  const baseFarePerPax = fareDetails.providerBaseFare ?? fareDetails.totalPrice;
+  const taxesPerPax = fareDetails.providerTaxAmount ?? 0;
   const baseFare = baseFarePerPax * paxCount;
   const taxes = taxesPerPax * paxCount;
 
@@ -165,9 +163,9 @@ export function buildFareDetails(
     t.name.toLowerCase().includes(fareClass === 'basic' ? 'basic' : fareClass === 'flex' ? 'flex' : 'standard')
   );
   const multiplier = dbTier?.priceMultiplier ?? FALLBACK_FARE_CLASS_MULTIPLIERS[fareClass];
-  const taxRate = pricingConfig?.taxRate ?? FALLBACK_TAX_RATE;
   const totalPrice = Math.round(flight.totalPrice * multiplier);
-  const basePrice = Math.round(totalPrice * (1 - taxRate));
+  // Use actual provider base/tax split scaled for the fare tier — no estimated tax rates
+  const basePrice = flight.baseFare ? Math.round(flight.baseFare * multiplier) : totalPrice;
 
   const isBasic = fareClass === 'basic';
   const isFlex = fareClass === 'flex';

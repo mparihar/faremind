@@ -378,9 +378,8 @@ export function buildLocalPricing(store: CheckoutStore, pricingConfig?: PricingC
   const allPaxFareTotal = selectedFare?.totalPrice ?? 0;
   const perPersonBase = selectedFare?.basePrice ?? 0;
 
-  // Use actual provider base/tax split when available (from Mystifly BaseFare/Taxes or Duffel base_amount/tax_amount).
-  // Falls back to estimated cosmetic split using taxRate when provider doesn't supply the breakdown.
-  const hasProviderSplit = sourceFlight?.baseFare != null && sourceFlight?.taxAmount != null && sourceFlight.totalPrice > 0;
+  // Always use actual provider base/tax split (from Mystifly BaseFare/Taxes or Duffel base_amount/tax_amount).
+  // No estimated or cosmetic splits — only real provider data.
 
   // Build per-passenger breakdown for display.
   // Distribute allPaxFareTotal exactly across passengers so line items sum to the
@@ -391,19 +390,10 @@ export function buildLocalPricing(store: CheckoutStore, pricingConfig?: PricingC
 
   const perPassenger: PerPassengerPrice[] = passengers.map((p, idx) => {
     const base = perPaxFloor + (idx < remainder ? 1 : 0);
-    let taxes: number;
-    let baseFare: number;
-    if (hasProviderSplit) {
-      // Scale provider tax proportionally for this fare tier
-      const ratio = base / sourceFlight!.totalPrice;
-      taxes = Math.round(sourceFlight!.taxAmount! * ratio);
-      baseFare = base - taxes;
-    } else {
-      // Fallback: cosmetic split using configured/default tax rate
-      const taxRate = pricingConfig?.taxRate ?? 0.156;
-      taxes = Math.round(base * taxRate);
-      baseFare = base - taxes;
-    }
+    // Scale provider tax proportionally for this fare tier
+    const ratio = (sourceFlight?.totalPrice && sourceFlight.totalPrice > 0) ? (base / sourceFlight.totalPrice) : 0;
+    const taxes = sourceFlight?.taxAmount != null ? Math.round(sourceFlight.taxAmount * ratio) : 0;
+    const baseFare = base - taxes;
     return { passengerId: p.id, type: p.type, baseFare, taxes, subtotal: base };
   });
 
