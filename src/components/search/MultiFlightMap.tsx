@@ -255,8 +255,9 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
             const arcLine = turf.lineString(outArc.coordinates);
             const len = turf.length(arcLine);
             const mid = turf.along(arcLine, len / 2);
-            const midPlus = turf.along(arcLine, Math.min(len, len / 2 + 10));
-            const b = turf.bearing(mid, midPlus);
+            // Use direct start→end bearing for the arrow direction — arc tangent
+            // at the midpoint can reverse due to the offset curve inflection
+            const b = turf.bearing(startCoords, endCoords);
             arcMidpoints.push({ lng: mid.geometry.coordinates[0], lat: mid.geometry.coordinates[1], bearing: b, color: outArcColor, flightId: id });
           } catch { /* skip */ }
         }
@@ -285,8 +286,8 @@ export default function MultiFlightMap(props: MultiFlightMapProps) {
               const arcLine = turf.lineString(retArc.coordinates);
               const len = turf.length(arcLine);
               const mid = turf.along(arcLine, len / 2);
-              const midPlus = turf.along(arcLine, Math.min(len, len / 2 + 10));
-              const b = turf.bearing(mid, midPlus);
+              // Use direct start→end bearing for arrow direction
+              const b = turf.bearing(startCoords, endCoords);
               arcMidpoints.push({ lng: mid.geometry.coordinates[0], lat: mid.geometry.coordinates[1], bearing: b, color: retArcColor, flightId: id });
             } catch { /* skip */ }
           }
