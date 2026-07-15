@@ -348,8 +348,10 @@ export default function CheckoutItineraryPage() {
         .find(f => f.id === resolvedFare.fareId) ?? null;
 
     // 4. Resolve source flight / round-trip
+    // Only use sessionStorage fallback for sourceRoundTrip when sourceFlight is NOT available
+    // to prevent stale round-trip data from a previous search leaking into one-way bookings.
     const sourceFlight    = useFareStore.getState().sourceFlight    ?? (ssGet('fm_source_flight')     as import('@/lib/types').UnifiedFlight | null);
-    const sourceRoundTrip = useFareStore.getState().sourceRoundTrip ?? (ssGet('fm_source_round_trip') as import('@/lib/round-trip-types').RoundTripOption | null);
+    const sourceRoundTrip = useFareStore.getState().sourceRoundTrip ?? (sourceFlight ? null : (ssGet('fm_source_round_trip') as import('@/lib/round-trip-types').RoundTripOption | null));
 
     console.log('[Itinerary] Source resolution:', {
       hasFlight: !!sourceFlight,
