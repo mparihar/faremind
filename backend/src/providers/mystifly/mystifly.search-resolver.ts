@@ -29,7 +29,7 @@ export interface SearchVersionConfig {
 
 // Default configuration when no rule matches
 const DEFAULT_CONFIG: SearchVersionConfig = {
-  version: 'v2.2',
+  version: 'v1',
   fareType: 'Public',
   target: (process.env.MYSTIFLY_TARGET || 'Test'),
   holdAllowed: false,
@@ -105,7 +105,7 @@ export async function resolveSearchConfig(params: {
 
 function ruleToConfig(rule: any): SearchVersionConfig {
   return {
-    version: (rule.searchVersion || 'v2.2') as MystiflySearchVersion,
+    version: (rule.searchVersion || 'v1') as MystiflySearchVersion,
     fareType: rule.fareType || 'Public',
     target: rule.target || DEFAULT_CONFIG.target,
     holdAllowed: rule.holdAllowed ?? false,
