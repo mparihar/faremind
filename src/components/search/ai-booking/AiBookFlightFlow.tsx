@@ -300,9 +300,23 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
     } catch (err) {
       console.error('Failed to fetch fare options:', err);
       setFareError('Could not load fares — using estimated pricing.');
-      const { buildFareDetails } = await import('@/store/useAiBookingStore');
+      const [{ buildFareDetails }, { default: pricingConfigModule }] = await Promise.all([
+        import('@/store/useAiBookingStore'),
+        import('@/hooks/usePricingConfig').then(async (mod) => {
+          // Fetch pricing config from DB for accurate fallback values
+          try {
+            const res = await fetch('/api/pricing-config');
+            if (res.ok) return { default: await res.json() as import('@/hooks/usePricingConfig').PricingConfig };
+          } catch { /* ignore */ }
+          return { default: null };
+        }),
+      ]);
+      const pricingCfg = pricingConfigModule;
       const fallbackFares: FareOption[] = (['basic', 'standard', 'flex'] as const).map(fc => {
-        const d = buildFareDetails(flight, fc);
+        const d = buildFareDetails(flight, fc, pricingCfg);
+        const dbTier = pricingCfg?.fareTiers?.find(t =>
+          t.name.toLowerCase().includes(fc === 'basic' ? 'basic' : fc === 'flex' ? 'flex' : 'standard')
+        );
         return {
           id: `ai_${fc}_${flight.id}`,
           offerId: flight.providerOfferId,
@@ -317,7 +331,7 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
             carryOnWeightKg: null,
             checked: d.checkedBags,
             checkedWeightKg: d.checkedWeightKg,
-            extraBagFeeUsd: 35,
+            extraBagFeeUsd: dbTier?.extraBagFeeUsd ?? pricingCfg?.extraBagFeeUsd ?? 35,
           },
           policy: {
             refundable: d.refundable,
@@ -326,8 +340,8 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
             changeFeeUsd: d.changeFee,
             seatSelection: d.seatSelection,
             seatSelectionFeeUsd: d.seatSelectionFee,
-            upgradeable: false,
-            loungeAccess: false,
+            upgradeable: dbTier?.upgradeable ?? false,
+            loungeAccess: dbTier?.loungeAccess ?? false,
             priorityBoarding: d.priorityBoarding,
             milesEarning: d.milesEarning,
           },

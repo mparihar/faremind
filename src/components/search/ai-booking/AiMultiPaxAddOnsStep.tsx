@@ -4,7 +4,7 @@
 // bags (total count, not per-pax), insurance (toggle)
 //
 // Uses live provider baggage pricing from /api/ancillaries
-// when available. Falls back to EXTRA_BAG_PRICE only when
+// when available. Falls back to FALLBACK_EXTRA_BAG_PRICE only when
 // the provider API is unavailable.
 // ═══════════════════════════════════════════════
 
@@ -12,7 +12,7 @@
 
 import { useState, useMemo } from 'react';
 import { Package, Heart, ChevronRight, Check, Loader2, AlertCircle } from 'lucide-react';
-import { EXTRA_BAG_PRICE, INSURANCE_RATE } from '@/lib/ai-booking-types';
+import { FALLBACK_EXTRA_BAG_PRICE, FALLBACK_INSURANCE_RATE } from '@/lib/ai-booking-types';
 import { useAiBookingStore } from '@/store/useAiBookingStore';
 import { isBundleEnabled } from '@/lib/bundle-flags';
 import type { NormalizedAncillary } from '@/lib/providers/providerAncillaryNormalizer';
@@ -45,7 +45,7 @@ export default function AiMultiPaxAddOnsStep({
   // Use DB-driven insurance fee if available, otherwise fallback to hardcoded rate
   const insuranceFee = computedFees
     ? Math.round(computedFees.insuranceFeeTotal / Math.max(1, passengerCount))
-    : Math.round(baseFarePrice * INSURANCE_RATE);
+    : Math.round(baseFarePrice * FALLBACK_INSURANCE_RATE);
 
   // Product metadata from DB (with sensible defaults)
   const insuranceName = computedFees?.insuranceProductName || 'Travel Insurance';
@@ -59,7 +59,7 @@ export default function AiMultiPaxAddOnsStep({
   }, [providerBaggage]);
 
   // Effective per-bag price: live provider price or fallback
-  const effectiveBagPrice = liveBagPrice ?? EXTRA_BAG_PRICE;
+  const effectiveBagPrice = liveBagPrice ?? FALLBACK_EXTRA_BAG_PRICE;
   const isLivePrice = liveBagPrice !== null;
 
   const fmt = (n: number) =>

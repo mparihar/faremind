@@ -19,15 +19,16 @@ import type {
 import type { SelectedSeatData } from '@/lib/ai-seat/ai-seat-types';
 import {
   FARE_CLASS_NAMES,
-  FARE_CLASS_MULTIPLIERS,
-  EXTRA_BAG_PRICE,
-  INSURANCE_RATE,
-  SERVICE_FEE_RATE,
-  TAX_RATE,
+  FALLBACK_FARE_CLASS_MULTIPLIERS,
+  FALLBACK_EXTRA_BAG_PRICE,
+  FALLBACK_INSURANCE_RATE,
+  FALLBACK_SERVICE_FEE_RATE,
+  FALLBACK_TAX_RATE,
 } from '@/lib/ai-booking-types';
 import { useCheckoutStore, makePassenger } from '@/store/useCheckoutStore';
 import type { SelectedFare, FareOption } from '@/lib/fare-types';
 import { fetchComputedFeesForContext, type ComputedFees } from '@/hooks/useFeeLoader';
+import type { PricingConfig } from '@/hooks/usePricingConfig';
 
 // ── SSR meal code → display label mapping ─────────────────────────────────────
 const SSR_MEAL_LABELS: Record<string, string> = {
@@ -101,12 +102,12 @@ function computePriceSummary(
   const paxCount = Math.max(1, passengerCount);
   const baseFarePerPax = fareDetails.totalPrice;
   const baseFare = baseFarePerPax * paxCount;
-  const taxes = Math.round(baseFare * TAX_RATE);
+  const taxes = Math.round(baseFare * FALLBACK_TAX_RATE);
 
-  // Use DB-driven service fee if available, otherwise fallback to hardcoded rate
+  // Use DB-driven service fee if available, otherwise last-resort fallback
   const serviceFee = computedFees
     ? computedFees.serviceFee
-    : Math.round(baseFare * SERVICE_FEE_RATE);
+    : Math.round(baseFare * FALLBACK_SERVICE_FEE_RATE);
 
   const protectedCount = protections.filter(p => p.selected).length;
   // Use DB-driven protection fee if available
@@ -115,15 +116,15 @@ function computePriceSummary(
     : protectionFeePerPax;
   const protectionFee = protectedCount * effectiveProtectionPerPax;
 
-  const bagPricePerUnit = liveBaggagePrice ?? EXTRA_BAG_PRICE;
+  const bagPricePerUnit = liveBaggagePrice ?? FALLBACK_EXTRA_BAG_PRICE;
   // extraBags is the total bag count (not per-passenger)
   const baggageFee = addOns.extraBags * bagPricePerUnit;
 
-  // Use DB-driven insurance fee if available, otherwise fallback
+  // Use DB-driven insurance fee if available, otherwise last-resort fallback
   const insuranceFee = addOns.travelInsurance
     ? (computedFees
         ? computedFees.insuranceFeeTotal
-        : Math.round(baseFarePerPax * INSURANCE_RATE) * paxCount)
+        : Math.round(baseFarePerPax * FALLBACK_INSURANCE_RATE) * paxCount)
     : 0;
 
   const seatSelectionFee = totalSeatFees(passengerSeats);
@@ -144,11 +145,21 @@ function computePriceSummary(
 }
 
 // ─── Build fare details from flight (fallback when API unavailable) ───────────
+// Uses DB pricing config when available, falls back to hardcoded defaults.
 
-export function buildFareDetails(flight: UnifiedFlight, fareClass: AiFareClass): AiFareDetails {
-  const multiplier = FARE_CLASS_MULTIPLIERS[fareClass];
+export function buildFareDetails(
+  flight: UnifiedFlight,
+  fareClass: AiFareClass,
+  pricingConfig?: PricingConfig | null,
+): AiFareDetails {
+  // Use DB fare tier multiplier if available, else fallback
+  const dbTier = pricingConfig?.fareTiers?.find(t =>
+    t.name.toLowerCase().includes(fareClass === 'basic' ? 'basic' : fareClass === 'flex' ? 'flex' : 'standard')
+  );
+  const multiplier = dbTier?.priceMultiplier ?? FALLBACK_FARE_CLASS_MULTIPLIERS[fareClass];
+  const taxRate = pricingConfig?.taxRate ?? FALLBACK_TAX_RATE;
   const totalPrice = Math.round(flight.totalPrice * multiplier);
-  const basePrice = Math.round(totalPrice * (1 - TAX_RATE));
+  const basePrice = Math.round(totalPrice * (1 - taxRate));
 
   const isBasic = fareClass === 'basic';
   const isFlex = fareClass === 'flex';
@@ -170,9 +181,12 @@ export function buildFareDetails(flight: UnifiedFlight, fareClass: AiFareClass):
   const changeable = isBasic ? false : true;
   const changeFee = isBasic ? null : isFlex ? 0 : actualChangeFee;
 
-  const seatSelection = isBasic ? 'not_available' as const : isFlex ? 'free' as const : 'fee' as const;
-  const seatSelectionFee = seatSelection === 'fee' ? 15 : null;
-  const priorityBoarding = isFlex;
+  // Use DB fare tier seat selection policy if available
+  const seatSelection = dbTier
+    ? (dbTier.seatSelection as 'free' | 'fee' | 'not_available')
+    : (isBasic ? 'not_available' as const : isFlex ? 'free' as const : 'fee' as const);
+  const seatSelectionFee = dbTier?.seatSelectionFeeUsd ?? (seatSelection === 'fee' ? 15 : null);
+  const priorityBoarding = dbTier?.priorityBoarding ?? isFlex;
   const milesEarning = isBasic ? 'reduced' as const : 'full' as const;
 
   const includedFeatures: string[] = [];
@@ -646,7 +660,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     const insuranceFee = travelInsurance && s.fareDetails
       ? (s.computedFees
           ? Math.round(s.computedFees.insuranceFeeTotal / Math.max(1, s.passengerCount))
-          : Math.round(s.fareDetails.totalPrice * INSURANCE_RATE))
+          : Math.round(s.fareDetails.totalPrice * FALLBACK_INSURANCE_RATE))
       : 0;
     const next = { ...s.addOns, travelInsurance, insuranceFee };
     const priceSummary = computePriceSummary(s.fareDetails, s.passengerCount, s.passengerProtections, s.protectionFee, next, s.passengerSeats, s.computedFees, s.liveBaggagePrice);
@@ -752,7 +766,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
         carryOnWeightKg: null,
         checked: fareDetails.checkedBags,
         checkedWeightKg: fareDetails.checkedWeightKg,
-        extraBagFeeUsd: s.liveBaggagePrice ?? EXTRA_BAG_PRICE,
+        extraBagFeeUsd: s.liveBaggagePrice ?? FALLBACK_EXTRA_BAG_PRICE,
       },
       policy: {
         refundable: fareDetails.refundable,

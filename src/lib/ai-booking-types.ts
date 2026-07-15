@@ -229,7 +229,11 @@ export const PASSENGER_FIELD_LABELS: Record<keyof AiPassengerData, string> = {
   passportExpiry: 'Passport Expiry Date (MM/DD/YYYY)',
 };
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Last-Resort Fallback Defaults ────────────────────────────────────────────
+// These are ONLY used when the DB pricing config (/api/pricing-config) is
+// unavailable. The primary path loads all values from DB FareTierTemplate,
+// PlatformFeeRule, and SystemConfig tables.
+// ──────────────────────────────────────────────────────────────────────────────
 
 export const FARE_CLASS_NAMES: Record<AiFareClass, string> = {
   basic: 'Economy Basic',
@@ -237,16 +241,16 @@ export const FARE_CLASS_NAMES: Record<AiFareClass, string> = {
   flex: 'Economy Flex',
 };
 
-export const FARE_CLASS_MULTIPLIERS: Record<AiFareClass, number> = {
+export const FALLBACK_FARE_CLASS_MULTIPLIERS: Record<AiFareClass, number> = {
   basic: 0.9,
   standard: 1.0,
   flex: 1.25,
 };
 
-export const EXTRA_BAG_PRICE = 35; // USD per bag
-export const INSURANCE_RATE = 0.04; // 4% of fare
-export const SERVICE_FEE_RATE = 0.015; // 1.5% of fare
-export const TAX_RATE = 0.156; // ~15.6% taxes estimate
+export const FALLBACK_EXTRA_BAG_PRICE = 35;     // USD per bag — use DB SystemConfig.extra_bag_fee_usd instead
+export const FALLBACK_INSURANCE_RATE = 0.04;     // 4% of fare — use DB PlatformFeeRule instead
+export const FALLBACK_SERVICE_FEE_RATE = 0.015;  // 1.5% of fare — use DB PlatformFeeRule instead
+export const FALLBACK_TAX_RATE = 0.156;          // ~15.6% — use DB SystemConfig.tax_rate instead
 export const MAX_PASSENGERS = 9;
 
 export const COUNTRIES = [
