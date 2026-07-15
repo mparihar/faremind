@@ -391,10 +391,27 @@ export async function searchFlights(params: {
   }
 
   const allFlights = providerResults.flatMap((r) => r.flights);
+
+  // ── Per-provider summary (confirms v1 + v2 both ran) ──
+  for (const pr of providerResults) {
+    const lowestCount = pr.flights.filter(f => f.fareType === 'lowest').length;
+    const brandedCount = pr.flights.filter(f => f.fareType === 'branded').length;
+    const otherCount = pr.flights.length - lowestCount - brandedCount;
+    const fareBreakdown = [
+      lowestCount > 0 ? `lowest=${lowestCount}` : '',
+      brandedCount > 0 ? `branded=${brandedCount}` : '',
+      otherCount > 0 ? `other=${otherCount}` : '',
+    ].filter(Boolean).join(', ');
+    console.log(`[Search ${searchId}] ${pr.provider}: ${pr.flights.length} flights (${fareBreakdown || 'none'}) in ${pr.responseTimeMs}ms${pr.error ? ` ❌ ${pr.error}` : ''}`);
+  }
+
   const { flights: aggregatedFlights, stats: aggregationStats } = aggregateProviderOffers(allFlights);
   const rankedFlights = mergeAndRankFlights(aggregatedFlights);
 
-  console.log(`[Search ${searchId}] Complete: ${rankedFlights.length} flights in ${Date.now() - overallStart}ms`);
+  // ── Final summary ──
+  const totalLowest = rankedFlights.filter(f => f.fareType === 'lowest').length;
+  const totalBranded = rankedFlights.filter(f => f.fareType === 'branded').length;
+  console.log(`[Search ${searchId}] Complete: ${rankedFlights.length} flights (lowest=${totalLowest}, branded=${totalBranded}) in ${Date.now() - overallStart}ms`);
 
   return { flights: rankedFlights, providers: providerResults, searchId, totalTimeMs: Date.now() - overallStart, usedMockData: false, aggregationStats };
 }
