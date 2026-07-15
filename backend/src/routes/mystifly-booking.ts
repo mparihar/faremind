@@ -91,6 +91,48 @@ function toMystiflyTitle(gender: string, type: string): MystiflyPassengerTitle {
 }
 
 /**
+ * Normalize a country value to a 2-letter uppercase ISO code.
+ * Mystifly requires format ^([A-Z][A-Z])$ (ERBUK037).
+ * Handles: full names ("United States" → "US"), lowercase ("us" → "US"), etc.
+ */
+function toIsoCountry(value: string | undefined): string {
+  if (!value) return 'US';
+  const v = value.trim();
+
+  // Already a 2-letter code — just uppercase it
+  if (/^[A-Za-z]{2}$/.test(v)) return v.toUpperCase();
+
+  // Common full name → code mappings
+  const map: Record<string, string> = {
+    'united states': 'US', 'united states of america': 'US', 'usa': 'US',
+    'india': 'IN', 'united kingdom': 'GB', 'uk': 'GB', 'great britain': 'GB',
+    'canada': 'CA', 'australia': 'AU', 'germany': 'DE', 'france': 'FR',
+    'china': 'CN', 'japan': 'JP', 'singapore': 'SG', 'malaysia': 'MY',
+    'thailand': 'TH', 'indonesia': 'ID', 'philippines': 'PH',
+    'united arab emirates': 'AE', 'uae': 'AE', 'saudi arabia': 'SA',
+    'pakistan': 'PK', 'bangladesh': 'BD', 'sri lanka': 'LK',
+    'nepal': 'NP', 'mexico': 'MX', 'brazil': 'BR', 'south korea': 'KR',
+    'nigeria': 'NG', 'south africa': 'ZA', 'egypt': 'EG', 'kenya': 'KE',
+    'turkey': 'TR', 'russia': 'RU', 'italy': 'IT', 'spain': 'ES',
+    'netherlands': 'NL', 'sweden': 'SE', 'norway': 'NO', 'denmark': 'DK',
+    'finland': 'FI', 'ireland': 'IE', 'new zealand': 'NZ', 'portugal': 'PT',
+    'switzerland': 'CH', 'belgium': 'BE', 'austria': 'AT', 'poland': 'PL',
+    'czech republic': 'CZ', 'greece': 'GR', 'hungary': 'HU', 'romania': 'RO',
+    'israel': 'IL', 'qatar': 'QA', 'bahrain': 'BH', 'kuwait': 'KW', 'oman': 'OM',
+  };
+
+  const lower = v.toLowerCase();
+  if (map[lower]) return map[lower];
+
+  // If it looks like a 3-letter code, take first 2 as best guess
+  if (/^[A-Za-z]{3}$/.test(v)) return v.slice(0, 2).toUpperCase();
+
+  // Fallback
+  console.warn(`[Mystifly] Unknown country "${v}" — defaulting to US`);
+  return 'US';
+}
+
+/**
  * Convert checkout passengers to Mystifly's AirTraveler format.
  */
 function toMystiflyTravelers(passengers: any[]): MystiflyAirTraveler[] {
@@ -106,9 +148,9 @@ function toMystiflyTravelers(passengers: any[]): MystiflyAirTraveler[] {
     Passport: p.passportNumber ? {
       PassportNumber: p.passportNumber,
       ExpiryDate: p.passportExpiry || '',
-      Country: p.passportCountry || p.nationality || 'US',
+      Country: toIsoCountry(p.passportCountry || p.nationality),
     } : undefined,
-    PassengerNationality: p.nationality || 'US',
+    PassengerNationality: toIsoCountry(p.nationality),
   }));
 }
 
@@ -267,7 +309,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         travelers,
         phoneNumber: (phone || '0000000000').replace(/[^0-9]/g, ''),
         email,
-        countryCode: countryCode || 'US',
+        countryCode: toIsoCountry(countryCode),
         clientReferenceNo,
         holdBooking: false,
       });
