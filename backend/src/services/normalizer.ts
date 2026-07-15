@@ -327,6 +327,7 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
     },
     segments,
     totalPrice,
+    providerTotalFare: totalPrice, // Raw Mystifly fare — used by confirm route price-change guard
     currency,
     cabinClass,
     fareRules: {

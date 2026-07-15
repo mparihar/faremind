@@ -220,6 +220,7 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
     outboundJourney: outbound,
     returnJourney: ret,
     totalPrice,
+    providerTotalFare: totalPrice, // Raw Mystifly fare — used by confirm route price-change guard
     currency,
     totalDurationMinutes: outbound.durationMinutes + ret.durationMinutes,
     totalStops: outbound.stops + ret.stops,
