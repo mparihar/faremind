@@ -319,7 +319,16 @@ export default function CheckoutItineraryPage() {
     const ssFare       = ssGet('fm_selected_fare') as import('@/lib/fare-types').SelectedFare | null;
     const resolvedFare = zustandFare ?? ssFare;
 
+    console.log('[Itinerary] Fare resolution:', {
+      zustandFare: !!zustandFare,
+      ssFare: !!ssFare,
+      resolved: !!resolvedFare,
+      fareId: resolvedFare?.fareId,
+      offerId: resolvedFare?.offerId,
+    });
+
     if (!resolvedFare) {
+      console.warn('[Itinerary] No fare found — showing empty state');
       // Nothing to show — let user navigate back; don't auto-redirect
       setReady(true);
       return;
@@ -339,6 +348,14 @@ export default function CheckoutItineraryPage() {
     const sourceFlight    = useFareStore.getState().sourceFlight    ?? (ssGet('fm_source_flight')     as import('@/lib/types').UnifiedFlight | null);
     const sourceRoundTrip = useFareStore.getState().sourceRoundTrip ?? (ssGet('fm_source_round_trip') as import('@/lib/round-trip-types').RoundTripOption | null);
 
+    console.log('[Itinerary] Source resolution:', {
+      hasFlight: !!sourceFlight,
+      hasRoundTrip: !!sourceRoundTrip,
+      provider: sourceFlight?.provider,
+      fareType: (sourceFlight as any)?.fareType,
+      segments: sourceFlight?.segments?.length,
+    });
+
     // 5. Traveler count and breakdown from context
     const ctx          = ssGet('fm_fare_context') as { travelers?: number; adults?: number; children?: number; infants?: number } | null;
     const travelerCount = typeof ctx?.travelers === 'number' ? ctx.travelers : 1;
@@ -347,7 +364,13 @@ export default function CheckoutItineraryPage() {
       : undefined;
 
     // 6. Init checkout store
-    checkoutStore.initFromStores(resolvedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown);
+    try {
+      checkoutStore.initFromStores(resolvedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown);
+    } catch (e) {
+      console.error('[Itinerary] initFromStores failed:', e);
+      setReady(true);
+      return;
+    }
 
     // 7. Continue the offer expiry session — timer was started on the search page.
     //    Only update the tracked offer ID; do NOT restart the countdown.
