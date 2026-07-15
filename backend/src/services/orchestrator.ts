@@ -291,8 +291,60 @@ async function searchMystifly(params: {
     const flights = denormalized
       .map((itin: any, idx: number) => { try { return normalizeMystiflyOffer(itin); } catch (e) { console.warn(`[Mystifly] Normalizer failed for itin #${idx}:`, (e as Error).message); return null; } })
       .filter(Boolean) as UnifiedFlight[];
+
+    // Tag all v2/v2.2 flights as branded fares
+    for (const f of flights) f.fareType = 'branded';
+
     return { provider: 'mystifly', flights, responseTimeMs: Date.now() - start, isMock: false };
   } catch (error) {
+    return { provider: 'mystifly', flights: [], responseTimeMs: Date.now() - start, error: (error as Error).message, isMock: false };
+  }
+}
+
+// ── Mystifly v1 Search (Lowest Fare) ──────────────────────────────────────────
+// v1 returns the cheapest fares without brand info. Runs in parallel with v2.
+
+async function searchMystiflyLowestFare(params: {
+  origin: string; destination: string; date: string;
+  returnDate?: string; adults: number; children?: number;
+  infants?: number; cabin?: string;
+  legs?: { origin: string; destination: string; departureDate: string }[];
+}): Promise<ProviderResult> {
+  const start = Date.now();
+  if (!isMystiflyConfigured()) {
+    return { provider: 'mystifly', flights: [], responseTimeMs: 0, error: 'Mystifly not configured', isMock: true };
+  }
+  try {
+    console.log(`[Mystifly] v1 Lowest Fare search: ${params.origin}→${params.destination}`);
+
+    const response = await mystifly.searchFlights({
+      origin: params.origin, destination: params.destination,
+      departureDate: params.date, returnDate: params.returnDate,
+      adults: params.adults, children: params.children,
+      infants: params.infants, cabinClass: params.cabin || 'economy',
+      pricingSource: 'All',
+      searchVersion: 'v1',
+      legs: params.legs,
+    });
+
+    const rawData = response?.Data || response || {};
+    const itineraries = rawData?.PricedItineraries || response?.PricedItineraries || [];
+
+    // v1 format is already flat — no denormalization needed
+    const flights = (Array.isArray(itineraries) ? itineraries : [])
+      .map((itin: any, idx: number) => {
+        try { return normalizeMystiflyOffer(itin); }
+        catch (e) { console.warn(`[Mystifly v1] Normalizer failed for itin #${idx}:`, (e as Error).message); return null; }
+      })
+      .filter(Boolean) as UnifiedFlight[];
+
+    // Tag all v1 flights as lowest fares
+    for (const f of flights) f.fareType = 'lowest';
+
+    console.log(`[Mystifly] v1 Lowest Fare: ${flights.length} results in ${Date.now() - start}ms`);
+    return { provider: 'mystifly', flights, responseTimeMs: Date.now() - start, isMock: false };
+  } catch (error) {
+    console.warn(`[Mystifly] v1 Lowest Fare search failed:`, (error as Error).message);
     return { provider: 'mystifly', flights: [], responseTimeMs: Date.now() - start, error: (error as Error).message, isMock: false };
   }
 }
@@ -320,13 +372,17 @@ export async function searchFlights(params: {
     // For multi-city, only Mystifly supports it currently
     if (isMultiCity) {
       if (hasMystifly && (!params.providers || params.providers.includes('mystifly'))) {
-        promises.push(searchMystifly(params));
+        promises.push(searchMystifly(params));         // v2 branded fares
+        promises.push(searchMystiflyLowestFare(params)); // v1 lowest fares (parallel)
       }
       // Duffel multi-city to be added later
     } else {
       if (hasDuffel && (!params.providers || params.providers.includes('duffel'))) promises.push(searchDuffel(params));
       if (hasAmadeus && (!params.providers || params.providers.includes('amadeus'))) promises.push(searchAmadeus(params));
-      if (hasMystifly && (!params.providers || params.providers.includes('mystifly'))) promises.push(searchMystifly(params));
+      if (hasMystifly && (!params.providers || params.providers.includes('mystifly'))) {
+        promises.push(searchMystifly(params));         // v2 branded fares
+        promises.push(searchMystiflyLowestFare(params)); // v1 lowest fares (parallel)
+      }
     }
     providerResults = await Promise.all(promises);
   } else {

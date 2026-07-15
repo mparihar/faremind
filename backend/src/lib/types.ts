@@ -70,6 +70,7 @@ export interface UnifiedFlight {
   stops: number;
   valueScore: number;
   fareClass?: string;
+  fareType?: 'lowest' | 'branded';
   seatsRemaining?: number;
   tags?: FlightTag[];
   breakdown?: ScoreBreakdown;

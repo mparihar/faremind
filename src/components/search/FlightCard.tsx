@@ -40,13 +40,14 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
       })();
 
   // Use scoring engine tags when available
-  const isBestValue = flight.tags?.includes('best_value') ?? false;
-  const isCheapest  = flight.tags?.includes('cheapest') ?? false;
-  const isFastest   = flight.tags?.includes('fastest')  ?? false;
-  const isNDC       = flight.provider === 'duffel';
-  const isMystifly  = flight.provider === 'mystifly';
+  const isBestValue  = flight.tags?.includes('best_value') ?? false;
+  const isCheapest   = flight.tags?.includes('cheapest') ?? false;
+  const isFastest    = flight.tags?.includes('fastest')  ?? false;
+  const isNDC        = flight.provider === 'duffel';
+  const isMystifly   = flight.provider === 'mystifly';
+  const isLowestFare = flight.fareType === 'lowest';
 
-  const hasTag = isBestValue || isCheapest || isFastest;
+  const hasTag = isBestValue || isCheapest || isFastest || isLowestFare;
 
   const ringClass = isAiHighlighted
     ? 'ring-2 ring-[#1ABC9C]/60 shadow-lg shadow-[#1ABC9C]/15'
@@ -105,6 +106,12 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
       {/* Top badges */}
       {(hasTag || isNDC || (aiBadge && !isAiHighlighted) || flight.fareRules.refundable || flight.fareRules.changeable) && !isCompact && (
         <div className="flex items-center gap-2 px-5 pt-4 flex-wrap">
+          {isLowestFare && (
+            <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-emerald-600 to-green-500 text-white shadow-sm">
+              <Tag className="w-3.5 h-3.5" />
+              Lowest Fare
+            </span>
+          )}
           {isBestValue && !aiBadge && (
             <span className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-bold bg-gradient-to-r from-[#1ABC9C] to-[#26d0ce] text-white shadow-sm">
               <Sparkles className="w-3.5 h-3.5" />
