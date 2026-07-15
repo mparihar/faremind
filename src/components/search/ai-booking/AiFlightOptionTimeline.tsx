@@ -73,6 +73,22 @@ export default function AiFlightOptionTimeline({ flights, roundTripOptions, onSe
           if (flightTags.includes('fastest') || rtBadges.includes('fastest')) {
             badges.push({ label: '⚡ Fastest', color: 'text-blue-700', bg: 'bg-blue-50', border: 'border-blue-200/60' });
           }
+          if (flightTags.includes('best_value') || rtBadges.includes('best_value')) {
+            badges.push({ label: '🌟 Best Value', color: 'text-teal-700', bg: 'bg-teal-50', border: 'border-teal-200/60' });
+          }
+          if (rtBadges.includes('fewest_stops')) {
+            badges.push({ label: '✈️ Fewest Stops', color: 'text-sky-700', bg: 'bg-sky-50', border: 'border-sky-200/60' });
+          }
+
+          // Lower Fare badge for 'lowest' fareType
+          if ((flight as any).fareType === 'lowest') {
+            badges.push({ label: '🏷️ Lower Fare', color: 'text-emerald-700', bg: 'bg-emerald-50', border: 'border-emerald-200/60' });
+          }
+
+          // Nonstop badge
+          if (flight.stops === 0) {
+            badges.push({ label: '🛫 Nonstop', color: 'text-indigo-700', bg: 'bg-indigo-50', border: 'border-indigo-200/60' });
+          }
 
           // Flexible = refundable or changeable
           if (flight.fareRules.refundable || flight.fareRules.changeable) {
