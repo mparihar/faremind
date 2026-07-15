@@ -18,7 +18,6 @@ import {
   Crown,
   Armchair,
   Zap,
-  UtensilsCrossed,
 } from 'lucide-react';
 import { CheckoutHeader } from '@/components/checkout/CheckoutStepNav';
 import { useOfferGuard } from '@/hooks/useOfferGuard';
@@ -403,84 +402,6 @@ function PremiumAirportServicesSection({
   );
 }
 
-// ─── Meal Selection (Mystifly SSR Preferences) ───────────────────────────────
-
-function MealSelectionSection({
-  meals,
-  selectedAncillaries,
-  onAdd,
-  onRemove,
-}: {
-  meals: NormalizedAncillary[];
-  selectedAncillaries: NormalizedAncillary[];
-  onAdd: (ancillary: NormalizedAncillary) => void;
-  onRemove: (serviceId: string) => void;
-}) {
-  const selectedMealId = selectedAncillaries.find(
-    a => a.ancillaryType === 'MEAL'
-  )?.providerServiceId;
-
-  return (
-    <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6">
-      <div className="flex items-center gap-2 mb-1">
-        <UtensilsCrossed className="w-5 h-5 text-orange-500" />
-        <h2 className="text-base font-bold text-slate-900">Meal Preference</h2>
-      </div>
-      <p className="text-xs text-slate-400 mb-4">
-        Select a special meal request. Standard IATA meal codes — subject to airline availability.
-      </p>
-
-      <div className="grid grid-cols-2 sm:grid-cols-3 gap-2">
-        {meals.map((meal) => {
-          const selected = selectedMealId === meal.providerServiceId;
-
-          return (
-            <button
-              key={meal.providerServiceId}
-              type="button"
-              onClick={() => {
-                if (selected) {
-                  onRemove(meal.providerServiceId);
-                } else {
-                  // Remove any previously selected meal, then add new one
-                  if (selectedMealId) onRemove(selectedMealId);
-                  onAdd(meal);
-                }
-              }}
-              className={cn(
-                'relative flex items-center gap-2.5 px-3 py-2.5 rounded-xl border-2 transition-all text-left',
-                selected
-                  ? 'border-[#1ABC9C] bg-[#1ABC9C]/5 shadow-sm'
-                  : 'border-slate-200 bg-white hover:border-slate-300'
-              )}
-            >
-              <div className={cn(
-                'w-4 h-4 rounded-full border-2 flex items-center justify-center flex-shrink-0',
-                selected
-                  ? 'border-[#1ABC9C] bg-[#1ABC9C]'
-                  : 'border-slate-300 bg-white'
-              )}>
-                {selected && <Check className="w-2.5 h-2.5 text-white" strokeWidth={3} />}
-              </div>
-              <div className="min-w-0">
-                <p className="text-xs font-bold text-slate-900 truncate">{meal.label}</p>
-                <p className="text-[10px] text-slate-400 truncate">{meal.description}</p>
-              </div>
-            </button>
-          );
-        })}
-      </div>
-
-      {selectedMealId && (
-        <p className="mt-3 text-xs text-[#1ABC9C] font-medium flex items-center gap-1">
-          <Check className="w-3 h-3" />
-          Meal preference will be submitted with your booking
-        </p>
-      )}
-    </div>
-  );
-}
-
 // ─── Price Drop Protection ────────────────────────────────────────────────────
 
 function PriceDropProtectionSection({
@@ -769,7 +690,6 @@ export default function AddonsPage() {
   // Provider state
   const [providerBaggage, setProviderBaggage] = useState<NormalizedAncillary[]>([]);
   const [premiumServices, setPremiumServices] = useState<NormalizedAncillary[]>([]);
-  const [providerMeals, setProviderMeals] = useState<NormalizedAncillary[]>([]);
   const [baggageLoading, setBaggageLoading] = useState(true);
   const [baggageError, setBaggageError] = useState<string | null>(null);
 
@@ -820,7 +740,6 @@ export default function AddonsPage() {
       .then((data: { baggage: NormalizedAncillary[]; meals: NormalizedAncillary[]; premiumServices?: NormalizedAncillary[]; error?: string; info?: string }) => {
         setProviderBaggage(data.baggage ?? []);
         setPremiumServices(data.premiumServices ?? []);
-        setProviderMeals(data.meals ?? []);
         if (data.error) setBaggageError(data.error);
         // Only show info message if no baggage data was returned
         else if (data.info && (!data.baggage || data.baggage.length === 0)) setBaggageError(data.info);
@@ -900,16 +819,6 @@ export default function AddonsPage() {
             {premiumServices.length > 0 && (
               <PremiumAirportServicesSection
                 services={premiumServices}
-                selectedAncillaries={selectedAncillaries}
-                onAdd={store.addAncillary}
-                onRemove={store.removeAncillary}
-              />
-            )}
-
-            {/* Meal Preferences — shown when provider returns meal SSR codes */}
-            {providerMeals.length > 0 && (
-              <MealSelectionSection
-                meals={providerMeals}
                 selectedAncillaries={selectedAncillaries}
                 onAdd={store.addAncillary}
                 onRemove={store.removeAncillary}
