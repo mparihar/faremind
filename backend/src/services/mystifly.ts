@@ -581,7 +581,7 @@ export async function searchFlights(params: MystiflySearchParams): Promise<any> 
 export async function revalidateFlight(fareSourceCode: string): Promise<any> {
   const result = await mystiflyRequest<any>({
     method: 'POST',
-    path: '/api/v2/Revalidate/Flight',
+    path: '/api/v1/Revalidate/Flight',
     body: {
       FareSourceCode: fareSourceCode,
       Target: MYSTIFLY_TARGET,
