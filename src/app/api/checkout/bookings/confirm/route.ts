@@ -1488,6 +1488,7 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Full transaction ─────────────────────────────────────────────────────
+    console.log(`[Checkout] Starting DB transaction — provider: ${sourceProvider}, masterPnr: ${masterPnr}, pax: ${passengers.length}, amount: $${totalAmount}`);
     const txResult = await prisma.$transaction(async (tx) => {
       // 1. MasterBooking
       const mb = await tx.masterBooking.create({
@@ -2055,6 +2056,7 @@ export async function POST(req: NextRequest) {
       return { mb, pnrResult };
     }, { timeout: 30000, maxWait: 10000 });
 
+    console.log(`[Checkout] ✅ DB transaction completed — bookingId: ${txResult.mb.id}`);
     const { mb: masterBooking, pnrResult } = txResult;
     const confirmedAt = new Date().toISOString();
 
@@ -2179,7 +2181,9 @@ export async function POST(req: NextRequest) {
     });
   } catch (err: any) {
     const msg = err?.message ?? String(err);
-    console.error('[checkout/bookings/confirm] error:', msg, err);
+    console.error('[checkout/bookings/confirm] ❌ CRITICAL ERROR:', msg);
+    console.error('[checkout/bookings/confirm] Stack:', err?.stack ?? 'no stack');
+    console.error('[checkout/bookings/confirm] Error type:', err?.constructor?.name ?? typeof err);
 
     // Extract Duffel root cause if available
     let customerMsg: string;
