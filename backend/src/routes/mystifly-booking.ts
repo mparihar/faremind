@@ -120,9 +120,21 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // CRITICAL: Mystifly revalidation issues a NEW FareSourceCode that MUST be
       // used for booking. Using the original search FSC causes ERBUK103
       // ("API version mismatch - Invalid FareSourceCode").
-      const revalidatedFareSourceCode = itinerary?.FareSourceCode || null;
+      // Check multiple possible paths — Mystifly API response structure varies.
+      const revalidatedFareSourceCode =
+        itinerary?.FareSourceCode ||
+        result?.Data?.FareSourceCode ||
+        result?.FareSourceCode ||
+        null;
+
+      // Debug: log what we found
+      console.log(`[Mystifly] Revalidation FSC debug — itinerary.FareSourceCode: ${itinerary?.FareSourceCode ? 'YES' : 'null'}, Data.FareSourceCode: ${result?.Data?.FareSourceCode ? 'YES' : 'null'}, top.FareSourceCode: ${result?.FareSourceCode ? 'YES' : 'null'}`);
+      console.log(`[Mystifly] Revalidation raw keys — Data keys: ${JSON.stringify(Object.keys(result?.Data || {}))}, itinerary keys: ${JSON.stringify(Object.keys(itinerary || {}))}`);
+
       if (revalidatedFareSourceCode && revalidatedFareSourceCode !== fareSourceCode) {
         console.log(`[Mystifly] FareSourceCode updated: ${fareSourceCode.slice(0, 30)}... → ${revalidatedFareSourceCode.slice(0, 30)}...`);
+      } else if (!revalidatedFareSourceCode) {
+        console.warn(`[Mystifly] ⚠️ No revalidated FareSourceCode found in response — using original FSC. This may cause ERBUK103.`);
       }
 
       console.log(`[Mystifly] Revalidation success — fare: ${totalFare} ${currency}`);
