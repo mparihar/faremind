@@ -607,21 +607,21 @@ export default function MealsPage() {
 
           {/* Meal Selection Not Available */}
           {!loading && !mealsSupported && (
-            <div className="lg:col-span-2 flex flex-col items-center justify-center py-12 px-6 rounded-2xl border border-slate-200 bg-white shadow-sm">
-              <div className="w-14 h-14 rounded-2xl bg-slate-100 flex items-center justify-center mb-4">
-                <UtensilsCrossed className="w-7 h-7 text-slate-400" strokeWidth={1.5} />
+            <div className="flex flex-col items-center justify-center py-6 px-4 rounded-2xl border border-slate-200 bg-white shadow-sm">
+              <div className="w-10 h-10 rounded-xl bg-slate-100 flex items-center justify-center mb-3">
+                <UtensilsCrossed className="w-5 h-5 text-slate-400" strokeWidth={1.5} />
               </div>
-              <h2 className="text-lg font-bold text-slate-900 mb-2">Meal Selection Not Available</h2>
-              <p className="text-sm text-slate-500 text-center max-w-md mb-1">
+              <h2 className="text-base font-bold text-slate-900 mb-1">Meal Selection Not Available</h2>
+              <p className="text-xs text-slate-500 text-center max-w-xs mb-1">
                 This airline does not offer meal selection through our booking system.
               </p>
-              <p className="text-xs text-slate-400 text-center max-w-md">
+              <p className="text-[11px] text-slate-400 text-center max-w-xs">
                 Complimentary snacks and beverages may be available on board. For special meal requests,
-                please contact the airline directly or manage your preferences during online check-in.
+                contact the airline directly or manage preferences during online check-in.
               </p>
               <button
                 onClick={() => router.push('/checkout/addons')}
-                className="mt-6 flex items-center gap-2 px-6 py-3 rounded-2xl bg-[#1ABC9C] hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-[#1ABC9C]/20 transition-all"
+                className="mt-4 flex items-center gap-2 px-5 py-2.5 rounded-2xl bg-[#1ABC9C] hover:bg-emerald-500 text-white font-bold text-sm shadow-lg shadow-[#1ABC9C]/20 transition-all"
               >
                 Continue to Add-ons <ChevronRight className="w-4 h-4" />
               </button>
