@@ -135,7 +135,13 @@ export async function GET(request: NextRequest) {
         : [];
 
       if (mealServices.length === 0) {
-        const result: MealResult = { meals: [], recommended: '', mealsSupported: false };
+        // Mystifly supports meal SSR preferences at booking time even when
+        // ExtraServices doesn't list them. Fall back to standard IATA SSR codes.
+        console.log(`[Meals] No meal ExtraServices found — using standard IATA SSR codes for Mystifly`);
+        const ssrCodes = ['STANDARD', 'VGML', 'AVML', 'NLML', 'MOML', 'KSML', 'HNML', 'DBML', 'GFML', 'LFML', 'FPML', 'SFML', 'LCML', 'CHML', 'NONE'];
+        const ssrMeals: MealOptionDef[] = ssrCodes.map(code => resolveMeal(code, 0));
+        const recommended = ssrMeals[0]?.code ?? 'STANDARD';
+        const result: MealResult = { meals: ssrMeals, recommended, mealsSupported: true };
         setCached(cacheKey, result);
         return NextResponse.json({ ...result, cached: false });
       }
