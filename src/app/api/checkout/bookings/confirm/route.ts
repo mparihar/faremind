@@ -254,8 +254,15 @@ export async function POST(req: NextRequest) {
       );
     }
 
-    const offerId = selectedFare?.offerId || selectedFare?.id || selectedFare?.duffelOfferId;
+    const offerId = selectedFare?.offerId || selectedFare?.id || selectedFare?.duffelOfferId
+      || sourceFlight?.providerOfferId || sourceRoundTrip?.providerOfferId;
     if (!offerId) {
+      console.error('[Checkout] ❌ No offer ID found from any source:', {
+        'selectedFare.offerId': selectedFare?.offerId,
+        'selectedFare.id': selectedFare?.id,
+        'sourceFlight.providerOfferId': sourceFlight?.providerOfferId,
+        'sourceRoundTrip.providerOfferId': sourceRoundTrip?.providerOfferId,
+      });
       return NextResponse.json(
         { error: 'No offer ID found. Please select a fare and try again.', errorCode: 'MISSING_OFFER_ID' },
         { status: 400 }
