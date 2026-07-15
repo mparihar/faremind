@@ -7,7 +7,7 @@
 
 'use client';
 
-import { Plane, Clock, ArrowRight, ArrowLeft, Sparkles } from 'lucide-react';
+import { Plane, Clock, ArrowRight, ArrowLeft } from 'lucide-react';
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
 import { formatDuration, formatPrice, getStopsLabel } from '@/lib/utils';
@@ -95,10 +95,7 @@ export default function AiFlightOptionTimeline({ flights, roundTripOptions, onSe
                 {/* Header row: airline + score */}
                 <div className="flex items-center justify-between gap-2 mb-1">
                   <span className="text-[13px] font-bold text-slate-700 truncate">{airline}</span>
-                  <div className="flex items-center gap-1 px-1.5 py-0.5 rounded-full bg-[#1ABC9C]/10 flex-none">
-                    <Sparkles className="w-2.5 h-2.5 text-[#1ABC9C]" />
-                    <span className="text-[12px] font-black text-[#1ABC9C]">{score}</span>
-                  </div>
+                  {/* Score badge removed — score used internally for ranking only */}
                 </div>
 
                 {/* Badge tags */}
