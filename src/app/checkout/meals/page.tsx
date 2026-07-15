@@ -518,7 +518,7 @@ export default function MealsPage() {
     setLoading(true);
 
     fetch(
-      `/api/meals?offer_id=${encodeURIComponent(selectedFare.offerId)}&provider=duffel`,
+      `/api/meals?offer_id=${encodeURIComponent(selectedFare.offerId)}&provider=${encodeURIComponent(sourceFlight?.provider ?? 'duffel')}`,
     )
       .then(r => r.json())
       .then((data: { meals: MealOptionDef[]; recommended: string; mealsSupported: boolean }) => {

@@ -189,9 +189,21 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const offerId = searchParams.get('offer_id');
   const orderId = searchParams.get('order_id');
+  const provider = (searchParams.get('provider') ?? 'duffel').toLowerCase();
 
   if (!offerId && !orderId) {
     return NextResponse.json({ error: 'offer_id or order_id required' }, { status: 400 });
+  }
+
+  // Seat maps are only available via Duffel — other providers don't support it
+  if (provider !== 'duffel') {
+    return NextResponse.json({
+      seatMaps: [],
+      seatSelectionSupported: false,
+      wheelchairSupported: false,
+      cached: false,
+      providerNote: `Seat map not available for provider: ${provider}`,
+    });
   }
 
   const id = (offerId ?? orderId)!;

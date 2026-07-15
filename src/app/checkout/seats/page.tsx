@@ -634,7 +634,7 @@ export default function SeatsPage() {
     if (!selectedFare?.offerId) { setLoadingMap(false); return; }
 
     setLoadingMap(true);
-    fetch(`/api/seats/seat-map?offer_id=${encodeURIComponent(selectedFare.offerId)}`)
+    fetch(`/api/seats/seat-map?offer_id=${encodeURIComponent(selectedFare.offerId)}&provider=${encodeURIComponent(sourceFlight?.provider ?? 'duffel')}`)
       .then(r => r.json())
       .then((data: { seatMaps: SegmentSeatMap[]; seatSelectionSupported?: boolean; wheelchairSupported?: boolean; error?: string }) => {
         setSeatMaps(data.seatMaps ?? []);
