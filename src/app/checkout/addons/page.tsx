@@ -712,16 +712,30 @@ export default function AddonsPage() {
 
   // Fetch provider ancillaries on mount
   useEffect(() => {
-    if (!selectedFare?.offerId) {
+    const provider = (store.sourceFlight?.provider ?? store.sourceRoundTrip?.provider ?? 'duffel').toLowerCase();
+
+    // Resolve the offer ID for ancillary fetch:
+    // 1. selectedFare.offerId (set from FareOption.offerId = fare_options endpoint offer_id)
+    // 2. sourceFlight.providerOfferId (the actual FareSourceCode for Mystifly)
+    // 3. sourceRoundTrip.providerOfferId
+    const resolvedOfferId =
+      selectedFare?.offerId ||
+      store.sourceFlight?.providerOfferId ||
+      store.sourceRoundTrip?.providerOfferId ||
+      '';
+
+    if (!resolvedOfferId) {
+      console.warn('[Addons] No offer ID available for ancillary fetch');
       setBaggageLoading(false);
       return;
     }
 
-    const provider = (store.sourceFlight?.provider ?? store.sourceRoundTrip?.provider ?? 'duffel').toLowerCase();
     setBaggageLoading(true);
     setBaggageError(null);
 
-    fetch(`/api/ancillaries?offer_id=${encodeURIComponent(selectedFare.offerId)}&provider=${provider}`)
+    console.log(`[Addons] Fetching ancillaries: provider=${provider}, offerId=${resolvedOfferId.slice(0, 30)}...`);
+
+    fetch(`/api/ancillaries?offer_id=${encodeURIComponent(resolvedOfferId)}&provider=${provider}`)
       .then(r => r.json())
       .then((data: { baggage: NormalizedAncillary[]; meals: NormalizedAncillary[]; premiumServices?: NormalizedAncillary[]; error?: string; info?: string }) => {
         setProviderBaggage(data.baggage ?? []);
@@ -734,7 +748,7 @@ export default function AddonsPage() {
         setBaggageError('Add-ons are temporarily unavailable. You can continue booking or manage add-ons with the airline after ticketing.');
       })
       .finally(() => setBaggageLoading(false));
-  }, [selectedFare?.offerId]);
+  }, [selectedFare?.offerId, store.sourceFlight?.providerOfferId]);
 
   if (!selectedFare || !sessionId) return null;
 

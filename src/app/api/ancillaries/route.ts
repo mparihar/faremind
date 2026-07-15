@@ -153,7 +153,7 @@ const MYSTIFLY_MEAL_CODES: Array<{ code: string; label: string; description: str
   { code: 'ORML', label: 'Oriental', description: 'Oriental meal' },
 ];
 
-const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:4000';
+const BACKEND_URL = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
 
 async function handleMystifly(offerId: string, cacheKey: string, mfref?: string | null) {
   // Mystifly sandbox returns Duffel-format offers (off_...).
