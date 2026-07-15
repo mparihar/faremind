@@ -553,11 +553,8 @@ export async function searchFlights(params: MystiflySearchParams): Promise<any> 
     IsInfantWithSeat: false,
   };
 
-  // Determine search API version
-  // IMPORTANT: The demo API (restapidemo.myfarebox.com) only supports v1 for
-  // Revalidate/Book/OrderTicket. FareSourceCodes are version-specific, so search
-  // MUST use the same version as booking. Use v1 until production API is configured.
-  const version = params.searchVersion || 'v1';
+  // Determine search API version (default v2.2)
+  const version = params.searchVersion || 'v2.2';
   const searchPath = `/api/${version}/Search/Flight`;
   const routeDesc = legs.map(l => `${l.origin}→${l.destination}`).join(', ');
   console.log(`[Mystifly] Search via ${searchPath} — ${routeDesc}, trip=${airTripType}, pricing=${searchRQ.PricingSourceType}`);
