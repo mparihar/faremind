@@ -402,7 +402,14 @@ function PaymentFormInner() {
           } : {}),
         }),
       })
-        .then((r) => r.json()) as {
+        .then(async (r) => {
+          const contentType = r.headers.get('content-type') || '';
+          if (!contentType.includes('application/json')) {
+            // Server returned HTML (e.g. Next.js error page, timeout, or crash)
+            throw new Error('Booking server returned an unexpected response. Your card authorization is safe — please try again or contact support.');
+          }
+          return r.json();
+        }) as {
           success: boolean; pnr?: string; bookingId?: string; error?: string;
           errorCode?: string;
           masterBookingReference?: string;

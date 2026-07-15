@@ -117,13 +117,22 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const totalFare = itinerary?.AirItineraryPricingInfo?.ItinTotalFare?.TotalFare?.Amount;
       const currency = itinerary?.AirItineraryPricingInfo?.ItinTotalFare?.TotalFare?.CurrencyCode ?? 'USD';
 
+      // CRITICAL: Mystifly revalidation issues a NEW FareSourceCode that MUST be
+      // used for booking. Using the original search FSC causes ERBUK103
+      // ("API version mismatch - Invalid FareSourceCode").
+      const revalidatedFareSourceCode = itinerary?.FareSourceCode || null;
+      if (revalidatedFareSourceCode && revalidatedFareSourceCode !== fareSourceCode) {
+        console.log(`[Mystifly] FareSourceCode updated: ${fareSourceCode.slice(0, 30)}... → ${revalidatedFareSourceCode.slice(0, 30)}...`);
+      }
+
       console.log(`[Mystifly] Revalidation success — fare: ${totalFare} ${currency}`);
 
       return {
         success: true,
         totalFare: totalFare ? parseFloat(totalFare) : null,
         currency,
-        fareSourceCode,
+        fareSourceCode: revalidatedFareSourceCode || fareSourceCode,
+        revalidatedFareSourceCode,
         raw: result,
       };
     } catch (error: any) {
