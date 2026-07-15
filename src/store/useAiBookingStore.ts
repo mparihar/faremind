@@ -100,14 +100,20 @@ function computePriceSummary(
   if (!fareDetails) return empty;
 
   const paxCount = Math.max(1, passengerCount);
-  const baseFarePerPax = fareDetails.totalPrice;
+
+  // The provider fare (totalPrice) ALREADY INCLUDES taxes.
+  // Split it into base + taxes for display only — do NOT add taxes on top.
+  const baseFarePerPax = fareDetails.basePrice;
+  const taxesPerPax = fareDetails.totalPrice - fareDetails.basePrice;
   const baseFare = baseFarePerPax * paxCount;
-  const taxes = Math.round(baseFare * FALLBACK_TAX_RATE);
+  const taxes = taxesPerPax * paxCount;
 
   // Use DB-driven service fee if available, otherwise last-resort fallback
+  // Service fee is based on the full fare (totalPrice), not just base
+  const fullFare = fareDetails.totalPrice * paxCount;
   const serviceFee = computedFees
     ? computedFees.serviceFee
-    : Math.round(baseFare * FALLBACK_SERVICE_FEE_RATE);
+    : Math.round(fullFare * FALLBACK_SERVICE_FEE_RATE);
 
   const protectedCount = protections.filter(p => p.selected).length;
   // Use DB-driven protection fee if available
@@ -124,7 +130,7 @@ function computePriceSummary(
   const insuranceFee = addOns.travelInsurance
     ? (computedFees
         ? computedFees.insuranceFeeTotal
-        : Math.round(baseFarePerPax * FALLBACK_INSURANCE_RATE) * paxCount)
+        : Math.round(fareDetails.totalPrice * FALLBACK_INSURANCE_RATE) * paxCount)
     : 0;
 
   const seatSelectionFee = totalSeatFees(passengerSeats);
@@ -139,6 +145,7 @@ function computePriceSummary(
     baggageFee,
     insuranceFee,
     seatSelectionFee,
+    // total = base + taxes (= provider fare) + service fee + add-ons
     total: baseFare + taxes + serviceFee + protectionFee + baggageFee + insuranceFee + seatSelectionFee,
     currency: fareDetails.currency,
   };
