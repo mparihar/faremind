@@ -581,7 +581,7 @@ export async function searchFlights(params: MystiflySearchParams): Promise<any> 
 export async function revalidateFlight(fareSourceCode: string): Promise<any> {
   const result = await mystiflyRequest<any>({
     method: 'POST',
-    path: '/api/v2.2/Revalidate/Flight',
+    path: '/api/v2/Revalidate/Flight',
     body: {
       FareSourceCode: fareSourceCode,
       Target: MYSTIFLY_TARGET,
@@ -632,7 +632,7 @@ export async function bookFlight(params: MystiflyBookParams): Promise<any> {
 
   const result = await mystiflyRequest<any>({
     method: 'POST',
-    path: '/api/v2.2/Book/Flight',
+    path: '/api/v2/Book/Flight',
     body: bookRQ as unknown as Record<string, unknown>,
     retries: 0, // Never retry booking operations
   });
@@ -664,7 +664,7 @@ export async function orderTicket(
 
   const result = await mystiflyRequest<any>({
     method: 'POST',
-    path: '/api/v2.2/OrderTicket',
+    path: '/api/v2/OrderTicket',
     body: rq as unknown as Record<string, unknown>,
     retries: 0, // Never retry ticketing
   });
