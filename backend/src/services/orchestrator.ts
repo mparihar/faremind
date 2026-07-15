@@ -364,8 +364,115 @@ async function searchMystiflyLowestFare(params: {
     const rawData = response?.Data || response || {};
     const itineraries = rawData?.PricedItineraries || response?.PricedItineraries || [];
 
-    // v1 format is already flat — no denormalization needed
-    const flights = (Array.isArray(itineraries) ? itineraries : [])
+    // ── v1 may also return v2.2-style reference-based data ─────────────
+    // Mystifly's v1 endpoint now returns the same structure as v2.2.
+    // Detect by checking for FlightSegmentList/FlightFaresList and
+    // denormalize identically to the v2.2 path.
+    const segmentList  = rawData?.FlightSegmentList || [];
+    const faresList    = rawData?.FlightFaresList || [];
+    const itinRefList  = rawData?.ItineraryReferenceList || [];
+    const penaltiesList = rawData?.PenaltiesInfoList || [];
+    const isV2Format   = segmentList.length > 0 && faresList.length > 0;
+
+    let denormalized: any[];
+
+    if (isV2Format) {
+      // Same denormalization as v2.2 — build lookup maps and flatten
+      const segMap  = new Map<number, any>();
+      for (const s of segmentList) segMap.set(s.SegmentRef, s);
+      const fareMap = new Map<number, any>();
+      for (const f of faresList) fareMap.set(f.FareRef, f);
+      const itinRefMap = new Map<number, any>();
+      for (const r of itinRefList) itinRefMap.set(r.ItineraryRef, r);
+      const penaltiesMap = new Map<number, any>();
+      for (const p of penaltiesList) penaltiesMap.set(p.PenaltiesInfoRef, p);
+
+      denormalized = itineraries.map((itin: any) => {
+        try {
+          const ods = itin.OriginDestinations || [];
+          const fare = fareMap.get(itin.FareRef);
+          const penalties = penaltiesMap.get(itin.PenaltiesInfoRef);
+
+          const resolvedFSC =
+            itin.FareSourceCode || itin.fareSourceCode
+            || itin.OfferID || itin.offerId
+            || fare?.FareSourceCode || fare?.fareSourceCode
+            || fare?.OfferID || '';
+
+          if (!resolvedFSC) {
+            console.warn(`[Mystifly v1] ⚠️ No FareSourceCode on v2-format itin. Keys: ${Object.keys(itin).join(', ')}${fare ? `, fare keys: ${Object.keys(fare).join(', ')}` : ''}`);
+          }
+
+          const legGroups = new Map<string, any[]>();
+          for (const od of ods) {
+            const leg = od.LegIndicator || '0';
+            if (!legGroups.has(leg)) legGroups.set(leg, []);
+            const seg = segMap.get(od.SegmentRef);
+            const itinRef = itinRefMap.get(od.ItineraryRef);
+            if (seg) {
+              legGroups.get(leg)!.push({
+                ...seg,
+                MarketingAirlineCode: seg.MarketingCarriercode || seg.MarketingCarrierCode || '',
+                FlightNumber: seg.MarketingFlightNumber || '',
+                OperatingAirline: { Code: seg.OperatingCarrierCode || '' },
+                CabinClassCode: itinRef?.CabinClassCode || 'Y',
+                Baggage: itinRef?.CheckinBaggage?.[0]?.Value || '',
+                CabinBaggage: itinRef?.CabinBaggage?.[0]?.Value || '',
+                SeatsRemaining: itinRef?.SeatsRemaining,
+                FareBasisCode: itinRef?.FareBasisCodes || '',
+                FareFamily: itinRef?.FareFamily || '',
+              });
+            }
+          }
+
+          const originDestinationOptions: any[] = [];
+          const sortedLegs = [...legGroups.entries()].sort((a, b) => Number(a[0]) - Number(b[0]));
+          for (const [, segs] of sortedLegs) {
+            originDestinationOptions.push({ FlightSegments: segs });
+          }
+
+          let totalAmount = 0;
+          let currency = fare?.Currency || 'USD';
+          if (fare?.PassengerFare) {
+            for (const pf of fare.PassengerFare) {
+              totalAmount += parseFloat(pf.TotalFare || '0') * (pf.Quantity || 1);
+            }
+          }
+
+          const penaltyDetail = penalties?.Penaltydetails?.[0];
+          const refundAllowed = penaltyDetail?.RefundAllowed === true;
+          const changeAllowed = penaltyDetail?.ChangeAllowed === true;
+          const changePenaltyAmount = parseFloat(penaltyDetail?.ChangePenaltyAmount || '0');
+          const refundPenaltyAmount = parseFloat(penaltyDetail?.RefundPenaltyAmount || '0');
+          const penaltyCurrency = penaltyDetail?.Currency || '';
+
+          return {
+            FareSourceCode: resolvedFSC,
+            ValidatingAirlineCode: itin.ValidatingCarrier || '',
+            OriginDestinationOptions: originDestinationOptions,
+            AirItineraryPricingInfo: {
+              ItinTotalFare: {
+                TotalFare: { Amount: String(totalAmount), CurrencyCode: currency },
+              },
+              IsRefundable: refundAllowed,
+            },
+            IsRefundable: refundAllowed,
+            _penalties: { refundAllowed, changeAllowed, changePenaltyAmount, refundPenaltyAmount, penaltyCurrency },
+            Provider: itin.Provider || 'MYSTIFLY',
+          };
+        } catch (e) {
+          console.warn(`[Mystifly v1] Denorm failed:`, (e as Error).message);
+          return null;
+        }
+      }).filter(Boolean);
+
+      console.log(`[Mystifly v1] Denormalized v2-format: ${denormalized.length} itineraries`);
+    } else {
+      // True v1 flat format — pass through as-is
+      denormalized = Array.isArray(itineraries) ? itineraries : [];
+    }
+
+    const flights = denormalized
       .map((itin: any, idx: number) => {
         try { return normalizeMystiflyOffer(itin); }
         catch (e) { console.warn(`[Mystifly v1] Normalizer failed for itin #${idx}:`, (e as Error).message); return null; }
