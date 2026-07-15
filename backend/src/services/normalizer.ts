@@ -266,11 +266,15 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
   const totalPrice = parseFloat(totalFare.Amount || totalFare.amount || '0');
   const currency = totalFare.CurrencyCode || totalFare.currencyCode || 'USD';
 
-  // Extract actual base fare and taxes from Mystifly API
+  // Extract actual base fare and taxes from Mystifly API.
+  // IMPORTANT: Mystifly's "Taxes" is an ARRAY of individual tax items [{TaxCode, Amount}, ...].
+  // The total tax amount is in "TotalTax" (an object with .Amount).
   const baseFareObj = itinTotalFare.BaseFare || itinTotalFare.baseFare || {};
-  const taxesObj = itinTotalFare.Taxes || itinTotalFare.taxes || itinTotalFare.TotalTax || itinTotalFare.totalTax || {};
-  const providerBaseFare = parseFloat(baseFareObj.Amount || baseFareObj.amount || '0') || undefined;
-  const providerTaxAmount = parseFloat(taxesObj.Amount || taxesObj.amount || '0') || undefined;
+  const totalTaxObj = itinTotalFare.TotalTax || itinTotalFare.totalTax || {};
+  const parsedBaseFare = parseFloat(baseFareObj.Amount || baseFareObj.amount || '');
+  const parsedTaxAmount = parseFloat(totalTaxObj.Amount || totalTaxObj.amount || '');
+  const providerBaseFare = !isNaN(parsedBaseFare) ? parsedBaseFare : undefined;
+  const providerTaxAmount = !isNaN(parsedTaxAmount) ? parsedTaxAmount : undefined;
 
   // ── Parse cabin class ──
   const firstSegRaw = odOptions[0]?.FlightSegments?.[0] || odOptions[0]?.flightSegments?.[0];
