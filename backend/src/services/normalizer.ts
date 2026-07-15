@@ -362,29 +362,25 @@ function parseMystiflyDuration(duration: any): number {
 // ─── Merge & Deduplicate ───
 
 export function mergeAndRankFlights(flights: UnifiedFlight[]): UnifiedFlight[] {
-  // Dedup by itinerary identity (airline + departure + route), NOT by price.
-  // When v1 and v2 return the same itinerary at different prices, keep the cheapest.
-  const bestByKey = new Map<string, UnifiedFlight>();
+  // Sort: put 'lowest' fareType first so when v1 and v2 have the same dedup key
+  // (same flight, same price), the 'Lowest Fare' badge is preserved.
+  const sorted = [...flights].sort((a, b) => {
+    if (a.fareType === 'lowest' && b.fareType !== 'lowest') return -1;
+    if (a.fareType !== 'lowest' && b.fareType === 'lowest') return 1;
+    return 0;
+  });
 
-  for (const f of flights) {
-    // Filter out invalid offers
-    if (f.totalPrice <= 0 || f.totalDuration <= 0 || f.segments.length === 0) continue;
+  const seen = new Set<string>();
+  const unique = sorted.filter((f) => {
+    // Filter out invalid offers (no price, no duration, no segments)
+    if (f.totalPrice <= 0 || f.totalDuration <= 0 || f.segments.length === 0) return false;
 
-    const key = `${f.airline.code}-${f.segments[0]?.departure.time}-${f.segments[0]?.departure.airport}-${f.segments[f.segments.length - 1]?.arrival.airport}`;
-    const existing = bestByKey.get(key);
+    const key = `${f.airline.code}-${f.segments[0]?.departure.time}-${f.segments[0]?.departure.airport}-${f.totalPrice}`;
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 
-    if (!existing) {
-      bestByKey.set(key, f);
-    } else if (f.totalPrice < existing.totalPrice) {
-      // Cheaper fare wins — preserve its fareType
-      bestByKey.set(key, f);
-    } else if (f.totalPrice === existing.totalPrice && f.fareType === 'lowest' && existing.fareType !== 'lowest') {
-      // Same price but v1 (lowest) takes priority for badge display
-      bestByKey.set(key, { ...existing, fareType: 'lowest' });
-    }
-  }
-
-  const unique = [...bestByKey.values()];
   return unique.sort((a, b) => {
     if (b.valueScore !== a.valueScore) return b.valueScore - a.valueScore;
     return a.totalPrice - b.totalPrice;
