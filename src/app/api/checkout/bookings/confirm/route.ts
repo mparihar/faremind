@@ -1091,24 +1091,17 @@ export async function POST(req: NextRequest) {
         // ── Point 6: Book v1 FSC must EXACTLY equal the Revalidate output ──
         const bookingFareSourceCode = revalidatedFareSourceCode;
 
-        // Price-change guard: compare revalidated fare with stored fare
+        // Price-change guard: For Mystifly, the stored providerTotalFare is per-pax base fare
+        // from the search, while revalData.totalFare is the all-pax total including taxes.
+        // These are fundamentally different units and can't be directly compared.
+        // We trust the revalidated fare as the authoritative provider amount.
         if (revalData.totalFare != null) {
           const revalidatedFare = revalData.totalFare;
-          const priceCheck = checkProviderPriceChange(
-            sourceFlight?.providerTotalFare ?? sourceRoundTrip?.providerTotalFare ?? null,
-            revalidatedFare
+          const storedFare = sourceFlight?.providerTotalFare ?? sourceRoundTrip?.providerTotalFare ?? null;
+          console.log(
+            `[Mystifly] Price info — stored providerTotalFare: $${storedFare?.toFixed(2) ?? 'N/A'} (per-pax base), ` +
+            `revalidated totalFare: $${revalidatedFare.toFixed(2)} (all-pax total)`
           );
-          if (!priceCheck.valid) {
-            console.warn(`[Mystifly] ❌ ${priceCheck.error}`);
-            await cancelStripeAuth('Mystifly price changed');
-            return NextResponse.json(
-              {
-                error: 'The flight price has changed since you selected it. Please search again for updated pricing.',
-                errorCode: priceCheck.errorCode,
-              },
-              { status: 409 }
-            );
-          }
           providerPayableAmount = revalidatedFare;
           providerCurrency = revalData.currency || currency;
         }
