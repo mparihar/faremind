@@ -372,14 +372,17 @@ export interface PricingConfigParam {
 }
 
 export function buildLocalPricing(store: CheckoutStore, pricingConfig?: PricingConfigParam): PricingBreakdown {
-  const { selectedFare, passengers, extraBags, priceProtection, travelInsurance, seatSelections, mealSelections, currency, computedFees } = store;
+  const { selectedFare, passengers, extraBags, priceProtection, travelInsurance, seatSelections, mealSelections, currency, computedFees, sourceFlight } = store;
   // Use the exact all-passenger total from the fare-options API to avoid rounding loss.
   // selectedFare.totalPrice is the all-passenger total; basePrice is per-person (display only).
   const allPaxFareTotal = selectedFare?.totalPrice ?? 0;
   const perPersonBase = selectedFare?.basePrice ?? 0;
-  const taxRate = pricingConfig?.taxRate ?? 0.156;
 
-  // Build per-passenger breakdown for display (cosmetic split of taxes from base).
+  // Use actual provider base/tax split when available (from Mystifly BaseFare/Taxes or Duffel base_amount/tax_amount).
+  // Falls back to estimated cosmetic split using taxRate when provider doesn't supply the breakdown.
+  const hasProviderSplit = sourceFlight?.baseFare != null && sourceFlight?.taxAmount != null && sourceFlight.totalPrice > 0;
+
+  // Build per-passenger breakdown for display.
   // Distribute allPaxFareTotal exactly across passengers so line items sum to the
   // total — avoids the ±$1 rounding drift when perPersonBase × count ≠ allPaxFareTotal.
   const paxCount = passengers.length || 1;
@@ -388,8 +391,20 @@ export function buildLocalPricing(store: CheckoutStore, pricingConfig?: PricingC
 
   const perPassenger: PerPassengerPrice[] = passengers.map((p, idx) => {
     const base = perPaxFloor + (idx < remainder ? 1 : 0);
-    const taxes = Math.round(base * taxRate);
-    return { passengerId: p.id, type: p.type, baseFare: base - taxes, taxes, subtotal: base };
+    let taxes: number;
+    let baseFare: number;
+    if (hasProviderSplit) {
+      // Scale provider tax proportionally for this fare tier
+      const ratio = base / sourceFlight!.totalPrice;
+      taxes = Math.round(sourceFlight!.taxAmount! * ratio);
+      baseFare = base - taxes;
+    } else {
+      // Fallback: cosmetic split using configured/default tax rate
+      const taxRate = pricingConfig?.taxRate ?? 0.156;
+      taxes = Math.round(base * taxRate);
+      baseFare = base - taxes;
+    }
+    return { passengerId: p.id, type: p.type, baseFare, taxes, subtotal: base };
   });
 
   const seatFees = seatSelections.reduce((s, x) => s + (x.priceUsd ?? 0), 0);
