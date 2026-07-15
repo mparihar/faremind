@@ -5,7 +5,7 @@ import Map, { Source, Layer, Marker } from 'react-map-gl/maplibre';
 import 'maplibre-gl/dist/maplibre-gl.css';
 import * as turf from '@turf/turf';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plane, X, Clock, MapPin, CreditCard, Sparkles, TrendingUp, ChevronRight } from 'lucide-react';
+import { X, Clock, MapPin, CreditCard, Sparkles, TrendingUp, ChevronRight } from 'lucide-react';
 import { UnifiedFlight } from '@/lib/types';
 import { getAirportCoords } from '@/lib/airport-coords';
 import { format } from 'date-fns';
@@ -399,12 +399,11 @@ export default function FlightIntelligenceMap(props: FlightIntelligenceMapProps)
           <Marker longitude={outPlanePt[0]} latitude={outPlanePt[1]} anchor="center">
             <div
               className="pointer-events-none"
-              style={{ transform: `rotate(${outBearing - 45}deg)` }}
+              style={{ transform: `rotate(${outBearing}deg)` }}
             >
-              <Plane
-                className="w-6 h-6"
-                style={{ color: '#0F172A', filter: 'drop-shadow(0 0 7px #0F172A) drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }}
-              />
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.35))' }}>
+                <path d="M14 2 L22 24 L14 19 L6 24 Z" fill="#0F172A" stroke="white" strokeWidth="1" />
+              </svg>
             </div>
           </Marker>
         )}
@@ -414,12 +413,11 @@ export default function FlightIntelligenceMap(props: FlightIntelligenceMapProps)
           <Marker longitude={retPlanePt[0]} latitude={retPlanePt[1]} anchor="center">
             <div
               className="pointer-events-none"
-              style={{ transform: `rotate(${retBearing - 45}deg)` }}
+              style={{ transform: `rotate(${retBearing}deg)` }}
             >
-              <Plane
-                className="w-6 h-6"
-                style={{ color: '#F97316', filter: 'drop-shadow(0 0 7px #F97316) drop-shadow(0 2px 4px rgba(0,0,0,0.4))' }}
-              />
+              <svg width="28" height="28" viewBox="0 0 28 28" fill="none" xmlns="http://www.w3.org/2000/svg" style={{ filter: 'drop-shadow(0 1px 3px rgba(0,0,0,0.35))' }}>
+                <path d="M14 2 L22 24 L14 19 L6 24 Z" fill="#F97316" stroke="white" strokeWidth="1" />
+              </svg>
             </div>
           </Marker>
         )}
