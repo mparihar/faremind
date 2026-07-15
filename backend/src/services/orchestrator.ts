@@ -470,19 +470,6 @@ async function searchMystiflyLowestFare(params: {
     } else {
       // True v1 flat format — pass through as-is
       denormalized = Array.isArray(itineraries) ? itineraries : [];
-
-      // Diagnostic: dump first v1 itin to find FareSourceCode location
-      if (denormalized.length > 0) {
-        const first = denormalized[0];
-        console.log(`[Mystifly v1] Flat format itin keys: ${Object.keys(first).join(', ')}`);
-        console.log(`[Mystifly v1] AirItineraryPricingInfo keys: ${first.AirItineraryPricingInfo ? Object.keys(first.AirItineraryPricingInfo).join(', ') : 'N/A'}`);
-        console.log(`[Mystifly v1] RequiredFieldsToBook: ${JSON.stringify(first.RequiredFieldsToBook)}`);
-        // Check nested FareSourceCode locations
-        console.log(`[Mystifly v1] itin.FareSourceCode: ${first.FareSourceCode}`);
-        console.log(`[Mystifly v1] AirItineraryPricingInfo.FareSourceCode: ${first.AirItineraryPricingInfo?.FareSourceCode}`);
-        // Dump first 800 chars of first itin
-        console.log(`[Mystifly v1] First itin sample: ${JSON.stringify(first).slice(0, 800)}`);
-      }
     }
 
     const flights = denormalized

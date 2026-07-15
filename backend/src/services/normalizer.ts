@@ -205,7 +205,10 @@ export function normalizeAmadeusOffer(offer: any, dictionaries?: any): UnifiedFl
  *   }
  */
 export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
-  const fareSourceCode = itinerary.FareSourceCode || '';
+  // v2.2 denormalized: FSC at root. v1 flat: FSC inside AirItineraryPricingInfo.
+  const fareSourceCode = itinerary.FareSourceCode
+    || itinerary.AirItineraryPricingInfo?.FareSourceCode
+    || '';
   if (!fareSourceCode) {
     throw new Error(`Missing FareSourceCode — flight cannot be booked. Itin keys: ${Object.keys(itinerary).join(', ')}`);
   }

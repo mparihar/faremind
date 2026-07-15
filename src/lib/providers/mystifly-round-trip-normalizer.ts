@@ -147,7 +147,10 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
   const odOptions = itinerary.OriginDestinationOptions || [];
   if (odOptions.length < 2) return null;
 
-  const fareSourceCode = itinerary.FareSourceCode || '';
+  // v2.2 denormalized: FSC at root. v1 flat: FSC inside AirItineraryPricingInfo.
+  const fareSourceCode = itinerary.FareSourceCode
+    || itinerary.AirItineraryPricingInfo?.FareSourceCode
+    || '';
   if (!fareSourceCode) {
     console.warn(`[Mystifly RT] Rejecting itinerary: missing FareSourceCode. Keys: ${Object.keys(itinerary).join(', ')}`);
     return null;
