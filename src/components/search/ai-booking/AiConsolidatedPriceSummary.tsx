@@ -7,6 +7,7 @@
 
 import { Calculator } from 'lucide-react';
 import type { AiPriceSummary } from '@/lib/ai-booking-types';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 interface Props {
   summary: AiPriceSummary;
@@ -37,7 +38,7 @@ export default function AiConsolidatedPriceSummary({ summary }: Props) {
     },
   ];
 
-  if (summary.protectionFee > 0) {
+  if (isBundleEnabled() && summary.protectionFee > 0) {
     rows.push({
       label: 'Price protection',
       value: summary.protectionFee,
@@ -58,7 +59,7 @@ export default function AiConsolidatedPriceSummary({ summary }: Props) {
     });
   }
 
-  if (summary.insuranceFee > 0) {
+  if (isBundleEnabled() && summary.insuranceFee > 0) {
     rows.push({
       label: 'Travel insurance',
       value: summary.insuranceFee,

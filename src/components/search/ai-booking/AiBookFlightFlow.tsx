@@ -54,6 +54,7 @@ import { useAiBookingStore } from '@/store/useAiBookingStore';
 import { apiFetch } from '@/lib/api-client';
 import { useCheckoutStore } from '@/store/useCheckoutStore';
 import { useOfferSessionStore } from '@/store/useOfferSessionStore';
+import { isBundleEnabled } from '@/lib/bundle-flags';
 
 import AiFlightOptionTimeline from './AiFlightOptionTimeline';
 import AiFareClassSelector from './AiFareClassSelector';
@@ -174,7 +175,8 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
       if (types.length > count) types.length = count;
       store.setPassengerTypes(types);
 
-      store.setStatus('price_protection');
+      // Skip price protection step if bundle (insurance/protection) is disabled
+      store.setStatus(isBundleEnabled() ? 'price_protection' : 'itinerary_preview');
     }
   }, [store.status, searchPassengers]);
 
@@ -385,7 +387,8 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
 
   const handlePassengerCountSelect = (n: number) => {
     store.setPassengerCount(n);
-    store.setStatus('price_protection');
+    // Skip price protection step if bundle (insurance/protection) is disabled
+    store.setStatus(isBundleEnabled() ? 'price_protection' : 'itinerary_preview');
   };
 
   const handleProtectionComplete = (selections: boolean[]) => {
@@ -1254,6 +1257,7 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
               providerBaggage={providerBaggage}
               baggageLoading={baggageLoading}
               baggageUnavailable={baggageUnavailable}
+              bundleEnabled={isBundleEnabled()}
               onComplete={handleAddOnsComplete}
             />
           </>

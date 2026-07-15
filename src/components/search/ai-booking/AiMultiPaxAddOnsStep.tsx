@@ -14,7 +14,6 @@ import { useState, useMemo } from 'react';
 import { Package, Heart, ChevronRight, Check, Loader2, AlertCircle } from 'lucide-react';
 import { FALLBACK_EXTRA_BAG_PRICE, FALLBACK_INSURANCE_RATE } from '@/lib/ai-booking-types';
 import { useAiBookingStore } from '@/store/useAiBookingStore';
-import { isBundleEnabled } from '@/lib/bundle-flags';
 import type { NormalizedAncillary } from '@/lib/providers/providerAncillaryNormalizer';
 
 interface Props {
@@ -24,6 +23,7 @@ interface Props {
   providerBaggage?: NormalizedAncillary[];
   baggageLoading?: boolean;
   baggageUnavailable?: boolean;
+  bundleEnabled?: boolean;
   onComplete: (addOns: { extraBags: number; travelInsurance: boolean; liveBagPrice?: number }) => void;
 }
 
@@ -34,6 +34,7 @@ export default function AiMultiPaxAddOnsStep({
   providerBaggage = [],
   baggageLoading = false,
   baggageUnavailable = false,
+  bundleEnabled = false,
   onComplete,
 }: Props) {
   const [step, setStep] = useState<'menu' | 'bags' | 'done'>('menu');
@@ -235,7 +236,7 @@ export default function AiMultiPaxAddOnsStep({
         </button>
 
         {/* Travel insurance — hidden when FAREMIND_BUNDLE is disabled */}
-        {isBundleEnabled() && (
+        {bundleEnabled && (
         <button
           onClick={() => {
             const next = !travelInsurance;
