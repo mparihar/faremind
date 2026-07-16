@@ -964,10 +964,20 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
       if (booking.bookingStatus === 'CANCELLED') return reply.code(400).send({ error: 'Cannot change a cancelled booking' });
 
-      const providerPnr = booking.pnrs.find(p => p.providerOrderId);
-      if (!providerPnr?.providerOrderId) {
-        // No provider order — fall back to manual request, using stored change fee
-        const fallbackPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
+      // Find the provider order ID — check PNR first, then MasterBooking-level field
+      let providerPnr = booking.pnrs.find((p: any) => p.providerOrderId);
+      let resolvedProviderOrderId = providerPnr?.providerOrderId
+        || (booking as any).providerOrderId   // MasterBooking-level fallback
+        || null;
+
+      // If we found a provider order ID from MasterBooking but not PNR, create a virtual PNR reference
+      if (!providerPnr && resolvedProviderOrderId) {
+        providerPnr = booking.pnrs.find((p: any) => p.isPrimary) ?? booking.pnrs[0];
+      }
+
+      if (!resolvedProviderOrderId) {
+        // No provider order anywhere — fall back to manual request
+        const fallbackPnr = booking.pnrs.find((p: any) => p.isPrimary) ?? booking.pnrs[0];
         const storedChangeFee = fallbackPnr?.changeFee != null ? Number(fallbackPnr.changeFee) : 0;
         const changeReq = await mbq.createChangeRequest({
           bookingId, type: 'DATE_CHANGE',
@@ -1011,7 +1021,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       if (booking.primaryProvider.toLowerCase() === 'duffel') {
         // Duffel requires the order's slice IDs to create a change request
-        const order = await provider.getOrder(providerPnr.providerOrderId);
+        const order = await provider.getOrder(resolvedProviderOrderId);
         const targetSlice = order.slices[sliceIndex ?? 0];
         if (!targetSlice) return reply.code(400).send({ error: 'No matching slice found for this journey' });
         slicesToRemove = [{ slice_id: targetSlice.id }];
@@ -1038,7 +1048,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // Search for change options via the provider adapter
       const result = await provider.searchChangeOptions(
-        providerPnr.providerOrderId,
+        resolvedProviderOrderId,
         slicesToRemove,
         [{
           origin,
@@ -1112,8 +1122,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const booking = await mbq.getMasterBookingFull(bookingId);
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
 
-      const providerPnr = booking.pnrs.find(p => p.providerOrderId);
-      if (!providerPnr?.providerOrderId) {
+      const confirmProviderPnr = booking.pnrs.find((p: any) => p.providerOrderId);
+      const confirmProviderOrderId = confirmProviderPnr?.providerOrderId
+        || (booking as any).providerOrderId
+        || null;
+      if (!confirmProviderOrderId) {
         return reply.code(400).send({ error: 'No provider order found for this booking' });
       }
 
