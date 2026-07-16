@@ -100,10 +100,14 @@ export default function BookingDetailPage() {
     upgrade_cabin: { icon: TrendingUp, cls: 'text-violet-400 border-violet-400/20 bg-violet-400/5 hover:bg-violet-400/10' },
     resend_itinerary: { icon: Mail, cls: 'text-sky-400 border-sky-400/20 bg-sky-400/5 hover:bg-sky-400/10' },
   };
+  // Check refundability from fareRules OR PNR data
+  const acctPrimaryPnr = b.pnrs?.find((p: any) => p.isPrimary) ?? b.pnrs?.[0];
+  const acctIsNonRefundable = fareRules ? !fareRules.refundable : (acctPrimaryPnr?.refundable === false);
+
   const fallbackActions = isCancelled
     ? [{ key: 'refund_status', label: 'View Refund Status', available: true }, { key: 'contact_support', label: 'Contact Support', available: true }]
     : [
-        { key: 'cancel', label: 'Cancel Booking', available: !isPast, badge: fareRules && !fareRules.refundable ? 'Non-refundable' : null, badgeColor: 'text-red-400' },
+        { key: 'cancel', label: 'Cancel Booking', available: !isPast, badge: acctIsNonRefundable ? 'Non-refundable' : null, badgeColor: 'text-red-400' },
         { key: 'date_change', label: 'Change Flight', available: !isPast, disabled: !(b.pnrs?.some((p: any) => p.changeable)) },
         { key: 'seat_change', label: 'Change Seat', available: !isPast, disabled: !(b.pnrs?.some((p: any) => p.seatSelection !== null && p.seatSelection !== 'false' && p.seatSelection !== 'none' && p.seatSelection !== 'unavailable')) },
         { key: 'add_baggage', label: 'Add Baggage', available: !isPast },

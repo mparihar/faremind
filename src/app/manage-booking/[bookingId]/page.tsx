@@ -397,11 +397,15 @@ export default function BookingDetailPage() {
   const depDate = new Date(b.departureDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: b.currency || 'USD', maximumFractionDigits: 0 }).format(n);
 
+  // Check refundability from fareRules OR PNR data
+  const primaryPnr = b.pnrs?.find((p: any) => p.isPrimary) ?? b.pnrs?.[0];
+  const isNonRefundable = fareRules ? !fareRules.refundable : (primaryPnr?.refundable === false);
+
   // ── Action configs ──
   const manageActions = isCancelled ? [
     { key: 'refund_status', label: 'View Refund Status', icon: CreditCard, color: 'text-blue-400 border-blue-400/20 bg-blue-400/5', hoverColor: 'hover:bg-blue-400/10' },
   ] : [
-    { key: 'cancel', label: 'Cancel Booking', icon: XCircle, color: 'text-red-400 border-red-400/20 bg-red-400/5', hoverColor: 'hover:bg-red-400/10', hide: isPast, badge: fareRules && !fareRules.refundable ? 'Non-refundable' : null, badgeColor: 'text-red-400' },
+    { key: 'cancel', label: 'Cancel Booking', icon: XCircle, color: 'text-red-400 border-red-400/20 bg-red-400/5', hoverColor: 'hover:bg-red-400/10', hide: isPast, badge: isNonRefundable ? 'Non-refundable' : null, badgeColor: 'text-red-400' },
     { key: 'date_change', label: 'Change Flight', icon: Calendar, color: 'text-purple-400 border-purple-400/20 bg-purple-400/5', hoverColor: 'hover:bg-purple-400/10', hide: isPast, disabled: fareRules ? !fareRules.changeable : false, disabledReason: 'Not allowed per fare rules' },
     { key: 'seat_change', label: 'Change Seat', icon: Ticket, color: 'text-blue-400 border-blue-400/20 bg-blue-400/5', hoverColor: 'hover:bg-blue-400/10', hide: isPast, disabled: (b.primaryProvider || '').toLowerCase() === 'duffel', disabledReason: 'Not supported by airline' },
     { key: 'add_baggage', label: 'Add Baggage', icon: Luggage, color: 'text-orange-400 border-orange-400/20 bg-orange-400/5', hoverColor: 'hover:bg-orange-400/10', hide: isPast, disabled: !canAddBaggage(b), disabledReason: `Baggage changes for this booking are not available through FareMind. Please contact the airline directly using your airline PNR.${b.masterPnr || b.pnrs?.[0]?.pnrCode ? ` Airline PNR: ${b.masterPnr || b.pnrs?.[0]?.pnrCode}` : ''}` },
