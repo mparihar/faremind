@@ -192,7 +192,7 @@ export interface IBookingProvider {
     orderId: string,
     slicesToRemove: { slice_id: string }[],
     slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[],
-    bookingPassengers?: { firstName: string; lastName: string; type?: string }[]
+    bookingPassengers?: { firstName: string; lastName: string; type?: string; eTicket?: string }[]
   ): Promise<{
     requestId: string;
     offers: {
@@ -393,7 +393,7 @@ export class DuffelAdapter implements IBookingProvider {
     orderId: string,
     slicesToRemove: { slice_id: string }[],
     slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[],
-    _bookingPassengers?: { firstName: string; lastName: string; type?: string }[]
+    _bookingPassengers?: { firstName: string; lastName: string; type?: string; eTicket?: string }[]
   ) {
     const result = await duffelClient.createOrderChangeRequest(orderId, {
       remove: slicesToRemove,
@@ -769,7 +769,7 @@ export class MystiflyAdapter implements IBookingProvider {
     mfRef: string,
     _slicesToRemove: { slice_id: string }[],
     slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[],
-    bookingPassengers?: { firstName: string; lastName: string; type?: string }[]
+    bookingPassengers?: { firstName: string; lastName: string; type?: string; eTicket?: string }[]
   ): Promise<{ requestId: string; offers: any[]; raw: unknown }> {
     // Step 1: Get current booking details (original fare) for the ReIssueQuote
     const order = await this.getOrder(mfRef);
@@ -787,7 +787,7 @@ export class MystiflyAdapter implements IBookingProvider {
     // Build passenger list: prefer DB passengers (always available), fall back to order
     const rawPax = (bookingPassengers && bookingPassengers.length > 0)
       ? bookingPassengers
-      : order.passengers.map(p => ({ firstName: p.givenName || '', lastName: p.familyName || '', type: p.type || 'ADT' }));
+      : order.passengers.map(p => ({ firstName: p.givenName || '', lastName: p.familyName || '', type: p.type || 'ADT', eTicket: '' }));
 
     if (rawPax.length === 0) {
       throw new Error('Mystifly ReIssueQuote failed: No passenger data available for this booking');
@@ -797,6 +797,7 @@ export class MystiflyAdapter implements IBookingProvider {
       firstName: p.firstName,
       lastName: p.lastName,
       passengerType: p.type || 'ADT',
+      eTicket: p.eTicket || '',
     }));
 
     // Step 2: Call Mystifly ReIssueQuote

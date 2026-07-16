@@ -1117,7 +1117,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         const type = raw === 'child' || raw === 'chd' ? 'CHD'
           : raw === 'infant' || raw === 'inf' ? 'INF'
           : 'ADT';
-        return { firstName: p.firstName || '', lastName: p.lastName || '', type };
+        // Find e-ticket for this passenger
+        const ticket = (booking.tickets || []).find((t: any) => t.passengerId === p.id);
+        const eTicket = ticket?.eTicketNumber || ticket?.ticketNumber || '';
+        return { firstName: p.firstName || '', lastName: p.lastName || '', type, eTicket };
       });
 
       const result = await provider.searchChangeOptions(

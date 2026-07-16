@@ -1014,6 +1014,7 @@ export interface MystiflyReissuePassenger {
   lastName: string;
   passengerType: string;          // ADT, CHD, INF
   title?: string;
+  eTicket?: string;
 }
 
 /**
@@ -1041,6 +1042,7 @@ export async function reissueQuote(
       firstName: p.firstName,
       lastName: p.lastName,
       passengerType: p.passengerType,
+      ...(p.eTicket ? { eTicket: p.eTicket } : {}),
     })),
   };
 
