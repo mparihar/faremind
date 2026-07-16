@@ -936,10 +936,9 @@ export async function postTicketingRequest(
   remarks?: string,
   newFareSourceCode?: string,
 ): Promise<any> {
-  const rq: MystiflyPtrRQ = {
-    UniqueID: uniqueId,
-    Target: MYSTIFLY_TARGET,
-    ...(remarks ? { Remarks: remarks } : {}),
+  const rq: Record<string, unknown> = {
+    mFRef: uniqueId,
+    ...(remarks ? { AdditionalNote: remarks } : {}),
     ...(newFareSourceCode ? { NewFareSourceCode: newFareSourceCode } : {}),
   };
 
@@ -950,7 +949,7 @@ export async function postTicketingRequest(
     path: `/api/PostTicketingRequest`,
     body: {
       ...rq,
-      PostTicketingRequestType: ptrType,
+      ptrType: ptrType,
     } as unknown as Record<string, unknown>,
     retries: 0,
   });
@@ -1112,11 +1111,11 @@ export async function voidQuote(mfRef: string): Promise<any> {
     body: {
       ptrType: 'VoidQuote',
       mFRef: mfRef,
-      Target: MYSTIFLY_TARGET,
     } as unknown as Record<string, unknown>,
     retries: 0,
   });
 
+  console.log(`[Mystifly] VoidQuote response for ${mfRef}:`, JSON.stringify(result, null, 2));
   return result;
 }
 
@@ -1140,7 +1139,6 @@ export async function executeVoid(
       mFRef: mfRef,
       PtrId: ptrId,
       AcceptQuote: 'yes',
-      Target: MYSTIFLY_TARGET,
     } as unknown as Record<string, unknown>,
     retries: 0, // Never retry void executions
   });
@@ -1165,11 +1163,11 @@ export async function refundQuote(mfRef: string): Promise<any> {
     body: {
       ptrType: 'RefundQuote',
       mFRef: mfRef,
-      Target: MYSTIFLY_TARGET,
     } as unknown as Record<string, unknown>,
     retries: 0,
   });
 
+  console.log(`[Mystifly] RefundQuote response for ${mfRef}:`, JSON.stringify(result, null, 2));
   return result;
 }
 
@@ -1193,7 +1191,6 @@ export async function executeRefund(
       mFRef: mfRef,
       PtrId: ptrId,
       AcceptQuote: 'yes',
-      Target: MYSTIFLY_TARGET,
     } as unknown as Record<string, unknown>,
     retries: 0, // Never retry refund executions
   });
