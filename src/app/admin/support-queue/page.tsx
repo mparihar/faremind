@@ -164,6 +164,33 @@ export default function SupportQueuePage() {
     }
   };
 
+  const [bulkDeleting, setBulkDeleting] = useState(false);
+  const handleBulkDelete = async () => {
+    if (!categoryFilter) return;
+    const count = filtered.length;
+    if (!confirm(`Are you sure you want to delete all ${count} "${categoryFilter}" ticket${count !== 1 ? 's' : ''}? This action cannot be undone.`)) return;
+    setBulkDeleting(true);
+    try {
+      const res = await adminFetch('/api/admin/support-tickets', {
+        method: 'DELETE',
+        body: JSON.stringify({ category: categoryFilter }),
+      });
+      if (res.ok) {
+        const data = await res.json();
+        alert(`Successfully deleted ${data.deletedCount} ticket${data.deletedCount !== 1 ? 's' : ''}.`);
+        load();
+      } else {
+        const data = await res.json();
+        alert(data.error || 'Failed to delete tickets');
+      }
+    } catch (e) {
+      console.error('Bulk delete failed', e);
+      alert('Bulk delete failed. Please try again.');
+    } finally {
+      setBulkDeleting(false);
+    }
+  };
+
   // Support staff default to "Assigned to Me"; admins see everything
   const isSupportOnly = adminUser?.role === 'SUPPORT';
   const [assigneeFilter, setAssigneeFilter] = useState<'ALL' | 'ME'>(isSupportOnly ? 'ME' : 'ALL');
@@ -344,6 +371,17 @@ export default function SupportQueuePage() {
           <option value="ALL">All Assignees</option>
           <option value="ME">Assigned to Me</option>
         </select>
+        {/* Bulk delete button — visible when category filter is active and user is admin */}
+        {isAdminOrSuper && categoryFilter && filtered.length > 0 && (
+          <button
+            onClick={handleBulkDelete}
+            disabled={bulkDeleting}
+            className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm font-semibold hover:bg-red-500/20 transition-all disabled:opacity-50"
+          >
+            <Trash2 size={14} />
+            {bulkDeleting ? 'Deleting…' : `Delete All ${categoryFilter} (${filtered.length})`}
+          </button>
+        )}
       </div>
 
       {/* Tickets table */}

@@ -70,5 +70,41 @@ export const POST = withAdmin(async (req: NextRequest, { admin }) => {
   } catch (err: any) {
     console.error('[support-tickets] POST error:', err);
     return NextResponse.json({ error: 'Failed to create ticket' }, { status: 500 });
-  }
 }, 'SUPPORT');
+
+// Bulk delete by category (SUPER_ADMIN only)
+export const DELETE = withAdmin(async (req: NextRequest, { admin }) => {
+  try {
+    const body = await req.json();
+    const { category, ticketIds } = body as { category?: string; ticketIds?: string[] };
+
+    if (!category && (!ticketIds || ticketIds.length === 0)) {
+      return NextResponse.json({ error: 'Either category or ticketIds is required' }, { status: 400 });
+    }
+
+    const where: Record<string, unknown> = {};
+    if (category) where.category = category;
+    if (ticketIds && ticketIds.length > 0) where.id = { in: ticketIds };
+
+    // Delete related messages first (foreign key constraint)
+    await prisma.supportTicketMessage.deleteMany({
+      where: { ticket: where },
+    });
+
+    const result = await prisma.supportTicket.deleteMany({ where });
+
+    await auditLog({
+      adminUserId: admin.sub,
+      action: 'BULK_DELETE_SUPPORT_TICKETS',
+      entityType: 'SupportTicket',
+      entityId: category || 'bulk',
+      after: { category, ticketIds, deletedCount: result.count },
+      ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
+    });
+
+    return NextResponse.json({ success: true, deletedCount: result.count });
+  } catch (err: any) {
+    console.error('[support-tickets] BULK DELETE error:', err);
+    return NextResponse.json({ error: 'Failed to delete tickets' }, { status: 500 });
+  }
+}, 'SUPER_ADMIN');
