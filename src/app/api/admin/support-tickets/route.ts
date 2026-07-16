@@ -73,18 +73,21 @@ export const POST = withAdmin(async (req: NextRequest, { admin }) => {
   }
 }, 'SUPPORT');
 
-// Bulk delete by category (SUPER_ADMIN only)
+// Bulk delete by category/status/ids/all (SUPER_ADMIN only)
 export const DELETE = withAdmin(async (req: NextRequest, { admin }) => {
   try {
     const body = await req.json();
-    const { category, ticketIds } = body as { category?: string; ticketIds?: string[] };
+    const { category, status, ticketIds, deleteAll } = body as {
+      category?: string; status?: string; ticketIds?: string[]; deleteAll?: boolean;
+    };
 
-    if (!category && (!ticketIds || ticketIds.length === 0)) {
-      return NextResponse.json({ error: 'Either category or ticketIds is required' }, { status: 400 });
+    if (!category && !status && !deleteAll && (!ticketIds || ticketIds.length === 0)) {
+      return NextResponse.json({ error: 'Specify category, status, ticketIds, or deleteAll' }, { status: 400 });
     }
 
     const where: Record<string, unknown> = {};
     if (category) where.category = category;
+    if (status) where.status = status;
     if (ticketIds && ticketIds.length > 0) where.id = { in: ticketIds };
 
     // Delete related messages first (foreign key constraint)
@@ -98,8 +101,8 @@ export const DELETE = withAdmin(async (req: NextRequest, { admin }) => {
       adminUserId: admin.sub,
       action: 'BULK_DELETE_SUPPORT_TICKETS',
       entityType: 'SupportTicket',
-      entityId: category || 'bulk',
-      after: { category, ticketIds, deletedCount: result.count },
+      entityId: category || status || 'all',
+      after: { category, status, ticketIds, deleteAll, deletedCount: result.count },
       ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
     });
 

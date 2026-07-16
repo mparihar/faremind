@@ -166,14 +166,32 @@ export default function SupportQueuePage() {
 
   const [bulkDeleting, setBulkDeleting] = useState(false);
   const handleBulkDelete = async () => {
-    if (!categoryFilter) return;
-    const count = filtered.length;
-    if (!confirm(`Are you sure you want to delete all ${count} "${categoryFilter}" ticket${count !== 1 ? 's' : ''}? This action cannot be undone.`)) return;
+    // Build the delete payload based on active filters
+    const payload: Record<string, unknown> = {};
+    let label = '';
+
+    if (categoryFilter && statusFilter) {
+      // Both filters active — delete by ticket IDs (intersection)
+      payload.ticketIds = filtered.map(t => t.id);
+      label = `${statusFilter.replace(/_/g, ' ')} "${categoryFilter}"`;
+    } else if (categoryFilter) {
+      payload.category = categoryFilter;
+      label = `"${categoryFilter}"`;
+    } else if (statusFilter) {
+      payload.status = statusFilter;
+      label = `${statusFilter.replace(/_/g, ' ')}`;
+    } else {
+      payload.deleteAll = true;
+      label = 'ALL';
+    }
+
+    const count = categoryFilter || statusFilter ? filtered.length : tickets.length;
+    if (!confirm(`Are you sure you want to delete ${count} ${label} ticket${count !== 1 ? 's' : ''}? This action cannot be undone.`)) return;
     setBulkDeleting(true);
     try {
       const res = await adminFetch('/api/admin/support-tickets', {
         method: 'DELETE',
-        body: JSON.stringify({ category: categoryFilter }),
+        body: JSON.stringify(payload),
       });
       if (res.ok) {
         const data = await res.json();
@@ -371,15 +389,19 @@ export default function SupportQueuePage() {
           <option value="ALL">All Assignees</option>
           <option value="ME">Assigned to Me</option>
         </select>
-        {/* Bulk delete button — visible when category filter is active and user is admin */}
-        {isAdminOrSuper && categoryFilter && filtered.length > 0 && (
+        {/* Bulk delete button — visible when admin and tickets exist */}
+        {isAdminOrSuper && tickets.length > 0 && (
           <button
             onClick={handleBulkDelete}
             disabled={bulkDeleting}
             className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm font-semibold hover:bg-red-500/20 transition-all disabled:opacity-50"
           >
             <Trash2 size={14} />
-            {bulkDeleting ? 'Deleting…' : `Delete All ${categoryFilter} (${filtered.length})`}
+            {bulkDeleting ? 'Deleting…' : categoryFilter
+              ? `Delete All ${categoryFilter} (${filtered.length})`
+              : statusFilter
+                ? `Delete All ${statusFilter.replace(/_/g, ' ')} (${filtered.length})`
+                : `Delete All Tickets (${tickets.length})`}
           </button>
         )}
       </div>
