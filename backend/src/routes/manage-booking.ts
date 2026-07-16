@@ -95,6 +95,13 @@ async function createCancellationSupportTicket(booking: any, reason: string): Pr
   try {
     const route = `${booking.originAirport} → ${booking.destinationAirport}`;
     const amount = fmtCurrency(Number(booking.totalAmount), booking.currency);
+    const passengerCount = booking.passengers?.length ?? 0;
+    const passengerList = (booking.passengers || []).map((p: any) =>
+      `  • ${p.firstName} ${p.lastName} (${p.passengerType || 'Adult'})${p.ticketNumber ? ` — Ticket: ${p.ticketNumber}` : ''}`
+    ).join('\n');
+    const pnrList = (booking.pnrs || []).map((p: any) =>
+      `  • ${p.pnrCode} (${p.providerName || booking.primaryProvider || 'N/A'}) — Status: ${p.status || 'Unknown'}`
+    ).join('\n');
 
     await prisma.supportTicket.create({
       data: {
@@ -102,13 +109,28 @@ async function createCancellationSupportTicket(booking: any, reason: string): Pr
         description: [
           `A cancellation could not be processed automatically for booking ${booking.masterBookingReference}.`,
           '',
-          `Customer: ${booking.customerName ?? 'N/A'} (${booking.customerEmail ?? 'N/A'})`,
+          '── Booking Details ──',
+          `Reference: ${booking.masterBookingReference}`,
+          `Airline PNR: ${booking.masterPnr ?? 'N/A'}`,
           `Route: ${route}`,
+          `Departure: ${booking.departureDate ? new Date(booking.departureDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A'}`,
           `Amount: ${amount}`,
           `Provider: ${booking.primaryProvider ?? 'Unknown'}`,
-          `PNR: ${booking.masterPnr ?? 'N/A'}`,
+          `Booking Status: ${booking.bookingStatus ?? 'N/A'}`,
+          `Ticketing Status: ${booking.ticketingStatus ?? 'N/A'}`,
           '',
-          `Reason: ${reason}`,
+          '── Customer ──',
+          `Name: ${booking.customerName ?? 'N/A'}`,
+          `Email: ${booking.customerEmail ?? 'N/A'}`,
+          '',
+          `── Passengers (${passengerCount}) ──`,
+          passengerList || '  No passenger data available',
+          '',
+          '── PNR Records ──',
+          pnrList || '  No PNR data available',
+          '',
+          '── Failure Reason ──',
+          reason,
           '',
           'Action Required: Please review this booking and manually process the cancellation with the airline provider.',
         ].join('\n'),
@@ -134,7 +156,7 @@ async function createCancellationSupportTicket(booking: any, reason: string): Pr
       },
     }).catch(() => {}); // non-critical
   } catch (err) {
-  console.error('[createCancellationSupportTicket] Failed to create support ticket:', err);
+    console.error('[createCancellationSupportTicket] Failed to create support ticket:', err);
   }
 }
 
@@ -456,7 +478,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote', providerReference: quote.quoteId, payloadJson: quote.raw as object });
       } catch (providerErr) {
         const providerMsg = providerErr instanceof Error ? providerErr.message : String(providerErr);
-        const cleanMsg = providerMsg.replace(/^.*not available:\s*/, '');
+        // Strip provider prefixes and internal emails for customer display
+        const cleanMsg = providerMsg
+          .replace(/^.*not available:\s*/, '')
+          .replace(/Request Cancellation to\s+\S+@\S+/gi, '')
+          .replace(/\s+/g, ' ')
+          .trim();
 
         fastify.log.error({ providerErr: cleanMsg }, '[manage-booking/cancel/quote] Provider quote failed');
 
@@ -494,7 +521,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         // Other errors — show actual message + support ticket
         await createCancellationSupportTicket(booking, `Provider error: ${cleanMsg}`);
         return reply.code(502).send({
-          error: `${cleanMsg}. Please contact FareMind Support.`,
+          error: `${cleanMsg}. Please contact FareMind Support at support@faremind.ai`,
           code: 'PROVIDER_QUOTE_FAILED',
           supportTicketCreated: true,
         });
@@ -624,9 +651,18 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           };
           await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_confirmed', providerReference: result.cancellationId, payloadJson: result.raw as object });
         } catch (providerErr) {
-          const errMsg = providerErr instanceof Error ? providerErr.message : String(providerErr);
-          fastify.log.error({ err: errMsg }, '[manage-booking/cancel/confirm] Provider cancellation failed');
-          return reply.code(502).send({ error: errMsg || 'The airline could not process the cancellation. Please contact support.', code: 'PROVIDER_CANCEL_FAILED' });
+          const rawMsg = providerErr instanceof Error ? providerErr.message : String(providerErr);
+          // Strip internal provider prefixes and emails for customer-facing display
+          const cleanMsg = rawMsg
+            .replace(/^Mystifly cancellation failed:\s*/i, '')
+            .replace(/Request Cancellation to\s+\S+@\S+/gi, '')
+            .replace(/\s+/g, ' ')
+            .trim();
+          const customerMsg = `${cleanMsg || 'The airline could not process the cancellation'}. Please contact FareMind Support at support@faremind.ai`;
+
+          fastify.log.error({ err: rawMsg }, '[manage-booking/cancel/confirm] Provider cancellation failed');
+          await createCancellationSupportTicket(booking, `Cancel confirm failed: ${rawMsg}`);
+          return reply.code(502).send({ error: customerMsg, code: 'PROVIDER_CANCEL_FAILED', supportTicketCreated: true });
         }
       }
 
