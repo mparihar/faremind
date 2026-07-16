@@ -523,9 +523,22 @@ export class MystiflyAdapter implements IBookingProvider {
     };
   }
 
-  async confirmCancellation(mfRef: string): Promise<CancelResult> {
+  async confirmCancellation(quoteId: string): Promise<CancelResult> {
+    // The quoteId is our synthetic ID: "mystifly_cancel_quote_MF35335226"
+    // Extract the actual MFRef (UniqueID) that Mystifly's Cancel API expects.
+    const mfRef = quoteId.replace(/^mystifly_cancel_quote_/, '');
+    if (!mfRef || mfRef === quoteId) {
+      throw new Error(`[MystiflyAdapter] Could not extract MFRef from quoteId: ${quoteId}`);
+    }
+
     const result = await mystiflyClient.cancelBooking(mfRef);
     const success = result?.Data?.Success || result?.Success;
+
+    if (!success) {
+      const errorMsg = result?.Data?.Errors?.[0]?.Message || result?.Message || 'Unknown error';
+      const errorCode = result?.Data?.Errors?.[0]?.Code || '';
+      throw new Error(`Mystifly cancellation failed: ${errorCode} ${errorMsg}`);
+    }
 
     return {
       cancellationId: `mystifly_cancel_${mfRef}_${Date.now()}`,
