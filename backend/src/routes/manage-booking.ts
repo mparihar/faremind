@@ -1110,6 +1110,13 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
 
       // Search for change options via the provider adapter
+      // Pass DB passengers so Mystifly can use them (getTripDetails may not return passengers)
+      const dbPassengers = (booking.passengers || []).map((p: any) => ({
+        firstName: p.firstName || '',
+        lastName: p.lastName || '',
+        type: p.passengerType || 'ADT',
+      }));
+
       const result = await provider.searchChangeOptions(
         resolvedProviderOrderId,
         slicesToRemove,
@@ -1118,7 +1125,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           destination,
           departure_date: newDepartureDate,
           cabin_class: cabinClass,
-        }]
+        }],
+        dbPassengers
       );
 
       // Persist the search request

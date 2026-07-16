@@ -191,7 +191,8 @@ export interface IBookingProvider {
   searchChangeOptions(
     orderId: string,
     slicesToRemove: { slice_id: string }[],
-    slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[]
+    slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[],
+    bookingPassengers?: { firstName: string; lastName: string; type?: string }[]
   ): Promise<{
     requestId: string;
     offers: {
@@ -391,7 +392,8 @@ export class DuffelAdapter implements IBookingProvider {
   async searchChangeOptions(
     orderId: string,
     slicesToRemove: { slice_id: string }[],
-    slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[]
+    slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[],
+    _bookingPassengers?: { firstName: string; lastName: string; type?: string }[]
   ) {
     const result = await duffelClient.createOrderChangeRequest(orderId, {
       remove: slicesToRemove,
@@ -766,9 +768,10 @@ export class MystiflyAdapter implements IBookingProvider {
   async searchChangeOptions(
     mfRef: string,
     _slicesToRemove: { slice_id: string }[],
-    slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[]
+    slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[],
+    bookingPassengers?: { firstName: string; lastName: string; type?: string }[]
   ): Promise<{ requestId: string; offers: any[]; raw: unknown }> {
-    // Step 1: Get current booking details (passengers + original fare) for the ReIssueQuote
+    // Step 1: Get current booking details (original fare) for the ReIssueQuote
     const order = await this.getOrder(mfRef);
     const originalTicketValue = order.totalAmount;
     const orderCurrency = order.currency || 'USD';
@@ -781,10 +784,18 @@ export class MystiflyAdapter implements IBookingProvider {
       cabinPreference: mystiflyClient.toCabinType(s.cabin_class || 'economy'),
     }));
 
-    // Build passenger list from order
-    const passengers: MystiflyReissuePassenger[] = order.passengers.map(p => ({
-      firstName: p.givenName || '',
-      lastName: p.familyName || '',
+    // Build passenger list: prefer DB passengers (always available), fall back to order
+    const rawPax = (bookingPassengers && bookingPassengers.length > 0)
+      ? bookingPassengers
+      : order.passengers.map(p => ({ firstName: p.givenName || '', lastName: p.familyName || '', type: p.type || 'ADT' }));
+
+    if (rawPax.length === 0) {
+      throw new Error('Mystifly ReIssueQuote failed: No passenger data available for this booking');
+    }
+
+    const passengers: MystiflyReissuePassenger[] = rawPax.map(p => ({
+      firstName: p.firstName,
+      lastName: p.lastName,
       passengerType: p.type || 'ADT',
     }));
 
