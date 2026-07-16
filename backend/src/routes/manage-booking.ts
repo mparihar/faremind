@@ -1001,21 +1001,48 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // Get the Duffel order to identify slice IDs
-      const order = await provider.getOrder(providerPnr.providerOrderId);
-      const targetSlice = order.slices[sliceIndex ?? 0];
-      if (!targetSlice) return reply.code(400).send({ error: 'No matching slice found for this journey' });
+      // Determine itinerary details — Duffel needs slice IDs from getOrder,
+      // Mystifly handles this internally via PTR ReIssue
+      let slicesToRemove: { slice_id: string }[] = [];
+      let origin = booking.originAirport;
+      let destination = booking.destinationAirport;
+      let cabinClass = 'economy';
+      let currentItinerary: any = { origin, destination, departureAt: booking.departureDate, duration: '' };
 
-      // Determine cabin class from first segment
-      const cabinClass = targetSlice.segments[0]?.cabin || 'economy';
-
-      // Search for change options via Duffel
-      const result = await provider.searchChangeOptions(
-        providerPnr.providerOrderId,
-        [{ slice_id: targetSlice.id }],
-        [{
+      if (booking.primaryProvider.toLowerCase() === 'duffel') {
+        // Duffel requires the order's slice IDs to create a change request
+        const order = await provider.getOrder(providerPnr.providerOrderId);
+        const targetSlice = order.slices[sliceIndex ?? 0];
+        if (!targetSlice) return reply.code(400).send({ error: 'No matching slice found for this journey' });
+        slicesToRemove = [{ slice_id: targetSlice.id }];
+        origin = targetSlice.origin;
+        destination = targetSlice.destination;
+        cabinClass = targetSlice.segments[0]?.cabin || 'economy';
+        currentItinerary = {
           origin: targetSlice.origin,
           destination: targetSlice.destination,
+          departureAt: targetSlice.departureAt,
+          duration: targetSlice.duration,
+        };
+      } else {
+        // For Mystifly, use booking-level data; the adapter handles trip details internally
+        const primaryPnr = booking.pnrs.find((p: any) => p.isPrimary) ?? booking.pnrs[0];
+        cabinClass = primaryPnr?.fareClass || 'economy';
+        currentItinerary = {
+          origin: booking.originAirport,
+          destination: booking.destinationAirport,
+          departureAt: booking.departureDate,
+          duration: '',
+        };
+      }
+
+      // Search for change options via the provider adapter
+      const result = await provider.searchChangeOptions(
+        providerPnr.providerOrderId,
+        slicesToRemove,
+        [{
+          origin,
+          destination,
           departure_date: newDepartureDate,
           cabin_class: cabinClass,
         }]
@@ -1052,21 +1079,16 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           newTotalAmount: o.newTotalAmount,
           newTotalCurrency: o.newTotalCurrency,
           expiresAt: o.expiresAt,
-          newSlices: o.slices.add,
-          removedSlices: o.slices.remove,
+          newSlices: o.slices?.add || [],
+          removedSlices: o.slices?.remove || [],
           conditions: o.conditions,
         })),
-        currentItinerary: {
-          origin: targetSlice.origin,
-          destination: targetSlice.destination,
-          departureAt: targetSlice.departureAt,
-          duration: targetSlice.duration,
-        },
+        currentItinerary,
       };
     } catch (e: any) {
       fastify.log.error(e, '[manage-booking/change/search]');
-      // Return provider errors gracefully
-      if (e.message?.includes('Duffel')) {
+      // Return provider errors gracefully for both Duffel and Mystifly
+      if (e.message?.includes('Duffel') || e.message?.includes('Mystifly') || e.message?.includes('ReIssue')) {
         return reply.code(200).send({
           supported: false,
           fallbackMode: 'support_request',
@@ -1097,7 +1119,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const provider = getProvider(booking.primaryProvider);
 
-      // Confirm the change via Duffel
+      // Confirm the change via the provider adapter (Duffel or Mystifly)
       const result = await provider.confirmChangeOption(
         changeOfferId,
         paymentAmount,

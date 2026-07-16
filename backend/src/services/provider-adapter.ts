@@ -435,6 +435,7 @@ export class DuffelAdapter implements IBookingProvider {
 // ═══════════════════════════════════════════════
 
 import * as mystiflyClient from './mystifly';
+import type { MystiflyReissueOriginDestination, MystiflyReissuePassenger } from './mystifly';
 
 export class MystiflyAdapter implements IBookingProvider {
   readonly name = 'mystifly';
@@ -617,25 +618,148 @@ export class MystiflyAdapter implements IBookingProvider {
   }
 
   supportsOrderChanges(): boolean {
-    return false; // Mystifly post-ticketing changes use PTR flow (complex, phase 2)
+    return true; // Mystifly supports flight changes via PTR ReIssue flow
   }
 
   // ── Order changes (not supported yet) ─────────
 
   async searchChangeOptions(
-    _orderId: string,
+    mfRef: string,
     _slicesToRemove: { slice_id: string }[],
-    _slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[]
+    slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[]
   ): Promise<{ requestId: string; offers: any[]; raw: unknown }> {
-    throw new Error('Mystifly order changes are not yet supported. Use PostTicketingRequest flow.');
+    // Step 1: Get current booking details (passengers) for the ReIssueQuote
+    const order = await this.getOrder(mfRef);
+
+    // Build origin-destination list from requested changes
+    const originDestinations: MystiflyReissueOriginDestination[] = slicesToAdd.map(s => ({
+      originLocationCode: s.origin,
+      destinationLocationCode: s.destination,
+      departureDateTime: `${s.departure_date}T00:00:00`,
+      cabinPreference: mystiflyClient.toCabinType(s.cabin_class || 'economy'),
+    }));
+
+    // Build passenger list from order
+    const passengers: MystiflyReissuePassenger[] = order.passengers.map(p => ({
+      firstName: p.givenName || '',
+      lastName: p.familyName || '',
+      passengerType: p.type || 'ADT',
+    }));
+
+    // Step 2: Call Mystifly ReIssueQuote
+    const result = await mystiflyClient.reissueQuote(mfRef, originDestinations, passengers);
+
+    // Step 3: Parse response
+    const success = result?.Data?.Success ?? result?.Success;
+    const data = result?.Data || result;
+
+    if (!success && !data?.PtrId) {
+      const errMsg = data?.Errors?.[0]?.Message || data?.Message || result?.Message || 'ReIssue quote not available';
+      throw new Error(`Mystifly ReIssueQuote failed: ${errMsg}`);
+    }
+
+    const ptrId = data?.PtrId || data?.ptrId || 0;
+    const options = data?.Options || data?.options || data?.ReissueOptions || [];
+
+    // Normalize options into our unified offer format
+    const offers = Array.isArray(options) && options.length > 0
+      ? options.map((opt: any, idx: number) => {
+          const fareDiff = parseFloat(opt.FareDifference || opt.fareDifference || opt.TotalAmount || '0');
+          const penalty = parseFloat(opt.Penalty || opt.penalty || opt.ChangeFee || '0');
+          const totalDelta = fareDiff + penalty;
+
+          return {
+            id: `mystifly_reissue_${mfRef}_${ptrId}_${idx + 1}`,
+            changeTotalAmount: totalDelta,
+            changeTotalCurrency: opt.Currency || opt.currency || order.currency || 'USD',
+            penaltyAmount: penalty,
+            penaltyCurrency: opt.Currency || opt.currency || order.currency || 'USD',
+            newTotalAmount: order.totalAmount + totalDelta,
+            newTotalCurrency: order.currency,
+            expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+            slices: {
+              add: slicesToAdd.map(s => ({
+                origin: s.origin,
+                destination: s.destination,
+                departure_date: s.departure_date,
+              })),
+              remove: [],
+            },
+            conditions: {
+              fareDifference: fareDiff,
+              penalty,
+              refundable: opt.IsRefundable ?? false,
+            },
+            // Mystifly-specific metadata needed for confirm
+            _mystifly: { ptrId, preferenceOption: idx + 1 },
+          };
+        })
+      : [{
+          // If Mystifly returns a single quote (no Options array),
+          // build a single offer from top-level PTR data
+          id: `mystifly_reissue_${mfRef}_${ptrId}_1`,
+          changeTotalAmount: parseFloat(data?.TotalAmount || data?.FareDifference || '0'),
+          changeTotalCurrency: data?.Currency || order.currency || 'USD',
+          penaltyAmount: parseFloat(data?.Penalty || data?.ChangeFee || '0'),
+          penaltyCurrency: data?.Currency || order.currency || 'USD',
+          newTotalAmount: order.totalAmount + parseFloat(data?.TotalAmount || data?.FareDifference || '0'),
+          newTotalCurrency: order.currency,
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+          slices: {
+            add: slicesToAdd.map(s => ({
+              origin: s.origin,
+              destination: s.destination,
+              departure_date: s.departure_date,
+            })),
+            remove: [],
+          },
+          conditions: {
+            fareDifference: parseFloat(data?.FareDifference || '0'),
+            penalty: parseFloat(data?.Penalty || '0'),
+          },
+          _mystifly: { ptrId, preferenceOption: 1 },
+        }];
+
+    return {
+      requestId: `mystifly_ptr_${ptrId}`,
+      offers,
+      raw: result,
+    };
   }
 
   async confirmChangeOption(
-    _changeOfferId: string,
+    changeOfferId: string,
     _paymentAmount?: number,
     _paymentCurrency?: string
   ): Promise<{ changeId: string; orderId: string; newTotalAmount: number; newTotalCurrency: string; confirmedAt: string; raw: unknown }> {
-    throw new Error('Mystifly order changes are not yet supported. Use PostTicketingRequest flow.');
+    // Parse the change offer ID: "mystifly_reissue_MF35335226_12345_1"
+    const parts = changeOfferId.split('_');
+    // Format: mystifly_reissue_{mfRef}_{ptrId}_{preferenceOption}
+    const mfRef = parts[2] || '';
+    const ptrId = parseInt(parts[3] || '0', 10);
+    const preferenceOption = parseInt(parts[4] || '1', 10);
+
+    if (!mfRef || !ptrId) {
+      throw new Error(`[MystiflyAdapter] Invalid changeOfferId format: ${changeOfferId}`);
+    }
+
+    const result = await mystiflyClient.confirmReissue(mfRef, ptrId, preferenceOption);
+    const success = result?.Data?.Success ?? result?.Success;
+    const data = result?.Data || result;
+
+    if (!success) {
+      const errMsg = data?.Errors?.[0]?.Message || data?.Message || result?.Message || 'ReIssue failed';
+      throw new Error(`Mystifly ReIssue confirm failed: ${errMsg}`);
+    }
+
+    return {
+      changeId: `mystifly_reissue_confirmed_${mfRef}_${ptrId}`,
+      orderId: mfRef,
+      newTotalAmount: parseFloat(data?.NewTotalAmount || data?.TotalAmount || '0'),
+      newTotalCurrency: data?.Currency || 'USD',
+      confirmedAt: new Date().toISOString(),
+      raw: result,
+    };
   }
 }
 

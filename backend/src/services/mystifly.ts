@@ -997,6 +997,86 @@ export async function markPtrAsRead(uniqueId: string): Promise<any> {
 }
 
 // ═══════════════════════════════════════════════
+// ReIssue — Flight Change
+// ═══════════════════════════════════════════════
+
+export interface MystiflyReissueOriginDestination {
+  originLocationCode: string;
+  destinationLocationCode: string;
+  departureDateTime: string;      // ISO-8601
+  cabinPreference?: string;       // Y, C, F, etc.
+  airlineCode?: string;
+  flightNumber?: number;
+}
+
+export interface MystiflyReissuePassenger {
+  firstName: string;
+  lastName: string;
+  passengerType: string;          // ADT, CHD, INF
+  title?: string;
+}
+
+/**
+ * Request a ReIssue Quote (flight change pricing) from Mystifly.
+ *
+ * Flow: POST /api/PostTicketingRequest with ptrType=ReIssueQuote
+ * Returns: PTR record with PtrId, penalty, fare difference, options.
+ */
+export async function reissueQuote(
+  mfRef: string,
+  originDestinations: MystiflyReissueOriginDestination[],
+  passengers: MystiflyReissuePassenger[],
+): Promise<any> {
+  console.log(`[Mystifly] ReIssueQuote — MFRef: ${mfRef}, ODs: ${originDestinations.length}`);
+
+  const result = await mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/PostTicketingRequest',
+    body: {
+      ptrType: 'ReIssueQuote',
+      mFRef: mfRef,
+      reissueQuoteRequestType: 'OND',
+      originDestinations,
+      passengers,
+      Target: MYSTIFLY_TARGET,
+    } as unknown as Record<string, unknown>,
+    retries: 0,
+  });
+
+  return result;
+}
+
+/**
+ * Confirm a ReIssue (execute the flight change) with Mystifly.
+ *
+ * Flow: POST /api/PostTicketingRequest with ptrType=ReIssue, AcceptQuote=yes
+ * Requires the PtrId from the ReIssueQuote response.
+ */
+export async function confirmReissue(
+  mfRef: string,
+  ptrId: number,
+  preferenceOption: number = 1,
+): Promise<any> {
+  console.log(`[Mystifly] ReIssue Confirm — MFRef: ${mfRef}, PtrId: ${ptrId}, Option: ${preferenceOption}`);
+
+  const result = await mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/PostTicketingRequest',
+    body: {
+      ptrType: 'ReIssue',
+      mFRef: mfRef,
+      PtrId: ptrId,
+      AcceptQuote: 'yes',
+      PreferenceOption: preferenceOption,
+      Target: MYSTIFLY_TARGET,
+    } as unknown as Record<string, unknown>,
+    retries: 0,
+  });
+
+  return result;
+}
+
+// ═══════════════════════════════════════════════
 
 export default {
   searchFlights,
@@ -1015,6 +1095,9 @@ export default {
   postTicketingRequest,
   searchPtrStatus,
   markPtrAsRead,
+  // ReIssue (Flight Change)
+  reissueQuote,
+  confirmReissue,
   // Helpers
   toCabinType,
   fromCabinType,
