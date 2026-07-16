@@ -218,6 +218,69 @@ export default function AccountDashboard() {
             </div>
           </motion.div>
 
+          {/* ── My Trips + Price Alert row ── */}
+          <motion.div variants={anim} className="grid grid-cols-1 md:grid-cols-2 gap-4">
+            {/* My Trips Summary */}
+            <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-white text-sm font-bold flex items-center gap-2">
+                  <Ticket size={14} className="text-[#1ABC9C]" /> My Trips
+                </h3>
+                <Link href="/account/bookings" className="text-[#1ABC9C] text-[10px] font-semibold flex items-center gap-1 hover:underline">
+                  View All Trips <ArrowRight size={10} />
+                </Link>
+              </div>
+              <div className="grid grid-cols-4 gap-2">
+                {[
+                  { n: upcomingTrips.length, l: 'Upcoming', c: 'text-[#1ABC9C]', filter: 'upcoming' },
+                  { n: pastCount, l: 'Past', c: 'text-blue-400', filter: 'past' },
+                  { n: cancelledCount, l: 'Cancelled', c: 'text-red-400', filter: 'cancelled' },
+                  { n: refundPendingCount, l: 'Refund Pending', c: 'text-amber-400', filter: 'cancelled' },
+                ].map(s => (
+                  <Link key={s.l} href={`/account/bookings?filter=${s.filter}`} className="text-center py-3 rounded-xl hover:bg-white/[0.04] transition-all cursor-pointer group">
+                    <p className={`text-3xl font-black leading-none ${s.c} group-hover:scale-110 transition-transform`}>{s.n}</p>
+                    <p className="text-slate-500 text-xs font-semibold mt-1.5">{s.l}</p>
+                  </Link>
+                ))}
+              </div>
+            </div>
+
+            {/* Price Alert */}
+            <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4">
+              <div className="flex items-center justify-between mb-3">
+                <h3 className="text-white text-sm font-bold flex items-center gap-2">
+                  <Bell size={14} className="text-purple-400" /> Price Alert
+                </h3>
+                <Link href="/account/alerts" className="text-[#1ABC9C] text-[10px] font-semibold flex items-center gap-1 hover:underline">
+                  View All <ArrowRight size={10} />
+                </Link>
+              </div>
+              {nextTrip ? (
+                <div>
+                  <p className="text-white text-xs font-semibold mb-1">{origin} → {dest}</p>
+                  <p className="text-slate-500 text-[10px] mb-2">{formatDate(nextTrip.departureDate)}</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-emerald-400 text-xs font-bold flex items-center gap-1">
+                      <TrendingDown size={12} /> {fmt(120)}
+                    </span>
+                    <span className="text-emerald-400 text-[10px] font-semibold bg-emerald-400/10 px-2 py-0.5 rounded-full">Great time to book!</span>
+                  </div>
+                  {/* Mini chart placeholder */}
+                  <div className="mt-3 h-10 flex items-end gap-px">
+                    {[35, 50, 40, 55, 45, 60, 50, 65, 55, 70, 60, 45, 40, 35, 30].map((h, i) => (
+                      <div key={i} className="flex-1 rounded-t-sm bg-gradient-to-t from-[#1ABC9C]/40 to-[#1ABC9C]/10" style={{ height: `${h}%` }} />
+                    ))}
+                  </div>
+                </div>
+              ) : (
+                <div className="text-center py-4">
+                  <p className="text-slate-500 text-xs">No active price alerts</p>
+                  <Link href="/" className="text-[#1ABC9C] text-[10px] font-semibold mt-1 inline-block hover:underline">Search flights to track</Link>
+                </div>
+              )}
+            </div>
+          </motion.div>
+
           {/* Upcoming Trip Cards */}
           <motion.div variants={anim}>
             {bookingsLoading ? (
@@ -367,69 +430,6 @@ export default function AccountDashboard() {
                 </Link>
               </div>
             )}
-          </motion.div>
-
-          {/* ── My Trips + Price Alert row ── */}
-          <motion.div variants={anim} className="grid grid-cols-1 md:grid-cols-2 gap-4">
-            {/* My Trips Summary */}
-            <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-white text-sm font-bold flex items-center gap-2">
-                  <Ticket size={14} className="text-[#1ABC9C]" /> My Trips
-                </h3>
-                <Link href="/account/bookings" className="text-[#1ABC9C] text-[10px] font-semibold flex items-center gap-1 hover:underline">
-                  View All Trips <ArrowRight size={10} />
-                </Link>
-              </div>
-              <div className="grid grid-cols-4 gap-2">
-                {[
-                  { n: upcomingTrips.length, l: 'Upcoming', c: 'text-[#1ABC9C]', filter: 'upcoming' },
-                  { n: pastCount, l: 'Past', c: 'text-blue-400', filter: 'past' },
-                  { n: cancelledCount, l: 'Cancelled', c: 'text-red-400', filter: 'cancelled' },
-                  { n: refundPendingCount, l: 'Refund Pending', c: 'text-amber-400', filter: 'cancelled' },
-                ].map(s => (
-                  <Link key={s.l} href={`/account/bookings?filter=${s.filter}`} className="text-center py-3 rounded-xl hover:bg-white/[0.04] transition-all cursor-pointer group">
-                    <p className={`text-3xl font-black leading-none ${s.c} group-hover:scale-110 transition-transform`}>{s.n}</p>
-                    <p className="text-slate-500 text-xs font-semibold mt-1.5">{s.l}</p>
-                  </Link>
-                ))}
-              </div>
-            </div>
-
-            {/* Price Alert */}
-            <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-white text-sm font-bold flex items-center gap-2">
-                  <Bell size={14} className="text-purple-400" /> Price Alert
-                </h3>
-                <Link href="/account/alerts" className="text-[#1ABC9C] text-[10px] font-semibold flex items-center gap-1 hover:underline">
-                  View All <ArrowRight size={10} />
-                </Link>
-              </div>
-              {nextTrip ? (
-                <div>
-                  <p className="text-white text-xs font-semibold mb-1">{origin} → {dest}</p>
-                  <p className="text-slate-500 text-[10px] mb-2">{formatDate(nextTrip.departureDate)}</p>
-                  <div className="flex items-center gap-2">
-                    <span className="text-emerald-400 text-xs font-bold flex items-center gap-1">
-                      <TrendingDown size={12} /> {fmt(120)}
-                    </span>
-                    <span className="text-emerald-400 text-[10px] font-semibold bg-emerald-400/10 px-2 py-0.5 rounded-full">Great time to book!</span>
-                  </div>
-                  {/* Mini chart placeholder */}
-                  <div className="mt-3 h-10 flex items-end gap-px">
-                    {[35, 50, 40, 55, 45, 60, 50, 65, 55, 70, 60, 45, 40, 35, 30].map((h, i) => (
-                      <div key={i} className="flex-1 rounded-t-sm bg-gradient-to-t from-[#1ABC9C]/40 to-[#1ABC9C]/10" style={{ height: `${h}%` }} />
-                    ))}
-                  </div>
-                </div>
-              ) : (
-                <div className="text-center py-4">
-                  <p className="text-slate-500 text-xs">No active price alerts</p>
-                  <Link href="/" className="text-[#1ABC9C] text-[10px] font-semibold mt-1 inline-block hover:underline">Search flights to track</Link>
-                </div>
-              )}
-            </div>
           </motion.div>
 
           {/* ── Recent Activity + Support row ── */}
