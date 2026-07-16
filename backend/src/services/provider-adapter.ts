@@ -711,6 +711,7 @@ export class MystiflyAdapter implements IBookingProvider {
       // Step 2: Fallback — direct /api/v1/Booking/Cancel
       console.log(`[MystiflyAdapter] Using direct Booking/Cancel for ${mfRef}`);
       const result = await mystiflyClient.cancelBooking(mfRef);
+      console.log(`[MystiflyAdapter] Direct cancel response for ${mfRef}:`, JSON.stringify(result, null, 2));
       const success = result?.Data?.Success || result?.Success;
       if (!success) {
         const errorMsg = result?.Data?.Errors?.[0]?.Message || result?.Message || 'Cancellation failed';

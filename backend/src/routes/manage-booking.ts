@@ -624,8 +624,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           };
           await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_confirmed', providerReference: result.cancellationId, payloadJson: result.raw as object });
         } catch (providerErr) {
-          fastify.log.error({ providerErr }, '[manage-booking/cancel/confirm] Provider cancellation failed');
-          return reply.code(502).send({ error: 'The airline could not process the cancellation. Please contact support.', code: 'PROVIDER_CANCEL_FAILED' });
+          const errMsg = providerErr instanceof Error ? providerErr.message : String(providerErr);
+          fastify.log.error({ err: errMsg }, '[manage-booking/cancel/confirm] Provider cancellation failed');
+          return reply.code(502).send({ error: errMsg || 'The airline could not process the cancellation. Please contact support.', code: 'PROVIDER_CANCEL_FAILED' });
         }
       }
 
