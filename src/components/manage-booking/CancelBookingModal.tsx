@@ -52,7 +52,15 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
   useEffect(() => {
     mountedRef.current = true;
     loadCancelQuote(bookingId).then(() => {
-      if (mountedRef.current) setStep('review');
+      if (!mountedRef.current) return;
+      // Check if the quote was actually loaded — the store swallows API errors
+      const state = useManageBookingStore.getState();
+      if (state.cancelQuote) {
+        setStep('review');
+      } else {
+        setLocalError(state.cancelError || 'The airline could not return cancellation details. A support ticket has been created — our team will follow up within 24 hours.');
+        setStep('error');
+      }
     }).catch(() => {
       if (mountedRef.current) { setLocalError('Could not retrieve cancellation information. Please try again.'); setStep('error'); }
     });
@@ -398,7 +406,7 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => { setStep('loading'); setMsgIdx(0); setLocalError(null); loadCancelQuote(bookingId).then(() => setStep('review')).catch(() => {}); }}
+                  onClick={() => { setStep('loading'); setMsgIdx(0); setLocalError(null); loadCancelQuote(bookingId).then(() => { const s = useManageBookingStore.getState(); if (s.cancelQuote) setStep('review'); else { setLocalError(s.cancelError || 'Cancellation details unavailable. A support ticket has been created.'); setStep('error'); } }).catch(() => { setLocalError('Could not connect. Please try again.'); setStep('error'); }); }}
                   className="flex items-center justify-center gap-1.5 py-3 rounded-xl border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/[0.04] transition-all"
                 >
                   <ArrowLeft size={13} /> Try Again
