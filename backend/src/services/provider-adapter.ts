@@ -77,6 +77,14 @@ export interface CancelQuote {
   refundTo: string;
   penaltyAmount: number;
   expiresAt: string;
+  /** Which cancellation path: VOID (within void window) or REFUND (standard refund) */
+  method: 'VOID' | 'REFUND' | 'UNKNOWN';
+  /** Airline-imposed cancellation penalty */
+  airlinePenalty: number;
+  /** Supplier/aggregator fee */
+  supplierFee: number;
+  /** Original booking amount */
+  originalAmount: number;
   raw: unknown;
 }
 
@@ -295,6 +303,10 @@ export class DuffelAdapter implements IBookingProvider {
       refundTo: cancellation.refund_to,
       penaltyAmount: 0, // Duffel bakes penalty into refund_amount
       expiresAt: cancellation.expires_at,
+      method: 'REFUND', // Duffel uses a unified refund flow (no separate void)
+      airlinePenalty: 0,
+      supplierFee: 0,
+      originalAmount: 0, // Not available from Duffel quote — calculated in route
       raw: cancellation,
     };
   }
@@ -505,50 +517,178 @@ export class MystiflyAdapter implements IBookingProvider {
   }
 
   async getCancellationQuote(mfRef: string): Promise<CancelQuote> {
-    // Mystifly doesn't have a separate cancel-quote API.
-    // We return a synthetic quote; the actual cancellation happens in confirmCancellation.
+    // ── Step 1: Get order details for original amount ──
     const order = await this.getOrder(mfRef);
-    const isRefundable = order.conditions?.refundable ?? false;
-    const refundAmount = isRefundable ? order.totalAmount : 0;
-    const penaltyAmount = isRefundable ? 0 : order.totalAmount;
+    const originalAmount = order.totalAmount;
+    const currency = order.currency;
+
+    // ── Step 2: Try VoidQuote first (within void window) ──
+    try {
+      console.log(`[MystiflyAdapter] Attempting VoidQuote for ${mfRef}`);
+      const voidResult = await mystiflyClient.voidQuote(mfRef);
+      const voidData = voidResult?.Data || voidResult;
+      const voidSuccess = voidData?.Success ?? voidResult?.Success;
+      const ptrId = voidData?.PtrId || voidData?.ptrId || voidResult?.PtrId;
+      const voidErrors = voidData?.Errors || voidResult?.Errors || [];
+
+      // Check for business-level "not eligible" vs technical failure
+      const isNotEligible = !voidSuccess && voidErrors.some((e: any) =>
+        (e.Code || e.code || '').toString().match(/void.*not.*eligible|void.*window|not.*voidable/i) ||
+        (e.Message || e.message || '').match(/void.*not.*eligible|void.*window|not.*voidable|cannot.*void/i)
+      );
+
+      if (voidSuccess && ptrId) {
+        // Void IS eligible — extract fee info
+        const voidPenalty = parseFloat(voidData?.Penalty || voidData?.penalty || '0');
+        const supplierFee = parseFloat(voidData?.SupplierFee || voidData?.supplierFee || '0');
+        const totalDeductions = voidPenalty + supplierFee;
+        const refundAmount = Math.max(0, originalAmount - totalDeductions);
+
+        console.log(`[MystiflyAdapter] VoidQuote eligible — PtrId: ${ptrId}, penalty: ${voidPenalty}, refund: ${refundAmount}`);
+
+        return {
+          quoteId: `mystifly_void_${mfRef}_${ptrId}`,
+          orderId: mfRef,
+          refundAmount,
+          refundCurrency: currency,
+          refundTo: 'original_payment',
+          penaltyAmount: totalDeductions,
+          expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min — void window can expire
+          method: 'VOID',
+          airlinePenalty: voidPenalty,
+          supplierFee,
+          originalAmount,
+          raw: voidResult,
+        };
+      }
+
+      // If not eligible for void, fall through to refund
+      if (!isNotEligible && !voidSuccess) {
+        // Technical failure — log but still try refund
+        console.warn(`[MystiflyAdapter] VoidQuote returned non-eligible response, trying RefundQuote`, voidErrors);
+      }
+    } catch (voidErr) {
+      // VoidQuote API call failed — log and fall through to RefundQuote
+      console.warn(`[MystiflyAdapter] VoidQuote API error for ${mfRef}, falling back to RefundQuote:`, voidErr instanceof Error ? voidErr.message : voidErr);
+    }
+
+    // ── Step 3: VoidQuote not eligible or failed → try RefundQuote ──
+    console.log(`[MystiflyAdapter] Attempting RefundQuote for ${mfRef}`);
+    const refundResult = await mystiflyClient.refundQuote(mfRef);
+    const refundData = refundResult?.Data || refundResult;
+    const refundSuccess = refundData?.Success ?? refundResult?.Success;
+    const refundPtrId = refundData?.PtrId || refundData?.ptrId || refundResult?.PtrId;
+    const refundErrors = refundData?.Errors || refundResult?.Errors || [];
+
+    if (!refundSuccess || !refundPtrId) {
+      const errMsg = refundErrors?.[0]?.Message || refundErrors?.[0]?.message || 'Cancellation not available';
+      throw new Error(`Mystifly cancellation not available: ${errMsg}`);
+    }
+
+    // Extract refund breakdown from PTR response
+    const airlinePenalty = parseFloat(refundData?.Penalty || refundData?.penalty || refundData?.CancellationCharge || '0');
+    const supplierFee = parseFloat(refundData?.SupplierFee || refundData?.supplierFee || '0');
+    const providerRefundAmount = parseFloat(refundData?.RefundAmount || refundData?.refundAmount || '0');
+    const totalDeductions = airlinePenalty + supplierFee;
+    // Use provider-returned refund amount if available, otherwise calculate
+    const refundAmount = providerRefundAmount > 0 ? providerRefundAmount : Math.max(0, originalAmount - totalDeductions);
+
+    console.log(`[MystiflyAdapter] RefundQuote eligible — PtrId: ${refundPtrId}, penalty: ${airlinePenalty}, supplierFee: ${supplierFee}, refund: ${refundAmount}`);
 
     return {
-      quoteId: `mystifly_cancel_quote_${mfRef}`,
+      quoteId: `mystifly_refund_${mfRef}_${refundPtrId}`,
       orderId: mfRef,
-      refundAmount, // Estimated — actual refund depends on fare rules
-      refundCurrency: order.currency,
+      refundAmount,
+      refundCurrency: currency,
       refundTo: 'original_payment',
-      penaltyAmount,
-      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 min synthetic expiry
-      raw: { note: 'Mystifly does not provide cancellation quotes. This is an estimated refund.' },
+      penaltyAmount: totalDeductions,
+      expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(), // 30 min
+      method: 'REFUND',
+      airlinePenalty,
+      supplierFee,
+      originalAmount,
+      raw: refundResult,
     };
   }
 
   async confirmCancellation(quoteId: string): Promise<CancelResult> {
-    // The quoteId is our synthetic ID: "mystifly_cancel_quote_MF35335226"
-    // Extract the actual MFRef (UniqueID) that Mystifly's Cancel API expects.
-    const mfRef = quoteId.replace(/^mystifly_cancel_quote_/, '');
-    if (!mfRef || mfRef === quoteId) {
-      throw new Error(`[MystiflyAdapter] Could not extract MFRef from quoteId: ${quoteId}`);
+    // quoteId format: "mystifly_void_{mfRef}_{ptrId}" or "mystifly_refund_{mfRef}_{ptrId}"
+    const voidMatch = quoteId.match(/^mystifly_void_(.+)_(\d+)$/);
+    const refundMatch = quoteId.match(/^mystifly_refund_(.+)_(\d+)$/);
+
+    if (voidMatch) {
+      // ── Execute Void ──
+      const [, mfRef, ptrIdStr] = voidMatch;
+      const ptrId = parseInt(ptrIdStr, 10);
+      console.log(`[MystiflyAdapter] Executing Void — MFRef: ${mfRef}, PtrId: ${ptrId}`);
+
+      const result = await mystiflyClient.executeVoid(mfRef, ptrId);
+      const data = result?.Data || result;
+      const success = data?.Success ?? result?.Success;
+
+      if (!success) {
+        const errorMsg = data?.Errors?.[0]?.Message || result?.Message || 'Void execution failed';
+        const errorCode = data?.Errors?.[0]?.Code || '';
+        throw new Error(`Mystifly void failed: ${errorCode} ${errorMsg}`);
+      }
+
+      return {
+        cancellationId: `mystifly_void_confirmed_${mfRef}_${ptrId}`,
+        orderId: mfRef,
+        refundAmount: parseFloat(data?.RefundAmount || '0'),
+        refundCurrency: data?.Currency || 'USD',
+        confirmedAt: new Date().toISOString(),
+        raw: result,
+      };
     }
 
-    const result = await mystiflyClient.cancelBooking(mfRef);
-    const success = result?.Data?.Success || result?.Success;
+    if (refundMatch) {
+      // ── Execute Refund ──
+      const [, mfRef, ptrIdStr] = refundMatch;
+      const ptrId = parseInt(ptrIdStr, 10);
+      console.log(`[MystiflyAdapter] Executing Refund — MFRef: ${mfRef}, PtrId: ${ptrId}`);
 
-    if (!success) {
-      const errorMsg = result?.Data?.Errors?.[0]?.Message || result?.Message || 'Unknown error';
-      const errorCode = result?.Data?.Errors?.[0]?.Code || '';
-      throw new Error(`Mystifly cancellation failed: ${errorCode} ${errorMsg}`);
+      const result = await mystiflyClient.executeRefund(mfRef, ptrId);
+      const data = result?.Data || result;
+      const success = data?.Success ?? result?.Success;
+
+      if (!success) {
+        const errorMsg = data?.Errors?.[0]?.Message || result?.Message || 'Refund execution failed';
+        const errorCode = data?.Errors?.[0]?.Code || '';
+        throw new Error(`Mystifly refund failed: ${errorCode} ${errorMsg}`);
+      }
+
+      return {
+        cancellationId: `mystifly_refund_confirmed_${mfRef}_${ptrId}`,
+        orderId: mfRef,
+        refundAmount: parseFloat(data?.RefundAmount || data?.refundAmount || '0'),
+        refundCurrency: data?.Currency || data?.currency || 'USD',
+        confirmedAt: new Date().toISOString(),
+        raw: result,
+      };
     }
 
-    return {
-      cancellationId: `mystifly_cancel_${mfRef}_${Date.now()}`,
-      orderId: mfRef,
-      refundAmount: 0, // Mystifly returns refund info asynchronously
-      refundCurrency: 'USD',
-      confirmedAt: success ? new Date().toISOString() : '',
-      raw: result,
-    };
+    // Legacy fallback: old-style quoteId (mystifly_cancel_quote_XXX)
+    const legacyMfRef = quoteId.replace(/^mystifly_cancel_quote_/, '');
+    if (legacyMfRef && legacyMfRef !== quoteId) {
+      console.warn(`[MystiflyAdapter] Legacy quoteId format detected: ${quoteId}. Using cancelBooking fallback.`);
+      const result = await mystiflyClient.cancelBooking(legacyMfRef);
+      const success = result?.Data?.Success || result?.Success;
+      if (!success) {
+        const errorMsg = result?.Data?.Errors?.[0]?.Message || result?.Message || 'Unknown error';
+        throw new Error(`Mystifly cancellation failed: ${errorMsg}`);
+      }
+      return {
+        cancellationId: `mystifly_cancel_${legacyMfRef}_${Date.now()}`,
+        orderId: legacyMfRef,
+        refundAmount: 0,
+        refundCurrency: 'USD',
+        confirmedAt: new Date().toISOString(),
+        raw: result,
+      };
+    }
+
+    throw new Error(`[MystiflyAdapter] Invalid quoteId format: ${quoteId}`);
   }
 
   async getSeatMap(fareSourceCode: string): Promise<SeatMapData[]> {

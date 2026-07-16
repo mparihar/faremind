@@ -141,14 +141,17 @@ export default function AiCancelBookingFlow({
               <Check className="w-3.5 h-3.5 text-white" />
             </div>
             <span className="text-[13px] font-bold text-emerald-700">
-              Booking Cancellation Requested
+              {cancelSuccess.cancellationMethod === 'VOID'
+                ? 'Booking Cancelled Successfully'
+                : 'Cancellation & Refund Submitted'}
             </span>
           </div>
 
           <div className="space-y-2 bg-white rounded-lg border border-emerald-200/50 px-3 py-2.5">
             <InfoRow label="FareMind Reference" value={cancelSuccess.bookingReference} />
             {pnrCode && <InfoRow label="Airline PNR" value={pnrCode} />}
-            <InfoRow label="Status" value="Cancellation submitted" highlight />
+            <InfoRow label="Cancellation Type" value={cancelSuccess.cancellationMethod === 'VOID' ? 'Immediate Void' : 'Refund'} highlight />
+            <InfoRow label="Status" value={cancelSuccess.cancellationMethod === 'VOID' ? 'Ticket voided' : 'Cancellation submitted'} highlight />
             <InfoRow
               label="Estimated Refund"
               value={cancelSuccess.refundAmount > 0 
@@ -204,10 +207,20 @@ export default function AiCancelBookingFlow({
           <InfoRow label="Route" value={q.route || route} />
           <InfoRow label="Departure" value={formatBookingDate(q.departureDate || departureDate)} />
 
+          {/* Void badge */}
+          {q.cancellationMethod === 'VOID' && (
+            <div className="flex items-center gap-1.5 px-2 py-1.5 rounded-lg bg-emerald-50 border border-emerald-200">
+              <Shield className="w-3 h-3 text-emerald-500" />
+              <span className="text-[10px] font-semibold text-emerald-600">Eligible for immediate cancellation</span>
+            </div>
+          )}
+
           {/* Refund Breakdown */}
           <div className="pt-2 border-t border-slate-100 space-y-1.5">
             <div className="flex items-center justify-between mb-1">
-              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">Refund Estimate</p>
+              <p className="text-[9px] font-black uppercase tracking-widest text-slate-400">
+                {q.cancellationMethod === 'VOID' ? 'Cancellation Summary' : 'Refund Estimate'}
+              </p>
               {q.refundability && (
                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
                   q.refundability === 'FULL_REFUND'
@@ -232,6 +245,12 @@ export default function AiCancelBookingFlow({
               <div className="flex justify-between text-[11px]">
                 <span className="text-slate-500">Airline Penalty</span>
                 <span className="font-semibold text-red-500">-{fmtCurrency(q.airlinePenalty, q.currency)}</span>
+              </div>
+            )}
+            {(q.supplierFee ?? 0) > 0 && (
+              <div className="flex justify-between text-[11px]">
+                <span className="text-slate-500">Supplier Fee</span>
+                <span className="font-semibold text-red-500">-{fmtCurrency(q.supplierFee, q.currency)}</span>
               </div>
             )}
             {q.fareMindFee > 0 && (

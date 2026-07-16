@@ -1078,6 +1078,117 @@ export async function confirmReissue(
 
 // ═══════════════════════════════════════════════
 
+// ═══════════════════════════════════════════════
+// Void / Refund — Cancellation PTR Flow
+// ═══════════════════════════════════════════════
+
+/**
+ * Request a Void Quote from Mystifly via PTR.
+ *
+ * Flow: POST /api/PostTicketingRequest with ptrType=VoidQuote
+ * Returns: PTR record with PtrId, void eligibility, penalty info.
+ *
+ * Void is only available within the airline's void window
+ * (typically 24h after ticketing, before midnight).
+ */
+export async function voidQuote(mfRef: string): Promise<any> {
+  console.log(`[Mystifly] VoidQuote — MFRef: ${mfRef}`);
+
+  const result = await mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/PostTicketingRequest',
+    body: {
+      ptrType: 'VoidQuote',
+      mFRef: mfRef,
+      Target: MYSTIFLY_TARGET,
+    } as unknown as Record<string, unknown>,
+    retries: 0,
+  });
+
+  return result;
+}
+
+/**
+ * Execute a Void (confirm void cancellation) via PTR.
+ *
+ * Flow: POST /api/PostTicketingRequest with ptrType=Void, AcceptQuote=yes
+ * Requires the PtrId from the VoidQuote response.
+ */
+export async function executeVoid(
+  mfRef: string,
+  ptrId: number,
+): Promise<any> {
+  console.log(`[Mystifly] Void Execute — MFRef: ${mfRef}, PtrId: ${ptrId}`);
+
+  const result = await mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/PostTicketingRequest',
+    body: {
+      ptrType: 'Void',
+      mFRef: mfRef,
+      PtrId: ptrId,
+      AcceptQuote: 'yes',
+      Target: MYSTIFLY_TARGET,
+    } as unknown as Record<string, unknown>,
+    retries: 0, // Never retry void executions
+  });
+
+  return result;
+}
+
+/**
+ * Request a Refund Quote from Mystifly via PTR.
+ *
+ * Flow: POST /api/PostTicketingRequest with ptrType=RefundQuote
+ * Returns: PTR record with PtrId, penalty breakdown, refundable amount.
+ *
+ * Used when void is not available (outside void window).
+ */
+export async function refundQuote(mfRef: string): Promise<any> {
+  console.log(`[Mystifly] RefundQuote — MFRef: ${mfRef}`);
+
+  const result = await mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/PostTicketingRequest',
+    body: {
+      ptrType: 'RefundQuote',
+      mFRef: mfRef,
+      Target: MYSTIFLY_TARGET,
+    } as unknown as Record<string, unknown>,
+    retries: 0,
+  });
+
+  return result;
+}
+
+/**
+ * Execute a Refund (confirm refund cancellation) via PTR.
+ *
+ * Flow: POST /api/PostTicketingRequest with ptrType=Refund, AcceptQuote=yes
+ * Requires the PtrId from the RefundQuote response.
+ */
+export async function executeRefund(
+  mfRef: string,
+  ptrId: number,
+): Promise<any> {
+  console.log(`[Mystifly] Refund Execute — MFRef: ${mfRef}, PtrId: ${ptrId}`);
+
+  const result = await mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/PostTicketingRequest',
+    body: {
+      ptrType: 'Refund',
+      mFRef: mfRef,
+      PtrId: ptrId,
+      AcceptQuote: 'yes',
+      Target: MYSTIFLY_TARGET,
+    } as unknown as Record<string, unknown>,
+    retries: 0, // Never retry refund executions
+  });
+
+  return result;
+}
+
 export default {
   searchFlights,
   revalidateFlight,
@@ -1098,6 +1209,11 @@ export default {
   // ReIssue (Flight Change)
   reissueQuote,
   confirmReissue,
+  // Void/Refund (Cancellation PTR)
+  voidQuote,
+  executeVoid,
+  refundQuote,
+  executeRefund,
   // Helpers
   toCabinType,
   fromCabinType,

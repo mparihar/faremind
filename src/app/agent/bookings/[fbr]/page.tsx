@@ -737,10 +737,24 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                           </div>
                         </div>
 
+                        {/* Void/Refund method badge — agent-only */}
+                        {cancelQuote.cancellationMethod && (
+                          <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold ${
+                            cancelQuote.cancellationMethod === 'VOID'
+                              ? 'bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 text-[#1ABC9C]'
+                              : 'bg-amber-500/5 border border-amber-500/20 text-amber-400'
+                          }`}>
+                            <span>{cancelQuote.cancellationMethod === 'VOID' ? '⚡ Immediate Void' : '💳 Refund'}</span>
+                            <span className="text-slate-500 font-mono text-[10px]">PTR: {cancelQuote.quoteId?.split('_').pop()}</span>
+                          </div>
+                        )}
+
                         {/* Refund Estimate */}
                         <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
                           <div className="px-4 py-3 border-b border-white/[0.05] flex items-center justify-between">
-                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">Refund Estimate</span>
+                            <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
+                              {cancelQuote.cancellationMethod === 'VOID' ? 'Cancellation Summary' : 'Refund Estimate'}
+                            </span>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                               cancelQuote.refundability === 'FULL_REFUND'
                                 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
@@ -767,6 +781,14 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                                 <span>Airline Penalty</span>
                                 <span className="text-red-400 font-medium">
                                   −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.airlinePenalty)}
+                                </span>
+                              </div>
+                            )}
+                            {(cancelQuote.supplierFee ?? 0) > 0 && (
+                              <div className="flex justify-between text-xs text-slate-400">
+                                <span>Supplier Fee</span>
+                                <span className="text-red-400 font-medium">
+                                  −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.supplierFee)}
                                 </span>
                               </div>
                             )}

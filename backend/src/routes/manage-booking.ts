@@ -401,11 +401,51 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      let refundAmount = isRefundable ? quote.refundAmount : 0;
-      let airlinePenalty = isRefundable ? Math.max(0, originalAmount - refundAmount) : originalAmount;
-      let estimatedRefund = isRefundable ? Math.max(0, refundAmount - FAREMIND_FEE) : 0;
+      // ── Use provider-returned penalty breakdown when available ─────────
+      const cancellationMethod = quote.method || 'REFUND'; // VOID or REFUND
+      const providerAirlinePenalty = quote.airlinePenalty ?? 0;
+      const providerSupplierFee = quote.supplierFee ?? 0;
+
+      // For VOID: use provider penalties directly (typically $0)
+      // For REFUND: use provider penalties; fall back to old logic if not provided
+      let airlinePenalty: number;
+      let refundAmount: number;
+
+      if (cancellationMethod === 'VOID') {
+        airlinePenalty = providerAirlinePenalty;
+        refundAmount = quote.refundAmount;
+      } else {
+        // REFUND path — use provider data if available, else calculate from refundable flag
+        if (providerAirlinePenalty > 0 || quote.refundAmount > 0) {
+          airlinePenalty = providerAirlinePenalty;
+          refundAmount = quote.refundAmount;
+        } else {
+          // Fallback for providers that don't return breakdowns (e.g., Duffel)
+          refundAmount = isRefundable ? quote.refundAmount : 0;
+          airlinePenalty = isRefundable ? Math.max(0, originalAmount - refundAmount) : originalAmount;
+        }
+      }
+
+      let estimatedRefund = Math.max(0, refundAmount - FAREMIND_FEE);
       let fareMindFee = estimatedRefund > 0 ? FAREMIND_FEE : 0;
-      const refundability = estimatedRefund <= 0 ? 'NON_REFUNDABLE' : airlinePenalty > 0 ? 'PARTIAL_REFUND' : 'FULL_REFUND';
+
+      // Determine refundability status
+      const refundability = estimatedRefund <= 0
+        ? 'NON_REFUNDABLE'
+        : (airlinePenalty + providerSupplierFee) > 0
+          ? 'PARTIAL_REFUND'
+          : 'FULL_REFUND';
+
+      // Customer-friendly cancellation type
+      const cancellationType = cancellationMethod === 'VOID'
+        ? 'IMMEDIATE_VOID'
+        : 'REFUND';
+
+      const warningMessage = cancellationMethod === 'VOID'
+        ? 'Your booking is eligible for immediate cancellation. This eligibility may expire shortly. This action cannot be undone.'
+        : isRefundable || refundAmount > 0
+          ? 'Cancellation penalties may vary until airline confirmation. This action cannot be undone.'
+          : 'This ticket is non-refundable. Confirming cancellation will cancel the booking without a refund.';
 
       return {
         quoteId: quote.quoteId,
@@ -416,21 +456,22 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         bookingStatus: booking.bookingStatus,
         cancellationAllowed: true,
         airlinePermitted: true,
+        cancellationMethod,   // 'VOID' or 'REFUND' — for agent/internal use
+        cancellationType,     // 'IMMEDIATE_VOID' or 'REFUND' — for UI display
         refundability,
         originalAmount,
         currency: booking.currency,
         airlinePenalty,
+        supplierFee: providerSupplierFee,
         fareMindFee,
-        penaltyAmount: airlinePenalty + fareMindFee,
+        penaltyAmount: airlinePenalty + providerSupplierFee + fareMindFee,
         estimatedRefund,
         refundAmount,
         refundCurrency: quote.refundCurrency,
         refundTo: quote.refundTo,
         refundMethod: 'ORIGINAL_PAYMENT',
-        refundTimeline: '5–10 business days',
-        warningMessage: isRefundable 
-          ? 'Cancellation penalties may vary until airline confirmation. This action cannot be undone.'
-          : 'This ticket is non-refundable. Confirming cancellation will cancel the booking without a refund.',
+        refundTimeline: cancellationMethod === 'VOID' ? '3–5 business days' : '5–10 business days',
+        warningMessage,
         pnrs,
         expiresAt: quote.expiresAt,
       };
@@ -486,21 +527,30 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
 
       // ── Database updates (atomic-ish) ─────────────────────────────────────
-      const primaryPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
+      const primaryPnr = booking.pnrs.find((p: any) => p.isPrimary) ?? booking.pnrs[0];
       const isRefundable = primaryPnr?.refundable ?? false;
-      const adminFee = isRefundable ? await getAdminServiceFee(booking) : 0;
+      const adminFee = (isRefundable || result.refundAmount > 0) ? await getAdminServiceFee(booking) : 0;
 
-      const netRefundAmount = isRefundable ? Math.max(0, result.refundAmount - adminFee) : 0;
+      // Determine cancellation method from quoteId encoding
+      const isVoid = quoteId.startsWith('mystifly_void_');
+      const cancellationMethod = isVoid ? 'VOID' : 'REFUND';
+
+      const netRefundAmount = result.refundAmount > 0 ? Math.max(0, result.refundAmount - adminFee) : 0;
       const fareMindFee = netRefundAmount > 0 ? adminFee : 0;
       const airlinePenalty = Math.max(0, originalAmount - result.refundAmount);
       const totalPenalty = Math.max(0, originalAmount - netRefundAmount);
 
       const isFullRefund = netRefundAmount >= originalAmount - 1; // 1 USD tolerance
-      const newPaymentStatus = isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
+      const newPaymentStatus = netRefundAmount <= 0
+        ? 'NO_REFUND'
+        : isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
+
+      // Void = ticket is voided immediately; Refund = refund is pending airline processing
+      const newTicketingStatus = isVoid ? 'VOIDED' : 'REFUND_PENDING';
 
       await prisma.masterBooking.update({
         where: { id: bookingId },
-        data: { bookingStatus: 'CANCELLED', paymentStatus: newPaymentStatus as any, ticketingStatus: 'VOIDED' },
+        data: { bookingStatus: 'CANCELLED', paymentStatus: newPaymentStatus as any, ticketingStatus: newTicketingStatus as any },
       });
 
       // Mark all PNRs cancelled
@@ -692,9 +742,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         success: true,
         cancellationId: cancel.id,
         bookingReference: booking.masterBookingReference,
+        cancellationMethod,   // 'VOID' or 'REFUND'
         refundAmount: netRefundAmount,
         refundCurrency: result.refundCurrency,
-        refundTimeline: '5–10 business days',
+        refundTimeline: isVoid ? '3–5 business days' : '5–10 business days',
         refundMethod: resolvedRefundMethod,
       };
     } catch (e) { fastify.log.error(e, '[manage-booking/cancel/confirm]'); reply.code(500).send({ error: 'Cancellation failed. Please try again or contact support.' }); }

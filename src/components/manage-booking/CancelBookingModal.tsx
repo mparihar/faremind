@@ -196,10 +196,19 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                   </div>
                 </div>
 
-                {/* Refund Estimate */}
+                {/* Cancellation type badge */}
+                {cancelQuote.cancellationMethod === 'VOID' && (
+                  <div className="flex items-center gap-2 bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 rounded-xl px-3 py-2">
+                    <Shield size={13} className="text-[#1ABC9C] shrink-0" />
+                    <p className="text-[#1ABC9C] text-xs font-semibold">Eligible for immediate cancellation — full amount returned</p>
+                  </div>
+                )}
+
                 <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
                   <div className="px-4 py-3 border-b border-white/[0.05] flex items-center justify-between">
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Refund Estimate</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+                      {cancelQuote.cancellationMethod === 'VOID' ? 'Cancellation Summary' : 'Refund Estimate'}
+                    </p>
                     {cancelQuote.refundability && (
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
                         cancelQuote.refundability === 'FULL_REFUND'
@@ -225,6 +234,12 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                       <div className="flex justify-between">
                         <span className="text-slate-400">Airline Penalty</span>
                         <span className="text-red-400 font-medium">−{fmt(cancelQuote.airlinePenalty, cancelQuote.currency)}</span>
+                      </div>
+                    )}
+                    {(cancelQuote.supplierFee ?? 0) > 0 && (
+                      <div className="flex justify-between">
+                        <span className="text-slate-400">Supplier Fee</span>
+                        <span className="text-red-400 font-medium">−{fmt(cancelQuote.supplierFee, cancelQuote.currency)}</span>
                       </div>
                     )}
                     {cancelQuote.fareMindFee > 0 && (
@@ -299,15 +314,24 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
               <div className="w-16 h-16 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/30 flex items-center justify-center mx-auto mb-4">
                 <Check size={30} className="text-[#1ABC9C]" />
               </div>
-              <h3 className="text-white font-black text-xl mb-1">Booking Cancelled</h3>
+              <h3 className="text-white font-black text-xl mb-1">
+                {cancelSuccess.cancellationMethod === 'VOID'
+                  ? 'Booking Cancelled'
+                  : 'Cancellation Submitted'}
+              </h3>
               <p className="text-slate-400 text-sm">
                 Ref: <span className="font-mono font-bold text-white">{cancelSuccess.bookingReference}</span>
               </p>
+              {cancelSuccess.cancellationMethod === 'VOID' && (
+                <p className="text-[#1ABC9C] text-xs mt-1 font-semibold">Ticket voided — immediate cancellation</p>
+              )}
             </div>
 
             {/* Refund card */}
             <div className="mx-5 mb-4 bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 rounded-2xl p-4 text-center">
-              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">Estimated Refund</p>
+              <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
+                {cancelSuccess.cancellationMethod === 'VOID' ? 'Amount Returned' : 'Estimated Refund'}
+              </p>
               <p className="text-3xl font-black text-[#1ABC9C]">
                 {cancelSuccess.refundAmount > 0 ? fmt(cancelSuccess.refundAmount, cancelSuccess.refundCurrency) : 'Non-refundable'}
               </p>
