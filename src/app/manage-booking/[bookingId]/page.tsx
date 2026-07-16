@@ -423,7 +423,7 @@ export default function BookingDetailPage() {
         </button>
 
         {/* ── Main Grid ── */}
-        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-start">
+        <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">
           {/* Left Column (Hero + Flight Details) */}
           <div className="lg:col-span-2 space-y-4">
             {/* ── Hero Header ── */}
@@ -629,7 +629,7 @@ export default function BookingDetailPage() {
           </div>
 
           {/* Right Column: Actions + Documents */}
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 h-full">
             {/* Manage Booking */}
             <Card>
               <SectionTitle>Manage Booking</SectionTitle>
