@@ -498,13 +498,31 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const result = await mystifly.cancelBooking(uniqueId);
 
-      const error = result?.Data?.Error || result?.Error;
-      if (error?.ErrorCode && error.ErrorCode !== '0') {
-        console.error(`[Mystifly] Cancellation failed: ${error.ErrorMessage}`);
+      // Mystifly returns errors in multiple formats — handle all of them:
+      // Format 1: { Data: { Error: { ErrorCode, ErrorMessage } } }
+      // Format 2: { Data: { Errors: [{ Code, Message }], Success: false } }
+      // Format 3: { Success: false, Message: "..." }
+      const singleError = result?.Data?.Error || result?.Error;
+      const errorsArray = result?.Data?.Errors;
+      const topLevelSuccess = result?.Data?.Success ?? result?.Success;
+
+      if (singleError?.ErrorCode && singleError.ErrorCode !== '0') {
+        console.error(`[Mystifly] Cancellation failed: ${singleError.ErrorMessage}`);
         return reply.code(422).send({
-          error: error.ErrorMessage || 'Cancellation failed',
+          error: singleError.ErrorMessage || 'Cancellation failed',
           errorCode: 'MYSTIFLY_CANCEL_FAILED',
-          raw: error,
+          raw: singleError,
+        });
+      }
+
+      if (errorsArray?.length > 0 || topLevelSuccess === false) {
+        const errMsg = errorsArray?.[0]?.Message || result?.Message || 'Unknown cancellation error';
+        const errCode = errorsArray?.[0]?.Code || '';
+        console.error(`[Mystifly] Cancellation failed: ${errCode} ${errMsg}`);
+        return reply.code(422).send({
+          error: errMsg,
+          errorCode: 'MYSTIFLY_CANCEL_FAILED',
+          raw: result?.Data || result,
         });
       }
 

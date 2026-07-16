@@ -30,12 +30,22 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             providerCancelled = true;
             refundAmount = Number(booking.totalPrice) - Number(booking.cancellationFee || 0);
           } else if (booking.provider === 'MYSTIFLY') {
-            await mystiflyClient.cancelBooking(booking.providerBookingId);
+            const result = await mystiflyClient.cancelBooking(booking.providerBookingId);
+            const success = result?.Data?.Success || result?.Success;
+            if (!success) {
+              const errMsg = result?.Data?.Errors?.[0]?.Message || result?.Message || 'Unknown error';
+              throw new Error(`Mystifly cancel failed: ${errMsg}`);
+            }
             providerCancelled = true;
             refundAmount = Number(booking.totalPrice) - Number(booking.cancellationFee || 0);
           }
         } catch (error) {
           console.error('[Cancel] Provider cancellation failed:', error);
+          // Do NOT mark as cancelled if the provider didn't actually cancel
+          return reply.code(502).send({
+            error: 'The airline could not process the cancellation. Please try again or contact support.',
+            code: 'PROVIDER_CANCEL_FAILED',
+          });
         }
       }
 
