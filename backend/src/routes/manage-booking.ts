@@ -67,7 +67,7 @@ async function getAdminServiceFee(booking: any): Promise<number> {
     const baseFare = Number(booking.totalAmount);
 
     const matchedRule = rules.find(matchesRule);
-    if (!matchedRule) return 20 * passengersCount; // default: $20 per passenger
+    if (!matchedRule) return 0; // no active rule configured — no fee
 
 
     if (matchedRule.calculationModel === 'FIXED_PER_BOOKING') {
@@ -80,10 +80,10 @@ async function getAdminServiceFee(booking: any): Promise<number> {
       return Math.round(Number(matchedRule.fixedAmount ?? 20) * passengersCount + baseFare * (Number(matchedRule.percentageValue ?? 0) / 100));
     }
 
-    return 20 * passengersCount; // default: $20 per passenger
+    return 0; // unknown model — no fee
   } catch (err) {
     console.error('[getAdminServiceFee] Error calculating admin service fee:', err);
-    return 20 * (booking.passengers?.length || 1); // default: $20 per passenger
+    return 0; // DB error — no fee rather than guess
   }
 }
 
