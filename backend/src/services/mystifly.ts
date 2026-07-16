@@ -1027,17 +1027,27 @@ export async function reissueQuote(
   originDestinations: MystiflyReissueOriginDestination[],
   passengers: MystiflyReissuePassenger[],
 ): Promise<any> {
-  console.log(`[Mystifly] ReIssueQuote — MFRef: ${mfRef}, ODs: ${originDestinations.length}`);
+  console.log(`[Mystifly] ReIssueQuote — MFRef: ${mfRef}, ODs: ${originDestinations.length}, Pax: ${passengers.length}`);
 
+  // Map to PascalCase to match Mystifly API spec (same convention as VoidQuote/RefundQuote)
   const result = await mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
     body: {
-      ptrType: 'ReIssueQuote',
-      mFRef: mfRef,
-      reissueQuoteRequestType: 'OND',
-      originDestinations,
-      passengers,
+      PostTicketingRequestType: 'ReIssueQuote',
+      UniqueID: mfRef,
+      ReissueQuoteRequestType: 'OND',
+      OriginDestinations: originDestinations.map(od => ({
+        OriginLocationCode: od.originLocationCode,
+        DestinationLocationCode: od.destinationLocationCode,
+        DepartureDateTime: od.departureDateTime,
+        CabinPreference: od.cabinPreference,
+      })),
+      Passengers: passengers.map(p => ({
+        FirstName: p.firstName,
+        LastName: p.lastName,
+        PassengerType: p.passengerType,
+      })),
       Target: MYSTIFLY_TARGET,
     } as unknown as Record<string, unknown>,
     retries: 0,
@@ -1049,7 +1059,7 @@ export async function reissueQuote(
 /**
  * Confirm a ReIssue (execute the flight change) with Mystifly.
  *
- * Flow: POST /api/PostTicketingRequest with ptrType=ReIssue, AcceptQuote=yes
+ * Flow: POST /api/PostTicketingRequest with PostTicketingRequestType=ReIssue, AcceptQuote=yes
  * Requires the PtrId from the ReIssueQuote response.
  */
 export async function confirmReissue(
@@ -1063,8 +1073,8 @@ export async function confirmReissue(
     method: 'POST',
     path: '/api/PostTicketingRequest',
     body: {
-      ptrType: 'ReIssue',
-      mFRef: mfRef,
+      PostTicketingRequestType: 'ReIssue',
+      UniqueID: mfRef,
       PtrId: ptrId,
       AcceptQuote: 'yes',
       PreferenceOption: preferenceOption,

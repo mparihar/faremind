@@ -226,17 +226,21 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const { selectedFare, passengers, extraBags, priceProtection, travelInsurance, seatSelections, currency } = request.body as any;
       if (!selectedFare || !Array.isArray(passengers) || passengers.length === 0) return reply.code(400).send({ error: 'selectedFare and passengers are required' });
 
-      const taxRate = 0.156;
+      // Use actual provider base fare / tax split when available, else fall back to estimated rate
       const perPersonBase: number = selectedFare.basePrice ?? 0;
+      const providerBase: number | undefined = selectedFare.providerBaseFare;
+      const providerTax: number | undefined = selectedFare.providerTaxAmount;
 
       const perPassenger = (passengers as PassengerPricing[]).map((pax, idx) => {
-        // Equal per-person split — perPersonBase is already per-person from fare-options API
         const effectiveBase = perPersonBase;
+        // Use real provider split if available
+        const baseFare = providerBase != null ? providerBase : Math.round(effectiveBase * 0.844);
+        const taxes = providerTax != null ? providerTax : Math.round(effectiveBase * 0.156);
         return {
           passengerId: pax.id ?? `pax_${idx}`,
           type: pax.type ?? 'adult',
-          baseFare: Math.round(effectiveBase * (1 - taxRate)),
-          taxes: Math.round(effectiveBase * taxRate),
+          baseFare,
+          taxes,
           subtotal: Math.round(effectiveBase),
         };
       });

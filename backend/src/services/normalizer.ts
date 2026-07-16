@@ -267,12 +267,36 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
   const currency = totalFare.CurrencyCode || totalFare.currencyCode || 'USD';
 
   // Extract actual base fare and taxes from Mystifly API.
-  // IMPORTANT: Mystifly's "Taxes" is an ARRAY of individual tax items [{TaxCode, Amount}, ...].
-  // The total tax amount is in "TotalTax" (an object with .Amount).
+  // Strategy 1: ItinTotalFare.BaseFare + ItinTotalFare.TotalTax (standard structure)
+  // Strategy 2: PTC_FareBreakdowns[0].PassengerFare (per-pax breakdown)
+  // Strategy 3: Derive tax = TotalFare - BaseFare if BaseFare exists but TotalTax doesn't
   const baseFareObj = itinTotalFare.BaseFare || itinTotalFare.baseFare || {};
   const totalTaxObj = itinTotalFare.TotalTax || itinTotalFare.totalTax || {};
-  const parsedBaseFare = parseFloat(baseFareObj.Amount || baseFareObj.amount || '');
-  const parsedTaxAmount = parseFloat(totalTaxObj.Amount || totalTaxObj.amount || '');
+  let parsedBaseFare = parseFloat(baseFareObj.Amount || baseFareObj.amount || '');
+  let parsedTaxAmount = parseFloat(totalTaxObj.Amount || totalTaxObj.amount || '');
+
+  // Fallback: try PTC_FareBreakdowns if ItinTotalFare doesn't have BaseFare/TotalTax
+  if ((isNaN(parsedBaseFare) || isNaN(parsedTaxAmount)) && pricingInfo.PTC_FareBreakdowns) {
+    const breakdowns = Array.isArray(pricingInfo.PTC_FareBreakdowns) ? pricingInfo.PTC_FareBreakdowns : [];
+    // Sum across all passenger types
+    let sumBase = 0, sumTax = 0;
+    for (const bd of breakdowns) {
+      const paxFare = bd.PassengerFare || bd.passengerFare || {};
+      const paxCount = bd.PassengerTypeQuantity?.Quantity || bd.PassengerTypeQuantity?.quantity || 1;
+      const bdBase = parseFloat(paxFare.BaseFare?.Amount || paxFare.baseFare?.Amount || '');
+      const bdTax = parseFloat(paxFare.TotalTax?.Amount || paxFare.totalTax?.Amount || paxFare.Taxes?.Amount || '');
+      if (!isNaN(bdBase)) sumBase += bdBase * paxCount;
+      if (!isNaN(bdTax)) sumTax += bdTax * paxCount;
+    }
+    if (!isNaN(sumBase) && sumBase > 0 && isNaN(parsedBaseFare)) parsedBaseFare = sumBase;
+    if (!isNaN(sumTax) && sumTax > 0 && isNaN(parsedTaxAmount)) parsedTaxAmount = sumTax;
+  }
+
+  // Fallback: derive tax from TotalFare - BaseFare
+  if (!isNaN(parsedBaseFare) && isNaN(parsedTaxAmount) && totalPrice > 0 && parsedBaseFare < totalPrice) {
+    parsedTaxAmount = Math.round((totalPrice - parsedBaseFare) * 100) / 100;
+  }
+
   const providerBaseFare = !isNaN(parsedBaseFare) ? parsedBaseFare : undefined;
   const providerTaxAmount = !isNaN(parsedTaxAmount) ? parsedTaxAmount : undefined;
 
