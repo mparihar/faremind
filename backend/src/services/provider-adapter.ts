@@ -768,8 +768,10 @@ export class MystiflyAdapter implements IBookingProvider {
     _slicesToRemove: { slice_id: string }[],
     slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[]
   ): Promise<{ requestId: string; offers: any[]; raw: unknown }> {
-    // Step 1: Get current booking details (passengers) for the ReIssueQuote
+    // Step 1: Get current booking details (passengers + original fare) for the ReIssueQuote
     const order = await this.getOrder(mfRef);
+    const originalTicketValue = order.totalAmount;
+    const orderCurrency = order.currency || 'USD';
 
     // Build origin-destination list from requested changes
     const originDestinations: MystiflyReissueOriginDestination[] = slicesToAdd.map(s => ({
@@ -801,22 +803,61 @@ export class MystiflyAdapter implements IBookingProvider {
     const ptrId = data?.PtrId || data?.ptrId || 0;
     const options = data?.Options || data?.options || data?.ReissueOptions || [];
 
-    // Normalize options into our unified offer format
+    // Helper: extract itinerary info from an option or top-level PTR data
+    const extractItinerary = (opt: any) => {
+      const segs = opt?.Segments || opt?.segments || opt?.FlightSegments || [];
+      const firstSeg = Array.isArray(segs) && segs.length > 0 ? segs[0] : null;
+      return {
+        origin: firstSeg?.Origin || firstSeg?.origin || firstSeg?.DepartureAirport || slicesToAdd[0]?.origin || '',
+        destination: firstSeg?.Destination || firstSeg?.destination || firstSeg?.ArrivalAirport || slicesToAdd[0]?.destination || '',
+        departureDateTime: firstSeg?.DepartureDateTime || firstSeg?.departureDateTime || firstSeg?.DepartureTime || `${slicesToAdd[0]?.departure_date}T00:00:00`,
+        arrivalDateTime: firstSeg?.ArrivalDateTime || firstSeg?.arrivalDateTime || firstSeg?.ArrivalTime || undefined,
+        airline: firstSeg?.AirlineName || firstSeg?.airlineName || firstSeg?.Carrier || '',
+        airlineCode: firstSeg?.AirlineCode || firstSeg?.airlineCode || firstSeg?.MarketingCarrier || '',
+        flightNumber: firstSeg?.FlightNumber || firstSeg?.flightNumber || '',
+        cabin: firstSeg?.CabinClass || firstSeg?.cabinClass || slicesToAdd[0]?.cabin_class || 'economy',
+        duration: firstSeg?.Duration || firstSeg?.duration || '',
+      };
+    };
+
+    // Helper: extract fee breakdown from an option
+    const extractFees = (opt: any) => {
+      const fareDiff = parseFloat(opt.FareDifference || opt.fareDifference || '0');
+      const taxDiff = parseFloat(opt.TaxDifference || opt.taxDifference || opt.TaxAmount || '0');
+      const penalty = parseFloat(opt.Penalty || opt.penalty || opt.ChangeFee || opt.ReissuePenalty || '0');
+      const supplierFee = parseFloat(opt.SupplierFee || opt.supplierFee || '0');
+      const totalAmount = parseFloat(opt.TotalAmount || opt.totalAmount || '0');
+      // If provider gives a total, use it; otherwise sum components
+      const totalDelta = totalAmount > 0 ? totalAmount : fareDiff + taxDiff + penalty + supplierFee;
+      const newTicketValue = parseFloat(opt.NewFareAmount || opt.newFareAmount || '0') || (originalTicketValue + fareDiff + taxDiff);
+
+      return { fareDiff, taxDiff, penalty, supplierFee, totalDelta, newTicketValue };
+    };
+
+    // Step 4: Normalize options into enhanced offer format
     const offers = Array.isArray(options) && options.length > 0
       ? options.map((opt: any, idx: number) => {
-          const fareDiff = parseFloat(opt.FareDifference || opt.fareDifference || opt.TotalAmount || '0');
-          const penalty = parseFloat(opt.Penalty || opt.penalty || opt.ChangeFee || '0');
-          const totalDelta = fareDiff + penalty;
+          const fees = extractFees(opt);
+          const itinerary = extractItinerary(opt);
 
           return {
             id: `mystifly_reissue_${mfRef}_${ptrId}_${idx + 1}`,
-            changeTotalAmount: totalDelta,
-            changeTotalCurrency: opt.Currency || opt.currency || order.currency || 'USD',
-            penaltyAmount: penalty,
-            penaltyCurrency: opt.Currency || opt.currency || order.currency || 'USD',
-            newTotalAmount: order.totalAmount + totalDelta,
-            newTotalCurrency: order.currency,
+            changeTotalAmount: fees.totalDelta,
+            changeTotalCurrency: opt.Currency || opt.currency || orderCurrency,
+            penaltyAmount: fees.penalty,
+            penaltyCurrency: opt.Currency || opt.currency || orderCurrency,
+            newTotalAmount: originalTicketValue + fees.totalDelta,
+            newTotalCurrency: orderCurrency,
             expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+            // Enhanced fee breakdown
+            fareDifference: fees.fareDiff,
+            taxDifference: fees.taxDiff,
+            airlineChangeFee: fees.penalty,
+            supplierFee: fees.supplierFee,
+            originalTicketValue,
+            newTicketValue: fees.newTicketValue,
+            // Enhanced itinerary
+            newItinerary: itinerary,
             slices: {
               add: slicesToAdd.map(s => ({
                 origin: s.origin,
@@ -826,8 +867,9 @@ export class MystiflyAdapter implements IBookingProvider {
               remove: [],
             },
             conditions: {
-              fareDifference: fareDiff,
-              penalty,
+              fareDifference: fees.fareDiff,
+              taxDifference: fees.taxDiff,
+              penalty: fees.penalty,
               refundable: opt.IsRefundable ?? false,
             },
             // Mystifly-specific metadata needed for confirm
@@ -838,26 +880,40 @@ export class MystiflyAdapter implements IBookingProvider {
           // If Mystifly returns a single quote (no Options array),
           // build a single offer from top-level PTR data
           id: `mystifly_reissue_${mfRef}_${ptrId}_1`,
-          changeTotalAmount: parseFloat(data?.TotalAmount || data?.FareDifference || '0'),
-          changeTotalCurrency: data?.Currency || order.currency || 'USD',
-          penaltyAmount: parseFloat(data?.Penalty || data?.ChangeFee || '0'),
-          penaltyCurrency: data?.Currency || order.currency || 'USD',
-          newTotalAmount: order.totalAmount + parseFloat(data?.TotalAmount || data?.FareDifference || '0'),
-          newTotalCurrency: order.currency,
-          expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-          slices: {
-            add: slicesToAdd.map(s => ({
-              origin: s.origin,
-              destination: s.destination,
-              departure_date: s.departure_date,
-            })),
-            remove: [],
-          },
-          conditions: {
-            fareDifference: parseFloat(data?.FareDifference || '0'),
-            penalty: parseFloat(data?.Penalty || '0'),
-          },
-          _mystifly: { ptrId, preferenceOption: 1 },
+          ...(() => {
+            const fees = extractFees(data);
+            const itinerary = extractItinerary(data);
+            return {
+              changeTotalAmount: fees.totalDelta,
+              changeTotalCurrency: data?.Currency || orderCurrency,
+              penaltyAmount: fees.penalty,
+              penaltyCurrency: data?.Currency || orderCurrency,
+              newTotalAmount: originalTicketValue + fees.totalDelta,
+              newTotalCurrency: orderCurrency,
+              expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+              fareDifference: fees.fareDiff,
+              taxDifference: fees.taxDiff,
+              airlineChangeFee: fees.penalty,
+              supplierFee: fees.supplierFee,
+              originalTicketValue,
+              newTicketValue: fees.newTicketValue,
+              newItinerary: itinerary,
+              slices: {
+                add: slicesToAdd.map(s => ({
+                  origin: s.origin,
+                  destination: s.destination,
+                  departure_date: s.departure_date,
+                })),
+                remove: [],
+              },
+              conditions: {
+                fareDifference: fees.fareDiff,
+                taxDifference: fees.taxDiff,
+                penalty: fees.penalty,
+              },
+              _mystifly: { ptrId, preferenceOption: 1 },
+            };
+          })(),
         }];
 
     return {

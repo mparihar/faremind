@@ -196,7 +196,7 @@ export function PassengerModal({ bookingId, passengers, onClose }: { bookingId: 
   );
 }
 
-// ── Date Change Modal (Duffel-integrated) ──
+// ── Date Change Modal (Mystifly PTR ReIssue + Duffel unified) ──
 export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: string; booking: any; onClose: () => void }) {
   const {
     changeOffers, changeSearchLoading, changeSearchError,
@@ -206,11 +206,13 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
   } = useManageBookingStore();
   const isRT = (booking.tripType || '').toLowerCase().includes('round');
   const [depDate, setDepDate] = useState('');
-  const [step, setStep] = useState<'date' | 'offers' | 'done'>('date');
+  const [step, setStep] = useState<'date' | 'offers' | 'review' | 'done'>('date');
   const [selectedOffer, setSelectedOffer] = useState<any>(null);
   const today = new Date().toISOString().split('T')[0];
   const iCls = 'w-full px-3 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all [color-scheme:dark] date-icon-orange';
   const fmt = (n: number, c = 'USD') => new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(n);
+  const fmtTime = (dt: string) => { try { return new Date(dt).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true }); } catch { return ''; } };
+  const fmtDate = (dt: string) => { try { return new Date(dt).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }); } catch { return dt; } };
 
   useEffect(() => { resetChangeState(); }, []);
   useEffect(() => { if (changeConfirmResult?.success) { setStep('done'); loadTimeline(bookingId); loadActions(bookingId); } }, [changeConfirmResult]);
@@ -221,8 +223,7 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
     if (ok) {
       setStep('offers');
     } else {
-      // Automated search failed — submit a manual change request so that
-      // admin, super admin, and support staff are notified via email.
+      // Automated search failed — submit a manual change request
       const { requestDateChange } = useManageBookingStore.getState();
       await requestDateChange(bookingId, depDate, undefined, 'Automated search unavailable — submitted via fallback').catch(() => {});
     }
@@ -239,24 +240,145 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
         className="w-full max-w-lg bg-[#0f1525] border border-white/10 rounded-2xl p-6" onClick={e => e.stopPropagation()}>
         <div className="flex items-center justify-between mb-5">
           <div>
-            <h3 className="text-white font-bold text-lg">Change Flight Date</h3>
-            <span className="text-[10px] text-amber-400/80 font-medium">If airline permits</span>
+            <h3 className="text-white font-bold text-lg">Change Flight</h3>
+            <span className="text-[10px] text-amber-400/80 font-medium">Subject to airline fare rules</span>
           </div>
           <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={18} /></button>
         </div>
 
+        {/* ── Step: Done ── */}
         {step === 'done' ? (
           <div className="text-center py-6">
             <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-3"><Check size={28} className="text-emerald-400" /></div>
-            <p className="text-white font-bold mb-1">{changeConfirmResult?.changeId ? 'Trip Updated Successfully' : 'Request Submitted'}</p>
+            <p className="text-white font-bold mb-1">{changeConfirmResult?.changeId ? 'Flight Changed Successfully' : 'Request Submitted'}</p>
             <p className="text-slate-400 text-sm mb-4">{changeConfirmResult?.message || 'Your itinerary has been updated.'}</p>
+            {changeConfirmResult?.newTotalAmount > 0 && (
+              <p className="text-[#1ABC9C] text-sm font-semibold mb-3">
+                New booking total: {fmt(changeConfirmResult.newTotalAmount, changeConfirmResult.newTotalCurrency)}
+              </p>
+            )}
             <button onClick={onClose} className="px-6 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-semibold text-sm">Done</button>
           </div>
+
+        /* ── Step: Review (selected offer breakdown) ── */
+        ) : step === 'review' && selectedOffer ? (
+          <div className="space-y-4">
+            {/* Itinerary comparison */}
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-white/[0.05]">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Review Your Flight Change</p>
+              </div>
+              <div className="px-4 py-3 space-y-3">
+                {/* Current flight */}
+                <div>
+                  <p className="text-[9px] text-red-400 uppercase font-bold tracking-wider mb-1">Current Flight</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-white font-semibold text-sm">{booking.originAirport} → {booking.destinationAirport}</span>
+                    <span className="text-slate-500 text-xs">·</span>
+                    <span className="text-slate-400 text-xs">{fmtDate(booking.departureDate)}</span>
+                  </div>
+                </div>
+                {/* New flight */}
+                <div>
+                  <p className="text-[9px] text-[#1ABC9C] uppercase font-bold tracking-wider mb-1">New Flight</p>
+                  <div className="flex items-center gap-2">
+                    <span className="text-white font-semibold text-sm">
+                      {selectedOffer.newItinerary?.origin || booking.originAirport} → {selectedOffer.newItinerary?.destination || booking.destinationAirport}
+                    </span>
+                    <span className="text-slate-500 text-xs">·</span>
+                    <span className="text-[#1ABC9C] text-xs font-medium">{fmtDate(depDate)}</span>
+                  </div>
+                  {(selectedOffer.newItinerary?.flightNumber || selectedOffer.newItinerary?.airline) && (
+                    <p className="text-slate-500 text-xs mt-0.5">
+                      {selectedOffer.newItinerary.airlineCode}{selectedOffer.newItinerary.flightNumber}
+                      {selectedOffer.newItinerary.airline ? ` · ${selectedOffer.newItinerary.airline}` : ''}
+                      {selectedOffer.newItinerary.departureDateTime && selectedOffer.newItinerary.departureDateTime !== `${depDate}T00:00:00`
+                        ? ` · ${fmtTime(selectedOffer.newItinerary.departureDateTime)}`
+                        : ''}
+                    </p>
+                  )}
+                </div>
+              </div>
+            </div>
+
+            {/* Fee breakdown */}
+            <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
+              <div className="px-4 py-2.5 border-b border-white/[0.05]">
+                <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Price Breakdown</p>
+              </div>
+              <div className="px-4 py-3 space-y-2 text-sm">
+                {(selectedOffer.fareDifference ?? 0) !== 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Difference in ticket price</span>
+                    <span className={`font-medium ${selectedOffer.fareDifference > 0 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                      {selectedOffer.fareDifference > 0 ? '+' : ''}{fmt(selectedOffer.fareDifference, selectedOffer.changeTotalCurrency)}
+                    </span>
+                  </div>
+                )}
+                {(selectedOffer.taxDifference ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Taxes & other charges</span>
+                    <span className="text-amber-400 font-medium">+{fmt(selectedOffer.taxDifference, selectedOffer.changeTotalCurrency)}</span>
+                  </div>
+                )}
+                {(selectedOffer.airlineChangeFee ?? selectedOffer.penaltyAmount ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Airline change fee</span>
+                    <span className="text-red-400 font-medium">+{fmt(selectedOffer.airlineChangeFee ?? selectedOffer.penaltyAmount, selectedOffer.changeTotalCurrency)}</span>
+                  </div>
+                )}
+                {(selectedOffer.supplierFee ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">Supplier fee</span>
+                    <span className="text-red-400 font-medium">+{fmt(selectedOffer.supplierFee, selectedOffer.changeTotalCurrency)}</span>
+                  </div>
+                )}
+                <div className="flex justify-between items-center pt-2 border-t border-white/[0.05]">
+                  <span className="text-white font-bold">
+                    {selectedOffer.changeTotalAmount > 0 ? 'Amount to pay' : selectedOffer.changeTotalAmount < 0 ? 'Remaining ticket value' : 'No additional cost'}
+                  </span>
+                  <span className={`font-black text-lg ${selectedOffer.changeTotalAmount > 0 ? 'text-amber-400' : selectedOffer.changeTotalAmount < 0 ? 'text-emerald-400' : 'text-[#1ABC9C]'}`}>
+                    {selectedOffer.changeTotalAmount !== 0
+                      ? `${selectedOffer.changeTotalAmount > 0 ? '' : ''}${fmt(Math.abs(selectedOffer.changeTotalAmount), selectedOffer.changeTotalCurrency)}`
+                      : '$0'}
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Warning */}
+            <div className="flex items-start gap-2 bg-amber-500/5 border border-amber-500/20 rounded-xl px-3 py-2">
+              <AlertCircle size={13} className="text-amber-400 shrink-0 mt-0.5" />
+              <p className="text-amber-200/70 text-xs">This action cannot be undone. Your current flight will be replaced.</p>
+            </div>
+
+            {changeConfirmError && (
+              <div className="flex items-start gap-2 text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2.5">
+                <AlertCircle size={14} className="shrink-0 mt-0.5" />
+                <span>The airline could not process this change. Please contact FareMind Support.</span>
+              </div>
+            )}
+
+            {/* Buttons */}
+            <div className="flex gap-3">
+              <button onClick={() => { setStep('offers'); }} className="flex-1 py-3 rounded-xl border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/[0.04]">Back</button>
+              <button onClick={handleConfirm} disabled={changeConfirmLoading}
+                className="flex-1 py-3 rounded-xl bg-purple-500 hover:bg-purple-600 text-white font-bold text-sm disabled:opacity-50 transition-all">
+                {changeConfirmLoading ? <Loader2 size={16} className="animate-spin mx-auto" /> : (
+                  selectedOffer.changeTotalAmount > 0
+                    ? `Confirm & Pay ${fmt(selectedOffer.changeTotalAmount, selectedOffer.changeTotalCurrency)}`
+                    : 'Confirm Flight Change'
+                )}
+              </button>
+            </div>
+          </div>
+
+        /* ── Step: Offers ── */
         ) : step === 'offers' ? (
           <div className="space-y-4">
             <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-sm text-slate-400">
               Current: <span className="text-white font-medium">{booking.originAirport} → {booking.destinationAirport}</span>
-              {' · '}Searching for: <span className="text-[#1ABC9C] font-medium">{depDate}</span>
+              {' · '}Searching for: <span className="text-[#1ABC9C] font-medium">{fmtDate(depDate)}</span>
             </div>
             {changeOffers.length === 0 ? (
               <div className="text-center py-6">
@@ -274,8 +396,18 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
                       className={`w-full text-left p-3 rounded-xl border transition-all ${selectedOffer?.id === o.id ? 'border-[#1ABC9C] bg-[#1ABC9C]/5' : 'border-white/[0.06] bg-white/[0.02] hover:border-white/10'}`}>
                       <div className="flex justify-between items-center">
                         <div>
-                          <p className="text-white text-sm font-semibold">{o.newSlices?.[0]?.segments?.[0]?.departing_at ? new Date(o.newSlices[0].segments[0].departing_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' }) : depDate}</p>
-                          <p className="text-slate-500 text-xs">{o.newSlices?.[0]?.segments?.map((s: any) => `${s.marketing_carrier?.iata_code || ''}${s.marketing_carrier_flight_number || ''}`).join(' → ') || 'Flight details'}</p>
+                          <p className="text-white text-sm font-semibold">
+                            {o.newItinerary?.departureDateTime && o.newItinerary.departureDateTime !== `${depDate}T00:00:00`
+                              ? `${fmtDate(o.newItinerary.departureDateTime)} · ${fmtTime(o.newItinerary.departureDateTime)}`
+                              : fmtDate(depDate)}
+                          </p>
+                          <p className="text-slate-500 text-xs">
+                            {o.newItinerary?.airlineCode && o.newItinerary?.flightNumber
+                              ? `${o.newItinerary.airlineCode}${o.newItinerary.flightNumber}`
+                              : o.newSlices?.[0]?.segments?.map((s: any) => `${s.marketing_carrier?.iata_code || ''}${s.marketing_carrier_flight_number || ''}`).join(' → ')
+                              || 'Flight details'}
+                            {o.newItinerary?.airline ? ` · ${o.newItinerary.airline}` : ''}
+                          </p>
                         </div>
                         <div className="text-right">
                           {o.changeTotalAmount !== 0 && (
@@ -283,24 +415,28 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
                               {o.changeTotalAmount > 0 ? '+' : ''}{fmt(o.changeTotalAmount, o.changeTotalCurrency)}
                             </p>
                           )}
-                          {o.penaltyAmount > 0 && <p className="text-[10px] text-slate-500">Penalty: {fmt(o.penaltyAmount, o.penaltyCurrency)}</p>}
+                          {o.changeTotalAmount === 0 && <p className="text-sm font-bold text-[#1ABC9C]">No extra cost</p>}
+                          {(o.airlineChangeFee ?? o.penaltyAmount ?? 0) > 0 && (
+                            <p className="text-[10px] text-slate-500">Includes {fmt(o.airlineChangeFee ?? o.penaltyAmount, o.penaltyCurrency)} change fee</p>
+                          )}
                         </div>
                       </div>
                     </button>
                   ))}
                 </div>
-                {changeConfirmError && <div className="flex items-start gap-2 text-amber-400 text-sm bg-amber-400/10 border border-amber-400/20 rounded-lg px-3 py-2.5"><AlertCircle size={14} className="shrink-0 mt-0.5" /><span>Please contact FareMind Support, and our team will review available options with the airline/provider.</span></div>}
-                <p className="text-slate-600 text-xs">Trip modifications depend on airline fare rules and provider support.</p>
+                <p className="text-slate-600 text-xs">Select an option and review the full price breakdown.</p>
                 <div className="flex gap-3">
                   <button onClick={() => { setStep('date'); setSelectedOffer(null); }} className="flex-1 py-3 rounded-xl border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/[0.04]">Back</button>
-                  <button onClick={handleConfirm} disabled={!selectedOffer || changeConfirmLoading}
+                  <button onClick={() => { if (selectedOffer) setStep('review'); }} disabled={!selectedOffer}
                     className="flex-1 py-3 rounded-xl bg-purple-500 hover:bg-purple-600 text-white font-bold text-sm disabled:opacity-50 transition-all">
-                    {changeConfirmLoading ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Confirm Change'}
+                    Review Change
                   </button>
                 </div>
               </>
             )}
           </div>
+
+        /* ── Step: Date selection ── */
         ) : (
           <div className="space-y-4">
             <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-sm text-slate-400">

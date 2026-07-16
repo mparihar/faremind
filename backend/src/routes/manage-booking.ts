@@ -1015,6 +1015,18 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
       if (booking.bookingStatus === 'CANCELLED') return reply.code(400).send({ error: 'Cannot change a cancelled booking' });
 
+      // Validate booking is in changeable state
+      if ((booking as any).ticketingStatus === 'VOIDED') {
+        return reply.code(400).send({ error: 'Cannot change a voided booking. The ticket has already been cancelled.' });
+      }
+      if ((booking as any).ticketingStatus === 'REFUND_PENDING') {
+        return reply.code(400).send({ error: 'Cannot change a booking with a pending refund.' });
+      }
+      // Check departure hasn't passed
+      if (new Date(booking.departureDate) < new Date()) {
+        return reply.code(400).send({ error: 'Cannot change a booking for a flight that has already departed.' });
+      }
+
       // Find the provider order ID — check PNR first, then MasterBooking-level field
       let providerPnr = booking.pnrs.find((p: any) => p.providerOrderId);
       let resolvedProviderOrderId = providerPnr?.providerOrderId
@@ -1130,8 +1142,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       return {
         supported: true,
         requestId: result.requestId,
+        provider: booking.primaryProvider,
         offerCount: result.offers.length,
-        offers: result.offers.map(o => ({
+        offers: result.offers.map((o: any) => ({
           id: o.id,
           changeTotalAmount: o.changeTotalAmount,
           changeTotalCurrency: o.changeTotalCurrency,
@@ -1140,6 +1153,15 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           newTotalAmount: o.newTotalAmount,
           newTotalCurrency: o.newTotalCurrency,
           expiresAt: o.expiresAt,
+          // Enhanced fee breakdown (Mystifly PTR)
+          fareDifference: o.fareDifference ?? 0,
+          taxDifference: o.taxDifference ?? 0,
+          airlineChangeFee: o.airlineChangeFee ?? o.penaltyAmount ?? 0,
+          supplierFee: o.supplierFee ?? 0,
+          originalTicketValue: o.originalTicketValue ?? Number(booking.totalAmount),
+          newTicketValue: o.newTicketValue ?? 0,
+          // Enhanced itinerary (Mystifly PTR)
+          newItinerary: o.newItinerary ?? null,
           newSlices: o.slices?.add || [],
           removedSlices: o.slices?.remove || [],
           conditions: o.conditions,
@@ -1172,6 +1194,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const booking = await mbq.getMasterBookingFull(bookingId);
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
+      if (booking.bookingStatus === 'CANCELLED') return reply.code(400).send({ error: 'Cannot change a cancelled booking' });
+      if ((booking as any).ticketingStatus === 'VOIDED') return reply.code(400).send({ error: 'Cannot change a voided booking' });
+      if ((booking as any).ticketingStatus === 'REFUND_PENDING') return reply.code(400).send({ error: 'Cannot change a booking with a pending refund' });
+      if (new Date(booking.departureDate) < new Date()) return reply.code(400).send({ error: 'Cannot change a booking for a past departure' });
 
       const confirmProviderPnr = booking.pnrs.find((p: any) => p.providerOrderId);
       const confirmProviderOrderId = confirmProviderPnr?.providerOrderId

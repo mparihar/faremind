@@ -6,6 +6,7 @@ import { Plane, ArrowLeft, Loader2, AlertCircle, User, MapPin, Calendar, Chevron
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import CancelBookingModal from '@/components/manage-booking/CancelBookingModal';
+import { DateChangeModal } from '@/components/manage-booking/BookingModals';
 import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
 import { canAddBaggage } from '@/lib/booking-capabilities';
 function StatusBadge({ status }: { status: string }) {
@@ -182,89 +183,8 @@ function PassengerModal({ bookingId, passengers, onClose }: { bookingId: string;
   );
 }
 
-// Date Change Modal
-function DateChangeModal({ bookingId, booking, onClose }: { bookingId: string; booking: any; onClose: () => void }) {
-  const { dateChangeLoading, dateChangeError, requestDateChange, loadTimeline, loadActions, fareRules } = useManageBookingStore();
-  const isRT = (booking.tripType || '').includes('round');
-  const [depDate, setDepDate] = useState('');
-  const [retDate, setRetDate] = useState('');
-  const [reason, setReason] = useState('');
-  const [done, setDone] = useState(false);
-  const iCls = 'w-full px-3 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all [color-scheme:dark]';
-
-  async function handleSubmit() {
-    if (!depDate) return;
-    const ok = await requestDateChange(bookingId, depDate, isRT ? retDate || undefined : undefined, reason || undefined);
-    if (ok) { setDone(true); await loadTimeline(bookingId); await loadActions(bookingId); }
-  }
-
-  // Build change fee message from stored fare rules
-  const changeFeeMsg = fareRules
-    ? fareRules.changeable
-      ? fareRules.changeFee != null && fareRules.changeFee > 0
-        ? `Changeable (fee: $${fareRules.changeFee}). Fare differences may also apply.`
-        : 'Changeable (Included). Only fare differences may apply.'
-      : 'Changes are not allowed under your fare rules. Our team will review your request.'
-    : 'Date changes are subject to airline fare rules and availability. Change fees may apply.';
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
-      <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }} className="w-full max-w-md bg-slate-900 border border-white/10 rounded-2xl p-6" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-5">
-          <h3 className="text-white font-bold text-lg">Change Flight Date</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={18} /></button>
-        </div>
-        {done ? (
-          <div className="text-center py-6">
-            <div className="w-14 h-14 rounded-full bg-emerald-500/10 border border-emerald-500/20 flex items-center justify-center mx-auto mb-3"><Check size={28} className="text-emerald-400" /></div>
-            <p className="text-white font-bold mb-1">Request Submitted</p>
-            <p className="text-slate-400 text-sm mb-4">Our support team will contact you within 24 hours to confirm your new dates.</p>
-            <button onClick={onClose} className="px-6 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-semibold text-sm">Done</button>
-          </div>
-        ) : (
-          <div className="space-y-4">
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-sm text-slate-400">
-              Current: <span className="text-white font-medium">{booking.originAirport} {(booking.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} {booking.destinationAirport}</span>
-              {' · '}{new Date(booking.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
-            </div>
-            <div>
-              <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">New Departure Date</label>
-              <input type="date" value={depDate} onChange={e => setDepDate(e.target.value)} min={new Date().toISOString().split('T')[0]} className={`${iCls} date-icon-orange`} />
-            </div>
-            {isRT && (
-              <div>
-                <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">New Return Date (optional)</label>
-                <input type="date" value={retDate} onChange={e => setRetDate(e.target.value)} min={depDate || new Date().toISOString().split('T')[0]} className={`${iCls} date-icon-orange`} />
-              </div>
-            )}
-            <div>
-              <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Reason (optional)</label>
-              <input type="text" value={reason} onChange={e => setReason(e.target.value)} placeholder="e.g. Medical emergency, schedule conflict" className={iCls} />
-            </div>
-            {/* Change fee info from fare rules */}
-            <div className={`flex items-start gap-2 text-xs rounded-lg px-3 py-2 ${
-              fareRules && !fareRules.changeable
-                ? 'bg-red-400/10 border border-red-400/20 text-red-300'
-                : fareRules && fareRules.changeFee != null && fareRules.changeFee > 0
-                  ? 'bg-amber-400/10 border border-amber-400/20 text-amber-300'
-                  : 'bg-white/[0.03] border border-white/[0.06] text-slate-500'
-            }`}>
-              <AlertCircle size={13} className="shrink-0 mt-0.5" />
-              <span>{changeFeeMsg}</span>
-            </div>
-            {dateChangeError && <div className="flex items-start gap-2 text-amber-400 text-sm bg-amber-400/10 border border-amber-400/20 rounded-lg px-3 py-2.5"><AlertCircle size={14} className="shrink-0 mt-0.5" /><span>Please contact FareMind Support, and our team will review available options with the airline/provider.</span></div>}
-            <div className="flex gap-3">
-              <button onClick={onClose} className="flex-1 py-3 rounded-xl border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/[0.04] transition-all">Cancel</button>
-              <button onClick={handleSubmit} disabled={!depDate || dateChangeLoading} className="flex-1 py-3 rounded-xl bg-purple-500 hover:bg-purple-600 text-white font-bold text-sm disabled:opacity-50 transition-all">
-                {dateChangeLoading ? <Loader2 size={16} className="animate-spin mx-auto" /> : 'Request Change'}
-              </button>
-            </div>
-          </div>
-        )}
-      </motion.div>
-    </div>
-  );
-}
+// DateChangeModal is now imported from '@/components/manage-booking/BookingModals'
+// which supports Mystifly PTR ReIssue + Duffel unified flow
 
 // E-Ticket Modal
 function ETicketModal({ bookingId, onClose }: { bookingId: string; onClose: () => void }) {

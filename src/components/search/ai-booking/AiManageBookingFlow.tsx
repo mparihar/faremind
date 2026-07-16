@@ -82,8 +82,9 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
 
   // Date change state
   const [dcDate, setDcDate] = useState('');
-  const [dcStep, setDcStep] = useState<'date' | 'searching' | 'offers' | 'confirming' | 'done' | 'fallback'>('date');
+  const [dcStep, setDcStep] = useState<'date' | 'searching' | 'offers' | 'review' | 'confirming' | 'done' | 'fallback'>('date');
   const [dcSelectedOffer, setDcSelectedOffer] = useState<any>(null);
+  const fmtAmt = (n: number, c = 'USD') => new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(n);
 
   const isLoggedIn = !!auth.user;
 
@@ -568,11 +569,15 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
           <>
             <AiBubble>
               {dcStep === 'done' ? (
-                <p>Your flight date has been updated! ✅</p>
+                <p>Your flight has been changed successfully! ✅</p>
               ) : dcStep === 'fallback' ? (
                 <p>Your date change request has been submitted. Our team will contact you within 24 hours.</p>
+              ) : dcStep === 'review' ? (
+                <p>Please review the price breakdown below. Would you like to confirm the flight change{dcSelectedOffer?.changeTotalAmount > 0 ? ` and pay ${fmtAmt(dcSelectedOffer.changeTotalAmount, dcSelectedOffer.changeTotalCurrency)}` : ''}?</p>
+              ) : dcStep === 'offers' ? (
+                <p>I found {mbStore.changeOffers.length} option{mbStore.changeOffers.length !== 1 ? 's' : ''} for your new date. Select one and review the details.</p>
               ) : (
-                <p>Let's change the flight date for booking <strong>{meta.ref}</strong>.</p>
+                <p>Let's change the flight for booking <strong>{meta.ref}</strong>.</p>
               )}
             </AiBubble>
 
@@ -620,55 +625,96 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
                   </button>
                 </div>
               </div>
-            ) : dcStep === 'offers' ? (
+            ) : dcStep === 'offers' || dcStep === 'review' ? (
               <div className="space-y-2">
-                <div className="bg-white/80 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-500">
-                  <span className="text-slate-800 font-medium">{selectedBooking.originAirport} → {selectedBooking.destinationAirport}</span>
-                  {' · '}New date: <span className="text-purple-600 font-medium">{dcDate}</span>
-                </div>
-
-                {mbStore.changeOffers.length === 0 ? (
-                  <div className="text-center py-4">
-                    <AlertCircle className="w-5 h-5 text-amber-500 mx-auto mb-1" />
-                    <p className="text-[12px] font-bold text-slate-700">No Alternatives Found</p>
-                    <p className="text-[10px] text-slate-400">The airline has no available options for this date.</p>
-                    <button onClick={() => setDcStep('date')} className="mt-2 px-3 py-1.5 text-[10px] rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 transition-colors">Try Another Date</button>
-                  </div>
-                ) : (
+                {/* Review step: show breakdown when offer selected and user clicked "Review" */}
+                {dcStep === 'review' && dcSelectedOffer ? (
                   <>
-                    <p className="text-slate-500 text-[10px]">{mbStore.changeOffers.length} option{mbStore.changeOffers.length > 1 ? 's' : ''} from airline</p>
-                    <div className="space-y-1.5 max-h-48 overflow-y-auto">
-                      {mbStore.changeOffers.map((o: any) => {
-                        const fmt = (n: number, c = 'USD') => new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(n);
-                        return (
-                          <button key={o.id} onClick={() => setDcSelectedOffer(o)}
-                            className={`w-full text-left p-3 rounded-xl border transition-all ${dcSelectedOffer?.id === o.id ? 'border-purple-400 bg-purple-50/50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
-                            <div className="flex justify-between items-center">
-                              <div>
-                                <p className="text-slate-800 text-[12px] font-semibold">
-                                  {o.newSlices?.[0]?.segments?.[0]?.departing_at
-                                    ? new Date(o.newSlices[0].segments[0].departing_at).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })
-                                    : dcDate}
-                                </p>
-                                <p className="text-slate-400 text-[10px]">
-                                  {o.newSlices?.[0]?.segments?.map((s: any) => `${s.marketing_carrier?.iata_code || ''}${s.marketing_carrier_flight_number || ''}`).join(' → ') || 'Flight details'}
-                                </p>
-                              </div>
-                              <div className="text-right">
-                                {o.changeTotalAmount !== 0 && (
-                                  <p className={`text-[12px] font-bold ${o.changeTotalAmount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
-                                    {o.changeTotalAmount > 0 ? '+' : ''}{fmt(o.changeTotalAmount, o.changeTotalCurrency)}
-                                  </p>
-                                )}
-                                {o.penaltyAmount > 0 && <p className="text-[9px] text-slate-400">Penalty: {fmt(o.penaltyAmount, o.penaltyCurrency)}</p>}
-                              </div>
-                            </div>
-                          </button>
-                        );
-                      })}
+                    {/* Itinerary comparison */}
+                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="px-3 py-2 border-b border-slate-100">
+                        <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Review Your Flight Change</p>
+                      </div>
+                      <div className="px-3 py-2.5 space-y-2">
+                        <div>
+                          <p className="text-[8px] text-red-400 uppercase font-bold tracking-wider">Current</p>
+                          <p className="text-slate-800 text-[11px] font-medium">{selectedBooking.originAirport} → {selectedBooking.destinationAirport} · {new Date(selectedBooking.departureDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                        </div>
+                        <div>
+                          <p className="text-[8px] text-emerald-500 uppercase font-bold tracking-wider">New Flight</p>
+                          <p className="text-slate-800 text-[11px] font-medium">
+                            {dcSelectedOffer.newItinerary?.origin || selectedBooking.originAirport} → {dcSelectedOffer.newItinerary?.destination || selectedBooking.destinationAirport} · {new Date(dcDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                          </p>
+                          {(dcSelectedOffer.newItinerary?.flightNumber || dcSelectedOffer.newItinerary?.airline) && (
+                            <p className="text-slate-400 text-[10px]">
+                              {dcSelectedOffer.newItinerary.airlineCode}{dcSelectedOffer.newItinerary.flightNumber}
+                              {dcSelectedOffer.newItinerary.airline ? ` · ${dcSelectedOffer.newItinerary.airline}` : ''}
+                            </p>
+                          )}
+                        </div>
+                      </div>
                     </div>
 
-                    {dcSelectedOffer && (
+                    {/* Price breakdown */}
+                    <div className="bg-white border border-slate-200 rounded-xl overflow-hidden">
+                      <div className="px-3 py-2 border-b border-slate-100">
+                        <p className="text-[9px] font-bold text-slate-500 uppercase tracking-wider">Price Breakdown</p>
+                      </div>
+                      <div className="px-3 py-2.5 space-y-1.5 text-[11px]">
+                        {(dcSelectedOffer.fareDifference ?? 0) !== 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Difference in ticket price</span>
+                            <span className={`font-medium ${dcSelectedOffer.fareDifference > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                              {dcSelectedOffer.fareDifference > 0 ? '+' : ''}{fmtAmt(dcSelectedOffer.fareDifference, dcSelectedOffer.changeTotalCurrency)}
+                            </span>
+                          </div>
+                        )}
+                        {(dcSelectedOffer.taxDifference ?? 0) > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Taxes & charges</span>
+                            <span className="text-amber-600 font-medium">+{fmtAmt(dcSelectedOffer.taxDifference, dcSelectedOffer.changeTotalCurrency)}</span>
+                          </div>
+                        )}
+                        {(dcSelectedOffer.airlineChangeFee ?? dcSelectedOffer.penaltyAmount ?? 0) > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Airline change fee</span>
+                            <span className="text-red-500 font-medium">+{fmtAmt(dcSelectedOffer.airlineChangeFee ?? dcSelectedOffer.penaltyAmount, dcSelectedOffer.changeTotalCurrency)}</span>
+                          </div>
+                        )}
+                        {(dcSelectedOffer.supplierFee ?? 0) > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">Supplier fee</span>
+                            <span className="text-red-500 font-medium">+{fmtAmt(dcSelectedOffer.supplierFee, dcSelectedOffer.changeTotalCurrency)}</span>
+                          </div>
+                        )}
+                        <div className="flex justify-between items-center pt-1.5 border-t border-slate-100">
+                          <span className="text-slate-800 font-bold text-[12px]">
+                            {dcSelectedOffer.changeTotalAmount > 0 ? 'Amount to pay' : dcSelectedOffer.changeTotalAmount < 0 ? 'Remaining ticket value' : 'No additional cost'}
+                          </span>
+                          <span className={`font-black text-[14px] ${dcSelectedOffer.changeTotalAmount > 0 ? 'text-amber-600' : dcSelectedOffer.changeTotalAmount < 0 ? 'text-emerald-600' : 'text-emerald-600'}`}>
+                            {dcSelectedOffer.changeTotalAmount !== 0 ? fmtAmt(Math.abs(dcSelectedOffer.changeTotalAmount), dcSelectedOffer.changeTotalCurrency) : '$0'}
+                          </span>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Warning */}
+                    <div className="flex items-start gap-1.5 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+                      <AlertCircle className="w-3 h-3 text-amber-500 shrink-0 mt-0.5" />
+                      <p className="text-amber-700 text-[10px]">This action cannot be undone. Your current flight will be replaced.</p>
+                    </div>
+
+                    {mbStore.changeConfirmError && (
+                      <div className="flex items-start gap-1.5 text-[10px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
+                        <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
+                        <span>The airline could not process this change. Please contact support.</span>
+                      </div>
+                    )}
+
+                    <div className="flex gap-2">
+                      <button onClick={() => setDcStep('offers')} className="flex-1 py-2 rounded-lg border border-slate-200 text-slate-500 text-[11px] font-medium hover:text-slate-700 transition-colors">
+                        Back
+                      </button>
                       <button
                         onClick={async () => {
                           setDcStep('confirming');
@@ -681,26 +727,89 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
                           if (ok) {
                             setDcStep('done');
                           } else {
-                            setDcStep('offers');
+                            setDcStep('review');
                           }
                         }}
                         disabled={mbStore.changeConfirmLoading}
-                        className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-[12px] font-bold transition-all disabled:opacity-50"
+                        className="flex-1 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold transition-all disabled:opacity-50"
                       >
-                        {mbStore.changeConfirmLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : 'Confirm Change'}
+                        {mbStore.changeConfirmLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : (
+                          dcSelectedOffer.changeTotalAmount > 0
+                            ? `Confirm & Pay ${fmtAmt(dcSelectedOffer.changeTotalAmount, dcSelectedOffer.changeTotalCurrency)}`
+                            : 'Confirm Flight Change'
+                        )}
                       </button>
-                    )}
+                    </div>
+                  </>
+                ) : (
+                  /* Offers list */
+                  <>
+                    <div className="bg-white/80 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-500">
+                      <span className="text-slate-800 font-medium">{selectedBooking.originAirport} → {selectedBooking.destinationAirport}</span>
+                      {' · '}New date: <span className="text-purple-600 font-medium">{new Date(dcDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</span>
+                    </div>
 
-                    {mbStore.changeConfirmError && (
-                      <div className="flex items-start gap-1.5 text-[10px] text-red-600 bg-red-50 border border-red-200 rounded-lg px-3 py-2">
-                        <AlertCircle className="w-3 h-3 shrink-0 mt-0.5" />
-                        <span>{mbStore.changeConfirmError}</span>
+                    {mbStore.changeOffers.length === 0 ? (
+                      <div className="text-center py-4">
+                        <AlertCircle className="w-5 h-5 text-amber-500 mx-auto mb-1" />
+                        <p className="text-[12px] font-bold text-slate-700">No Alternatives Found</p>
+                        <p className="text-[10px] text-slate-400">The airline has no available options for this date.</p>
+                        <button onClick={() => setDcStep('date')} className="mt-2 px-3 py-1.5 text-[10px] rounded-lg border border-slate-200 text-slate-500 hover:text-slate-700 transition-colors">Try Another Date</button>
                       </div>
-                    )}
+                    ) : (
+                      <>
+                        <p className="text-slate-500 text-[10px]">{mbStore.changeOffers.length} option{mbStore.changeOffers.length > 1 ? 's' : ''} from airline</p>
+                        <div className="space-y-1.5 max-h-48 overflow-y-auto">
+                          {mbStore.changeOffers.map((o: any) => {
+                            return (
+                              <button key={o.id} onClick={() => setDcSelectedOffer(o)}
+                                className={`w-full text-left p-3 rounded-xl border transition-all ${dcSelectedOffer?.id === o.id ? 'border-purple-400 bg-purple-50/50' : 'border-slate-200 bg-white hover:border-slate-300'}`}>
+                                <div className="flex justify-between items-center">
+                                  <div>
+                                    <p className="text-slate-800 text-[12px] font-semibold">
+                                      {o.newItinerary?.departureDateTime && o.newItinerary.departureDateTime !== `${dcDate}T00:00:00`
+                                        ? `${new Date(o.newItinerary.departureDateTime).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${new Date(o.newItinerary.departureDateTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+                                        : new Date(dcDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
+                                    </p>
+                                    <p className="text-slate-400 text-[10px]">
+                                      {o.newItinerary?.airlineCode && o.newItinerary?.flightNumber
+                                        ? `${o.newItinerary.airlineCode}${o.newItinerary.flightNumber}`
+                                        : o.newSlices?.[0]?.segments?.map((s: any) => `${s.marketing_carrier?.iata_code || ''}${s.marketing_carrier_flight_number || ''}`).join(' → ')
+                                        || 'Flight details'}
+                                      {o.newItinerary?.airline ? ` · ${o.newItinerary.airline}` : ''}
+                                    </p>
+                                  </div>
+                                  <div className="text-right">
+                                    {o.changeTotalAmount !== 0 && (
+                                      <p className={`text-[12px] font-bold ${o.changeTotalAmount > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                                        {o.changeTotalAmount > 0 ? '+' : ''}{fmtAmt(o.changeTotalAmount, o.changeTotalCurrency)}
+                                      </p>
+                                    )}
+                                    {o.changeTotalAmount === 0 && <p className="text-[12px] font-bold text-emerald-600">No extra cost</p>}
+                                    {(o.airlineChangeFee ?? o.penaltyAmount ?? 0) > 0 && (
+                                      <p className="text-[9px] text-slate-400">Includes {fmtAmt(o.airlineChangeFee ?? o.penaltyAmount, o.penaltyCurrency)} change fee</p>
+                                    )}
+                                  </div>
+                                </div>
+                              </button>
+                            );
+                          })}
+                        </div>
 
-                    <button onClick={() => setDcStep('date')} className="w-full py-2 rounded-lg border border-slate-200 text-slate-500 text-[11px] font-medium hover:text-slate-700 transition-colors">
-                      Try Another Date
-                    </button>
+                        {dcSelectedOffer && (
+                          <button
+                            onClick={() => setDcStep('review')}
+                            className="w-full py-2.5 rounded-xl bg-purple-600 hover:bg-purple-700 text-white text-[12px] font-bold transition-all"
+                          >
+                            Review Change Details
+                          </button>
+                        )}
+
+                        <button onClick={() => setDcStep('date')} className="w-full py-2 rounded-lg border border-slate-200 text-slate-500 text-[11px] font-medium hover:text-slate-700 transition-colors">
+                          Try Another Date
+                        </button>
+                      </>
+                    )}
                   </>
                 )}
               </div>
