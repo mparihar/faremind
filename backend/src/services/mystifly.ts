@@ -1027,29 +1027,32 @@ export async function reissueQuote(
   originDestinations: MystiflyReissueOriginDestination[],
   passengers: MystiflyReissuePassenger[],
 ): Promise<any> {
+  const requestBody = {
+    PostTicketingRequestType: 'ReIssueQuote',
+    UniqueID: mfRef,
+    ReissueQuoteRequestType: 'OND',
+    OriginDestinations: originDestinations.map(od => ({
+      OriginLocationCode: od.originLocationCode,
+      DestinationLocationCode: od.destinationLocationCode,
+      DepartureDateTime: od.departureDateTime,
+      CabinPreference: od.cabinPreference,
+    })),
+    Passengers: passengers.map(p => ({
+      FirstName: p.firstName,
+      LastName: p.lastName,
+      PassengerType: p.passengerType,
+    })),
+    Target: MYSTIFLY_TARGET,
+  };
+
   console.log(`[Mystifly] ReIssueQuote — MFRef: ${mfRef}, ODs: ${originDestinations.length}, Pax: ${passengers.length}`);
+  console.log(`[Mystifly] ReIssueQuote REQUEST BODY:`, JSON.stringify(requestBody, null, 2));
 
   // Map to PascalCase to match Mystifly API spec (same convention as VoidQuote/RefundQuote)
   const result = await mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
-    body: {
-      PostTicketingRequestType: 'ReIssueQuote',
-      UniqueID: mfRef,
-      ReissueQuoteRequestType: 'OND',
-      OriginDestinations: originDestinations.map(od => ({
-        OriginLocationCode: od.originLocationCode,
-        DestinationLocationCode: od.destinationLocationCode,
-        DepartureDateTime: od.departureDateTime,
-        CabinPreference: od.cabinPreference,
-      })),
-      Passengers: passengers.map(p => ({
-        FirstName: p.firstName,
-        LastName: p.lastName,
-        PassengerType: p.passengerType,
-      })),
-      Target: MYSTIFLY_TARGET,
-    } as unknown as Record<string, unknown>,
+    body: requestBody as unknown as Record<string, unknown>,
     retries: 0,
   });
 
