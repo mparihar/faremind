@@ -146,6 +146,10 @@ export async function applyMarkupToOffers(flights: UnifiedFlight[]): Promise<voi
     if (markupAmount > 0) {
       flight.providerTotalFare = flight.totalPrice;
       flight.totalPrice = Math.round((flight.totalPrice + markupAmount) * 100) / 100;
+      // Adjust baseFare to include markup (markup is FareMind margin, not tax)
+      if (flight.baseFare != null) {
+        flight.baseFare = Math.round((flight.baseFare + markupAmount) * 100) / 100;
+      }
       flight.fareMindMarkupAmount = markupAmount;
       flight.markupRuleId = rule.id;
       appliedCount++;
