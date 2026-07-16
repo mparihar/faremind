@@ -70,6 +70,7 @@ export const POST = withAdmin(async (req: NextRequest, { admin }) => {
   } catch (err: any) {
     console.error('[support-tickets] POST error:', err);
     return NextResponse.json({ error: 'Failed to create ticket' }, { status: 500 });
+  }
 }, 'SUPPORT');
 
 // Bulk delete by category (SUPER_ADMIN only)
