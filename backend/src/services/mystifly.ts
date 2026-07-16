@@ -1028,27 +1028,25 @@ export async function reissueQuote(
   passengers: MystiflyReissuePassenger[],
 ): Promise<any> {
   const requestBody = {
-    PostTicketingRequestType: 'ReIssueQuote',
-    UniqueID: mfRef,
-    ReissueQuoteRequestType: 'OND',
-    OriginDestinations: originDestinations.map(od => ({
-      OriginLocationCode: od.originLocationCode,
-      DestinationLocationCode: od.destinationLocationCode,
-      DepartureDateTime: od.departureDateTime,
-      CabinPreference: od.cabinPreference,
+    ptrType: 'ReIssueQuote',
+    mFRef: mfRef,
+    reissueQuoteRequestType: 'OND',
+    originDestinations: originDestinations.map(od => ({
+      originLocationCode: od.originLocationCode,
+      destinationLocationCode: od.destinationLocationCode,
+      departureDateTime: od.departureDateTime,
+      cabinPreference: od.cabinPreference,
     })),
-    Passengers: passengers.map(p => ({
-      FirstName: p.firstName,
-      LastName: p.lastName,
-      PassengerType: p.passengerType,
+    passengers: passengers.map(p => ({
+      firstName: p.firstName,
+      lastName: p.lastName,
+      passengerType: p.passengerType,
     })),
-    Target: MYSTIFLY_TARGET,
   };
 
   console.log(`[Mystifly] ReIssueQuote — MFRef: ${mfRef}, ODs: ${originDestinations.length}, Pax: ${passengers.length}`);
   console.log(`[Mystifly] ReIssueQuote REQUEST BODY:`, JSON.stringify(requestBody, null, 2));
 
-  // Map to PascalCase to match Mystifly API spec (same convention as VoidQuote/RefundQuote)
   const result = await mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
@@ -1062,7 +1060,7 @@ export async function reissueQuote(
 /**
  * Confirm a ReIssue (execute the flight change) with Mystifly.
  *
- * Flow: POST /api/PostTicketingRequest with PostTicketingRequestType=ReIssue, AcceptQuote=yes
+ * Flow: POST /api/PostTicketingRequest with ptrType=ReIssue, AcceptQuote=yes
  * Requires the PtrId from the ReIssueQuote response.
  */
 export async function confirmReissue(
@@ -1076,12 +1074,11 @@ export async function confirmReissue(
     method: 'POST',
     path: '/api/PostTicketingRequest',
     body: {
-      PostTicketingRequestType: 'ReIssue',
-      UniqueID: mfRef,
+      ptrType: 'ReIssue',
+      mFRef: mfRef,
       PtrId: ptrId,
       AcceptQuote: 'yes',
       PreferenceOption: preferenceOption,
-      Target: MYSTIFLY_TARGET,
     } as unknown as Record<string, unknown>,
     retries: 0,
   });
