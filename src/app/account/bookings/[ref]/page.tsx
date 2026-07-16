@@ -12,6 +12,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import CancelBookingModal from '@/components/manage-booking/CancelBookingModal';
 import { SeatMapModal, PassengerModal, DateChangeModal, ETicketModal, RefundModal, SupportModal } from '@/components/manage-booking/BookingModals';
 import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
+import { apiFetch } from '@/lib/api-client';
 import { canAddBaggage } from '@/lib/booking-capabilities';
 
 function StatusBadge({ status }: { status: string }) {
@@ -677,14 +678,10 @@ export default function BookingDetailPage() {
               setEmailError('');
               const htmlContent = generateItineraryHtmlFromBooking(b);
               const pdfBase64 = btoa(unescape(encodeURIComponent(htmlContent)));
-              let apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
-              apiUrl = apiUrl.replace(/\/$/, '');
-              const res = await fetch(`${apiUrl}/api/manage-booking/${b.id}/email-itinerary`, {
+              await apiFetch(`/api/manage-booking/${b.id}/email-itinerary`, {
                 method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ email, pdfBase64, isHtml: true }),
               });
-              if (!res.ok) throw new Error('Failed to send email');
               setEmailDone(true);
             } catch {
               setEmailError('Failed to send email. Please try again.');

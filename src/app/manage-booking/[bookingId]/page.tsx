@@ -8,6 +8,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import CancelBookingModal from '@/components/manage-booking/CancelBookingModal';
 import { DateChangeModal } from '@/components/manage-booking/BookingModals';
 import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
+import { apiFetch } from '@/lib/api-client';
 import { canAddBaggage } from '@/lib/booking-capabilities';
 function StatusBadge({ status }: { status: string }) {
   const m: Record<string, [string, string]> = { CONFIRMED: ['bg-emerald-500/10 text-emerald-400', 'Confirmed'], TICKETED: ['bg-emerald-500/10 text-emerald-400', 'Ticketed'], CANCELLED: ['bg-red-500/10 text-red-400', 'Cancelled'], CREATED: ['bg-amber-500/10 text-amber-400', 'Processing'], COMPLETED: ['bg-blue-500/10 text-blue-400', 'Completed'] };
@@ -299,15 +300,10 @@ function EmailItineraryModal({ bookingId, booking, onClose }: { bookingId: strin
       // Convert HTML to base64 for the email attachment
       const pdfBase64 = btoa(unescape(encodeURIComponent(htmlContent)));
       
-      let apiUrl = process.env.NEXT_PUBLIC_API_URL || '';
-      apiUrl = apiUrl.replace(/\/$/, '');
-      const res = await fetch(`${apiUrl}/api/manage-booking/${bookingId}/email-itinerary`, {
+      await apiFetch(`/api/manage-booking/${bookingId}/email-itinerary`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email, pdfBase64, isHtml: true })
+        body: JSON.stringify({ email, pdfBase64, isHtml: true }),
       });
-      
-      if (!res.ok) throw new Error('Failed to send email');
       setDone(true);
     } catch (err) {
       setError('Failed to send email. Please try again.');
