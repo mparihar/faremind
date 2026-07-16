@@ -386,9 +386,11 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
         body: JSON.stringify({ newDepartureDate, sliceIndex }),
       });
       if (!data.supported) {
+        const msg = data.message || 'Change not available online.';
+        const ticketNotice = data.supportTicketCreated ? '\n\nA support ticket has been created. Our team will follow up within 24 hours.' : '';
         set({
           changeSearchLoading: false,
-          changeSearchError: data.message || 'Change not available online.',
+          changeSearchError: msg + ticketNotice,
           changeOffers: [],
         });
         return false;

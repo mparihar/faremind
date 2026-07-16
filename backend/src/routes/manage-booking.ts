@@ -133,7 +133,71 @@ async function createCancellationSupportTicket(booking: any, reason: string): Pr
       },
     }).catch(() => {}); // non-critical
   } catch (err) {
-    console.error('[createCancellationSupportTicket] Failed to create support ticket:', err);
+  console.error('[createCancellationSupportTicket] Failed to create support ticket:', err);
+  }
+}
+
+/**
+ * Auto-creates a support ticket when a flight change could not be processed automatically.
+ * Includes PNR, route, customer, requested date, and the provider error.
+ */
+async function createFlightChangeSupportTicket(
+  booking: any,
+  reason: string,
+  newDepartureDate?: string,
+): Promise<void> {
+  try {
+    const route = `${booking.originAirport} → ${booking.destinationAirport}`;
+    const amount = fmtCurrency(Number(booking.totalAmount), booking.currency);
+    const providerPnr = booking.pnrs?.find((p: any) => p.providerOrderId);
+    const airlinePnr = providerPnr?.airlinePnr || booking.masterPnr || 'N/A';
+    const providerOrderId = providerPnr?.providerOrderId || (booking as any).providerOrderId || 'N/A';
+
+    await prisma.supportTicket.create({
+      data: {
+        subject: `Flight Change Assistance: ${booking.masterBookingReference} — ${booking.customerName ?? 'Customer'}`,
+        description: [
+          `A flight change could not be processed automatically for booking ${booking.masterBookingReference}.`,
+          '',
+          `Customer: ${booking.customerName ?? 'N/A'} (${booking.customerEmail ?? 'N/A'})`,
+          `Route: ${route}`,
+          `Current Departure: ${booking.departureDate ? new Date(booking.departureDate).toISOString().split('T')[0] : 'N/A'}`,
+          `Requested New Departure: ${newDepartureDate || 'N/A'}`,
+          `Booking Amount: ${amount}`,
+          `Provider: ${booking.primaryProvider ?? 'Unknown'}`,
+          `PNR (Airline): ${airlinePnr}`,
+          `Provider Order ID: ${providerOrderId}`,
+          `Master Booking Ref: ${booking.masterBookingReference}`,
+          '',
+          `Reason: ${reason}`,
+          '',
+          'Action Required: Please review this booking and manually process the flight change with the airline/provider.',
+        ].join('\n'),
+        priority: 'HIGH',
+        status: 'OPEN',
+        category: 'Flight Change Request',
+        channel: 'SYSTEM',
+        customerName: booking.customerName ?? '',
+        customerEmail: booking.customerEmail ?? '',
+        bookingRef: booking.masterBookingReference,
+        airlinePnr: booking.masterPnr ?? undefined,
+      },
+    });
+
+    // Also log a booking event so it's visible in the timeline
+    await prisma.bookingEvent.create({
+      data: {
+        bookingId: booking.id,
+        eventType: 'CHANGE_ESCALATED',
+        eventTitle: 'Flight change escalated to admin support',
+        eventDescription: `Auto-change unavailable: ${reason}. Support ticket created for manual processing.`,
+        actorType: 'system',
+      },
+    }).catch(() => {}); // non-critical
+
+    console.log(`[createFlightChangeSupportTicket] Support ticket created for ${booking.masterBookingReference}`);
+  } catch (err) {
+    console.error('[createFlightChangeSupportTicket] Failed to create support ticket:', err);
   }
 }
 
@@ -1184,17 +1248,36 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       };
     } catch (e: any) {
       fastify.log.error(e, '[manage-booking/change/search]');
+
+      // Retrieve booking for ticket creation (may already be in scope from try block)
+      const { bookingId } = request.params as { bookingId: string };
+      const { newDepartureDate: reqDate } = request.body as { newDepartureDate?: string };
+      const ticketBooking = await mbq.getMasterBookingFull(bookingId).catch(() => null);
+
       // Return provider errors gracefully for both Duffel and Mystifly
       if (e.message?.includes('Duffel') || e.message?.includes('Mystifly') || e.message?.includes('ReIssue')) {
         // Extract the actual provider error message for display
         const providerMsg = e.message?.replace(/^.*failed:\s*/, '') || 'Change not available';
+
+        // Auto-create support ticket for manual follow-up
+        if (ticketBooking) {
+          await createFlightChangeSupportTicket(ticketBooking, e.message, reqDate);
+        }
+
         return reply.code(200).send({
           supported: false,
           fallbackMode: 'support_request',
           message: providerMsg,
+          supportTicketCreated: true,
           offers: [],
         });
       }
+
+      // Generic server error — still create a support ticket
+      if (ticketBooking) {
+        await createFlightChangeSupportTicket(ticketBooking, e.message || 'Unknown error', reqDate);
+      }
+
       reply.code(500).send({ error: 'Server error' });
     }
   });
