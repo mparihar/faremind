@@ -63,11 +63,12 @@ async function getAdminServiceFee(booking: any): Promise<number> {
       return true;
     };
 
-    const matchedRule = rules.find(matchesRule);
-    if (!matchedRule) return 20;
-
     const passengersCount = booking.passengers?.length || 1;
     const baseFare = Number(booking.totalAmount);
+
+    const matchedRule = rules.find(matchesRule);
+    if (!matchedRule) return 20 * passengersCount; // default: $20 per passenger
+
 
     if (matchedRule.calculationModel === 'FIXED_PER_BOOKING') {
       return Number(matchedRule.fixedAmount ?? 20);
@@ -79,10 +80,10 @@ async function getAdminServiceFee(booking: any): Promise<number> {
       return Math.round(Number(matchedRule.fixedAmount ?? 20) * passengersCount + baseFare * (Number(matchedRule.percentageValue ?? 0) / 100));
     }
 
-    return 20;
+    return 20 * passengersCount; // default: $20 per passenger
   } catch (err) {
     console.error('[getAdminServiceFee] Error calculating admin service fee:', err);
-    return 20;
+    return 20 * (booking.passengers?.length || 1); // default: $20 per passenger
   }
 }
 
@@ -429,8 +430,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (booking.bookingStatus === 'CANCELLED') return reply.code(400).send({ error: 'Booking is already cancelled', code: 'ALREADY_CANCELLED' });
       if (['FAILED', 'COMPLETED'].includes(booking.bookingStatus)) return reply.code(400).send({ error: 'This booking cannot be cancelled', code: 'NOT_CANCELLABLE' });
       if (new Date(booking.departureDate) < new Date()) return reply.code(400).send({ error: 'This flight has already departed', code: 'PAST_FLIGHT' });
-
-      const FAREMIND_FEE = await getAdminServiceFee(booking);
       const originalAmount = Number(booking.totalAmount);
       const providerPnr = booking.pnrs.find(p => p.providerOrderId);
       const pnrs = booking.pnrs.map(p => ({ pnrCode: p.pnrCode, status: p.status }));
@@ -490,8 +489,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         }
       }
 
+      // ── FareMind service fee — only for refundable bookings, per passenger ──
+      const isBookingRefundable = isRefundable || (cancellationMethod === 'VOID') || refundAmount > 0;
+      const FAREMIND_FEE = isBookingRefundable ? await getAdminServiceFee(booking) : 0;
+
       let estimatedRefund = Math.max(0, refundAmount - FAREMIND_FEE);
-      let fareMindFee = estimatedRefund > 0 ? FAREMIND_FEE : 0;
+      let fareMindFee = isBookingRefundable && estimatedRefund > 0 ? FAREMIND_FEE : 0;
 
       // Determine refundability status
       const refundability = estimatedRefund <= 0
@@ -593,14 +596,17 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // ── Database updates (atomic-ish) ─────────────────────────────────────
       const primaryPnr = booking.pnrs.find((p: any) => p.isPrimary) ?? booking.pnrs[0];
       const isRefundable = primaryPnr?.refundable ?? false;
-      const adminFee = (isRefundable || result.refundAmount > 0) ? await getAdminServiceFee(booking) : 0;
 
       // Determine cancellation method from quoteId encoding
       const isVoid = quoteId.startsWith('mystifly_void_');
       const cancellationMethod = isVoid ? 'VOID' : 'REFUND';
 
+      // FareMind service fee — only for refundable bookings (per passenger via getAdminServiceFee)
+      const isBookingRefundable = isRefundable || isVoid || result.refundAmount > 0;
+      const adminFee = isBookingRefundable ? await getAdminServiceFee(booking) : 0;
+
       const netRefundAmount = result.refundAmount > 0 ? Math.max(0, result.refundAmount - adminFee) : 0;
-      const fareMindFee = netRefundAmount > 0 ? adminFee : 0;
+      const fareMindFee = isBookingRefundable && netRefundAmount > 0 ? adminFee : 0;
       const airlinePenalty = Math.max(0, originalAmount - result.refundAmount);
       const totalPenalty = Math.max(0, originalAmount - netRefundAmount);
 
