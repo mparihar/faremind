@@ -862,7 +862,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                       className="flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-bold text-white bg-red-500 hover:bg-red-600 transition-all disabled:opacity-50"
                     >
                       {saving ? <Loader2 className="w-4 h-4 animate-spin" /> : <XCircle className="w-4 h-4" />}
-                      Confirm Cancellation
+                      {cancelQuote?.cancelAnywayAllowed ? 'Cancel Anyway (No Refund)' : 'Confirm Cancellation'}
                     </button>
                   </div>
                 )}

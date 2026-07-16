@@ -54,6 +54,7 @@ export interface CancelQuoteData {
   bookingReference: string;
   bookingStatus?: string;
   cancellationAllowed: boolean;
+  cancelAnywayAllowed?: boolean;
   airlinePermitted: boolean | null;
   refundability: 'FULL_REFUND' | 'PARTIAL_REFUND' | 'NON_REFUNDABLE';
   originalAmount: number;

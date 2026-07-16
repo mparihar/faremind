@@ -455,10 +455,46 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         quote = await provider.getCancellationQuote(providerPnr.providerOrderId);
         await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote', providerReference: quote.quoteId, payloadJson: quote.raw as object });
       } catch (providerErr) {
-        fastify.log.error({ providerErr }, '[manage-booking/cancel/quote] Provider API failed — creating support ticket');
-        await createCancellationSupportTicket(booking, `Provider API error while fetching cancellation quote: ${providerErr instanceof Error ? providerErr.message : String(providerErr)}`);
+        const providerMsg = providerErr instanceof Error ? providerErr.message : String(providerErr);
+        const cleanMsg = providerMsg.replace(/^.*not available:\s*/, '');
+
+        fastify.log.error({ providerErr: cleanMsg }, '[manage-booking/cancel/quote] Provider quote failed');
+
+        // Detect "not eligible for refund" — offer Cancel Anyway (no refund)
+        const isNonRefundable = /not eligible for refund|non.?refundable|no refund/i.test(cleanMsg);
+
+        if (isNonRefundable) {
+          return reply.code(200).send({
+            cancellationAllowed: true,
+            cancelAnywayAllowed: true,
+            refundability: 'NON_REFUNDABLE',
+            cancellationType: 'NO_REFUND',
+            originalAmount,
+            currency: booking.currency,
+            estimatedRefund: 0,
+            refundAmount: 0,
+            airlinePenalty: originalAmount,
+            supplierFee: 0,
+            fareMindFee: 0,
+            penaltyAmount: originalAmount,
+            quoteId: `mystifly_cancel_norefund_${providerPnr.providerOrderId}`,
+            bookingReference: booking.masterBookingReference,
+            airlinePnr: booking.masterPnr || primaryPnr?.pnrCode || null,
+            route: `${booking.originAirport} → ${booking.destinationAirport}`,
+            departureDate: booking.departureDate,
+            bookingStatus: booking.bookingStatus,
+            cancellationMethod: 'CANCEL',
+            refundMethod: 'NONE',
+            refundTimeline: 'N/A',
+            warningMessage: `${cleanMsg}. Cancelling will forfeit the entire booking amount. This action cannot be undone.`,
+            pnrs: pnrs,
+          });
+        }
+
+        // Other errors — show actual message + support ticket
+        await createCancellationSupportTicket(booking, `Provider error: ${cleanMsg}`);
         return reply.code(502).send({
-          error: 'The airline provider could not return cancellation details at this time. A support ticket has been created and our team will process your cancellation request manually.',
+          error: `${cleanMsg}. Please contact FareMind Support.`,
           code: 'PROVIDER_QUOTE_FAILED',
           supportTicketCreated: true,
         });
@@ -599,10 +635,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // Determine cancellation method from quoteId encoding
       const isVoid = quoteId.startsWith('mystifly_void_');
-      const cancellationMethod = isVoid ? 'VOID' : 'REFUND';
+      const isCancelAnyway = quoteId.startsWith('mystifly_cancel_norefund_');
+      const cancellationMethod = isVoid ? 'VOID' : isCancelAnyway ? 'CANCEL' : 'REFUND';
 
       // FareMind service fee — only for refundable bookings (per passenger via getAdminServiceFee)
-      const isBookingRefundable = isRefundable || isVoid || result.refundAmount > 0;
+      // Cancel-anyway = non-refundable, no fee
+      const isBookingRefundable = !isCancelAnyway && (isRefundable || isVoid || result.refundAmount > 0);
       const adminFee = isBookingRefundable ? await getAdminServiceFee(booking) : 0;
 
       const netRefundAmount = result.refundAmount > 0 ? Math.max(0, result.refundAmount - adminFee) : 0;
@@ -615,8 +653,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         ? 'NO_REFUND'
         : isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
 
-      // Void = ticket is voided immediately; Refund = refund is pending airline processing
-      const newTicketingStatus = isVoid ? 'VOIDED' : 'REFUND_PENDING';
+      // Void = voided immediately; Cancel-anyway = cancelled (no refund); Refund = pending
+      const newTicketingStatus = isVoid ? 'VOIDED' : isCancelAnyway ? 'CANCELLED' : 'REFUND_PENDING';
 
       await prisma.masterBooking.update({
         where: { id: bookingId },

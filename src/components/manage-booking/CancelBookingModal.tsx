@@ -308,7 +308,9 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                       <Loader2 size={14} className="animate-spin" />
                       Processing…
                     </span>
-                  ) : 'Confirm Cancellation'}
+                  ) : cancelQuote?.cancelAnywayAllowed
+                    ? 'Cancel Anyway (No Refund)'
+                    : 'Confirm Cancellation'}
                 </button>
               </div>
             </div>

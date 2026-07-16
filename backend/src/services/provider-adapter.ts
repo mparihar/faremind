@@ -583,7 +583,7 @@ export class MystiflyAdapter implements IBookingProvider {
     const refundErrors = refundData?.Errors || refundResult?.Errors || [];
 
     if (!refundSuccess || !refundPtrId) {
-      const errMsg = refundErrors?.[0]?.Message || refundErrors?.[0]?.message || 'Cancellation not available';
+      const errMsg = refundResult?.Message || refundData?.Message || refundErrors?.[0]?.Message || refundErrors?.[0]?.message || 'Cancellation not available';
       throw new Error(`Mystifly cancellation not available: ${errMsg}`);
     }
 
@@ -665,6 +665,64 @@ export class MystiflyAdapter implements IBookingProvider {
         orderId: mfRef,
         refundAmount: parseFloat(data?.RefundAmount || data?.refundAmount || '0'),
         refundCurrency: data?.Currency || data?.currency || 'USD',
+        confirmedAt: new Date().toISOString(),
+        raw: result,
+      };
+    }
+
+    // ── Cancel Anyway (non-refundable): try Void PTR → fallback to direct cancel ──
+    // quoteId format: "mystifly_cancel_norefund_{mfRef}"
+    const noRefundMatch = quoteId.match(/^mystifly_cancel_norefund_(.+)$/);
+    if (noRefundMatch) {
+      const [, mfRef] = noRefundMatch;
+      console.log(`[MystiflyAdapter] Cancel Anyway (no refund) — MFRef: ${mfRef}`);
+
+      // Step 1: Try Void PTR
+      try {
+        console.log(`[MystiflyAdapter] Attempting Void PTR for cancel-anyway — MFRef: ${mfRef}`);
+        const voidQuoteResult = await mystiflyClient.voidQuote(mfRef);
+        const voidData = voidQuoteResult?.Data || voidQuoteResult;
+        const voidSuccess = voidData?.Success ?? voidQuoteResult?.Success;
+        const voidPtrId = voidData?.PtrId || voidData?.ptrId || voidQuoteResult?.PtrId;
+
+        if (voidSuccess && voidPtrId) {
+          console.log(`[MystiflyAdapter] Void PTR succeeded — executing void PtrId: ${voidPtrId}`);
+          const execResult = await mystiflyClient.executeVoid(mfRef, voidPtrId);
+          const execData = execResult?.Data || execResult;
+          const execSuccess = execData?.Success ?? execResult?.Success;
+
+          if (execSuccess) {
+            console.log(`[MystiflyAdapter] Void executed successfully for ${mfRef}`);
+            return {
+              cancellationId: `mystifly_void_norefund_${mfRef}_${voidPtrId}`,
+              orderId: mfRef,
+              refundAmount: 0,
+              refundCurrency: 'USD',
+              confirmedAt: new Date().toISOString(),
+              raw: execResult,
+            };
+          }
+        }
+        console.log(`[MystiflyAdapter] Void PTR not available for cancel-anyway, falling back to direct cancel`);
+      } catch (voidErr) {
+        console.log(`[MystiflyAdapter] Void PTR failed for cancel-anyway: ${voidErr instanceof Error ? voidErr.message : voidErr}, falling back to direct cancel`);
+      }
+
+      // Step 2: Fallback — direct /api/v1/Booking/Cancel
+      console.log(`[MystiflyAdapter] Using direct Booking/Cancel for ${mfRef}`);
+      const result = await mystiflyClient.cancelBooking(mfRef);
+      const success = result?.Data?.Success || result?.Success;
+      if (!success) {
+        const errorMsg = result?.Data?.Errors?.[0]?.Message || result?.Message || 'Cancellation failed';
+        throw new Error(`Mystifly cancellation failed: ${errorMsg}`);
+      }
+
+      console.log(`[MystiflyAdapter] Direct cancel successful for ${mfRef}`);
+      return {
+        cancellationId: `mystifly_direct_cancel_${mfRef}_${Date.now()}`,
+        orderId: mfRef,
+        refundAmount: 0,
+        refundCurrency: 'USD',
         confirmedAt: new Date().toISOString(),
         raw: result,
       };
