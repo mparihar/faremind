@@ -1186,10 +1186,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       fastify.log.error(e, '[manage-booking/change/search]');
       // Return provider errors gracefully for both Duffel and Mystifly
       if (e.message?.includes('Duffel') || e.message?.includes('Mystifly') || e.message?.includes('ReIssue')) {
+        // Extract the actual provider error message for display
+        const providerMsg = e.message?.replace(/^.*failed:\s*/, '') || 'Change not available';
         return reply.code(200).send({
           supported: false,
           fallbackMode: 'support_request',
-          message: `The airline could not process your change request automatically. ${e.message}`,
+          message: providerMsg,
           offers: [],
         });
       }
