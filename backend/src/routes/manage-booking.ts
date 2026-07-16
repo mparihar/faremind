@@ -1111,11 +1111,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // Search for change options via the provider adapter
       // Pass DB passengers so Mystifly can use them (getTripDetails may not return passengers)
-      const dbPassengers = (booking.passengers || []).map((p: any) => ({
-        firstName: p.firstName || '',
-        lastName: p.lastName || '',
-        type: p.passengerType || 'ADT',
-      }));
+      const dbPassengers = (booking.passengers || []).map((p: any) => {
+        // Map DB passenger types to Mystifly codes
+        const raw = (p.passengerType || 'adult').toLowerCase();
+        const type = raw === 'child' || raw === 'chd' ? 'CHD'
+          : raw === 'infant' || raw === 'inf' ? 'INF'
+          : 'ADT';
+        return { firstName: p.firstName || '', lastName: p.lastName || '', type };
+      });
 
       const result = await provider.searchChangeOptions(
         resolvedProviderOrderId,
