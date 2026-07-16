@@ -59,22 +59,20 @@ export async function GET() {
       milesEarning: t.milesEarning,
     }));
 
-    // 3. System configs (tax_rate, extra_bag_fee_usd)
+    // 3. System configs (tax_rate)
     const configs = await prisma.systemConfig.findMany({
-      where: { key: { in: ['tax_rate', 'extra_bag_fee_usd'] } },
+      where: { key: { in: ['tax_rate'] } },
     });
 
     const configMap: Record<string, string> = {};
     for (const c of configs) configMap[c.key] = c.value;
 
     const taxRate = configMap['tax_rate'] ? parseFloat(configMap['tax_rate']) : null;
-    const extraBagFeeUsd = configMap['extra_bag_fee_usd'] ? parseFloat(configMap['extra_bag_fee_usd']) : null;
 
     return NextResponse.json({
       serviceFee,
       fareTiers,
       taxRate,
-      extraBagFeeUsd,
     });
   } catch (err: any) {
     console.error('[pricing-config] GET error:', err);

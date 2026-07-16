@@ -249,7 +249,7 @@ export const FALLBACK_FARE_CLASS_MULTIPLIERS: Record<AiFareClass, number> = {
   flex: 1.25,
 };
 
-export const FALLBACK_EXTRA_BAG_PRICE = 35;     // USD per bag — use DB SystemConfig.extra_bag_fee_usd instead
+// FALLBACK_EXTRA_BAG_PRICE removed — live pricing only, no dummy fallback
 export const FALLBACK_INSURANCE_RATE = 0.04;     // 4% of fare — use DB PlatformFeeRule instead
 export const FALLBACK_SERVICE_FEE_RATE = 0.015;  // 1.5% of fare — use DB PlatformFeeRule instead
 export const FALLBACK_TAX_RATE = 0.156;          // ~15.6% — use DB SystemConfig.tax_rate instead

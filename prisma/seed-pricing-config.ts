@@ -23,7 +23,7 @@ const FARE_TIERS = [
 
 const SYSTEM_CONFIGS = [
   { key: 'tax_rate',           value: '0.156',  description: 'Tax rate applied to base fare (15.6% = 0.156)' },
-  { key: 'extra_bag_fee_usd',  value: '35',     description: 'Default extra checked bag fee in USD' },
+  // extra_bag_fee_usd removed — live pricing from provider only
 ];
 
 async function main() {

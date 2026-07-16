@@ -333,7 +333,7 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
             carryOnWeightKg: null,
             checked: d.checkedBags,
             checkedWeightKg: d.checkedWeightKg,
-            extraBagFeeUsd: dbTier?.extraBagFeeUsd ?? pricingCfg?.extraBagFeeUsd ?? 35,
+            extraBagFeeUsd: dbTier?.extraBagFeeUsd ?? pricingCfg?.extraBagFeeUsd ?? null, // live only — no fallback
           },
           policy: {
             refundable: d.refundable,

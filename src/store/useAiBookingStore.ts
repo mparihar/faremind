@@ -20,7 +20,7 @@ import type { SelectedSeatData } from '@/lib/ai-seat/ai-seat-types';
 import {
   FARE_CLASS_NAMES,
   FALLBACK_FARE_CLASS_MULTIPLIERS,
-  FALLBACK_EXTRA_BAG_PRICE,
+
   FALLBACK_INSURANCE_RATE,
   FALLBACK_SERVICE_FEE_RATE,
 } from '@/lib/ai-booking-types';
@@ -121,7 +121,7 @@ function computePriceSummary(
     : protectionFeePerPax;
   const protectionFee = protectedCount * effectiveProtectionPerPax;
 
-  const bagPricePerUnit = liveBaggagePrice ?? FALLBACK_EXTRA_BAG_PRICE;
+  const bagPricePerUnit = liveBaggagePrice ?? 0; // live price only — no fallback
   // extraBags is the total bag count (not per-passenger)
   const baggageFee = addOns.extraBags * bagPricePerUnit;
 
@@ -792,7 +792,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
         carryOnWeightKg: null,
         checked: fareDetails.checkedBags,
         checkedWeightKg: fareDetails.checkedWeightKg,
-        extraBagFeeUsd: s.liveBaggagePrice ?? FALLBACK_EXTRA_BAG_PRICE,
+        extraBagFeeUsd: s.liveBaggagePrice ?? null, // live price only — no fallback
       },
       policy: {
         refundable: fareDetails.refundable,

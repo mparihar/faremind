@@ -3,16 +3,15 @@
 // Add-ons for multiple passengers:
 // bags (total count, not per-pax), insurance (toggle)
 //
-// Uses live provider baggage pricing from /api/ancillaries
-// when available. Falls back to FALLBACK_EXTRA_BAG_PRICE only when
-// the provider API is unavailable.
+// Uses live provider baggage pricing from /api/ancillaries.
+// Shows 'Price varies by airline' when live price is unavailable.
 // ═══════════════════════════════════════════════
 
 'use client';
 
 import { useState, useMemo } from 'react';
 import { Package, Heart, ChevronRight, Check, Loader2, AlertCircle } from 'lucide-react';
-import { FALLBACK_EXTRA_BAG_PRICE, FALLBACK_INSURANCE_RATE } from '@/lib/ai-booking-types';
+import { FALLBACK_INSURANCE_RATE } from '@/lib/ai-booking-types';
 import { useAiBookingStore } from '@/store/useAiBookingStore';
 import type { NormalizedAncillary } from '@/lib/providers/providerAncillaryNormalizer';
 
@@ -59,8 +58,8 @@ export default function AiMultiPaxAddOnsStep({
     return Math.round(total / providerBaggage.length);
   }, [providerBaggage]);
 
-  // Effective per-bag price: live provider price or fallback
-  const effectiveBagPrice = liveBagPrice ?? FALLBACK_EXTRA_BAG_PRICE;
+  // Effective per-bag price: live provider price or null (no fallback)
+  const effectiveBagPrice = liveBagPrice;
   const isLivePrice = liveBagPrice !== null;
 
   const fmt = (n: number) =>
@@ -131,10 +130,13 @@ export default function AiMultiPaxAddOnsStep({
             <span className="text-[14px] font-bold text-[#1ABC9C]">Extra Checked Bags</span>
           </div>
           <p className="text-[15px] text-white/90">
-            How many extra bags do you need? ({fmt(effectiveBagPrice)} each)
+            How many extra bags do you need?{effectiveBagPrice ? ` (${fmt(effectiveBagPrice)} each)` : ''}
           </p>
           {isLivePrice && (
             <p className="text-[11px] text-emerald-400/70 mt-0.5">✓ Live pricing from airline</p>
+          )}
+          {!isLivePrice && (
+            <p className="text-[12px] text-amber-400/70 mt-0.5">Price varies by airline — will be confirmed at checkout</p>
           )}
           {passengerCount > 1 && (
             <p className="text-[12px] text-white/50 mt-0.5">
@@ -163,7 +165,7 @@ export default function AiMultiPaxAddOnsStep({
                 </span>
               </div>
               <span className="text-[15px] font-bold text-[#F97316]">
-                +{fmt(n * effectiveBagPrice)}
+                +{effectiveBagPrice ? fmt(n * effectiveBagPrice) : 'Price on request'}
               </span>
             </button>
           ))}
@@ -221,7 +223,7 @@ export default function AiMultiPaxAddOnsStep({
                 <span className="text-[12px] text-amber-500 ml-1">Not available online</span>
               ) : (
                 <span className="text-[12px] text-slate-400 ml-1">
-                  ({fmt(effectiveBagPrice)}/bag{isLivePrice ? ' · live' : ''})
+                  ({effectiveBagPrice ? `${fmt(effectiveBagPrice)}/bag` : 'Price varies'}{isLivePrice ? ' · live' : ''})
                 </span>
               )}
             </div>

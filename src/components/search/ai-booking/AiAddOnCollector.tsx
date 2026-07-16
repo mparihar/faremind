@@ -9,7 +9,7 @@
 import { useState } from 'react';
 import { Package, Shield, Heart, ChevronRight, Check } from 'lucide-react';
 import { formatPrice } from '@/lib/utils';
-import { FALLBACK_EXTRA_BAG_PRICE, FALLBACK_INSURANCE_RATE } from '@/lib/ai-booking-types';
+import { FALLBACK_INSURANCE_RATE } from '@/lib/ai-booking-types';
 import { useAiBookingStore } from '@/store/useAiBookingStore';
 
 // ─── Props ────────────────────────────────────────────────────────────────────
@@ -37,6 +37,7 @@ export default function AiAddOnCollector({
   const [selections, setSelections] = useState<string[]>([]);
 
   const computedFees = useAiBookingStore(s => s.computedFees);
+  const liveBagPrice = useAiBookingStore(s => s.liveBaggagePrice);
   // Use DB-driven insurance fee if available, otherwise fallback to hardcoded rate
   const insuranceFee = computedFees
     ? Math.round(computedFees.insuranceFeeTotal) // Total for all passengers
@@ -80,7 +81,7 @@ export default function AiAddOnCollector({
           </div>
           <p className="text-[15px] text-white/90">How many extra bags do you need?</p>
           <p className="text-[13px] text-white/50 mt-0.5">
-            {formatPrice(FALLBACK_EXTRA_BAG_PRICE, currency)} per bag
+          {liveBagPrice ? `${formatPrice(liveBagPrice, currency)} per bag` : 'Price varies by airline'}
           </p>
         </div>
 
@@ -100,7 +101,7 @@ export default function AiAddOnCollector({
                 </span>
               </div>
               <span className="text-[15px] font-bold text-[#F97316]">
-                +{formatPrice(n * FALLBACK_EXTRA_BAG_PRICE, currency)}
+                +{liveBagPrice ? formatPrice(n * liveBagPrice, currency) : 'Price on request'}
               </span>
             </button>
           ))}
@@ -122,7 +123,7 @@ export default function AiAddOnCollector({
   }
 
   // ── Main menu ───────────────────────────────────────────────────────────────
-  const runningTotal = (extraBags * FALLBACK_EXTRA_BAG_PRICE) + (travelInsurance ? insuranceFee : 0);
+  const runningTotal = (extraBags * (liveBagPrice ?? 0)) + (travelInsurance ? insuranceFee : 0);
 
   return (
     <div className="space-y-2.5">
@@ -170,7 +171,7 @@ export default function AiAddOnCollector({
             <div className="text-left">
               <span className="text-[15px] font-semibold text-slate-700 block">🧳 Extra checked bags</span>
               <span className="text-[13px] text-slate-400">
-                {formatPrice(FALLBACK_EXTRA_BAG_PRICE, currency)}/bag
+                {liveBagPrice ? `${formatPrice(liveBagPrice, currency)}/bag` : 'Price varies'}
                 {extraBags > 0 && <span className="text-emerald-600 ml-1">· {extraBags} selected</span>}
               </span>
             </div>
