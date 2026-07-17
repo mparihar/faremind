@@ -119,21 +119,39 @@ function QuickActions({ nextTrip }: { nextTrip: any }) {
   );
 }
 
-/* ── Benefits Card ── */
+/* ── Benefits Card (admin-configurable via SystemConfig) ── */
 function BenefitsCard({ memberSince }: { memberSince: string }) {
-  const items = [
-    { icon: CreditCard, label: 'Travel Credits', value: '$120 Available' },
-    { icon: Gift, label: 'Loyalty Points', value: '1,250 Points' },
-    { icon: Calendar, label: 'Member Since', value: memberSince },
-  ];
+  const ICON_MAP: Record<string, React.ElementType> = { CreditCard, Gift, Calendar, Clock, Zap, Ticket };
+  const [items, setItems] = useState([
+    { label: 'Travel Credits', value: '$120 Available', icon: 'CreditCard', enabled: true },
+    { label: 'Loyalty Points', value: '1,250 Points', icon: 'Gift', enabled: true },
+    { label: 'Member Since', value: memberSince, icon: 'Calendar', enabled: true },
+  ]);
+
+  useEffect(() => {
+    (async () => {
+      try {
+        const res = await fetch('/api/benefits-config');
+        if (res.ok) {
+          const data = await res.json();
+          if (data.benefits?.length) setItems(data.benefits);
+        }
+      } catch { /* use defaults */ }
+    })();
+  }, []);
+
+  const visibleItems = items.filter(it => it.enabled !== false);
+  if (visibleItems.length === 0) return null;
+
   return (
     <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-4">
       <h3 className="text-white text-sm font-bold flex items-center gap-2 mb-3">
         <Gift size={14} className="text-amber-400" /> Your Benefits
       </h3>
       <div className="space-y-0">
-        {items.map((it, i) => {
-          const Icon = it.icon;
+        {visibleItems.map((it, i) => {
+          const Icon = ICON_MAP[it.icon] || Gift;
+          const displayValue = it.value === '__MEMBER_SINCE__' ? memberSince : it.value;
           return (
             <div key={it.label} className={`flex items-center gap-3 py-2.5 ${i > 0 ? 'border-t border-white/[0.05]' : ''}`}>
               <div className="w-8 h-8 rounded-lg bg-amber-400/10 border border-amber-400/20 flex items-center justify-center shrink-0">
@@ -141,7 +159,7 @@ function BenefitsCard({ memberSince }: { memberSince: string }) {
               </div>
               <div className="flex-1 min-w-0">
                 <p className="text-white text-xs font-semibold">{it.label}</p>
-                <p className="text-[#1ABC9C] text-[10px] font-bold">{it.value}</p>
+                <p className="text-[#1ABC9C] text-[10px] font-bold">{displayValue}</p>
               </div>
               <ChevronRight size={12} className="text-slate-600" />
             </div>

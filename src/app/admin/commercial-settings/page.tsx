@@ -1,7 +1,7 @@
 'use client';
 
 import Link from 'next/link';
-import { DollarSign, Shield, Heart, ArrowRight } from 'lucide-react';
+import { DollarSign, Shield, Heart, ArrowRight, Gift } from 'lucide-react';
 
 const SECTIONS = [
   {
@@ -30,6 +30,15 @@ const SECTIONS = [
     color: 'from-purple-500 to-violet-500',
     border: 'border-purple-500/30',
     badges: ['Travel Insurance'],
+  },
+  {
+    href: '/admin/commercial-settings/benefits',
+    title: 'User Benefits',
+    description: 'Configure the "Your Benefits" card shown on user dashboards. Add, remove, reorder, or toggle benefit items.',
+    icon: Gift,
+    color: 'from-amber-500 to-yellow-500',
+    border: 'border-amber-500/30',
+    badges: ['Travel Credits', 'Loyalty Points', 'Member Since'],
   },
 ];
 
