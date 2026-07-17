@@ -432,7 +432,6 @@ export function mergeAndRankFlights(flights: UnifiedFlight[]): UnifiedFlight[] {
     const ft = f.fareType || 'untagged';
     ftCounts[ft] = (ftCounts[ft] || 0) + 1;
   }
-  console.log(`[MergeRank] fareType distribution: ${JSON.stringify(ftCounts)}`);
 
   return unique.sort((a, b) => {
     if (b.valueScore !== a.valueScore) return b.valueScore - a.valueScore;

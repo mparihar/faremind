@@ -107,8 +107,6 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[ServicePayment] Created ${payment.id} — ${serviceType} $${amount} by ${user.email}`);
-
     return NextResponse.json({
       paymentId: payment.id,
       clientSecret: paymentIntent.client_secret,

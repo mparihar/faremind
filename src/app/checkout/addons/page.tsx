@@ -733,8 +733,6 @@ export default function AddonsPage() {
     setBaggageLoading(true);
     setBaggageError(null);
 
-    console.log(`[Addons] Fetching ancillaries: provider=${provider}, offerId=${resolvedOfferId.slice(0, 30)}...`);
-
     fetch(`/api/ancillaries?offer_id=${encodeURIComponent(resolvedOfferId)}&provider=${provider}`)
       .then(r => r.json())
       .then((data: { baggage: NormalizedAncillary[]; meals: NormalizedAncillary[]; premiumServices?: NormalizedAncillary[]; error?: string; info?: string }) => {

@@ -34,10 +34,6 @@ export async function POST(req: NextRequest) {
     // Stripe expects amount in the smallest currency unit (cents for USD)
     const amountInCents = Math.round(amount * 100);
 
-    console.log(
-      `[Stripe] Creating PaymentIntent — $${amount.toFixed(2)} ${currency.toUpperCase()} (${amountInCents} cents)`
-    );
-
     let customer = undefined;
     if (userId) {
       // Find a customer id for this user if it exists
@@ -78,8 +74,6 @@ export async function POST(req: NextRequest) {
         allow_redirects: 'never',
       },
     });
-
-    console.log(`[Stripe] ✅ PaymentIntent created: ${paymentIntent.id}`);
 
     return NextResponse.json({
       paymentIntentId: paymentIntent.id,

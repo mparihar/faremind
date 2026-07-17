@@ -75,8 +75,6 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
 
-      console.log(`[PTR] VoidQuote — UniqueID: ${uniqueId}`);
-
       // Create DB record
       let ptrRecord = null;
       if (bookingId) {
@@ -125,8 +123,6 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
 
-      console.log(`[PTR] Void Execute — UniqueID: ${uniqueId}`);
-
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 
       const result = await mystifly.postTicketingRequest(uniqueId, 'Void');
@@ -154,8 +150,6 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         uniqueId: string; bookingId?: string; requestedBy?: string; notes?: string;
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
-
-      console.log(`[PTR] RefundQuote — UniqueID: ${uniqueId}`);
 
       let ptrRecord = null;
       if (bookingId) {
@@ -204,8 +198,6 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
 
-      console.log(`[PTR] Refund Execute — UniqueID: ${uniqueId}`);
-
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 
       const result = await mystifly.postTicketingRequest(uniqueId, 'Refund');
@@ -233,8 +225,6 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         uniqueId: string; bookingId?: string; newFareSourceCode?: string; requestedBy?: string; notes?: string;
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
-
-      console.log(`[PTR] ReIssueQuote — UniqueID: ${uniqueId}`);
 
       let ptrRecord = null;
       if (bookingId) {
@@ -282,8 +272,6 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         uniqueId: string; ptrId?: string; newFareSourceCode?: string; requestedBy?: string;
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
-
-      console.log(`[PTR] ReIssue Execute — UniqueID: ${uniqueId}`);
 
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 

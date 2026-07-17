@@ -179,7 +179,6 @@ export function startListening(
         resolve({ transcript, confidence: lastConfidence || 0.9 });
       } else {
         // Auto-restart — browser killed it but user is still expecting to speak
-        console.log('[Voice] Auto-restarting recognition (browser ended prematurely)');
         try {
           recognition.start();
           activeRecognition = recognition;

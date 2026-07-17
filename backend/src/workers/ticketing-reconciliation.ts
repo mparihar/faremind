@@ -69,8 +69,6 @@ export async function runTicketingReconciliation(): Promise<ReconciliationResult
     return results;
   }
 
-  console.log(`[TicketRecon] Processing ${pendingRecords.length} pending record(s)...`);
-
   for (const record of pendingRecords) {
     try {
       const result = await reconcileSingleBooking(record);
@@ -101,7 +99,6 @@ export async function runTicketingReconciliation(): Promise<ReconciliationResult
     }
   }
 
-  console.log(`[TicketRecon] Completed — ${results.length} record(s) processed`);
   return results;
 }
 
@@ -110,8 +107,6 @@ export async function runTicketingReconciliation(): Promise<ReconciliationResult
 async function reconcileSingleBooking(record: any): Promise<ReconciliationResult> {
   const now = new Date();
   const mfRef = record.providerUniqueId;
-
-  console.log(`[TicketRecon] Polling MFRef: ${mfRef} (poll #${record.pollCount + 1})`);
 
   // Mark as actively polling
   await prisma.ticketingReconciliation.update({
@@ -207,8 +202,6 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
       },
     });
 
-    console.log(`[TicketRecon] ✅ ${mfRef} — TICKETED with ${ticketNumbers.length} ticket(s)`);
-
     return {
       id: record.id,
       bookingId: record.bookingId,
@@ -258,8 +251,6 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
       },
     });
 
-    console.log(`[TicketRecon] ❌ ${mfRef} — NOT_BOOKED (provider status: ${ticketStatus})`);
-
     return {
       id: record.id,
       bookingId: record.bookingId,
@@ -297,8 +288,6 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
       },
     });
 
-    console.log(`[TicketRecon] ⚠️ ${mfRef} — ESCALATED after ${newPollCount} polls`);
-
     return {
       id: record.id,
       bookingId: record.bookingId,
@@ -324,8 +313,6 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
       lastProviderResponse: rawStatusResponse,
     },
   });
-
-  console.log(`[TicketRecon] ⏳ ${mfRef} — Still pending, next poll at ${nextPollAt.toISOString()}`);
 
   return {
     id: record.id,
@@ -358,7 +345,6 @@ export async function queueForReconciliation(params: {
   });
 
   if (existing) {
-    console.log(`[TicketRecon] Already queued: ${params.providerUniqueId} (${existing.id})`);
     return existing.id;
   }
 
@@ -372,7 +358,6 @@ export async function queueForReconciliation(params: {
     },
   });
 
-  console.log(`[TicketRecon] Queued for reconciliation: ${params.providerUniqueId} (${record.id})`);
   return record.id;
 }
 

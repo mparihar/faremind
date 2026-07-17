@@ -48,54 +48,22 @@ const input: RankingInput = {
 
 const result = rankFlightOffers(input);
 
-console.log('═══════════════════════════════════════════════════════════════');
-console.log('  FareMind AI Score — DFW ↔ DEL (Sep 21 → Jan 1)');
-console.log('  Profile:', result.profileId);
-console.log('═══════════════════════════════════════════════════════════════');
-
 for (const offer of result.rankedOffers) {
   const isQR = offer.offerId === 'card_1_QR';
   const label = isQR
     ? 'Card 1 — QR via DOH | $2,346 | Non-refundable | 39h 20m'
     : 'Card 2 — BA via LHR | $1,810 | Changeable    | 58h 5m';
-  console.log(`\n┌─ ${label}`);
-  console.log(`│  Rank: #${offer.rank}    AI Score: ${offer.finalScore}/100    Confidence: ${offer.confidence}`);
-  console.log('│');
-  console.log('│  Score Breakdown:');
-  console.log(`│    Price:              ${offer.scoreBreakdown.priceScore}`);
-  console.log(`│    Duration:           ${offer.scoreBreakdown.durationScore}`);
-  console.log(`│    Stops:              ${offer.scoreBreakdown.stopsScore}`);
-  console.log(`│    Schedule:           ${offer.scoreBreakdown.scheduleScore}`);
-  console.log(`│    Flexibility:        ${offer.scoreBreakdown.flexibilityScore}`);
-  console.log(`│    Comfort:            ${offer.scoreBreakdown.comfortScore}`);
-  console.log(`│    Baggage:            ${offer.scoreBreakdown.baggageScore}`);
-  console.log(`│    Brand:              ${offer.scoreBreakdown.brandScore}`);
-  console.log(`│    Reliability:        ${offer.scoreBreakdown.reliabilityScore}`);
-  console.log(`│    Airport Experience: ${offer.scoreBreakdown.airportExperienceScore}`);
-  console.log('│');
   if (offer.appliedRules.length > 0) {
-    console.log('│  Applied Rules:');
     for (const rule of offer.appliedRules) {
       const sign = rule.impact >= 0 ? '+' : '';
-      console.log(`│    [${rule.ruleId}] ${sign}${rule.impact}: ${rule.reason}`);
     }
-    console.log('│');
   }
-  console.log('│  Reasons:');
-  for (const r of offer.machineReasons) console.log(`│    ✓ ${r}`);
   if (offer.tradeoffs.length > 0) {
-    console.log('│  Tradeoffs:');
-    for (const t of offer.tradeoffs) console.log(`│    ✗ ${t}`);
   }
-  console.log('└──────────────────────────────────────────────────────────');
 }
 
 // Summary
 const sorted = result.rankedOffers.sort((a, b) => a.rank - b.rank);
-console.log('\n══════════════════════════════════════════════════════════');
-console.log('  FINAL RANKING:');
 for (const o of sorted) {
   const tag = o.offerId === 'card_1_QR' ? 'QR $2,346' : 'BA $1,810';
-  console.log(`  #${o.rank}  ${tag}  →  AI Score: ${o.finalScore}/100`);
 }
-console.log('══════════════════════════════════════════════════════════');

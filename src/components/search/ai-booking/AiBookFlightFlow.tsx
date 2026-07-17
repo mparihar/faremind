@@ -474,8 +474,6 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
       const offerId = selectedFare?.offerId || roundTrip?.providerOfferId || flight.providerOfferId;
       const provider = flight.provider || 'duffel';
 
-      console.log('[AI Seat Client] Fetching group blocks:', { offerId, provider, segmentIndex, passengerCount: store.passengerCount, area: mapPrefToArea(pref), type: pref.type });
-
       const res = await fetch('/api/seats/recommendations', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -496,7 +494,6 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
       }
 
       const resp = await res.json();
-      console.log('[AI Seat Client] Full response:', JSON.stringify(resp));
 
       const groupResp = resp as GroupSeatResponse;
 

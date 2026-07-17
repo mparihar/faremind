@@ -196,7 +196,6 @@ export function commitVoiceData(
 ) {
   if (result.passengerId && result.pendingUpdates && Object.keys(result.pendingUpdates).length > 0) {
     updatePassenger(result.passengerId, result.pendingUpdates);
-    console.log('[Voice] ✅ Committed pending voice data for', result.targetLabel);
   }
 }
 

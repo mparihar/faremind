@@ -115,7 +115,6 @@ export async function agentNotifyAll(params: AgentNotifyParams): Promise<void> {
   if (customerEmail) {
     promises.push(
       sendBrevo(customerEmail, subject, customerHtml, bodyText).then(ok => {
-        if (ok) console.log(`[agent-notify] ✅ Customer: ${customerEmail}`);
         // Log to email_logs
         prisma.emailLog.create({
           data: { recipient: customerEmail, recipientName: params.customerName, subject, template: params.event, status: ok ? 'SENT' : 'FAILED', provider: 'Brevo', bookingRef },
@@ -128,7 +127,6 @@ export async function agentNotifyAll(params: AgentNotifyParams): Promise<void> {
   if (agentEmail && agentEmail !== customerEmail) {
     promises.push(
       sendBrevo(agentEmail, adminSubject, adminHtml, bodyText).then(ok => {
-        if (ok) console.log(`[agent-notify] ✅ Agent: ${agentEmail}`);
         prisma.emailLog.create({
           data: { recipient: agentEmail, recipientName: params.agentName, subject: adminSubject, template: `[Agent] ${params.event}`, status: ok ? 'SENT' : 'FAILED', provider: 'Brevo', bookingRef },
         }).catch(() => {});
@@ -142,7 +140,6 @@ export async function agentNotifyAll(params: AgentNotifyParams): Promise<void> {
     if (adminEmail === agentEmail || adminEmail === customerEmail) continue; // avoid duplicate
     promises.push(
       sendBrevo(adminEmail, adminSubject, adminHtml, bodyText).then(ok => {
-        if (ok) console.log(`[agent-notify] ✅ Admin: ${adminEmail}`);
         prisma.emailLog.create({
           data: { recipient: adminEmail, recipientName: 'Admin', subject: adminSubject, template: `[Admin] ${params.event}`, status: ok ? 'SENT' : 'FAILED', provider: 'Brevo', bookingRef },
         }).catch(() => {});

@@ -216,10 +216,6 @@ export function checkProviderPriceChange(
   }
 
   if (priceDelta < 0) {
-    console.log(
-      `[Checkout] ✅ Provider price dropped: $${storedFare.toFixed(2)} → $${revalidatedFare.toFixed(2)} ` +
-      `(${deltaPct.toFixed(1)}% decrease) — allowing in customer's favor`
-    );
   }
 
   return { valid: true, storedFare, revalidatedFare, deltaPct };

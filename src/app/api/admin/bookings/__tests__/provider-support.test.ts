@@ -19,7 +19,6 @@ let failed = 0;
 function assert(condition: boolean, message: string) {
   if (condition) {
     passed++;
-    console.log(`  ✓ ${message}`);
   } else {
     failed++;
     console.error(`  ✗ ${message}`);
@@ -30,7 +29,6 @@ function assertEqual(actual: any, expected: any, message: string) {
   const match = JSON.stringify(actual) === JSON.stringify(expected);
   if (match) {
     passed++;
-    console.log(`  ✓ ${message}`);
   } else {
     failed++;
     console.error(`  ✗ ${message}`);
@@ -87,8 +85,6 @@ function hasRole(userRole: string, required: string): boolean {
 // Test 1: Admin can open Duffel Assistant for Duffel booking
 // ═══════════════════════════════════════════════
 
-console.log('\n═══ Test 1: Admin can open Duffel Assistant ═══\n');
-
 {
   // SUPER_ADMIN has SUPPORT access
   assert(hasRole('SUPER_ADMIN', 'SUPPORT'), 'SUPER_ADMIN passes RBAC check');
@@ -109,8 +105,6 @@ console.log('\n═══ Test 1: Admin can open Duffel Assistant ═══\n');
 // Test 2: Support staff can open Duffel Assistant
 // ═══════════════════════════════════════════════
 
-console.log('\n═══ Test 2: Support staff can open ═══\n');
-
 {
   assert(hasRole('SUPPORT', 'SUPPORT'), 'SUPPORT role passes RBAC (rank 2 >= 2)');
   assert(hasRole('OPS_ADMIN', 'SUPPORT'), 'OPS_ADMIN passes RBAC (rank 4 >= 2)');
@@ -119,8 +113,6 @@ console.log('\n═══ Test 2: Support staff can open ═══\n');
 // ═══════════════════════════════════════════════
 // Test 3: Agent can open for assigned booking
 // ═══════════════════════════════════════════════
-
-console.log('\n═══ Test 3: Agent can access assigned booking ═══\n');
 
 {
   const agent = { id: 'agent_user_1', role: 'FAREMIND_AGENT' };
@@ -135,8 +127,6 @@ console.log('\n═══ Test 3: Agent can access assigned booking ═══\n')
 // Test 4: Agent cannot access unrelated booking
 // ═══════════════════════════════════════════════
 
-console.log('\n═══ Test 4: Agent denied for unrelated booking ═══\n');
-
 {
   const agent = { id: 'different_agent', role: 'FAREMIND_AGENT' };
   const canAccess =
@@ -148,8 +138,6 @@ console.log('\n═══ Test 4: Agent denied for unrelated booking ═══\n'
 // ═══════════════════════════════════════════════
 // Test 5: Customer cannot access endpoint
 // ═══════════════════════════════════════════════
-
-console.log('\n═══ Test 5: Customer blocked by RBAC ═══\n');
 
 {
   // Admin endpoint requires SUPPORT role (rank 2)
@@ -168,8 +156,6 @@ console.log('\n═══ Test 5: Customer blocked by RBAC ═══\n');
 // Test 6: Non-Duffel booking does not show assistant
 // ═══════════════════════════════════════════════
 
-console.log('\n═══ Test 6: Non-Duffel booking rejected ═══\n');
-
 {
   assert(
     MYSTIFLY_BOOKING.primaryProvider.toLowerCase() !== 'duffel',
@@ -186,8 +172,6 @@ console.log('\n═══ Test 6: Non-Duffel booking rejected ═══\n');
 // ═══════════════════════════════════════════════
 // Test 7: Duffel booking without order ID
 // ═══════════════════════════════════════════════
-
-console.log('\n═══ Test 7: Missing order ID rejected ═══\n');
 
 {
   assert(
@@ -209,8 +193,6 @@ console.log('\n═══ Test 7: Missing order ID rejected ═══\n');
 // ═══════════════════════════════════════════════
 // Test 8: Duffel API key never exposed
 // ═══════════════════════════════════════════════
-
-console.log('\n═══ Test 8: API key never exposed ═══\n');
 
 {
   const apiToken = 'duffel_secret_never_expose_this';
@@ -237,8 +219,6 @@ console.log('\n═══ Test 8: API key never exposed ═══\n');
 // ═══════════════════════════════════════════════
 // Test 9: Audit event created
 // ═══════════════════════════════════════════════
-
-console.log('\n═══ Test 9: Audit event structure ═══\n');
 
 {
   const auditEntry = {
@@ -271,8 +251,6 @@ console.log('\n═══ Test 9: Audit event structure ═══\n');
 // Test 10: Feature flag disables assistant
 // ═══════════════════════════════════════════════
 
-console.log('\n═══ Test 10: Feature flag disables assistant ═══\n');
-
 {
   // When DUFFEL_ASSISTANT_ENABLED=false, backend returns 403
   process.env.DUFFEL_ASSISTANT_ENABLED = 'false';
@@ -299,8 +277,6 @@ console.log('\n═══ Test 10: Feature flag disables assistant ═══\n');
 // ═══════════════════════════════════════════════
 // Bonus: Existing functionality not broken
 // ═══════════════════════════════════════════════
-
-console.log('\n═══ Bonus: Existing functionality unchanged ═══\n');
 
 {
   // New schema fields are all nullable/default — won't break existing queries
@@ -330,12 +306,7 @@ console.log('\n═══ Bonus: Existing functionality unchanged ═══\n');
 // Summary
 // ═══════════════════════════════════════════════
 
-console.log(`\n═══════════════════════════════════════`);
-console.log(`  TOTAL: ${passed + failed}  |  PASS: ${passed}  |  FAIL: ${failed}`);
-console.log(`═══════════════════════════════════════\n`);
-
 if (failed > 0) {
   process.exit(1);
 } else {
-  console.log('✅ All 10 acceptance criteria PASSED\n');
 }

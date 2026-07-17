@@ -438,11 +438,6 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     // to compute meaningful percentiles. Otherwise fall back to all-candidate stats.
     if (cabinFilteredFeatures.length >= 3) {
       stats = computeScoringStats(cabinFilteredFeatures);
-      console.log(
-        `[AI Scoring] Cabin-aware stats: ${[...selectedCabinClasses].join(', ')} ` +
-        `(${cabinFilteredFeatures.length} of ${allFeatures.length} offers) ` +
-        `price range $${stats.minPrice.toFixed(0)}-$${stats.maxPrice.toFixed(0)}`
-      );
     }
   }
 
@@ -506,9 +501,7 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
   }));
   const comparableResult = validateComparableOffers(comparableCandidates);
   if (comparableResult.adjustments.length > 0) {
-    console.log(`[AI Scoring] Comparable-offer adjustments: ${comparableResult.adjustments.length}`);
     for (const adj of comparableResult.adjustments) {
-      console.log(`  ${adj.offerId}: ${adj.oldScore.toFixed(1)} → ${adj.newScore.toFixed(1)} | ${adj.reason}`);
     }
   }
 
@@ -528,9 +521,7 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
 
     const nonstopResult = validateComparableNonstops(nonstopCandidates);
     if (nonstopResult.adjustments.length > 0) {
-      console.log(`[AI Scoring] Comparable nonstop adjustments: ${nonstopResult.adjustments.length}`);
       for (const adj of nonstopResult.adjustments) {
-        console.log(`  ${adj.offerId}: ${adj.oldScore.toFixed(1)} → ${adj.newScore.toFixed(1)} | ${adj.reason}`);
       }
     }
   }
@@ -550,9 +541,7 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
 
     const refundableResult = validateRefundablePriority(refundableCandidates);
     if (refundableResult.adjustments.length > 0) {
-      console.log(`[AI Scoring] Refundable priority adjustments: ${refundableResult.adjustments.length}`);
       for (const adj of refundableResult.adjustments) {
-        console.log(`  ${adj.offerId}: ${adj.oldScore.toFixed(1)} → ${adj.newScore.toFixed(1)} | ${adj.reason}`);
       }
     }
   }
@@ -611,7 +600,6 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     }
 
     if (dnaAdjustments > 0) {
-      console.log(`[AI Scoring] Travel DNA applied ${dnaAdjustments} bonuses`);
       // Re-sort after DNA bonuses
       tieBreakCandidates.sort((a, b) => {
         const scoreDiff = b.score.finalScore - a.score.finalScore;

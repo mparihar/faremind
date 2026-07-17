@@ -212,10 +212,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // ── Point 1 & 9: Log the exact Search v2 FSC with hash ──
       const searchFscHash = hashFsc(fareSourceCode);
-      console.log(`[FSC-Trace] SEARCH FSC — len=${fareSourceCode.length}, sha256=${searchFscHash}, preview=${fareSourceCode.slice(0, 60)}...`);
 
       // ── Point 2: Send the exact Search FSC to Revalidate v1 ──
-      console.log(`[Mystifly] Revalidating fare via POST /api/v1/Revalidate/Flight`);
       const result = await mystifly.revalidateFlight(fareSourceCode);
 
       // Check for Mystifly-level errors
@@ -230,15 +228,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
 
       // ── Point 3: Log the COMPLETE raw Revalidate response ──
-      console.log(`[FSC-Trace] REVALIDATE RAW RESPONSE (full):\n${JSON.stringify(result, null, 2)}`);
 
       // ── Point 4: Deep recursive search for FareSourceCode in response ──
       const allFscs = findAllFareSourceCodes(result);
-      console.log(`[FSC-Trace] Deep search found ${allFscs.length} FareSourceCode(s) in response:`);
       for (const found of allFscs) {
         const h = hashFsc(found.value);
-        console.log(`[FSC-Trace]   path=${found.path}, len=${found.value.length}, sha256=${h}, preview=${found.value.slice(0, 60)}...`);
-        console.log(`[FSC-Trace]   matchesSearch=${found.value === fareSourceCode}`);
       }
 
       // Extract revalidated fare info
@@ -254,8 +248,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const isValid = isValidRaw === true || isValidRaw === 'true' || isValidRaw === 'True';
       const holdAllowedRaw = result?.Data?.HoldAllowed ?? result?.HoldAllowed ?? itinerary?.HoldAllowed;
       const holdAllowed = holdAllowedRaw === true || holdAllowedRaw === 'true' || holdAllowedRaw === 'True';
-
-      console.log(`[Mystifly] Revalidation flags — IsValid: ${isValidRaw} (${isValid}), HoldAllowed: ${holdAllowedRaw} (${holdAllowed})`);
 
       // ── Block booking if IsValid is explicitly false ──
       if (isValidRaw !== undefined && !isValid) {
@@ -274,14 +266,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         // Prefer an FSC that is DIFFERENT from search (indicates revalidation produced a new one)
         if (found.value !== fareSourceCode) {
           revalidatedFareSourceCode = found.value;
-          console.log(`[FSC-Trace] Using REVALIDATED FSC from path=${found.path} (differs from search)`);
           break;
         }
       }
       // If all found FSCs match the search FSC, use the first one (echo-back is valid for some providers)
       if (!revalidatedFareSourceCode && allFscs.length > 0) {
         revalidatedFareSourceCode = allFscs[0].value;
-        console.log(`[FSC-Trace] Using FSC from path=${allFscs[0].path} (same as search — echo-back)`);
       }
 
       // ── Point 5 & 10: Do NOT fallback to original search FSC ──
@@ -297,9 +287,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // ── Point 9: Log revalidated FSC hash ──
       const revalFscHash = hashFsc(revalidatedFareSourceCode);
-      console.log(`[FSC-Trace] REVALIDATED FSC — len=${revalidatedFareSourceCode.length}, sha256=${revalFscHash}`);
-      console.log(`[FSC-Trace] FSC comparison — search=${searchFscHash} vs reval=${revalFscHash}, match=${searchFscHash === revalFscHash}`);
-      console.log(`[Mystifly] Revalidation success — fare: ${totalFare} ${currency}, holdAllowed: ${holdAllowed}`);
 
       return {
         success: true,
@@ -357,16 +344,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // ── Point 9: Log BOOK FSC with hash ──
       const bookFscHash = hashFsc(fareSourceCode);
-      console.log(`[FSC-Trace] BOOK FSC — len=${fareSourceCode.length}, sha256=${bookFscHash}, preview=${fareSourceCode.slice(0, 60)}...`);
 
       // ── Point 7: Build a DEDICATED Book v1 request payload ──
       // Do NOT spread or reuse the Search v2 response model.
       const travelers = toMystiflyTravelers(passengers);
-
-      console.log(
-        `[Mystifly] Creating booking via POST /api/v1/Book/Flight — ${travelers.length} passenger(s), ` +
-        `FSC hash: ${bookFscHash}`
-      );
 
       const result = await mystifly.bookFlight({
         fareSourceCode,
@@ -379,7 +360,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       });
 
       // Log full Book response for debugging
-      console.log(`[FSC-Trace] BOOK RAW RESPONSE:\n${JSON.stringify(result, null, 2)}`);
 
       // Check for Mystifly-level errors
       const errors = result?.Data?.Errors || result?.Errors || [];
@@ -413,8 +393,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           raw: result,
         });
       }
-
-      console.log(`[Mystifly] ✅ Booking created — MFRef: ${uniqueId}, status: ${status}, FSC hash: ${bookFscHash}`);
 
       return {
         success: true,
@@ -451,8 +429,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'uniqueId is required' });
       }
 
-      console.log(`[Mystifly] Issuing ticket — MFRef: ${uniqueId}`);
-
       const result = await mystifly.orderTicket(uniqueId, fareSourceCode, clientReferenceNo);
 
       // Check for errors
@@ -467,7 +443,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
 
       const status = result?.Data?.Status || result?.Status || 'Unknown';
-      console.log(`[Mystifly] ✅ Ticket issued — MFRef: ${uniqueId}, status: ${status}`);
 
       return {
         success: true,
@@ -493,8 +468,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (!uniqueId) {
         return reply.code(400).send({ error: 'uniqueId is required' });
       }
-
-      console.log(`[Mystifly] Cancelling booking — MFRef: ${uniqueId}`);
 
       const result = await mystifly.cancelBooking(uniqueId);
 
@@ -527,7 +500,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
 
       const status = result?.Data?.Status || result?.Status || 'Cancelled';
-      console.log(`[Mystifly] ✅ Booking cancelled — MFRef: ${uniqueId}, status: ${status}`);
 
       return {
         success: true,
@@ -556,8 +528,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'uniqueId is required' });
       }
 
-      console.log(`[Mystifly] Checking ticket status — MFRef: ${uniqueId}`);
-
       const result = await mystifly.getTicketOrderStatus(uniqueId);
 
       const error = result?.Data?.Error || result?.Error;
@@ -573,8 +543,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Extract status — Mystifly uses "TktStatus" or similar fields
       const ticketStatus = result?.Data?.TktStatus || result?.Data?.Status || result?.Status || 'Unknown';
       const ticketNumbers = result?.Data?.TicketNumbers || result?.Data?.ETicketNumbers || [];
-
-      console.log(`[Mystifly] Ticket status for ${uniqueId}: ${ticketStatus}`);
 
       return {
         success: true,
@@ -604,8 +572,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'uniqueId is required' });
       }
 
-      console.log(`[Mystifly] Fetching trip details — MFRef: ${uniqueId}`);
-
       const result = await mystifly.getTripDetails(uniqueId);
 
       const error = result?.Data?.Error || result?.Error;
@@ -632,8 +598,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           if (num && typeof num === 'string') ticketNumbers.push(num);
         }
       }
-
-      console.log(`[Mystifly] Trip details for ${uniqueId}: status=${bookingStatus}, tickets=[${ticketNumbers.join(', ')}]`);
 
       return {
         success: true,
@@ -662,7 +626,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'fareSourceCode is required' });
       }
 
-      console.log(`[Mystifly] Fetching fare rules — FSC: ${fareSourceCode.slice(0, 20)}...`);
       const result = await mystifly.getFareRules(fareSourceCode);
 
       const error = result?.Data?.Error || result?.Error;
@@ -695,7 +658,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'fareSourceCode is required' });
       }
 
-      console.log(`[Mystifly] Fetching seat map — FSC: ${fareSourceCode.slice(0, 20)}...`);
       const result = await mystifly.getSeatMap(fareSourceCode);
 
       const error = result?.Data?.Error || result?.Error;
@@ -728,7 +690,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'uniqueId and notes[] are required' });
       }
 
-      console.log(`[Mystifly] Adding ${notes.length} booking note(s) — MFRef: ${uniqueId}`);
       const result = await mystifly.addBookingNotes(uniqueId, notes);
 
       const error = result?.Data?.Error || result?.Error;
@@ -767,11 +728,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'uniqueId (MFRef) is required' });
       }
 
-      console.log(
-        `[Mystifly] Fetching ancillary services — MFRef: ${uniqueId}, ` +
-        `baggage: ${baggage ?? true}, meal: ${meal ?? true}, seatMap: ${seatMap ?? false}`
-      );
-
       const result = await mystifly.getAncillaryServices(uniqueId, {
         baggage: baggage ?? true,
         meal: meal ?? true,
@@ -794,12 +750,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const baggageServices = data?.BaggageServices || data?.ExtraBaggageList || [];
       const mealServices = data?.MealServices || data?.MealList || [];
       const seatMapData = data?.SeatMapData || data?.SeatMap || null;
-
-      console.log(
-        `[Mystifly] Ancillary services for ${uniqueId}: ` +
-        `${baggageServices.length} baggage, ${mealServices.length} meals, ` +
-        `seatMap: ${seatMapData ? 'available' : 'none'}`
-      );
 
       return {
         success: true,

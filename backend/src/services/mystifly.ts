@@ -613,7 +613,6 @@ export async function searchFlights(params: MystiflySearchParams): Promise<any> 
   const version = params.searchVersion || 'v2.2';
   const searchPath = `/api/${version}/Search/Flight`;
   const routeDesc = legs.map(l => `${l.origin}→${l.destination}`).join(', ');
-  console.log(`[Mystifly] Search via ${searchPath} — ${routeDesc}, trip=${airTripType}, pricing=${searchRQ.PricingSourceType}`);
 
   const result = await mystiflyRequest<any>({
     method: 'POST',
@@ -942,8 +941,6 @@ export async function postTicketingRequest(
     ...(newFareSourceCode ? { NewFareSourceCode: newFareSourceCode } : {}),
   };
 
-  console.log(`[Mystifly] PTR ${ptrType} — UniqueID: ${uniqueId}`);
-
   const result = await mystiflyRequest<any>({
     method: 'POST',
     path: `/api/PostTicketingRequest`,
@@ -961,7 +958,6 @@ export async function postTicketingRequest(
  * Search for Post-Ticketing Requests by UniqueID.
  */
 export async function searchPtrStatus(uniqueId: string): Promise<any> {
-  console.log(`[Mystifly] Searching PTR status — UniqueID: ${uniqueId}`);
 
   const result = await mystiflyRequest<any>({
     method: 'POST',
@@ -980,7 +976,6 @@ export async function searchPtrStatus(uniqueId: string): Promise<any> {
  * Mark a PTR notification as read.
  */
 export async function markPtrAsRead(uniqueId: string): Promise<any> {
-  console.log(`[Mystifly] Marking PTR as read — UniqueID: ${uniqueId}`);
 
   const result = await mystiflyRequest<any>({
     method: 'POST',
@@ -1045,9 +1040,6 @@ export async function reissueQuote(
     })),
   };
 
-  console.log(`[Mystifly] ReIssueQuote — MFRef: ${mfRef}, ODs: ${originDestinations.length}, Pax: ${passengers.length}`);
-  console.log(`[Mystifly] ReIssueQuote REQUEST BODY:`, JSON.stringify(requestBody, null, 2));
-
   const result = await mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
@@ -1069,7 +1061,6 @@ export async function confirmReissue(
   ptrId: number,
   preferenceOption: number = 1,
 ): Promise<any> {
-  console.log(`[Mystifly] ReIssue Confirm — MFRef: ${mfRef}, PtrId: ${ptrId}, Option: ${preferenceOption}`);
 
   const result = await mystiflyRequest<any>({
     method: 'POST',
@@ -1103,7 +1094,6 @@ export async function confirmReissue(
  * (typically 24h after ticketing, before midnight).
  */
 export async function voidQuote(mfRef: string): Promise<any> {
-  console.log(`[Mystifly] VoidQuote — MFRef: ${mfRef}`);
 
   const result = await mystiflyRequest<any>({
     method: 'POST',
@@ -1115,7 +1105,6 @@ export async function voidQuote(mfRef: string): Promise<any> {
     retries: 0,
   });
 
-  console.log(`[Mystifly] VoidQuote response for ${mfRef}:`, JSON.stringify(result, null, 2));
   return result;
 }
 
@@ -1129,7 +1118,6 @@ export async function executeVoid(
   mfRef: string,
   ptrId: number,
 ): Promise<any> {
-  console.log(`[Mystifly] Void Execute — MFRef: ${mfRef}, PtrId: ${ptrId}`);
 
   const result = await mystiflyRequest<any>({
     method: 'POST',
@@ -1155,7 +1143,6 @@ export async function executeVoid(
  * Used when void is not available (outside void window).
  */
 export async function refundQuote(mfRef: string): Promise<any> {
-  console.log(`[Mystifly] RefundQuote — MFRef: ${mfRef}`);
 
   const result = await mystiflyRequest<any>({
     method: 'POST',
@@ -1167,7 +1154,6 @@ export async function refundQuote(mfRef: string): Promise<any> {
     retries: 0,
   });
 
-  console.log(`[Mystifly] RefundQuote response for ${mfRef}:`, JSON.stringify(result, null, 2));
   return result;
 }
 
@@ -1181,7 +1167,6 @@ export async function executeRefund(
   mfRef: string,
   ptrId: number,
 ): Promise<any> {
-  console.log(`[Mystifly] Refund Execute — MFRef: ${mfRef}, PtrId: ${ptrId}`);
 
   const result = await mystiflyRequest<any>({
     method: 'POST',

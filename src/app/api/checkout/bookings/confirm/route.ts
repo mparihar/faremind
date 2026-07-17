@@ -195,13 +195,11 @@ async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
           failureAuditId: auditRecord.id,
         },
       });
-      console.log(`[BookingAudit] ✅ Support ticket created for failure — ${auditRecord.id}`);
     } catch (ticketErr) {
       // Don't let ticket creation failure affect the audit log
       console.error('[BookingAudit] ⚠️ Failed to create support ticket:', ticketErr instanceof Error ? ticketErr.message : ticketErr);
     }
 
-    console.log(`[BookingAudit] ✅ Failure recorded — ${ctx.errorCode} for ${primaryPax.email || 'unknown'}`);
   } catch (auditErr) {
     // Never let audit logging failure affect the customer response
     console.error('[BookingAudit] ❌ Failed to record audit:', auditErr instanceof Error ? auditErr.message : auditErr);
@@ -323,8 +321,6 @@ export async function POST(req: NextRequest) {
     const isMystifly = routingProvider === 'mystifly';
     const isDuffel = !isMystifly; // Default to Duffel for unknown providers
 
-    console.log(`[Checkout] Source Provider: ${sourceProvider} | Routing Provider: ${routingProvider} | Round-trip: ${isRoundTrip} | Offer: ${offerId?.slice(0, 30)}...`);
-
     // Mystifly uses FareSourceCode (stored as providerOfferId) instead of Duffel offer IDs.
     // The FareSourceCode is passed through selectedFare.offerId or the providerOfferId field.
     const fareSourceCode = isMystifly ? offerId : null;
@@ -422,15 +418,6 @@ export async function POST(req: NextRequest) {
       providerPayableTotal: Math.round((baseProviderFare + frontendSeatFees) * 100) / 100,
     };
 
-    console.log(
-      `[Checkout] Financial breakdown — provider: $${financials.providerPayableTotal.toFixed(2)}, ` +
-      `markup: $${financials.markupAmount.toFixed(2)}, svcFee: $${financials.serviceFeeAmount.toFixed(2)}, ` +
-      `seats: $${financials.seatServiceTotal.toFixed(2)}, meals: $${financials.mealServiceTotal.toFixed(2)}, ` +
-      `bags: $${financials.baggageServiceTotal.toFixed(2)}, ` +
-      `protection: $${financials.priceProtectionAmount.toFixed(2)}, insurance: $${financials.travelInsuranceAmount.toFixed(2)}, ` +
-      `customer total: $${financials.customerGrandTotal.toFixed(2)} (frontend: $${frontendTotal.toFixed(2)})`
-    );
-
     // ══════════════════════════════════════════════════════════════════════════
     // PHASE 1b — Stripe Authorization Verification
     // ══════════════════════════════════════════════════════════════════════════
@@ -476,10 +463,6 @@ export async function POST(req: NextRequest) {
       }
 
       stripeVerified = true;
-      console.log(
-        `[Checkout] ✅ Stripe authorization verified — ${paymentIntentId}: ` +
-        `$${authorizedAmountDollars.toFixed(2)} authorized (expected: $${expectedDollars.toFixed(2)})`
-      );
     } catch (stripeErr: any) {
       console.error('[Checkout] ❌ Failed to verify Stripe authorization:', stripeErr.message);
       return NextResponse.json(
@@ -512,7 +495,6 @@ export async function POST(req: NextRequest) {
       if (stripeVerified && paymentIntentId) {
         try {
           await stripe.paymentIntents.cancel(paymentIntentId);
-          console.log(`[Stripe] Authorization cancelled (${paymentIntentId}) — reason: ${reason}`);
         } catch (cancelErr: any) {
           console.error(`[Stripe] Failed to cancel authorization: ${cancelErr.message}`);
         }
@@ -639,7 +621,6 @@ export async function POST(req: NextRequest) {
         // If offer is missing infant passengers, log it but proceed —
         // we'll generate placeholder IDs for them below
         if (offerInfants.length < checkoutInfants.length) {
-          console.log(`[Duffel] Offer has ${offerInfants.length} infant passenger(s) but checkout has ${checkoutInfants.length} — will generate IDs for missing infants`);
         }
 
         // Match offer passengers to our checkout passengers by type
@@ -665,7 +646,6 @@ export async function POST(req: NextRequest) {
           // Duffel accepts generated IDs for infant_without_seat passengers
           if (!paxId && duffelType === 'infant_without_seat') {
             paxId = `inf_generated_${idx}`;
-            console.log(`[Duffel] Generated placeholder ID for infant #${idx}: ${paxId}`);
           }
 
           // Fallback: try to find any unused passenger ID
@@ -704,7 +684,6 @@ export async function POST(req: NextRequest) {
 
         // Log phone normalization for debugging
         duffelPassengers.forEach((dp, i) => {
-          console.log(`[Duffel] Passenger ${i}: phone raw="${passengers[i]?.phone}" → normalized="${dp.phone_number}"`);
         });
 
         // ── Link infants to adults (Duffel requirement) ─────────────────────
@@ -719,7 +698,6 @@ export async function POST(req: NextRequest) {
           const matchingAdult = adultPaxList[idx];
           if (matchingAdult && infantId) {
             (matchingAdult as any).infant_passenger_id = infantId;
-            console.log(`[Duffel] Linked infant ${infantId} to adult ${matchingAdult.id}`);
           } else {
             console.warn(`[Duffel] Could not link infant ${infantId} to an adult — no matching adult at index ${idx}`);
           }
@@ -738,7 +716,6 @@ export async function POST(req: NextRequest) {
             // Skip infant passengers — they are lap infants (infant_without_seat) and don't get seats
             const seatPax = passengers.find((p: any) => p.id === seat.passengerId);
             if (seatPax?.type === 'infant') {
-              console.log(`[Duffel] Skipping seat ${seat.seatNumber} for infant passenger ${seat.passengerId}`);
               continue;
             }
 
@@ -752,12 +729,10 @@ export async function POST(req: NextRequest) {
             if (correctServiceId) {
               seatServices.push({ id: correctServiceId, quantity: 1 });
               seatServiceTotal += (typeof seat.priceUsd === 'number' ? seat.priceUsd : 0);
-              console.log(`[Duffel] Seat ${seat.seatNumber} → pax_${paxIndex} → service: ${correctServiceId}`);
             }
           }
         }
         if (seatServices.length > 0) {
-          console.log(`[Duffel] Including ${seatServices.length} seat service(s) in order (extra cost: ${seatServiceTotal.toFixed(2)} ${totalCurrency}): ${seatServices.map(s => s.id).join(', ')}`);
         }
 
         // ── Build ancillary services from selected provider add-ons ────
@@ -771,7 +746,6 @@ export async function POST(req: NextRequest) {
           }
         }
         if (ancillaryServices.length > 0) {
-          console.log(`[Duffel] Including ${ancillaryServices.length} ancillary service(s) in order (extra cost: ${ancillaryServiceTotal.toFixed(2)} ${totalCurrency})`);
         }
 
         // Combine all services (seats + ancillary add-ons)
@@ -783,26 +757,13 @@ export async function POST(req: NextRequest) {
         providerPayableAmount = revalidatedProviderFare + seatServiceTotal + ancillaryServiceTotal;
         const providerPaymentStr = providerPayableAmount.toFixed(2);
 
-        console.log(
-          `[Duffel] Creating order — offer: ${offerId}, pax: ${duffelPassengers.length}, ` +
-          `providerPayable: $${providerPaymentStr} ${totalCurrency} ` +
-          `(provider fare: $${revalidatedProviderFare.toFixed(2)} + seats: $${seatServiceTotal.toFixed(2)}), ` +
-          `customer grand total: $${financials.customerGrandTotal.toFixed(2)}`
-        );
-
         // Debug: log full passenger payload for troubleshooting
-        console.log('[Duffel] Passenger payload:', JSON.stringify(duffelPassengers.map(dp => ({
-          id: dp.id, type: dp.type, given_name: dp.given_name, family_name: dp.family_name,
-          born_on: (dp as any).born_on, infant_passenger_id: (dp as any).infant_passenger_id ?? null,
-        })), null, 2));
 
         // Parse wheelchair assistance selections
         const wcSelections = Array.isArray(wheelchairSelections)
           ? wheelchairSelections.filter((w: any) => w.code && w.code !== 'NONE')
           : [];
         if (wcSelections.length > 0) {
-          console.log(`[Checkout] ♿ Wheelchair assistance requested for ${wcSelections.length} passenger-segment(s):`,
-            wcSelections.map((w: any) => `${w.passengerId}/${w.segmentKey}→${w.code}`).join(', '));
         }
 
         // Build the provider order request payload
@@ -855,11 +816,8 @@ export async function POST(req: NextRequest) {
               passengers: retryPassengers,
             };
 
-            console.log(`[Duffel] Retrying with phone: ${DUFFEL_SAFE_PHONE} for all ${retryPassengers.length} passenger(s)`);
-
             try {
               duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', retryRequest);
-              console.log(`[Duffel] ✅ Order created (with sanitized phone): ${duffelOrder.id} (PNR: ${duffelOrder.booking_reference})`);
             } catch (phoneRetryErr: any) {
               // If still fails, try without seats as well
               const retryNoSeats = { ...retryRequest };
@@ -873,7 +831,6 @@ export async function POST(req: NextRequest) {
               seatServiceTotal = 0;
 
               duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', retryNoSeats);
-              console.log(`[Duffel] ✅ Order created (sanitized phone, no seats): ${duffelOrder.id} (PNR: ${duffelOrder.booking_reference})`);
             }
           } else {
             // If the error is about seat services, retry WITHOUT seat services.
@@ -900,14 +857,11 @@ export async function POST(req: NextRequest) {
               seatServiceTotal = 0;
 
               duffelOrder = await duffelRequest<DuffelOrder>('POST', '/air/orders', retryRequest);
-              console.log(`[Duffel] ✅ Order created (without seats): ${duffelOrder.id} (PNR: ${duffelOrder.booking_reference})`);
             } else {
               throw seatErr; // re-throw non-seat errors
             }
           }
         }
-
-        console.log(`[Duffel] ✅ Order created: ${duffelOrder.id} (PNR: ${duffelOrder.booking_reference})`);
 
         // ══════════════════════════════════════════════════════════════════
         // STRIPE CAPTURE — Provider order succeeded, NOW charge the card
@@ -915,9 +869,6 @@ export async function POST(req: NextRequest) {
         if (stripeVerified && paymentIntentId) {
           try {
             const captured = await stripe.paymentIntents.capture(paymentIntentId);
-            console.log(
-              `[Stripe] ✅ Payment captured: ${captured.id} — $${(captured.amount / 100).toFixed(2)} ${captured.currency}`
-            );
           } catch (captureErr: any) {
             // CRITICAL: Duffel order exists but Stripe capture failed.
             // Log this for manual intervention — the booking is valid,
@@ -1021,7 +972,6 @@ export async function POST(req: NextRequest) {
         let mystiflyPaymentCaptured = false;
 
         // ── Step 1/6: Revalidate fare ────────────────────────────────────
-        console.log(`[Mystifly] Step 1/6: Revalidating fare...`);
         const revalRes = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1048,7 +998,6 @@ export async function POST(req: NextRequest) {
         // ── Extract IsValid and HoldAllowed ──────────────────────────────
         const isValid = revalData.isValid;
         const holdAllowed = revalData.holdAllowed === true;
-        console.log(`[Mystifly] Revalidation flags — IsValid: ${isValid}, HoldAllowed: ${holdAllowed}`);
 
         // Block if IsValid is explicitly false
         if (isValid === false) {
@@ -1069,7 +1018,6 @@ export async function POST(req: NextRequest) {
 
         // ── Point 5: Require revalidated FSC — NO fallback to search FSC ──
         revalidatedFareSourceCode = revalData.fareSourceCode || revalData.revalidatedFareSourceCode || null;
-        console.log(`[FSC-Trace] Confirm route — searchFSC hash: ${revalData.searchFscHash || 'N/A'}, revalFSC hash: ${revalData.revalFscHash || 'N/A'}`);
 
         // ── Point 10: Block booking when revalidation does not return a valid FSC ──
         if (!revalidatedFareSourceCode) {
@@ -1098,20 +1046,13 @@ export async function POST(req: NextRequest) {
         if (revalData.totalFare != null) {
           const revalidatedFare = revalData.totalFare;
           const storedFare = sourceFlight?.providerTotalFare ?? sourceRoundTrip?.providerTotalFare ?? null;
-          console.log(
-            `[Mystifly] Price info — stored providerTotalFare: $${storedFare?.toFixed(2) ?? 'N/A'} (per-pax base), ` +
-            `revalidated totalFare: $${revalidatedFare.toFixed(2)} (all-pax total)`
-          );
           providerPayableAmount = revalidatedFare;
           providerCurrency = revalData.currency || currency;
         }
 
-        console.log(`[Mystifly] ✅ Revalidation passed — fare: $${providerPayableAmount}, holdAllowed: ${holdAllowed}, bookingFSC hash: ${revalData.revalFscHash || 'N/A'}`);
-
         // ── Step 2/6: FareRules (fire-and-forget) ────────────────────────
         // Called between Revalidate and BookFlight per Mystifly guidelines.
         // Non-blocking — logged for audit trail but doesn't delay checkout.
-        console.log(`[Mystifly] Step 2/6: Fetching FareRules (fire-and-forget)...`);
         fetch(`${BACKEND_URL}/api/mystifly/fare-rules`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1119,7 +1060,6 @@ export async function POST(req: NextRequest) {
         }).then(async (res) => {
           const data = await res.json().catch(() => ({}));
           if (res.ok) {
-            console.log(`[Mystifly] ✅ FareRules fetched successfully for booking FSC`);
           } else {
             console.warn(`[Mystifly] ⚠️ FareRules fetch returned error: ${data.error || 'unknown'} (non-blocking)`);
           }
@@ -1129,14 +1069,10 @@ export async function POST(req: NextRequest) {
 
         // ── Step 3/6: Stripe Capture (BEFORE BookFlight) ─────────────────
         // Secure customer payment BEFORE debiting agency balance at Mystifly.
-        console.log(`[Mystifly] Step 3/6: Capturing Stripe payment...`);
         if (stripeVerified && paymentIntentId) {
           try {
             const captured = await stripe.paymentIntents.capture(paymentIntentId);
             mystiflyPaymentCaptured = true;
-            console.log(
-              `[Stripe] ✅ Payment captured: ${captured.id} — $${(captured.amount / 100).toFixed(2)} ${captured.currency}`
-            );
           } catch (captureErr: any) {
             console.error(`[Stripe] ❌ Payment capture failed: ${captureErr.message}`);
             // Payment failed — do NOT proceed to BookFlight
@@ -1162,7 +1098,6 @@ export async function POST(req: NextRequest) {
         // Flow branching based on HoldAllowed:
         //   HoldAllowed=true  → holdBooking=true  (Hold booking, payment at OrderTicket)
         //   HoldAllowed=false → holdBooking=false  (Webfare, payment at BookFlight)
-        console.log(`[Mystifly] Step 4/6: Creating booking (holdBooking=${holdAllowed})...`);
         const bookRes = await fetch(`${BACKEND_URL}/api/mystifly/book`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
@@ -1241,7 +1176,6 @@ export async function POST(req: NextRequest) {
           if (mystiflyPaymentCaptured && paymentIntentId) {
             try {
               const refund = await stripe.refunds.create({ payment_intent: paymentIntentId });
-              console.log(`[Stripe] ✅ Refund issued after BookFlight failure: ${refund.id}`);
             } catch (refundErr: any) {
               console.error(`[Stripe] ❌ CRITICAL: Refund failed after BookFlight failure: ${refundErr.message}`);
               // This requires manual intervention — log prominently
@@ -1267,8 +1201,6 @@ export async function POST(req: NextRequest) {
           status: bookData.status,
         };
 
-        console.log(`[Mystifly] ✅ Booking created — MFRef: ${mystiflyBookingResult.uniqueId}`);
-
         // ── Step 5/6: Issue ticket (ONLY for Hold bookings) ──────────────
         // HoldAllowed=true  → OrderTicket is required (payment debited here)
         // HoldAllowed=false → Webfare: payment was debited at BookFlight, skip OrderTicket
@@ -1276,7 +1208,6 @@ export async function POST(req: NextRequest) {
 
         if (holdAllowed) {
           // Hold booking — must call OrderTicket to issue ticket and debit payment
-          console.log(`[Mystifly] Step 5/6: Issuing ticket (Hold booking — OrderTicket required)...`);
           try {
             const ticketRes = await fetch(`${BACKEND_URL}/api/mystifly/order-ticket`, {
               method: 'POST',
@@ -1294,10 +1225,8 @@ export async function POST(req: NextRequest) {
               const rawStatus = (ticketData.status || ticketData.ticketStatus || '').toLowerCase();
               if (rawStatus.includes('ticket-in process') || rawStatus.includes('in process')) {
                 ticketingStatus = 'TICKETING_PENDING';
-                console.log(`[Mystifly] ⏳ Ticket-in-Process for MFRef: ${mystiflyBookingResult.uniqueId} — queuing for reconciliation`);
               } else {
                 ticketingStatus = 'ISSUED';
-                console.log(`[Mystifly] ✅ Ticket issued for MFRef: ${mystiflyBookingResult.uniqueId}`);
               }
             } else {
               ticketingStatus = 'TICKETING_PENDING';
@@ -1310,7 +1239,6 @@ export async function POST(req: NextRequest) {
         } else {
           // Webfare — payment was debited at BookFlight, no OrderTicket needed
           ticketingStatus = 'SKIPPED_WEBFARE';
-          console.log(`[Mystifly] Step 5/6: Skipping OrderTicket — Webfare (HoldAllowed=false), payment debited at BookFlight`);
         }
 
         // Queue for reconciliation if ticketing didn't complete immediately
@@ -1334,7 +1262,6 @@ export async function POST(req: NextRequest) {
         // ── Step 6/6: TripDetails (confirm booking + extract ticket numbers) ──
         // Called at the end of the flow per Mystifly guidelines to confirm the
         // booking and extract ticket numbers for the DB record.
-        console.log(`[Mystifly] Step 6/6: Fetching TripDetails for MFRef: ${mystiflyBookingResult.uniqueId}...`);
         try {
           const tripRes = await fetch(`${BACKEND_URL}/api/mystifly/trip-details`, {
             method: 'POST',
@@ -1344,7 +1271,6 @@ export async function POST(req: NextRequest) {
           const tripData = await tripRes.json();
 
           if (tripRes.ok && tripData.success) {
-            console.log(`[Mystifly] ✅ TripDetails — status: ${tripData.bookingStatus}, tickets: [${(tripData.ticketNumbers || []).join(', ')}]`);
 
             // If we got ticket numbers, update the booking result
             if (tripData.ticketNumbers?.length > 0) {
@@ -1352,7 +1278,6 @@ export async function POST(req: NextRequest) {
               // If ticketing was pending but TripDetails shows tickets, update status
               if (ticketingStatus === 'TICKETING_PENDING' || ticketingStatus === 'SKIPPED_WEBFARE') {
                 ticketingStatus = 'ISSUED';
-                console.log(`[Mystifly] ✅ TripDetails confirmed tickets issued — upgrading ticketingStatus to ISSUED`);
               }
             }
             if (tripData.bookingStatus) {
@@ -1372,7 +1297,6 @@ export async function POST(req: NextRequest) {
         if (stripeVerified && paymentIntentId) {
           try {
             await stripe.refunds.create({ payment_intent: paymentIntentId });
-            console.log(`[Stripe] ✅ Refund issued after Mystifly failure`);
           } catch (refundErr: any) {
             console.error(`[Stripe] ❌ CRITICAL: Refund failed: ${refundErr.message}`);
           }
@@ -1457,7 +1381,6 @@ export async function POST(req: NextRequest) {
         if (existingUser) {
           // User already registered — link booking to their account
           resolvedUserId = existingUser.id;
-          console.log(`[Checkout] Platform user found for ${normEmail} → ${existingUser.id}`);
         } else {
           // Auto-register: create platform user from primary contact info
           const newUser = await prisma.user.create({
@@ -1471,7 +1394,6 @@ export async function POST(req: NextRequest) {
             },
           });
           resolvedUserId = newUser.id;
-          console.log(`[Checkout] ✅ Auto-registered platform user for ${normEmail} → ${newUser.id}`);
         }
       } catch (autoRegErr: any) {
         // Non-blocking: if auto-registration fails, booking still proceeds
@@ -1481,7 +1403,6 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Full transaction ─────────────────────────────────────────────────────
-    console.log(`[Checkout] Starting DB transaction — provider: ${sourceProvider}, masterPnr: ${masterPnr}, pax: ${passengers.length}, amount: $${totalAmount}`);
     const txResult = await prisma.$transaction(async (tx) => {
       // 1. MasterBooking
       const mb = await tx.masterBooking.create({
@@ -1857,7 +1778,6 @@ export async function POST(req: NextRequest) {
             },
           }).catch(() => null);
         }
-        console.log(`[Checkout] Stored ${ancillaryList.filter((a: any) => !a.included).length} provider ancillary record(s)`);
       }
 
       // 10. Price protection add-on
@@ -2039,7 +1959,6 @@ export async function POST(req: NextRequest) {
         }
         if (chargeInserts.length > 0) {
           await tx.bookingCommercialCharge.createMany({ data: chargeInserts });
-          console.log(`[booking] ✅ Wrote ${chargeInserts.length} commercial charge snapshot(s)`);
         }
       } catch (feeErr) {
         // Don't block booking creation if fee snapshot fails
@@ -2049,7 +1968,6 @@ export async function POST(req: NextRequest) {
       return { mb, pnrResult };
     }, { timeout: 30000, maxWait: 10000 });
 
-    console.log(`[Checkout] ✅ DB transaction completed — bookingId: ${txResult.mb.id}`);
     const { mb: masterBooking, pnrResult } = txResult;
     const confirmedAt = new Date().toISOString();
 
@@ -2073,7 +1991,6 @@ export async function POST(req: NextRequest) {
     // Previously these were unawaited promises that got killed when the
     // response was returned — causing customers to never receive emails.
     after(async () => {
-      console.log(`[Checkout] 📨 Firing post-booking notifications: customerEmail="${customerEmail}" agentEmail="${agentEmail || '(none)'}"`);
       try {
         await fireNotification({
           event_type: 'BOOKING_CONFIRMED',

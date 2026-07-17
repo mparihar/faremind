@@ -76,7 +76,6 @@ export async function POST(req: NextRequest) {
       const m = emailErr instanceof Error ? emailErr.message : String(emailErr);
       console.error('[send-otp] Email delivery failed:', m);
       if (process.env.NODE_ENV !== 'production') {
-        console.log(`\n[DEV OTP] ✉️  ${admin.email} → ${otp}\n`);
       }
     }
 

@@ -39,12 +39,6 @@ export function trackDnaEvent(
   };
 
   // Console log for development observability
-  console.log(`[🧬 DNA Analytics] ${event}`, {
-    cardId: data.cardId,
-    dnaScore: data.dnaScore,
-    finalDnaScore: data.finalDnaScore,
-    source: data.source,
-  });
 
   // Queue for potential batch send (future: send to analytics backend)
   analyticsQueue.push(payload);

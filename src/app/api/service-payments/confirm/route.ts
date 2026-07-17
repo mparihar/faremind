@@ -89,8 +89,6 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[ServicePayment] ✅ Confirmed ${payment.id} — Support ticket ${ticketNumber} created`);
-
     // ── 4. Email notifications (non-blocking) ──
     notifyAdminsOfPayment(payment, ticketNumber).catch(e =>
       console.error('[ServicePayment] Notification error:', e)
@@ -217,5 +215,4 @@ async function notifyAdminsOfPayment(payment: any, ticketNumber: string) {
       }),
     }).catch(() => {});
   }
-  console.log(`[ServicePayment] Notified ${recipients.length} admin(s) for ticket ${ticketNumber}`);
 }

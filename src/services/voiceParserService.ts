@@ -78,14 +78,12 @@ export async function parseVoiceCommand(
   transcript: string,
   pageContext: PageContext = 'HOME_SEARCH',
 ): Promise<VoiceCommandResult> {
-  console.log('[Voice] Sending command to parser:', { transcript, pageContext });
 
   const result = await apiFetch<VoiceCommandResult>('/api/voice/parse-command', {
     method: 'POST',
     body: JSON.stringify({ transcript, pageContext }),
   });
 
-  console.log('[Voice] Command parsed:', result);
   return result;
 }
 
@@ -102,10 +100,6 @@ export async function parsePassengerVoiceCommand(
   transcript: string,
   passengerContext: PassengerContext,
 ): Promise<VoicePassengerResult> {
-  console.log('[Voice] Sending passenger command to parser:', {
-    transcript,
-    passengerContext,
-  });
 
   const result = await apiFetch<VoicePassengerResult>('/api/voice/parse-command', {
     method: 'POST',
@@ -116,6 +110,5 @@ export async function parsePassengerVoiceCommand(
     }),
   });
 
-  console.log('[Voice] Passenger command parsed:', result);
   return result;
 }

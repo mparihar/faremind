@@ -118,7 +118,6 @@ export const POST = withAdmin(async (req: NextRequest, { admin, params }: any) =
         });
         if (quoteRes.ok) {
           quoteData = await quoteRes.json();
-          console.log('[cancel-action] Quote:', JSON.stringify(quoteData).slice(0, 300));
         } else {
           console.warn('[cancel-action] Quote failed:', quoteRes.status, await quoteRes.text().catch(() => ''));
         }
@@ -136,7 +135,6 @@ export const POST = withAdmin(async (req: NextRequest, { admin, params }: any) =
         });
         if (confirmRes.ok) {
           providerCancelResult = await confirmRes.json();
-          console.log('[cancel-action] ✅ Provider cancellation confirmed');
         } else {
           const errText = await confirmRes.text().catch(() => '');
           console.error('[cancel-action] Provider cancellation failed:', confirmRes.status, errText);

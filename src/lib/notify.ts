@@ -138,8 +138,6 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
   const name = String(d.customer_name ?? 'Traveler');
   const amount = String(d.total_amount ?? '');
 
-  console.log(`[notify] 🔍 buildCustomerEmail: event=${eventType} ref=${ref} name=${name} has_full_booking_data=${!!d.full_booking_data}`);
-
   switch (eventType) {
     case 'BOOKING_CONFIRMED': {
       // Send ONLY the detailed itinerary email — no simple fallback template.
@@ -148,9 +146,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
       const fullBookingData = d.full_booking_data as Record<string, unknown> | undefined;
       if (fullBookingData) {
         try {
-          console.log(`[notify] 📄 Generating detailed itinerary HTML for customer email (ref=${ref})...`);
           const itineraryHtml = generateItineraryHtmlFromBooking(fullBookingData);
-          console.log(`[notify] ✅ Itinerary HTML generated successfully (${itineraryHtml.length} chars)`);
           return {
             subject: `Your FAREMIND flight is confirmed – ${ref}`,
             html: itineraryHtml,
@@ -490,7 +486,6 @@ export async function fireNotification(payload: NotifyPayload): Promise<void> {
   const customerName = String(data.customer_name ?? 'Customer');
 
   // Diagnostic logging — visible in production logs
-  console.log(`[notify] 📨 fireNotification: event=${event_type} customer_email=${customer_email || '(none)'} ref=${ref || '(none)'}`);
 
   // Derive a human-readable template name from the event type
   const templateMap: Record<string, string> = {
@@ -513,15 +508,11 @@ export async function fireNotification(payload: NotifyPayload): Promise<void> {
   const template = templateMap[event_type] || event_type;
 
   // ── Customer email (independent try/catch — failure here must NOT block admin/agent) ──
-  console.log(`[notify] 🔍 Customer email check: event=${event_type} customer_email="${customer_email || '(none)'}" isCustomerEvent=${CUSTOMER_EVENTS.has(event_type)}`);
   if (CUSTOMER_EVENTS.has(event_type) && customer_email) {
     try {
-      console.log(`[notify] 📧 Building customer email for ${event_type} → ${customer_email}`);
       const spec = buildCustomerEmail(event_type, data);
       if (spec) {
-        console.log(`[notify] 📤 Sending customer email: subject="${spec.subject}" htmlLength=${spec.html.length} to=${customer_email}`);
         await sendBrevo(customer_email, spec.subject, spec.html, spec.text, { recipientName: customerName, template, bookingRef: ref });
-        console.log(`[notify] ✅ Customer email sent: ${event_type} → ${customer_email}`);
       } else {
         console.warn(`[notify] ⚠️ buildCustomerEmail returned null for ${event_type}`);
       }
@@ -541,7 +532,6 @@ export async function fireNotification(payload: NotifyPayload): Promise<void> {
         for (const adminEmail of adminEmails) {
           await sendBrevo(adminEmail, spec.subject, spec.html, spec.text, { recipientName: 'Admin', template: `[Admin] ${template}`, bookingRef: ref });
         }
-        console.log(`[notify] ✅ Admin emails sent: ${event_type} → ${adminEmails.join(', ')}`);
       }
     } catch (adminErr) {
       console.error(`[notify] ❌ Admin email FAILED for ${event_type}:`, adminErr instanceof Error ? adminErr.message : adminErr);
@@ -566,7 +556,6 @@ export async function fireNotification(payload: NotifyPayload): Promise<void> {
           template: `[Agent] ${template}`,
           bookingRef: ref,
         });
-        console.log(`[notify] ✅ Agent email sent: ${event_type} → ${agentEmail}`);
       }
     } catch (agentErr) {
       console.error(`[notify] ❌ Agent email FAILED for ${event_type} → ${agentEmail}:`, agentErr instanceof Error ? agentErr.message : agentErr);

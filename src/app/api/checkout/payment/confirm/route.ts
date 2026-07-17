@@ -43,10 +43,6 @@ export async function POST(req: NextRequest) {
     const cleanNumber = card.number.replace(/\s/g, '');
     const last4 = cleanNumber.slice(-4);
 
-    console.log(
-      `[Stripe] Confirming PaymentIntent ${paymentIntentId} — card ending ${last4}`
-    );
-
     // 1. Create a PaymentMethod from card details
     const paymentMethod = await stripe.paymentMethods.create({
       type: 'card',
@@ -67,14 +63,10 @@ export async function POST(req: NextRequest) {
       },
     });
 
-    console.log(`[Stripe] PaymentMethod created: ${paymentMethod.id} (${paymentMethod.card?.brand} ****${last4})`);
-
     // 2. Confirm the PaymentIntent with the PaymentMethod
     const confirmedIntent = await stripe.paymentIntents.confirm(paymentIntentId, {
       payment_method: paymentMethod.id,
     });
-
-    console.log(`[Stripe] PaymentIntent confirmed: ${confirmedIntent.id} — status: ${confirmedIntent.status}`);
 
     // With capture_method: 'manual', confirming results in 'requires_capture'
     // (funds authorized but not yet captured). This is the expected status.

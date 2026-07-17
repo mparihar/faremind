@@ -62,7 +62,6 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
   let htmlContent: string;
   try {
     htmlContent = generateItineraryHtmlFromBooking(booking);
-    console.log(`[resend-itinerary] ✅ Generated itinerary HTML (${htmlContent.length} chars) for ${ref}`);
   } catch (err) {
     console.error('[resend-itinerary] ❌ generateItineraryHtmlFromBooking failed:', err);
     // Fallback to simple confirmation
@@ -94,7 +93,6 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
     });
 
     const responseBody = await res.text();
-    console.log(`[resend-itinerary] Brevo response: ${res.status} ${responseBody}`);
 
     if (!res.ok) {
       console.error(`[resend-itinerary] ❌ Brevo rejected: ${res.status} ${responseBody}`);
@@ -104,7 +102,6 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
       }, { status: 502 });
     }
 
-    console.log(`[resend-itinerary] ✅ Email sent to ${targetEmail} for booking ${ref}`);
   } catch (err) {
     console.error('[resend-itinerary] ❌ Failed to send via Brevo:', err);
     return NextResponse.json({ error: 'Failed to send email' }, { status: 500 });

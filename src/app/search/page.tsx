@@ -331,7 +331,6 @@ function SearchContent() {
               expiresAt: earliest,
               searchCriteria: { origin, destination, departureDate: date },
             });
-            console.log(`[Search] ⏱️ Offer timer started — earliest expires: ${earliest}`);
           }
         } else if (data.flights) {
           setResults(data.flights);
@@ -350,7 +349,6 @@ function SearchContent() {
               expiresAt: earliest,
               searchCriteria: { origin, destination, departureDate: date },
             });
-            console.log(`[Search] ⏱️ Offer timer started — earliest expires: ${earliest}`);
           }
         }
         if (data.meta) setSearchMeta(data.meta);
@@ -834,7 +832,6 @@ function SearchContent() {
           }))
         : panelFilteredOneWay.slice(0, 50);
 
-      console.log(`[DNA Search] Sending ${cardsToSend.length} cards, userId=${authUser?.id ?? 'none'}`);
       setDnaFlightCount(cardsToSend.length);
 
       // Snapshot the flights being sent — used for display when DNA is active
@@ -886,7 +883,6 @@ function SearchContent() {
       const data: DnaSearchResult = await res.json();
       // Update flight count from the actual topN config in the API response
       if (data.dnaSearchTopN) setDnaFlightCount(data.dnaSearchTopN);
-      console.log('[DNA Search] Response:', { eligible: data.eligible, reason: data.reason, resultCount: data.results?.length ?? 0, topN: data.dnaSearchTopN });
 
       if (!res.ok || !data.eligible) {
         // Don't permanently disable — keep as null so user can retry
@@ -909,13 +905,6 @@ function SearchContent() {
         prefs.setDnaSearchActive(true);
         setDnaSearchStatus('complete');
         // Debug: trace DNA mapping
-        console.log('[DNA Search] ✅ Results received:', {
-          resultCount: data.results.length,
-          sampleCardIds: data.results.slice(0, 3).map((r: any) => r.cardId),
-          sampleDnaScores: data.results.slice(0, 3).map((r: any) => r.dnaScore),
-          sampleRTIds: panelFilteredRT.slice(0, 3).map(rt => rt.id),
-          sampleOWIds: panelFilteredOneWay.slice(0, 3).map(f => f.id),
-        });
         trackDnaEvent('dna_search_completed', {
           source: 'flight_page',
           totalResults: data.results.length,
@@ -961,7 +950,6 @@ function SearchContent() {
       const url = new URL(window.location.href);
       url.searchParams.delete('dna');
       window.history.replaceState({}, '', url.toString());
-      console.log('[DNA Search] 🧬 Auto-triggering DNA Search after sign-in redirect');
       // Trigger DNA Search
       handleDnaSearch();
     }

@@ -92,8 +92,6 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Failed to send email' }, { status: 502 });
     }
 
-    console.log(`[email-itinerary] ✅ Email sent to ${targetEmail} for booking ${ref}`);
-
     // Log to email_logs (non-blocking)
     try {
       await prisma.emailLog.create({

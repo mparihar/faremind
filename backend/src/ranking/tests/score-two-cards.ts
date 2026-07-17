@@ -69,34 +69,9 @@ const input: RankingInput = {
 
 const result = rankFlightOffers(input);
 
-console.log('\n══════════════════════════════════════════════════');
-console.log('  SCORING: BA $1,730 vs BA $1,494');
-console.log('  DFW → DEL | Nov 16 → Dec 5, 2026');
-console.log('══════════════════════════════════════════════════\n');
-
 for (const offer of result.rankedOffers) {
   const orig = input.offers.find(o => o.offerId === offer.offerId)!;
   const b = offer.scoreBreakdown;
-  console.log(`━━━ Rank #${offer.rank}: ${orig.airline} $${orig.totalPrice} (${orig.durationMinutes}m = ${Math.floor(orig.durationMinutes/60)}h ${orig.durationMinutes%60}m) ━━━`);
-  console.log(`  FINAL SCORE: ${offer.finalScore}`);
-  console.log(`  ┌────────────────────┬────────┬────────┐`);
-  console.log(`  │ Dimension          │ Score  │ Weight │`);
-  console.log(`  ├────────────────────┼────────┼────────┤`);
-  console.log(`  │ Price              │ ${b.priceScore.toFixed(1).padStart(6)} │   28%  │`);
-  console.log(`  │ Duration           │ ${b.durationScore.toFixed(1).padStart(6)} │   18%  │`);
-  console.log(`  │ Stops              │ ${b.stopsScore.toFixed(1).padStart(6)} │   14%  │`);
-  console.log(`  │ Schedule           │ ${b.scheduleScore.toFixed(1).padStart(6)} │   10%  │`);
-  console.log(`  │ Flexibility        │ ${b.flexibilityScore.toFixed(1).padStart(6)} │   10%  │`);
-  console.log(`  │ Comfort            │ ${b.comfortScore.toFixed(1).padStart(6)} │    8%  │`);
-  console.log(`  │ Baggage            │ ${b.baggageScore.toFixed(1).padStart(6)} │    5%  │`);
-  console.log(`  │ Brand              │ ${b.brandScore.toFixed(1).padStart(6)} │    3%  │`);
-  console.log(`  │ Reliability        │ ${b.reliabilityScore.toFixed(1).padStart(6)} │    2%  │`);
-  console.log(`  │ Airport Experience │ ${b.airportExperienceScore.toFixed(1).padStart(6)} │    2%  │`);
-  console.log(`  └────────────────────┴────────┴────────┘`);
-  console.log(`  Reasons: ${offer.machineReasons.join(' | ')}`);
-  console.log(`  Tradeoffs: ${offer.tradeoffs.join(' | ')}`);
   if (offer.appliedRules.length > 0) {
-    console.log(`  Rules: ${offer.appliedRules.map(r => `${r.ruleId}: ${r.adjustment > 0 ? '+' : ''}${r.adjustment} — ${r.reason}`).join('; ')}`);
   }
-  console.log();
 }

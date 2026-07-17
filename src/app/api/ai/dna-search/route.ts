@@ -87,18 +87,14 @@ export async function POST(req: NextRequest) {
   // ── Generate DNA profile on-demand (creates/updates if not yet generated) ──
   try {
     const genResult = await generateTravelDnaProfile(userId);
-    console.log(`[DNA Search] Profile generated for ${userId}: status=${genResult.status}, bookings=${genResult.confirmedBookingCount}, profiles=`, Object.entries(genResult.profiles || {}).map(([k, v]: [string, any]) => `${k}:${v?.status}(${v?.confirmedBookingCount}/${v?.minBookingsRequired})`).join(', '));
   } catch (genErr) {
     console.warn('[DNA Search] Profile generation skipped:', genErr instanceof Error ? genErr.message : genErr);
   }
 
   // ── Load DNA profile (strict category match) ──────────────────────────────
-  console.log(`[DNA Search] Loading ${tripCategory} DNA profile for user ${userId}`);
   const dnaContext = await getTravelDnaForRecommendation(userId, tripCategory);
-  console.log(`[DNA Search] Profile result: active=${dnaContext.active}, prefCategories=${Object.keys(dnaContext.preferences || {}).length}`);
 
   if (!dnaContext.active || !dnaContext.preferences || Object.keys(dnaContext.preferences).length === 0) {
-    console.log(`[DNA Search] ${tripCategory} DNA profile not active for user ${userId}`);
     return NextResponse.json({
       eligible: false,
       reason: `Your ${tripCategory.toLowerCase()} FareMind DNA profile is still learning. Complete more ${tripCategory.toLowerCase()} bookings to unlock DNA Search.`,
@@ -124,7 +120,6 @@ export async function POST(req: NextRequest) {
   // Derive high-level traveler traits from raw preferences
   const travelerTraits = deriveTravelerTraits(dnaContext.preferences);
   const traitsText = serializeTraitsForGpt(travelerTraits);
-  console.log(`[DNA Search] Derived ${travelerTraits.length} traits:`, travelerTraits.map(t => `${t.traitName}(${t.confidence}%)`).join(', '));
 
   // ── Step 1: Extract top 12 strongest DNA preferences ─────────────────────
   const topPrefs = extractTopPreferences(dnaContext.preferences, 12);
@@ -164,7 +159,6 @@ export async function POST(req: NextRequest) {
   const matchSummary = cardMatchData.slice(0, 5).map(c =>
     `${c.cardId.slice(0, 8)}...(${c.matchedFacts.length} matches: ${c.matchedFacts.map(f => f.preferenceKey).join(',')})`
   );
-  console.log(`[DNA Search] Card match summary (first 5):`, matchSummary);
 
   // ── Step 3: Build GPT prompt with matched facts ──────────────────────────
   const traitNames = travelerTraits.map(t => t.traitName);
@@ -266,8 +260,6 @@ For each card:
     // Cache the result
     setCachedDnaResult(cacheKey, result);
 
-    console.log(`[DNA Search] Evaluated ${topCards.length} cards for user ${userId}, top DNA score: ${rankedResults[0]?.dnaScore ?? 0}, GPT returned: ${gptCards.length}, fallback: ${validGptCards.length - gptCardIds.size}`);
-
     return NextResponse.json(result);
   } catch (err: unknown) {
     // ── Complete GPT failure — use deterministic fallback for all cards ────
@@ -298,7 +290,6 @@ For each card:
     };
 
     setCachedDnaResult(cacheKey, result);
-    console.log(`[DNA Search] Fallback mode: ${topCards.length} cards evaluated with deterministic reasons`);
 
     return NextResponse.json(result);
   }

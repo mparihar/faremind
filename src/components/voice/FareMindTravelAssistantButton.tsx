@@ -176,7 +176,6 @@ export default function FareMindTravelAssistantButton() {
     if (user && sessionToken && !dnaFetched) {
       fetchDna(sessionToken);
     }
-    console.log('[Voice] Assistant Opened');
   }, [user, sessionToken, dnaFetched, fetchDna]);
 
   // Toggle mic — ChatGPT style
@@ -188,7 +187,6 @@ export default function FareMindTravelAssistantButton() {
     }
 
     if (state === 'listening') {
-      console.log('[Voice] User stopped recording');
       stopListening();
       return;
     }
@@ -204,7 +202,6 @@ export default function FareMindTravelAssistantButton() {
     setClarifyMessage('');
     setErrorMessage('');
     setExpanded(true);
-    console.log('[Voice] Recording Started');
 
     try {
       const result = await startListening((interimText) => {
@@ -214,10 +211,8 @@ export default function FareMindTravelAssistantButton() {
       const transcript = result.transcript;
       setFinalTranscript(transcript);
       setLiveTranscript(transcript);
-      console.log('[Voice] Transcript:', transcript, 'Confidence:', result.confidence);
 
       setState('processing');
-      console.log('[Voice] Parsing command...');
 
       try {
         // ── Branch by page context ────────────────────────────────────
@@ -254,7 +249,6 @@ export default function FareMindTravelAssistantButton() {
 
     setFormData(data);
     setMissingFields(validation.missingFields);
-    console.log('[Voice] Command Parsed:', data);
 
     // Helper: attempt to fill the form, retrying briefly if ref isn't registered yet
     const tryFillForm = async (): Promise<boolean> => {
@@ -262,7 +256,6 @@ export default function FareMindTravelAssistantButton() {
       const ref = useVoiceStore.getState().searchFormRef;
       if (ref) {
         ref.fillFromVoice(data);
-        console.log('[Voice] Hero form populated — user will verify & click Search');
         return true;
       }
       // Ref not ready — retry a few times (SearchForm registers on mount after refresh)
@@ -271,7 +264,6 @@ export default function FareMindTravelAssistantButton() {
         const retryRef = useVoiceStore.getState().searchFormRef;
         if (retryRef) {
           retryRef.fillFromVoice(data);
-          console.log(`[Voice] Hero form populated on retry ${attempt + 1}`);
           return true;
         }
       }
@@ -284,13 +276,11 @@ export default function FareMindTravelAssistantButton() {
         // Last resort: stash in sessionStorage and force a reload so the recovery effect picks it up
         sessionStorage.setItem('faremind_voice_search', JSON.stringify(data));
         window.location.reload();
-        console.log('[Voice] SearchForm ref unavailable — reloading to apply voice data');
         return;
       }
     } else {
       sessionStorage.setItem('faremind_voice_search', JSON.stringify(data));
       router.push('/');
-      console.log('[Voice] Redirecting to homepage with voice data');
     }
 
     handleClose();
@@ -312,7 +302,6 @@ export default function FareMindTravelAssistantButton() {
 
     const parsed = await parsePassengerVoiceCommand(transcript, passengerContext);
     setPassengerParsed(parsed);
-    console.log('[Voice] Passenger command parsed:', parsed);
 
     // Handle CLARIFY
     if (parsed.action === 'CLARIFY') {
@@ -344,7 +333,6 @@ export default function FareMindTravelAssistantButton() {
     );
 
     setPassengerFillResult(fillResult);
-    console.log('[Voice] Passenger fill result:', fillResult);
 
     if (fillResult.conflicts.length > 0) {
       setState('passenger_conflicts');
@@ -377,14 +365,12 @@ export default function FareMindTravelAssistantButton() {
     } : null);
 
     setState('passenger_confirmation');
-    console.log('[Voice] Conflicts resolved — replaced all');
   }, [passengerFillResult, passengerParsed]);
 
   const handleKeepExisting = useCallback(() => {
     // Just move to confirmation without applying conflicts
     setPassengerFillResult(prev => prev ? { ...prev, conflicts: [] } : null);
     setState('passenger_confirmation');
-    console.log('[Voice] Conflicts resolved — kept existing');
   }, []);
 
   // Commit voice data only when user confirms ("Looks Good")
@@ -401,13 +387,11 @@ export default function FareMindTravelAssistantButton() {
     if (!formData) return;
 
     setState('executing');
-    console.log('[Voice] Executing search...');
 
     const currentRef = useVoiceStore.getState().searchFormRef;
     if (pageContext === 'HOME_SEARCH' && currentRef) {
       currentRef.triggerSearch();
       handleClose();
-      console.log('[Voice] Flight Search Executed');
     } else if (pageContext !== 'HOME_SEARCH') {
       sessionStorage.setItem('faremind_voice_search', JSON.stringify(formData));
       router.push('/');

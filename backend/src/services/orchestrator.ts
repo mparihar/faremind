@@ -157,7 +157,6 @@ async function searchMystifly(params: {
       searchVersion = config.version;
       pricingSource = toPricingSourceType(config.fareType);
       if (config.matchedRuleName) {
-        console.log(`[Mystifly] Route ${params.origin}→${params.destination} matched rule "${config.matchedRuleName}" → ${searchVersion}, ${pricingSource}`);
       }
     } catch {
       // Fallback to defaults if resolver fails
@@ -300,8 +299,6 @@ async function searchMystifly(params: {
         }
       }).filter(Boolean);
 
-      console.log(`[Mystifly] v2.2 denormalized: ${denormalized.length} itineraries (from ${itineraries.length} raw, ${segmentList.length} segments, ${faresList.length} fares)`);
-
       // Diagnostic: report FSC presence — empty FSC = booking will fail
       const fscPresent = denormalized.filter((d: any) => d.FareSourceCode && d.FareSourceCode.length > 0).length;
       const fscMissing = denormalized.length - fscPresent;
@@ -349,7 +346,6 @@ async function searchMystiflyLowestFare(params: {
     return { provider: 'mystifly', flights: [], responseTimeMs: 0, error: 'Mystifly not configured', isMock: true };
   }
   try {
-    console.log(`[Mystifly] v1 Lowest Fare search: ${params.origin}→${params.destination}`);
 
     const response = await mystifly.searchFlights({
       origin: params.origin, destination: params.destination,
@@ -466,7 +462,6 @@ async function searchMystiflyLowestFare(params: {
         }
       }).filter(Boolean);
 
-      console.log(`[Mystifly v1] Denormalized v2-format: ${denormalized.length} itineraries`);
     } else {
       // True v1 flat format — pass through as-is
       denormalized = Array.isArray(itineraries) ? itineraries : [];
@@ -482,7 +477,6 @@ async function searchMystiflyLowestFare(params: {
     // Tag all v1 flights as lowest fares
     for (const f of flights) f.fareType = 'lowest';
 
-    console.log(`[Mystifly] v1 Lowest Fare: ${flights.length} results in ${Date.now() - start}ms`);
     return { provider: 'mystifly', flights, responseTimeMs: Date.now() - start, isMock: false };
   } catch (error) {
     console.warn(`[Mystifly] v1 Lowest Fare search failed:`, (error as Error).message);
@@ -505,7 +499,6 @@ export async function searchFlights(params: {
   const hasMystifly = shouldUseMystifly();
 
   const isMultiCity = params.legs && params.legs.length > 0;
-  console.log(`[Search ${searchId}] Provider mode: ${providerMode} → duffel=${hasDuffel} amadeus=${hasAmadeus} mystifly=${hasMystifly}${isMultiCity ? ` [MULTI-CITY: ${params.legs!.length} legs]` : ''}`);
 
   let providerResults: ProviderResult[];
   if (hasDuffel || hasAmadeus || hasMystifly) {
@@ -543,7 +536,6 @@ export async function searchFlights(params: {
       brandedCount > 0 ? `branded=${brandedCount}` : '',
       otherCount > 0 ? `other=${otherCount}` : '',
     ].filter(Boolean).join(', ');
-    console.log(`[Search ${searchId}] ${pr.provider}: ${pr.flights.length} flights (${fareBreakdown || 'none'}) in ${pr.responseTimeMs}ms${pr.error ? ` ❌ ${pr.error}` : ''}`);
   }
 
   const { flights: aggregatedFlights, stats: aggregationStats } = aggregateProviderOffers(allFlights);
@@ -552,7 +544,6 @@ export async function searchFlights(params: {
   // ── Final summary ──
   const totalLowest = rankedFlights.filter(f => f.fareType === 'lowest').length;
   const totalBranded = rankedFlights.filter(f => f.fareType === 'branded').length;
-  console.log(`[Search ${searchId}] Complete: ${rankedFlights.length} flights (lowest=${totalLowest}, branded=${totalBranded}) in ${Date.now() - overallStart}ms`);
 
   return { flights: rankedFlights, providers: providerResults, searchId, totalTimeMs: Date.now() - overallStart, usedMockData: false, aggregationStats };
 }

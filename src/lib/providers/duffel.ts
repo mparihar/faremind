@@ -366,7 +366,6 @@ export async function searchFlights(params: DuffelSearchParams): Promise<DuffelO
   });
 
   let offers = offerRequest.offers || [];
-  console.log(`[Duffel] Search ${params.origin}→${params.destination}: ${offers.length} offers returned (inline)`);
 
   // Duffel live API: airlines may not have responded yet when the offer_request
   // is first created. If inline offers are empty, poll the listOffers endpoint
@@ -374,13 +373,11 @@ export async function searchFlights(params: DuffelSearchParams): Promise<DuffelO
   if (offers.length === 0 && offerRequest.id) {
     const POLL_DELAYS = [2000, 3000, 5000]; // wait 2s, 3s, 5s between retries
     for (let i = 0; i < POLL_DELAYS.length; i++) {
-      console.log(`[Duffel] No inline offers — polling attempt ${i + 1}/${POLL_DELAYS.length} (waiting ${POLL_DELAYS[i]}ms)...`);
       await sleep(POLL_DELAYS[i]);
       try {
         const polledOffers = await listOffers(offerRequest.id, { limit: 200, sort: 'total_amount' });
         if (polledOffers && polledOffers.length > 0) {
           offers = polledOffers;
-          console.log(`[Duffel] Poll ${i + 1}: got ${offers.length} offers`);
           break;
         }
       } catch (pollErr) {
@@ -496,7 +493,6 @@ export async function createBooking(params: DuffelBookingParams): Promise<Duffel
       id: s.id,
       quantity: s.quantity,
     }));
-    console.log(`[Duffel] 🧳 Attaching ${params.selectedServices.length} ancillary service(s)`);
   }
 
   const order = await duffelRequest<DuffelOrder>({
@@ -506,7 +502,6 @@ export async function createBooking(params: DuffelBookingParams): Promise<Duffel
     retries: 0, // Never retry a payment
   });
 
-  console.log(`[Duffel] ✅ Order created: ${order.id} (PNR: ${order.booking_reference})`);
   return order;
 }
 
@@ -559,16 +554,12 @@ export async function cancelBooking(orderId: string): Promise<{
     body: { order_id: orderId } as Record<string, unknown>,
   });
 
-  console.log(`[Duffel] Cancellation quote: ${cancellation.refund_amount} ${cancellation.refund_currency} (expires: ${cancellation.expires_at})`);
-
   // Step 2: Confirm cancellation
   const confirmed = await duffelRequest<DuffelCancellation>({
     method: 'POST',
     path: `/air/order_cancellations/${cancellation.id}/actions/confirm`,
     retries: 0, // Don't retry cancellation confirmation
   });
-
-  console.log(`[Duffel] ✅ Cancellation confirmed: ${confirmed.id}`);
 
   return {
     cancellation: confirmed,

@@ -9,12 +9,10 @@ export default function Footer() {
   const [modalState, setModalState] = useState<'none' | 'ranking' | 'intelligence'>('none');
 
   const openModal = (type: 'ranking' | 'intelligence') => {
-    console.log(`Analytics: Footer Feature Modal Opened: ${type === 'ranking' ? 'AI Flight Ranking' : 'Price Intelligence'}`);
     setModalState(type);
   };
 
   const closeModal = () => {
-    console.log('Analytics: Footer Feature Modal Closed');
     setModalState('none');
   };
 
@@ -104,7 +102,6 @@ export default function Footer() {
                     </button>
                   ) : (
                     <button
-                      onClick={() => console.log('Analytics: Voice Assistant Opened from Footer')}
                       className="text-sm text-slate-400 hover:text-white transition-colors text-left"
                     >
                       {item.name}

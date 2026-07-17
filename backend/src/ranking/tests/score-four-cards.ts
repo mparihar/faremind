@@ -114,48 +114,13 @@ const input: RankingInput = {
 
 const result = rankFlightOffers(input);
 
-console.log('\n══════════════════════════════════════════════════════════════');
-console.log('  NEW ENGINE: 4 CARDS — DFW → DEL | Nov 16 → Dec 5, 2026');
-console.log('══════════════════════════════════════════════════════════════\n');
-console.log(`Journey: ${result.audit.journeyType} | Profile: ${result.profileId}`);
-console.log(`Weights: ${JSON.stringify(result.audit.weightsUsed)}\n`);
-
-console.log('┌─────────────────────────────────────────────────────────────────────────────────────────────┐');
-console.log('│ RANKING ORDER (should match UI)                                                            │');
-console.log('├────┬──────────┬────────┬──────────┬─────────┬──────┬────────┬──────────┬─────────┬─────────┤');
-console.log('│Rank│ Price    │ Score  │ Price    │Duration │Stops │Baggage │Flexiblty │Schedule │Brand    │');
-console.log('├────┼──────────┼────────┼──────────┼─────────┼──────┼────────┼──────────┼─────────┼─────────┤');
-
 for (const offer of result.rankedOffers) {
   const orig = input.offers.find(o => o.offerId === offer.offerId)!;
   const b = offer.scoreBreakdown;
-  console.log(
-    `│ #${offer.rank} │ $${orig.totalPrice.toString().padEnd(7)} │ ${offer.finalScore.toString().padEnd(6)} │ ` +
-    `${b.priceScore.toFixed(0).padStart(5)}    │ ${b.durationScore.toFixed(0).padStart(5)}   │${b.stopsScore.toFixed(0).padStart(4)}  │ ` +
-    `${b.baggageScore.toFixed(0).padStart(5)}  │ ${b.flexibilityScore.toFixed(0).padStart(7)}  │ ${b.scheduleScore.toFixed(0).padStart(5)}   │ ${b.brandScore.toFixed(0).padStart(5)}   │`
-  );
 }
-console.log('└────┴──────────┴────────┴──────────┴─────────┴──────┴────────┴──────────┴─────────┴─────────┘\n');
 
-console.log('UI DISPLAYED ORDER: $1,377 → $1,620 → $1,494 → $1,555');
-console.log('ENGINE RANKED ORDER:', result.rankedOffers.map(o => {
-  const orig = input.offers.find(x => x.offerId === o.offerId)!;
-  return `$${orig.totalPrice}`;
-}).join(' → '));
-console.log('\nMATCH?', (() => {
-  const uiOrder = ['ba-1377', 'ba-1620', 'ba-1494', 'ba-1555'];
-  const engineOrder = result.rankedOffers.map(o => o.offerId);
-  return JSON.stringify(uiOrder) === JSON.stringify(engineOrder) ? '✅ YES' : '❌ NO — UI does NOT match engine';
-})());
-
-console.log('\n── Detailed Reasons ──');
 for (const offer of result.rankedOffers) {
   const orig = input.offers.find(o => o.offerId === offer.offerId)!;
-  console.log(`\n#${offer.rank} $${orig.totalPrice} (score ${offer.finalScore}):`);
-  console.log(`  Reasons: ${offer.machineReasons.join(' | ')}`);
-  console.log(`  Tradeoffs: ${offer.tradeoffs.join(' | ')}`);
   if (offer.appliedRules.length > 0) {
-    console.log(`  Rules: ${offer.appliedRules.map(r => `${r.ruleId}:${r.adjustment > 0 ? '+' : ''}${r.adjustment}`).join(', ')}`);
   }
 }
-console.log();

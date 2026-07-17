@@ -96,20 +96,15 @@ export async function searchMystiflyRoundTrip(params: {
       options = convertUnifiedToRoundTrip(flights);
     }
 
-    console.log(`[Mystifly RT] ${params.origin}⇄${params.destination}: ${options.length} round-trip options in ${Date.now() - start}ms`);
-
     // ── Diagnostic: dump first itinerary's airline data ──
     if (rawItineraries && rawItineraries.length > 0) {
       const first = rawItineraries[0];
       const segs = first.OriginDestinationOptions?.[0]?.FlightSegments || [];
-      console.log(`[Mystifly RT DEBUG] ValidatingAirlineCode: "${first.ValidatingAirlineCode}"`);
       segs.forEach((s: any, i: number) => {
-        console.log(`[Mystifly RT DEBUG]   Seg ${i}: MarketingAirlineCode="${s.MarketingAirlineCode}" FlightNumber="${s.FlightNumber}"`);
       });
     }
     if (options.length > 0) {
       const first = options[0];
-      console.log(`[Mystifly RT DEBUG] First option airlines: ${JSON.stringify(first.airlines)}, codes: ${JSON.stringify(first.airlineCodes)}, provider: ${first.provider}`);
     }
 
     return { options, responseTimeMs: Date.now() - start };

@@ -78,8 +78,6 @@ export const PUT = withAdmin(async (req: NextRequest, { admin }) => {
       },
     });
 
-    console.log(`[SystemConfig] Updated "${key}" = "${value}" by ${admin.email}`);
-
     return NextResponse.json({ config });
   } catch (err: any) {
     console.error('[admin/system-config] PUT error:', err);

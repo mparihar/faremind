@@ -99,7 +99,6 @@ export async function applyMarkupToOffers(flights: UnifiedFlight[]): Promise<voi
 
   const rule = await getActiveMarkupRule();
   if (!rule) {
-    console.log('[Markup] No active MARKUP_FEE rule — offers pass through at provider price');
     return;
   }
 
@@ -122,7 +121,6 @@ export async function applyMarkupToOffers(flights: UnifiedFlight[]): Promise<voi
   }
 
   if (appliedCount > 0) {
-    console.log(`[Markup] Applied ${rule.calculationModel} markup to ${appliedCount}/${flights.length} one-way offers`);
   }
 }
 
@@ -137,7 +135,6 @@ export async function applyMarkupToRoundTripOptions(options: RoundTripOption[]):
 
   const rule = await getActiveMarkupRule();
   if (!rule) {
-    console.log('[Markup] No active MARKUP_FEE rule — RT options pass through at provider price');
     return;
   }
 
@@ -160,7 +157,6 @@ export async function applyMarkupToRoundTripOptions(options: RoundTripOption[]):
   }
 
   if (appliedCount > 0) {
-    console.log(`[Markup] Applied ${rule.calculationModel} markup to ${appliedCount}/${options.length} round-trip options`);
   }
 }
 

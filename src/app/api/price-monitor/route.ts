@@ -45,8 +45,6 @@ export async function POST(request: NextRequest) {
       });
     }
 
-    console.log(`[PriceMonitor] Processing ${jobs.length} tracking jobs`);
-
     const results = [];
 
     for (const job of jobs) {
@@ -86,7 +84,6 @@ export async function POST(request: NextRequest) {
 
         if (percentDrop >= thresholdPercent && priceDiff > 0) {
           // Price drop detected!
-          console.log(`[PriceMonitor] 🔥 Price drop: $${priceDiff.toFixed(2)} (${percentDrop.toFixed(1)}%) for booking ${job.bookingId}`);
 
           // Get booking to find userId
           const booking = await prisma.booking.findUnique({

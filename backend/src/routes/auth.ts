@@ -79,7 +79,6 @@ async function createAndSendOtp(email: string, name: string): Promise<void> {
   });
 
   // Always log in dev; attempt email send (non-blocking failure)
-  console.log(`[auth][dev] OTP for ${email}: ${otp}`);
   try { await sendOtpEmail(email, name, otp); } catch (e) {
     console.error('[auth] Email send failed:', e);
   }

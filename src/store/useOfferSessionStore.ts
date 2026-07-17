@@ -130,7 +130,6 @@ export const useOfferSessionStore = create<OfferSessionStore>((set, get) => ({
       // Persist to sessionStorage
       get().persistToStorage();
 
-      console.log(`[OfferSession] Session started — ${remaining}s remaining`);
     } catch (err) {
       console.warn('[OfferSession] Failed to start session, using local-only timer:', err);
 
@@ -159,16 +158,6 @@ export const useOfferSessionStore = create<OfferSessionStore>((set, get) => ({
       const remaining = Math.max(0, Math.floor((new Date(fallbackExpiry).getTime() - Date.now()) / 1000));
 
       // Detailed audit logging for tracking "Fare Expired" triggers
-      console.log(`[OfferSession] 📋 Timer audit:`, {
-        providerExpiresAt: expiresAt || 'none',
-        providerRemainingMs: expiresAt ? providerExpiryMs : 'N/A',
-        providerUsable: providerExpiryUsable,
-        fallbackMinutes,
-        finalExpiresAt: fallbackExpiry,
-        finalRemainingSeconds: remaining,
-        timerSource: providerExpiryUsable ? 'provider (Duffel)' : `fallback (${fallbackMinutes}min)`,
-        status: remaining <= 0 ? 'EXPIRED' : remaining <= 180 ? 'WARNING' : 'ACTIVE',
-      });
 
       set({
         offerSessionId: null,
@@ -205,7 +194,6 @@ export const useOfferSessionStore = create<OfferSessionStore>((set, get) => ({
       // Stop the interval
       if (_intervalId) clearInterval(_intervalId);
       set({ remainingSeconds: 0, status: 'EXPIRED', _intervalId: null });
-      console.log('[OfferSession] ⏰ Offer expired');
 
       // Notify backend
       const { offerSessionId } = get();
@@ -263,7 +251,6 @@ export const useOfferSessionStore = create<OfferSessionStore>((set, get) => ({
       ...(provider ? { provider } : {}),
     });
     get().persistToStorage();
-    console.log(`[OfferSession] Updated tracked offer → ${providerOfferId} (timer unchanged: ${state.remainingSeconds}s remaining)`);
   },
 
   clearSession: () => {
@@ -323,7 +310,6 @@ export const useOfferSessionStore = create<OfferSessionStore>((set, get) => ({
         set({ _intervalId: intervalId });
       }
 
-      console.log(`[OfferSession] Hydrated from storage — ${remaining}s remaining (${status})`);
       return true;
     } catch {
       return false;

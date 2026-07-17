@@ -34,7 +34,6 @@ export async function GET(req: NextRequest) {
     }
     // Retry once on socket errors (UND_ERR_SOCKET, premature close, etc.)
     if (err?.code === 'UND_ERR_SOCKET' || err?.message?.includes('premature') || err?.message?.includes('socket')) {
-      console.log('[FlexSearch Proxy] Retrying after socket error...');
       try {
         const retryController = new AbortController();
         const retryTimeout = setTimeout(() => retryController.abort(), 120_000);

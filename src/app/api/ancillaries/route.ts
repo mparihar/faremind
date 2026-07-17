@@ -110,11 +110,6 @@ async function handleDuffel(offerId: string, cacheKey: string) {
 
   setCached(cacheKey, { baggage, meals, premiumServices });
 
-  console.log(
-    `[Ancillaries] Duffel offer ${offerId}: ${baggage.length} baggage, ` +
-    `${premiumServices.length} premium service(s)`,
-  );
-
   return NextResponse.json({
     baggage,
     meals,
@@ -159,7 +154,6 @@ async function handleMystifly(offerId: string, cacheKey: string, mfref?: string 
   // Mystifly sandbox returns Duffel-format offers (off_...).
   // Route those through the Duffel ancillary handler to get real extra baggage pricing.
   if (offerId.startsWith('off_')) {
-    console.log(`[Ancillaries] Mystifly offer ${offerId} is a Duffel-format ID — routing to Duffel handler`);
     return handleDuffel(offerId, cacheKey);
   }
 
@@ -179,7 +173,6 @@ async function handleMystifly(offerId: string, cacheKey: string, mfref?: string 
     const seatData = await seatRes.json();
 
     if (seatRes.ok && seatData.success) {
-      console.log(`[Ancillaries] Mystifly SeatMap fetched for FSC: ${offerId.slice(0, 20)}...`);
       // SeatMap data is returned as raw — frontend seat selector can use it
       // We normalize what we can into premium services
       const seatMapRaw = seatData.Data || seatData;
@@ -278,7 +271,6 @@ async function handleMystifly(offerId: string, cacheKey: string, mfref?: string 
           });
         }
 
-        console.log(`[Ancillaries] Mystifly post-booking: ${baggage.length} baggage from AncillaryServiceRequest`);
       } else {
         console.warn(`[Ancillaries] Mystifly AncillaryServiceRequest failed: ${ancData.error || 'unknown'}`);
       }
@@ -288,12 +280,6 @@ async function handleMystifly(offerId: string, cacheKey: string, mfref?: string 
   }
 
   setCached(cacheKey, { baggage, meals, premiumServices });
-
-  console.log(
-    `[Ancillaries] Mystifly offer ${offerId.slice(0, 20)}...: ` +
-    `${baggage.length} baggage, ${meals.length} meals, ${premiumServices.length} premium services` +
-    (mfref ? ` (post-booking MFRef: ${mfref})` : ' (pre-booking)')
-  );
 
   return NextResponse.json({
     baggage,

@@ -165,7 +165,6 @@ async function main() {
 
   try {
     await fastify.listen({ port: PORT, host: '0.0.0.0' });
-    console.log(`\n  FareMind Backend (:${PORT}) — ${process.env.NODE_ENV || 'development'}\n`);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

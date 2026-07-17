@@ -351,8 +351,6 @@ function PaymentFormInner() {
         throw new Error(`Unexpected payment status: ${paymentIntent?.status}. Please try again.`);
       }
 
-      console.log(`[Payment] ✅ Stripe authorization successful: ${paymentIntentId} (status: ${paymentIntent.status})`);
-
       // 3. Confirm booking — calls Next.js route directly (creates Duffel order + captures Stripe)
       // Inject agent booking context if booking on behalf of customer
       const agentCtxRaw = typeof window !== 'undefined' ? sessionStorage.getItem('agentBookingContext') : null;

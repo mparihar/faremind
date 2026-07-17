@@ -19,7 +19,6 @@ let failed = 0;
 function assert(condition: boolean, message: string) {
   if (condition) {
     passed++;
-    console.log(`  ✓ ${message}`);
   } else {
     failed++;
     console.error(`  ✗ ${message}`);
@@ -30,7 +29,6 @@ function assertEqual(actual: any, expected: any, message: string) {
   const match = JSON.stringify(actual) === JSON.stringify(expected);
   if (match) {
     passed++;
-    console.log(`  ✓ ${message}`);
   } else {
     failed++;
     console.error(`  ✗ ${message}`);
@@ -42,8 +40,6 @@ function assertEqual(actual: any, expected: any, message: string) {
 // ═══════════════════════════════════════════════
 // Feature Flag Tests
 // ═══════════════════════════════════════════════
-
-console.log('\n═══ Duffel Assistant — Feature Flag ═══\n');
 
 // Test: env var 'false' disables the feature
 {
@@ -71,8 +67,6 @@ console.log('\n═══ Duffel Assistant — Feature Flag ═══\n');
 // Session Creation — Validation Tests
 // ═══════════════════════════════════════════════
 
-console.log('\n═══ Duffel Assistant — Session Creation ═══\n');
-
 // Test: missing API token throws
 {
   delete process.env.DUFFEL_API_TOKEN;
@@ -97,8 +91,6 @@ console.log('\n═══ Duffel Assistant — Session Creation ═══\n');
 // Security Tests
 // ═══════════════════════════════════════════════
 
-console.log('\n═══ Duffel Assistant — Security ═══\n');
-
 // Test: API token never in response
 {
   process.env.DUFFEL_API_TOKEN = 'secret_token_never_expose_this';
@@ -122,8 +114,6 @@ console.log('\n═══ Duffel Assistant — Security ═══\n');
 // ═══════════════════════════════════════════════
 // Provider Validation Tests
 // ═══════════════════════════════════════════════
-
-console.log('\n═══ Duffel Assistant — Provider Validation ═══\n');
 
 // Test: Duffel provider is accepted
 {
@@ -155,8 +145,6 @@ console.log('\n═══ Duffel Assistant — Provider Validation ═══\n');
 // ═══════════════════════════════════════════════
 // RBAC Tests
 // ═══════════════════════════════════════════════
-
-console.log('\n═══ Duffel Assistant — RBAC ═══\n');
 
 // Replicate the ROLE_RANK from admin-rbac.ts
 const ROLE_RANK: Record<string, number> = {
@@ -193,8 +181,6 @@ assert(!hasRole('CUSTOMER', 'SUPPORT'), 'CUSTOMER role cannot access SUPPORT-lev
 // Agent Access Tests
 // ═══════════════════════════════════════════════
 
-console.log('\n═══ Duffel Assistant — Agent Access ═══\n');
-
 // Test: Agent can access their own booking
 {
   const agent = { id: 'agent_1', role: 'FAREMIND_AGENT' };
@@ -229,8 +215,6 @@ console.log('\n═══ Duffel Assistant — Agent Access ═══\n');
 // Audit Log Schema Tests
 // ═══════════════════════════════════════════════
 
-console.log('\n═══ Duffel Assistant — Audit Log ═══\n');
-
 {
   const auditEntry = {
     action: 'DUFFEL_ASSISTANT_OPENED',
@@ -255,8 +239,6 @@ console.log('\n═══ Duffel Assistant — Audit Log ═══\n');
 // ═══════════════════════════════════════════════
 // Existing Functionality — No Regression
 // ═══════════════════════════════════════════════
-
-console.log('\n═══ Duffel Assistant — No Regression ═══\n');
 
 {
   // New fields are nullable/default and don't affect existing queries
@@ -293,10 +275,6 @@ console.log('\n═══ Duffel Assistant — No Regression ═══\n');
 // ═══════════════════════════════════════════════
 // Summary
 // ═══════════════════════════════════════════════
-
-console.log(`\n═══════════════════════════════════════`);
-console.log(`  TOTAL: ${passed + failed}  |  PASS: ${passed}  |  FAIL: ${failed}`);
-console.log(`═══════════════════════════════════════\n`);
 
 if (failed > 0) {
   process.exit(1);

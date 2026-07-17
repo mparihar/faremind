@@ -218,7 +218,6 @@ async function createFlightChangeSupportTicket(
       },
     }).catch(() => {}); // non-critical
 
-    console.log(`[createFlightChangeSupportTicket] Support ticket created for ${booking.masterBookingReference}`);
   } catch (err) {
     console.error('[createFlightChangeSupportTicket] Failed to create support ticket:', err);
   }
@@ -285,7 +284,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       await prisma.otpCode.updateMany({ where: { email: booking.customerEmail, isUsed: false }, data: { isUsed: true } });
       const otp = generateOtp();
       await prisma.otpCode.create({ data: { email: booking.customerEmail, otpHash: hashOtp(otp), expiresAt: new Date(Date.now() + 5 * 60_000) } });
-      console.log(`[manage-booking][dev] OTP for ${booking.customerEmail}: ${otp}`);
       await sendBookingOtpEmail(booking.customerEmail, booking.customerName, otp);
       return { success: true };
     } catch (e) { fastify.log.error(e, '[manage-booking/lookup/send-otp]'); reply.code(500).send({ error: 'Server error' }); }

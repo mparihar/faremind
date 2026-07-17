@@ -526,7 +526,6 @@ export class MystiflyAdapter implements IBookingProvider {
 
     // ── Step 2: Try VoidQuote first (within void window) ──
     try {
-      console.log(`[MystiflyAdapter] Attempting VoidQuote for ${mfRef}`);
       const voidResult = await mystiflyClient.voidQuote(mfRef);
       const voidData = voidResult?.Data || voidResult;
       const voidSuccess = voidData?.Success ?? voidResult?.Success;
@@ -545,8 +544,6 @@ export class MystiflyAdapter implements IBookingProvider {
         const supplierFee = parseFloat(voidData?.SupplierFee || voidData?.supplierFee || '0');
         const totalDeductions = voidPenalty + supplierFee;
         const refundAmount = Math.max(0, originalAmount - totalDeductions);
-
-        console.log(`[MystiflyAdapter] VoidQuote eligible — PtrId: ${ptrId}, penalty: ${voidPenalty}, refund: ${refundAmount}`);
 
         return {
           quoteId: `mystifly_void_${mfRef}_${ptrId}`,
@@ -575,7 +572,6 @@ export class MystiflyAdapter implements IBookingProvider {
     }
 
     // ── Step 3: VoidQuote not eligible or failed → try RefundQuote ──
-    console.log(`[MystiflyAdapter] Attempting RefundQuote for ${mfRef}`);
     const refundResult = await mystiflyClient.refundQuote(mfRef);
     const refundData = refundResult?.Data || refundResult;
     const refundSuccess = refundData?.Success ?? refundResult?.Success;
@@ -594,8 +590,6 @@ export class MystiflyAdapter implements IBookingProvider {
     const totalDeductions = airlinePenalty + supplierFee;
     // Use provider-returned refund amount if available, otherwise calculate
     const refundAmount = providerRefundAmount > 0 ? providerRefundAmount : Math.max(0, originalAmount - totalDeductions);
-
-    console.log(`[MystiflyAdapter] RefundQuote eligible — PtrId: ${refundPtrId}, penalty: ${airlinePenalty}, supplierFee: ${supplierFee}, refund: ${refundAmount}`);
 
     return {
       quoteId: `mystifly_refund_${mfRef}_${refundPtrId}`,
@@ -622,7 +616,6 @@ export class MystiflyAdapter implements IBookingProvider {
       // ── Execute Void ──
       const [, mfRef, ptrIdStr] = voidMatch;
       const ptrId = parseInt(ptrIdStr, 10);
-      console.log(`[MystiflyAdapter] Executing Void — MFRef: ${mfRef}, PtrId: ${ptrId}`);
 
       const result = await mystiflyClient.executeVoid(mfRef, ptrId);
       const data = result?.Data || result;
@@ -648,7 +641,6 @@ export class MystiflyAdapter implements IBookingProvider {
       // ── Execute Refund ──
       const [, mfRef, ptrIdStr] = refundMatch;
       const ptrId = parseInt(ptrIdStr, 10);
-      console.log(`[MystiflyAdapter] Executing Refund — MFRef: ${mfRef}, PtrId: ${ptrId}`);
 
       const result = await mystiflyClient.executeRefund(mfRef, ptrId);
       const data = result?.Data || result;
@@ -675,24 +667,20 @@ export class MystiflyAdapter implements IBookingProvider {
     const noRefundMatch = quoteId.match(/^mystifly_cancel_norefund_(.+)$/);
     if (noRefundMatch) {
       const [, mfRef] = noRefundMatch;
-      console.log(`[MystiflyAdapter] Cancel Anyway (no refund) — MFRef: ${mfRef}`);
 
       // Step 1: Try Void PTR
       try {
-        console.log(`[MystiflyAdapter] Attempting Void PTR for cancel-anyway — MFRef: ${mfRef}`);
         const voidQuoteResult = await mystiflyClient.voidQuote(mfRef);
         const voidData = voidQuoteResult?.Data || voidQuoteResult;
         const voidSuccess = voidData?.Success ?? voidQuoteResult?.Success;
         const voidPtrId = voidData?.PtrId || voidData?.ptrId || voidQuoteResult?.PtrId;
 
         if (voidSuccess && voidPtrId) {
-          console.log(`[MystiflyAdapter] Void PTR succeeded — executing void PtrId: ${voidPtrId}`);
           const execResult = await mystiflyClient.executeVoid(mfRef, voidPtrId);
           const execData = execResult?.Data || execResult;
           const execSuccess = execData?.Success ?? execResult?.Success;
 
           if (execSuccess) {
-            console.log(`[MystiflyAdapter] Void executed successfully for ${mfRef}`);
             return {
               cancellationId: `mystifly_void_norefund_${mfRef}_${voidPtrId}`,
               orderId: mfRef,
@@ -703,22 +691,17 @@ export class MystiflyAdapter implements IBookingProvider {
             };
           }
         }
-        console.log(`[MystiflyAdapter] Void PTR not available for cancel-anyway, falling back to direct cancel`);
       } catch (voidErr) {
-        console.log(`[MystiflyAdapter] Void PTR failed for cancel-anyway: ${voidErr instanceof Error ? voidErr.message : voidErr}, falling back to direct cancel`);
       }
 
       // Step 2: Fallback — direct /api/v1/Booking/Cancel
-      console.log(`[MystiflyAdapter] Using direct Booking/Cancel for ${mfRef}`);
       const result = await mystiflyClient.cancelBooking(mfRef);
-      console.log(`[MystiflyAdapter] Direct cancel response for ${mfRef}:`, JSON.stringify(result, null, 2));
       const success = result?.Data?.Success || result?.Success;
       if (!success) {
         const errorMsg = result?.Data?.Errors?.[0]?.Message || result?.Message || 'Cancellation failed';
         throw new Error(`Mystifly cancellation failed: ${errorMsg}`);
       }
 
-      console.log(`[MystiflyAdapter] Direct cancel successful for ${mfRef}`);
       return {
         cancellationId: `mystifly_direct_cancel_${mfRef}_${Date.now()}`,
         orderId: mfRef,

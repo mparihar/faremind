@@ -88,7 +88,6 @@ export const PUT = withAdmin(async (req: NextRequest, { admin }) => {
       admin.email,
     );
 
-    console.log(`[FAREMIND DNA Config] Updated by ${admin.email}`);
     return NextResponse.json({ config });
   } catch (err: any) {
     console.error('[admin/travel-dna/config] PUT error:', err);

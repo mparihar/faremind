@@ -191,7 +191,6 @@ export async function GET(request: NextRequest) {
         // Direct in-process ranking — no HTTP call needed
         const rankResult = rankFlightOffersV3(rankingInput);
         rankingMetadata = rankResult.audit;
-        console.log(`[Search] V3 engine: ${rankResult.rankedOffers.length} offers, profile=${rankResult.profileId}, top=$${rankResult.rankedOffers[0]?.finalScore}`);
 
         // Map backend ranking output → frontend format
         // Build a lookup: offerId → RankedOffer

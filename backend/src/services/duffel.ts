@@ -352,7 +352,6 @@ export async function searchFlights(params: DuffelSearchParams): Promise<DuffelO
   });
 
   let offers = offerRequest.offers || [];
-  console.log(`[Duffel] Search ${params.origin}→${params.destination}: ${offers.length} offers returned (inline)`);
 
   // Duffel live API: airlines may not have responded yet when the offer_request
   // is first created. If inline offers are empty, poll the listOffers endpoint
@@ -360,13 +359,11 @@ export async function searchFlights(params: DuffelSearchParams): Promise<DuffelO
   if (offers.length === 0 && offerRequest.id) {
     const POLL_DELAYS = [2000, 3000, 5000]; // wait 2s, 3s, 5s between retries
     for (let i = 0; i < POLL_DELAYS.length; i++) {
-      console.log(`[Duffel] No inline offers — polling attempt ${i + 1}/${POLL_DELAYS.length} (waiting ${POLL_DELAYS[i]}ms)...`);
       await sleep(POLL_DELAYS[i]);
       try {
         const polledOffers = await listOffers(offerRequest.id, { limit: 200, sort: 'total_amount' });
         if (polledOffers && polledOffers.length > 0) {
           offers = polledOffers;
-          console.log(`[Duffel] Poll ${i + 1}: got ${offers.length} offers`);
           break;
         }
       } catch (pollErr) {
@@ -483,8 +480,6 @@ export async function createBooking(params: DuffelBookingParams): Promise<Duffel
       type: 'special_assistance',
       data: { ssr_code: s.ssr_code },
     }));
-    console.log(`[Duffel] 🦽 Attaching ${params.services.length} wheelchair SSR(s):`,
-      params.services.map(s => `${s.passenger_id}→${s.ssr_code}`).join(', '));
   }
 
   const order = await duffelRequest<DuffelOrder>({

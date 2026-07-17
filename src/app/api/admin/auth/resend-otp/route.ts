@@ -40,7 +40,6 @@ export async function POST(req: NextRequest) {
     } catch (emailErr) {
       console.error('[resend-otp] Email delivery failed:', emailErr);
       if (process.env.NODE_ENV !== 'production') {
-        console.log(`[DEV OTP] ${admin.email}: ${otp}`);
       }
     }
 

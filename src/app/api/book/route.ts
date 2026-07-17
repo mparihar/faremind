@@ -94,7 +94,6 @@ export async function POST(request: NextRequest) {
 
         providerBookingId = order.id;
         pnr = order.booking_reference;
-        console.log(`[Booking] Duffel order created: ${pnr}`);
       } catch (error) {
         console.error('[Booking] Duffel booking failed:', error);
         // Fall through to mock PNR
@@ -125,7 +124,6 @@ export async function POST(request: NextRequest) {
 
         providerBookingId = order.data.id;
         pnr = order.data.associatedRecords?.[0]?.reference || generateMockPNR();
-        console.log(`[Booking] Amadeus order created: ${pnr}`);
       } catch (error) {
         console.error('[Booking] Amadeus booking failed:', error);
         pnr = generateMockPNR();
@@ -170,7 +168,6 @@ export async function POST(request: NextRequest) {
         if (bookRes.ok && bookData.success && bookData.uniqueId) {
           providerBookingId = bookData.uniqueId;
           pnr = bookData.uniqueId; // MFRef is the PNR for Mystifly
-          console.log(`[Booking] Mystifly order created: ${pnr}`);
         } else {
           throw new Error(bookData.error || 'Mystifly booking failed');
         }
@@ -182,7 +179,6 @@ export async function POST(request: NextRequest) {
     } else {
       // Mock booking (no provider configured or mock flight)
       pnr = generateMockPNR();
-      console.log(`[Booking] Mock booking created: ${pnr}`);
     }
 
     // ─── Step 2: Save to database ───

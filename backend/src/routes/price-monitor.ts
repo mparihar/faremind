@@ -15,7 +15,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const jobs = await getActiveTrackingJobs(50);
       if (jobs.length === 0) return { message: 'No tracking jobs due', processed: 0 };
 
-      console.log(`[PriceMonitor] Processing ${jobs.length} jobs`);
       const results = [];
 
       for (const job of jobs) {

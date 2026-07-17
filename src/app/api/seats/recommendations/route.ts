@@ -68,10 +68,8 @@ async function fetchSeatMaps(offerId: string, provider: string): Promise<Segment
 
   // Duffel: call provider directly (no HTTP self-call)
   try {
-    console.log(`[AI Seat] Fetching seat map directly from Duffel for offer: ${offerId}`);
     const raw = await getSeatMaps(offerId, 'offer');
     const seatMaps = raw.map(transformSeatMap);
-    console.log(`[AI Seat] Seat map result: ${seatMaps.length} segment(s) from direct Duffel call`);
 
     if (seatMaps.length === 0) {
       // Do NOT cache empty results — allow retry on next request
@@ -120,11 +118,6 @@ export async function POST(request: NextRequest) {
       const targetMap = seatMaps[Math.min(segIdx, seatMaps.length - 1)];
       const classifiedSeats = flattenSeatMap(targetMap);
 
-      console.log(
-        `[AI Seat] Group request: ${passengerCount} pax, area=${areaPreference}, type=${seatTypePreference}, ` +
-        `segment=${segIdx}, ${classifiedSeats.filter(s => s.available).length} available seats`
-      );
-
       // Zone & availability breakdown for debugging
       const avail = classifiedSeats.filter(s => s.available);
       const unavail = classifiedSeats.filter(s => !s.available);
@@ -135,10 +128,6 @@ export async function POST(request: NextRequest) {
       };
       const frontRows = avail.filter(s => s.cabinZone === 'front').map(s => s.rowNumber);
       const frontRange = frontRows.length > 0 ? `rows ${Math.min(...frontRows)}-${Math.max(...frontRows)}` : 'none';
-      console.log(
-        `[AI Seat] Zone breakdown: front=${zoneBreakdown.front} (${frontRange}), middle=${zoneBreakdown.middle}, rear=${zoneBreakdown.rear} | ` +
-        `blocked/reserved: ${unavail.length}`
-      );
 
       const result = findConsecutiveGroupSeatBlocks({
         classifiedSeats,
@@ -146,11 +135,6 @@ export async function POST(request: NextRequest) {
         areaPreference,
         seatTypePreference,
       });
-
-      console.log(
-        `[AI Seat] Group result: ${result.blocks.length} blocks found, fallbackLevel=${result.fallbackLevel}` +
-        (result.fallbackReason ? ` — ${result.fallbackReason}` : '')
-      );
 
       const resp: GroupSeatResponse = {
         options: result.blocks,
@@ -179,12 +163,6 @@ export async function POST(request: NextRequest) {
     // 1. Fetch seat maps
     const seatMaps = await fetchSeatMaps(reqBody.offerId, provider);
 
-    console.log(
-      `[AI Seat] Fetched seat maps for ${provider}/${reqBody.offerId.substring(0, 20)}... → ` +
-      `${seatMaps.length} segment(s), segmentIndex=${segmentIndex}, ` +
-      `${seatMaps.reduce((n, sm) => n + sm.cabins.reduce((c, cab) => c + cab.rows.length, 0), 0)} total rows`
-    );
-
     if (!seatMaps.length) {
       console.warn(`[AI Seat] No seat maps returned for ${reqBody.offerId}`);
       const response: SeatRecommendationResponse = {
@@ -201,12 +179,6 @@ export async function POST(request: NextRequest) {
     const targetSeatMap = seatMaps[Math.min(segmentIndex, seatMaps.length - 1)];
     const classifiedSeats = flattenSeatMap(targetSeatMap);
 
-    console.log(
-      `[AI Seat] Classified: ${classifiedSeats.length} total seats, ` +
-      `${classifiedSeats.filter(s => s.available).length} available, ` +
-      `${classifiedSeats.filter(s => !s.available).length} unavailable`
-    );
-
     // 3. Filter out excluded seats (pool depletion for multi-passenger)
     const filteredSeats = excludeSeats.length
       ? classifiedSeats.filter(s => !excludeSeats.includes(s.seatNumber))
@@ -222,13 +194,6 @@ export async function POST(request: NextRequest) {
       fallbackUsed: result.fallbackUsed,
       fallbackReason: result.fallbackReason,
     };
-
-    console.log(
-      `[AI Seat] ${provider} | ${reqBody.offerId.substring(0, 16)}... | ` +
-      `${result.totalAvailable} available | returning ${result.seats.length} seats | ` +
-      `top: ${result.seats[0]?.seatNumber ?? 'none'} (score ${result.seats[0]?.score ?? 0}) | ` +
-      `fallback: ${result.fallbackUsed}`
-    );
 
     return NextResponse.json(response);
   } catch (error) {

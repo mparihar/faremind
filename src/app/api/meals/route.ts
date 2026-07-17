@@ -112,9 +112,7 @@ export async function GET(request: NextRequest) {
       const revalData = await revalRes.json();
       const extraServices = revalData?.raw?.Data?.ExtraServices ?? revalData?.raw?.ExtraServices ?? [];
 
-      console.log(`[Meals] Mystifly ExtraServices count: ${Array.isArray(extraServices) ? extraServices.length : 'N/A'}`);
       if (Array.isArray(extraServices) && extraServices.length > 0) {
-        console.log(`[Meals] Mystifly ExtraServices sample:`, JSON.stringify(extraServices.slice(0, 3), null, 2));
       }
 
       // Parse meal-type services from ExtraServices
@@ -137,7 +135,6 @@ export async function GET(request: NextRequest) {
       if (mealServices.length === 0) {
         // Mystifly supports meal SSR preferences at booking time even when
         // ExtraServices doesn't list them. Fall back to standard IATA SSR codes.
-        console.log(`[Meals] No meal ExtraServices found — using standard IATA SSR codes for Mystifly`);
         const ssrCodes = ['STANDARD', 'VGML', 'AVML', 'NLML', 'MOML', 'KSML', 'HNML', 'DBML', 'GFML', 'LFML', 'FPML', 'SFML', 'LCML', 'CHML', 'NONE'];
         const ssrMeals: MealOptionDef[] = ssrCodes.map(code => resolveMeal(code, 0));
         const recommended = ssrMeals[0]?.code ?? 'STANDARD';

@@ -193,10 +193,6 @@ export function flattenSeatMap(seatMap: SegmentSeatMap): ClassifiedSeat[] {
   const sandboxMode = totalWithDesignator > 0 && totalAvailable === 0;
 
   if (sandboxMode) {
-    console.log(
-      `[AI Seat] Sandbox mode detected: ${totalWithDesignator} seats, 0 available_services. ` +
-      `Treating all as available at $0.`
-    );
   }
 
   for (const raw of rawSeats) {

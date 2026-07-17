@@ -123,10 +123,6 @@ export function aggregateProviderOffers(flights: UnifiedFlight[]): AggregationRe
     .map(([provider, count]) => `${provider}: ${count}`)
     .join(', ');
 
-  console.log(
-    `[Aggregation] APPEND_ALL: ${totalBefore} total offers (${providerSummary})`
-  );
-
   // Return ALL flights — no filtering, no dedup, no winner selection
   return { flights: [...flights], stats };
 }

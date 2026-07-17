@@ -202,7 +202,6 @@ export async function calculateCommercialFees(ctx: BookingContext): Promise<FeeC
     // Take highest priority matching rule
     const rule = matchingRules[0];
     if (!rule) {
-      console.log(`[fee-engine] No active ${feeType} rule matched for provider=${ctx.provider} cabin=${ctx.cabin} trip=${ctx.tripType}`);
       continue;
     }
 
@@ -257,7 +256,6 @@ export async function calculateCommercialFees(ctx: BookingContext): Promise<FeeC
 
   const protectionRule = matchingProtection[0];
   if (!protectionRule) {
-    console.log(`[fee-engine] No active PRICE_DROP_PROTECTION rule matched for cabin=${ctx.cabin} trip=${ctx.tripType}`);
   }
   if (protectionRule && protectionRule.pricingModel !== 'PROVIDER_QUOTED') {
     const eligible = countEligiblePassengers(
@@ -314,7 +312,6 @@ export async function calculateCommercialFees(ctx: BookingContext): Promise<FeeC
 
   const insuranceRule = matchingInsurance[0];
   if (!insuranceRule) {
-    console.log(`[fee-engine] No active TRAVEL_INSURANCE rule matched for cabin=${ctx.cabin} trip=${ctx.tripType}`);
   }
   if (insuranceRule && insuranceRule.pricingModel !== 'PROVIDER_QUOTED') {
     const fixedAmt = Number(insuranceRule.fixedAmount ?? 0);
