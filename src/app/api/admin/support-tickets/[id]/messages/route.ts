@@ -13,14 +13,14 @@ export const POST = withAdmin(async (req: NextRequest, { admin, params }: any) =
 
     const isInternal = Boolean(body.isInternal);
 
-    const message = await prisma.supportTicketMessage.create({
+    const msg = await prisma.supportTicketMessage.create({
       data: {
         ticketId,
-        adminUserId: admin.sub,
-        message: body.message,
+        senderId: admin.sub,
+        content: body.message,
         isInternal,
       },
-      include: { adminUser: { select: { fullName: true } } }
+      include: { sender: { select: { fullName: true } } }
     });
 
     // Update ticket's updatedAt timestamp
@@ -34,11 +34,11 @@ export const POST = withAdmin(async (req: NextRequest, { admin, params }: any) =
       action: 'ADD_TICKET_MESSAGE',
       entityType: 'SupportTicket',
       entityId: ticketId,
-      after: { messageId: message.id, isInternal },
+      after: { messageId: msg.id, isInternal },
       ipAddress: req.headers.get('x-forwarded-for') ?? undefined,
     });
 
-    return NextResponse.json({ message });
+    return NextResponse.json({ message: msg });
   } catch (err: any) {
     console.error('[support-tickets/[id]/messages] POST error:', err);
     return NextResponse.json({ error: 'Failed to add message' }, { status: 500 });

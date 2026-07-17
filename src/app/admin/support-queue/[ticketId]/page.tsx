@@ -449,12 +449,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ ticketI
           {ticket.messages?.map((msg: any) => (
             <div key={msg.id} className={`p-6 rounded-2xl border ${msg.isInternal ? 'bg-amber-500/5 border-amber-500/20' : 'bg-slate-800/50 border-slate-700/50'}`}>
               <div className="flex items-center gap-3 mb-4">
-                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${msg.adminUser ? 'bg-[#1ABC9C]/20 text-[#1ABC9C]' : 'bg-slate-700 text-white'}`}>
-                  {msg.adminUser ? msg.adminUser.fullName[0] : ticket.customerName[0]}
+                <div className={`w-8 h-8 rounded-full flex items-center justify-center font-bold text-xs ${msg.sender ? 'bg-[#1ABC9C]/20 text-[#1ABC9C]' : 'bg-slate-700 text-white'}`}>
+                  {msg.sender ? msg.sender.fullName[0] : ticket.customerName[0]}
                 </div>
                 <div>
                   <p className="text-white font-semibold text-sm">
-                    {msg.adminUser ? msg.adminUser.fullName : ticket.customerName}
+                    {msg.sender ? msg.sender.fullName : ticket.customerName}
                     {msg.isInternal && <span className="ml-2 text-[10px] bg-amber-500/20 text-amber-500 px-2 py-0.5 rounded uppercase font-bold tracking-wider">Internal Note</span>}
                   </p>
                 </div>
@@ -463,7 +463,7 @@ export default function TicketDetailPage({ params }: { params: Promise<{ ticketI
                 </div>
               </div>
               <div className={`text-sm whitespace-pre-wrap ${msg.isInternal ? 'text-amber-200/80' : 'text-slate-300'}`}>
-                {msg.message}
+                {msg.content}
               </div>
             </div>
           ))}

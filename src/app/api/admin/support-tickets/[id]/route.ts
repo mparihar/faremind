@@ -68,7 +68,7 @@ export const GET = withAdmin(async (req: NextRequest, { params }: any) => {
         failureAudit: true,
         messages: {
           orderBy: { createdAt: 'asc' },
-          include: { adminUser: { select: { fullName: true } } }
+          include: { sender: { select: { fullName: true } } }
         }
       }
     });
