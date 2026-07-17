@@ -50,10 +50,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
       return NextResponse.json({ error: 'Access denied' }, { status: 403 });
     }
 
-    // Don't expose SYSTEM tickets to users
-    if (ticket.channel === 'SYSTEM') {
-      return NextResponse.json({ error: 'Ticket not found' }, { status: 404 });
-    }
+    // Note: all tickets are visible to the user, including auto-generated ones
 
     return NextResponse.json({
       ticket: {

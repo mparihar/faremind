@@ -28,11 +28,10 @@ export async function GET(req: NextRequest) {
 
     const userEmail = session.user.email;
 
-    // Fetch tickets belonging to this user (by email), excluding SYSTEM-generated ones
+    // Fetch tickets belonging to this user (by email)
     const tickets = await prisma.supportTicket.findMany({
       where: {
         customerEmail: { equals: userEmail, mode: 'insensitive' },
-        channel: { not: 'SYSTEM' }, // Exclude infrastructure/auto-generated tickets
       },
       include: {
         _count: {
