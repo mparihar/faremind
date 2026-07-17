@@ -2,7 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { motion } from 'framer-motion';
-import { X, Loader2, AlertCircle, Check, Plane, Printer, User, Calendar } from 'lucide-react';
+import { X, Loader2, AlertCircle, Check, Plane, Printer, User, Calendar, Mail } from 'lucide-react';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 
 // ── Seat Map Modal ──
