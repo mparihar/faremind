@@ -21,6 +21,7 @@ const SIDEBAR_NAV = [
   { href: '/account/travel-dna', label: 'My FareMind DNA\u2122', icon: Dna },
   { href: '/account/alerts', label: 'Price Alerts', icon: TrendingDown },
   { href: '/account/payment-methods', label: 'Payment Methods', icon: Wallet },
+  { href: '/account/make-payment', label: 'Make a Payment', icon: CreditCard },
   { href: '/account/refunds', label: 'Refunds & Credits', icon: CreditCard },
   { href: '/account/notifications', label: 'Notifications', icon: Bell },
   { href: '/account/profile', label: 'Profile', icon: User },

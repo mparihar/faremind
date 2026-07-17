@@ -36,6 +36,7 @@ const AGENT_NAV = [
   { href: '/agent/post-booking', label: 'Post-Booking', icon: RotateCcw },
   { href: '/agent/cancellations', label: 'Cancellations', icon: XCircle },
   { href: '/agent/refunds', label: 'Refunds & Credits', icon: CreditCard },
+  { href: '/agent/make-payment', label: 'Make a Payment', icon: CreditCard },
   { href: '/agent/duffel-assistant', label: 'Duffel Assistant', icon: MessageCircle },
   { href: '/agent/notifications', label: 'Notifications', icon: Bell },
   { href: '/agent/support', label: 'Contact Support', icon: HelpCircle },

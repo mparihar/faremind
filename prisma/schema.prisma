@@ -40,6 +40,7 @@ model User {
   notifications   Notification[]
   savedRoutes     SavedRoute[]
   paymentMethods  PaymentMethod[]
+  servicePayments ServicePayment[]
 
   @@map("users")
 }
@@ -601,6 +602,7 @@ model MasterBooking {
   providerSyncs          ProviderSync[]
   commercialCharges      BookingCommercialCharge[]
   ancillaries            BookingAncillary[]
+  servicePayments        ServicePayment[]
 
   // Agent booking ownership
   createdByRole          String?            @map("created_by_role")       // 'AGENT' | 'CUSTOMER' | null
@@ -2679,4 +2681,54 @@ enum PtrStatus {
   COMPLETED
   FAILED
   CANCELLED
+}
+
+// ═══════════════════════════════════════════════
+// SERVICE PAYMENTS (Make a Payment)
+// ═══════════════════════════════════════════════
+
+model ServicePayment {
+  id                    String               @id @default(cuid())
+  bookingId             String?              @map("booking_id")
+  userId                String?              @map("user_id")
+  serviceType           ServicePaymentType   @map("service_type")
+  description           String               @db.Text
+  amount                Decimal              @db.Decimal(10, 2)
+  currency              String               @default("USD")
+  status                MbPaymentTxStatus    @default(PENDING)
+  stripePaymentIntentId String?              @unique @map("stripe_payment_intent_id")
+  pnrCode               String?              @map("pnr_code")
+  ticketNumber          String?              @map("ticket_number")
+  customerEmail         String               @map("customer_email")
+  customerName          String               @map("customer_name")
+  customerPhone         String?              @map("customer_phone")
+  requestedBy           String               @default("USER") @map("requested_by") // USER, AGENT, ADMIN
+  processedBy           String?              @map("processed_by")
+  notes                 String?              @db.Text
+  paidAt                DateTime?            @map("paid_at")
+  failedAt              DateTime?            @map("failed_at")
+  failureReason         String?              @map("failure_reason")
+  createdAt             DateTime             @default(now()) @map("created_at")
+  updatedAt             DateTime             @updatedAt @map("updated_at")
+
+  booking MasterBooking? @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+  user    User?          @relation(fields: [userId], references: [id], onDelete: SetNull)
+
+  @@index([bookingId])
+  @@index([userId])
+  @@index([status])
+  @@index([serviceType])
+  @@index([customerEmail])
+  @@map("service_payments")
+}
+
+enum ServicePaymentType {
+  CFAR
+  PRICE_DROP_PROTECTION
+  TRAVEL_INSURANCE
+  SEAT_CHANGE
+  DATE_CHANGE
+  BAGGAGE_CHANGE
+  UPGRADE
+  OTHER
 }

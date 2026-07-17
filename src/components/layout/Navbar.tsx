@@ -37,7 +37,7 @@ const NAV_ITEMS = [
 const HELP_ITEMS = [
   { label: 'Flight Cancellation', icon: XCircle, href: '/manage-booking', auth: false },
   { label: 'Refund & Credit', icon: CreditCard, href: '/account/refunds', auth: true },
-  { label: 'Make a Payment', icon: Wallet, href: '/manage-booking', auth: false },
+  { label: 'Make a Payment', icon: Wallet, href: '/account/make-payment', auth: true },
   { label: 'Contact Support', icon: Headphones, href: '/support', auth: false },
 ];
 
