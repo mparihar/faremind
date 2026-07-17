@@ -105,13 +105,20 @@ export default function SupportPage() {
   const [tickets, setTickets] = useState<UserTicket[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(true);
 
-  // Load user's tickets
+  // Load user's tickets — try sessionToken from store, fallback to localStorage
   useEffect(() => {
-    if (!sessionToken) { setTicketsLoading(false); return; }
+    let token = sessionToken;
+    if (!token) {
+      try {
+        const stored = localStorage.getItem('faremind_session');
+        if (stored) token = JSON.parse(stored).token;
+      } catch {}
+    }
+    if (!token) { setTicketsLoading(false); return; }
     (async () => {
       try {
         const res = await fetch('/api/user/support-tickets', {
-          headers: { Authorization: `Bearer ${sessionToken}` },
+          headers: { Authorization: `Bearer ${token}` },
         });
         if (res.ok) {
           const data = await res.json();
@@ -159,10 +166,10 @@ export default function SupportPage() {
       <h1 className="text-2xl font-black text-white mb-6">Help & Support</h1>
 
       {/* ── My Tickets ───────────────────────────────────────────────────── */}
-      {sessionToken && (
-        <div className="mb-6">
-          <div className="flex items-center gap-2 mb-4">
-            <Ticket size={18} className="text-[#1ABC9C]" />
+      {/* Always show — we're inside the authenticated account layout */}
+      <div className="mb-6">
+        <div className="flex items-center gap-2 mb-4">
+          <Ticket size={18} className="text-[#1ABC9C]" />
             <p className="text-white font-bold text-base">My Support Tickets</p>
             {tickets.length > 0 && (
               <span className="ml-auto text-[10px] font-bold text-slate-500 uppercase tracking-wider">
@@ -239,7 +246,7 @@ export default function SupportPage() {
             </div>
           )}
         </div>
-      )}
+      </div>
 
       {/* ── Contact Form + Sidebar ───────────────────────────────────────── */}
       <div className="grid lg:grid-cols-5 gap-6">
