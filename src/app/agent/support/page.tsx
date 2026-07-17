@@ -161,76 +161,75 @@ export default function AgentSupportPage() {
       <div className="mb-6">
         <div className="flex items-center gap-2 mb-4">
           <Ticket size={18} className="text-[#1ABC9C]" />
-            <p className="text-white font-bold text-base">My Support Tickets</p>
-            {tickets.length > 0 && (
-              <span className="ml-auto text-[10px] font-bold text-slate-500 uppercase tracking-wider">
-                {tickets.length} ticket{tickets.length !== 1 ? 's' : ''}
-              </span>
-            )}
-          </div>
-
-          {ticketsLoading ? (
-            <div className="flex items-center justify-center py-8 bg-white/[0.02] border border-white/[0.06] rounded-2xl">
-              <RefreshCw size={16} className="text-[#1ABC9C] animate-spin" />
-            </div>
-          ) : tickets.length === 0 ? (
-            <div className="text-center py-8 bg-white/[0.02] border border-white/[0.06] rounded-2xl">
-              <Inbox size={28} className="text-slate-600 mx-auto mb-2" />
-              <p className="text-slate-400 text-sm font-semibold">No support tickets yet</p>
-              <p className="text-slate-500 text-xs mt-1">Submit a request below and it will appear here.</p>
-            </div>
-          ) : (
-            <div className="space-y-2">
-              {tickets.map((t, i) => {
-                const cfg = STATUS_CFG[t.status] || STATUS_CFG.OPEN;
-                const StIcon = cfg.icon;
-                const catClr = CATEGORY_CLR[t.category] || 'text-slate-400';
-                return (
-                  <motion.button
-                    key={t.id}
-                    initial={{ opacity: 0, y: 6 }}
-                    animate={{ opacity: 1, y: 0 }}
-                    transition={{ delay: i * 0.03 }}
-                    onClick={() => router.push(`/agent/support/${t.id}`)}
-                    className="w-full text-left bg-white/[0.04] border border-white/[0.08] rounded-xl p-4 hover:bg-white/[0.06] transition-all group"
-                  >
-                    <div className="flex items-center gap-3">
-                      <span className="text-[#1ABC9C] font-mono font-bold text-xs bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 px-2 py-0.5 rounded-md shrink-0">
-                        {getTicketNum(t)}
-                      </span>
-                      <span className="text-white font-semibold text-sm truncate flex-1 group-hover:text-[#1ABC9C] transition-colors">
-                        {t.subject}
-                      </span>
-                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${cfg.cls}`}>
-                        <StIcon size={10} />
-                        {cfg.label}
-                      </span>
-                    </div>
-                    <div className="flex items-center gap-3 mt-2 pl-[72px] text-[10px] text-slate-500">
-                      <span className={`font-semibold ${catClr}`}>{t.category}</span>
-                      {t.bookingRef && (
-                        <>
-                          <span className="text-slate-700">•</span>
-                          <span className="font-mono">{t.bookingRef}</span>
-                        </>
-                      )}
-                      <span className="text-slate-700">•</span>
-                      <span>{formatDistanceToNow(new Date(t.createdAt), { addSuffix: true })}</span>
-                      {t.messageCount > 0 && (
-                        <>
-                          <span className="text-slate-700">•</span>
-                          <span className="flex items-center gap-0.5">
-                            <MessageSquare size={9} /> {t.messageCount} {t.messageCount === 1 ? 'reply' : 'replies'}
-                          </span>
-                        </>
-                      )}
-                    </div>
-                  </motion.button>
-                );
-              })}
-            </div>
+          <p className="text-white font-bold text-base">My Support Tickets</p>
+          {tickets.length > 0 && (
+            <span className="ml-auto text-[10px] font-bold text-slate-500 uppercase tracking-wider">
+              {tickets.length} ticket{tickets.length !== 1 ? 's' : ''}
+            </span>
           )}
         </div>
+
+        {ticketsLoading ? (
+          <div className="flex items-center justify-center py-8 bg-white/[0.02] border border-white/[0.06] rounded-2xl">
+            <RefreshCw size={16} className="text-[#1ABC9C] animate-spin" />
+          </div>
+        ) : tickets.length === 0 ? (
+          <div className="text-center py-8 bg-white/[0.02] border border-white/[0.06] rounded-2xl">
+            <Inbox size={28} className="text-slate-600 mx-auto mb-2" />
+            <p className="text-slate-400 text-sm font-semibold">No support tickets yet</p>
+            <p className="text-slate-500 text-xs mt-1">Submit a request below and it will appear here.</p>
+          </div>
+        ) : (
+          <div className="space-y-2">
+            {tickets.map((t, i) => {
+              const cfg = STATUS_CFG[t.status] || STATUS_CFG.OPEN;
+              const StIcon = cfg.icon;
+              const catClr = CATEGORY_CLR[t.category] || 'text-slate-400';
+              return (
+                <motion.button
+                  key={t.id}
+                  initial={{ opacity: 0, y: 6 }}
+                  animate={{ opacity: 1, y: 0 }}
+                  transition={{ delay: i * 0.03 }}
+                  onClick={() => router.push(`/agent/support/${t.id}`)}
+                  className="w-full text-left bg-white/[0.04] border border-white/[0.08] rounded-xl p-4 hover:bg-white/[0.06] transition-all group"
+                >
+                  <div className="flex items-center gap-3">
+                    <span className="text-[#1ABC9C] font-mono font-bold text-xs bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 px-2 py-0.5 rounded-md shrink-0">
+                      {getTicketNum(t)}
+                    </span>
+                    <span className="text-white font-semibold text-sm truncate flex-1 group-hover:text-[#1ABC9C] transition-colors">
+                      {t.subject}
+                    </span>
+                    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${cfg.cls}`}>
+                      <StIcon size={10} />
+                      {cfg.label}
+                    </span>
+                  </div>
+                  <div className="flex items-center gap-3 mt-2 pl-[72px] text-[10px] text-slate-500">
+                    <span className={`font-semibold ${catClr}`}>{t.category}</span>
+                    {t.bookingRef && (
+                      <>
+                        <span className="text-slate-700">•</span>
+                        <span className="font-mono">{t.bookingRef}</span>
+                      </>
+                    )}
+                    <span className="text-slate-700">•</span>
+                    <span>{formatDistanceToNow(new Date(t.createdAt), { addSuffix: true })}</span>
+                    {t.messageCount > 0 && (
+                      <>
+                        <span className="text-slate-700">•</span>
+                        <span className="flex items-center gap-0.5">
+                          <MessageSquare size={9} /> {t.messageCount} {t.messageCount === 1 ? 'reply' : 'replies'}
+                        </span>
+                      </>
+                    )}
+                  </div>
+                </motion.button>
+              );
+            })}
+          </div>
+        )}
       </div>
 
       {/* ── Contact Form + Sidebar ───────────────────────────────────────── */}
