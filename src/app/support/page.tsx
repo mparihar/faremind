@@ -125,11 +125,8 @@ export default function PublicSupportPage() {
   return (
     <div className="min-h-screen bg-gradient-to-br from-slate-900 via-[#0f172a] to-slate-900 pt-20 pb-12 px-4">
       <div className="max-w-5xl mx-auto">
-        {/* Back link */}
-        <Link href="/" className="inline-flex items-center gap-2 text-slate-400 hover:text-white text-sm font-medium transition-all mb-6 group">
-          <ArrowLeft size={14} className="transition-transform group-hover:-translate-x-1" />
-          Back to Home
-        </Link>
+
+
 
         {/* Header */}
         <div className="flex items-center gap-3 mb-8">
