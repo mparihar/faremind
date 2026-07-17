@@ -713,6 +713,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         notes: isEstimate ? 'Manual cancellation — provider order not linked' : undefined,
       } as any);
 
+      // Update cancellation record status — provider already confirmed the cancellation
+      await mbq.updateCancellationStatus(
+        cancel.id,
+        netRefundAmount > 0 ? 'REFUND_PENDING' : 'CANCELLED',
+      );
+
       // Create refund record & process live Stripe refund
       if (netRefundAmount > 0) {
         const refundRecord = await prisma.bookingRefund.create({
@@ -771,6 +777,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
                   eventDescription: `Stripe refund ${stripeRefund.id}: ${fmtCurrency(netRefundAmount, result.refundCurrency)} refunded to original payment method.`,
                   actorType: 'system',
                 });
+
+                // Mark cancellation record as fully refunded
+                if (stripeRefund.status === 'succeeded') {
+                  await mbq.updateCancellationStatus(cancel.id, 'REFUNDED').catch(() => {});
+                }
               } catch (stripeErr: any) {
                 fastify.log.error({ stripeErr }, `[Stripe] ❌ Refund failed for PI ${payment.stripePaymentIntentId}`);
 
@@ -995,6 +1006,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Create change request for audit trail
       await mbq.createChangeRequest({
         bookingId, type: 'SEAT_CHANGE',
+        status: 'CONFIRMED',   // Seat change already processed — mark as done
+        confirmedAt: new Date(),
         requestedBy: booking.userId || booking.customerEmail,
         originalData: existingSeat ? { seat: existingSeat.seatNumber } : undefined,
         requestedData: { seat: seatDesignator, price, serviceId },

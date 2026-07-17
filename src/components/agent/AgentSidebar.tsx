@@ -18,6 +18,8 @@ import {
   Ticket,
   Users,
   RotateCcw,
+  Headphones,
+  HelpCircle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -28,11 +30,13 @@ const AGENT_NAV = [
   { href: '/agent/booking-workspace', label: 'Booking Workspace', icon: Wrench },
   { href: '/agent/bookings', label: 'My Bookings', icon: Briefcase },
   { href: '/agent/ticket-queue', label: 'Ticket Queue', icon: Ticket },
+  { href: '/agent/support-tickets', label: 'Support Tickets', icon: Headphones },
   { href: '/agent/passenger-updates', label: 'Passenger Updates', icon: UserCog },
   { href: '/agent/post-booking', label: 'Post-Booking', icon: RotateCcw },
   { href: '/agent/cancellations', label: 'Cancellations', icon: XCircle },
   { href: '/agent/duffel-assistant', label: 'Duffel Assistant', icon: MessageCircle },
   { href: '/agent/notifications', label: 'Notifications', icon: Bell },
+  { href: '/agent/support', label: 'Contact Support', icon: HelpCircle },
   { href: '/agent/profile', label: 'Profile', icon: User },
   { href: '__logout__', label: 'Sign Out', icon: LogOut },
 ];

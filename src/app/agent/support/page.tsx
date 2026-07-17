@@ -33,7 +33,6 @@ const CATEGORY_CLR: Record<string, string> = {
   'Refund Query': 'text-emerald-400',
 };
 
-/* ─────── Ticket type ─────── */
 interface UserTicket {
   id: string;
   ticketNumber: string | null;
@@ -55,14 +54,12 @@ function getTicketNum(t: UserTicket): string {
   return t.id.slice(-6).toUpperCase();
 }
 
-/* ─────── FAQ ─────── */
 const FAQ = [
-  { q: 'How do I cancel my booking?', a: 'Go to My Trips, open your booking, and click "Cancel Booking" in the Actions panel. You\'ll see the estimated refund before confirming.' },
-  { q: 'When will I receive my refund?', a: 'Refunds are processed to your original payment method within 5–10 business days after cancellation is confirmed.' },
-  { q: 'Can I change my flight dates?', a: 'Yes — open your booking and click "Change Flight Date". Date changes are subject to airline fare rules and availability fees.' },
-  { q: 'How do I get my e-ticket?', a: 'Open your booking detail page and click "Download E-Ticket". You can also re-send your itinerary to your email from the same page.' },
-  { q: 'How do I update passenger details?', a: 'Open your booking and click "Update Passenger". You can edit contact information. Name changes require airline approval.' },
-  { q: 'Why isn\'t my booking showing up?', a: 'Make sure you\'re logged in with the same email used to book. If the booking was made as a guest, use the Manage Booking page instead.' },
+  { q: 'How do I cancel a booking?', a: 'Go to My Bookings, open the booking, and click "Cancel Booking" in the Actions panel. You\'ll see the estimated refund before confirming.' },
+  { q: 'When will the customer receive their refund?', a: 'Refunds are processed to the original payment method within 5–10 business days after cancellation is confirmed.' },
+  { q: 'Can I change flight dates for a customer?', a: 'Yes — open the booking and click "Change Flight Date". Date changes are subject to airline fare rules and availability fees.' },
+  { q: 'How do I download an e-ticket?', a: 'Open the booking detail page and click "Download E-Ticket". You can also re-send the itinerary to the customer\'s email.' },
+  { q: 'How do I update passenger details?', a: 'Open the booking and click "Update Passenger". You can edit contact information. Name changes require airline approval.' },
 ];
 
 function FaqItem({ q, a }: { q: string; a: string }) {
@@ -86,10 +83,7 @@ function FaqItem({ q, a }: { q: string; a: string }) {
   );
 }
 
-/* ═══════════════════════════════════════════════════════════════════════════
-   MAIN PAGE
-   ═══════════════════════════════════════════════════════════════════════════ */
-export default function SupportPage() {
+export default function AgentSupportPage() {
   const router = useRouter();
   const { user, sessionToken } = useAuthStore();
   const [subject, setSubject] = useState('');
@@ -101,11 +95,9 @@ export default function SupportPage() {
   const [ticketNumber, setTicketNumber] = useState('');
   const [error, setError] = useState('');
 
-  // My Tickets state
   const [tickets, setTickets] = useState<UserTicket[]>([]);
   const [ticketsLoading, setTicketsLoading] = useState(true);
 
-  // Load user's tickets
   useEffect(() => {
     if (!sessionToken) { setTicketsLoading(false); return; }
     (async () => {
@@ -120,7 +112,7 @@ export default function SupportPage() {
       } catch { /* silent */ }
       setTicketsLoading(false);
     })();
-  }, [sessionToken, sent]); // re-fetch after submitting a new ticket
+  }, [sessionToken, sent]);
 
   const iCls = 'w-full px-4 py-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white text-[15px] focus:outline-none focus:border-[#1ABC9C] transition-all placeholder:text-slate-600';
 
@@ -133,7 +125,7 @@ export default function SupportPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          name: user?.name || 'Customer',
+          name: user?.name || 'Agent',
           email: user?.email || '',
           subject: subject.trim(),
           message: message.trim(),
@@ -155,7 +147,7 @@ export default function SupportPage() {
   }
 
   return (
-    <div>
+    <div className="p-8">
       <h1 className="text-2xl font-black text-white mb-6">Help & Support</h1>
 
       {/* ── My Tickets ───────────────────────────────────────────────────── */}
@@ -193,27 +185,21 @@ export default function SupportPage() {
                     initial={{ opacity: 0, y: 6 }}
                     animate={{ opacity: 1, y: 0 }}
                     transition={{ delay: i * 0.03 }}
-                    onClick={() => router.push(`/account/support/${t.id}`)}
+                    onClick={() => router.push(`/agent/support/${t.id}`)}
                     className="w-full text-left bg-white/[0.04] border border-white/[0.08] rounded-xl p-4 hover:bg-white/[0.06] transition-all group"
                   >
                     <div className="flex items-center gap-3">
-                      {/* Ticket number */}
                       <span className="text-[#1ABC9C] font-mono font-bold text-xs bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 px-2 py-0.5 rounded-md shrink-0">
                         {getTicketNum(t)}
                       </span>
-
-                      {/* Subject */}
                       <span className="text-white font-semibold text-sm truncate flex-1 group-hover:text-[#1ABC9C] transition-colors">
                         {t.subject}
                       </span>
-
-                      {/* Status badge */}
                       <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${cfg.cls}`}>
                         <StIcon size={10} />
                         {cfg.label}
                       </span>
                     </div>
-
                     <div className="flex items-center gap-3 mt-2 pl-[72px] text-[10px] text-slate-500">
                       <span className={`font-semibold ${catClr}`}>{t.category}</span>
                       {t.bookingRef && (
@@ -243,7 +229,6 @@ export default function SupportPage() {
 
       {/* ── Contact Form + Sidebar ───────────────────────────────────────── */}
       <div className="grid lg:grid-cols-5 gap-6">
-        {/* Contact Form */}
         <div className="lg:col-span-3">
           <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-5">
@@ -264,7 +249,6 @@ export default function SupportPage() {
                   </div>
                 )}
                 <p className="text-slate-400 text-sm">Our support team will review your request and respond to <strong className="text-white">{user?.email}</strong> within 24 hours.</p>
-                <p className="text-slate-500 text-xs mt-2">You can track your ticket status in the &ldquo;My Support Tickets&rdquo; section above.</p>
                 <button onClick={() => { setSent(false); setSubject(''); setMessage(''); setBookingRef(''); setCategory(''); setTicketNumber(''); }}
                   className="mt-5 px-5 py-2.5 rounded-xl border border-white/10 text-slate-400 text-sm font-semibold hover:bg-white/[0.04] transition-all">
                   Submit Another Request
@@ -317,9 +301,8 @@ export default function SupportPage() {
           </div>
         </div>
 
-        {/* Sidebar info + FAQ */}
+        {/* Sidebar info */}
         <div className="lg:col-span-2 space-y-4">
-          {/* Response time */}
           <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-4">
               <Clock size={18} className="text-[#1ABC9C]" />
@@ -341,10 +324,8 @@ export default function SupportPage() {
             </div>
           </div>
 
-          {/* WhatsApp Urgent Support */}
           <WhatsAppUrgentSupport defaultName={user?.name || undefined} defaultEmail={user?.email || undefined} />
 
-          {/* Direct Contact */}
           <div className="bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 rounded-2xl p-5">
             <div className="flex items-center gap-2 mb-3">
               <Headphones size={18} className="text-[#1ABC9C]" />

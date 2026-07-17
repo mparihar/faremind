@@ -13,6 +13,32 @@ export const GET = withAdmin(async (_req: NextRequest) => {
   const weekStart = new Date(now); weekStart.setDate(now.getDate() - 7);
   const monthStart = new Date(now); monthStart.setDate(1); monthStart.setHours(0, 0, 0, 0);
 
+  // ── Auto-cleanup stale pending records ──────────────────────────────────
+  // This ensures the Pending Work count is always accurate
+  await Promise.allSettled([
+    // 1. Seat change audit trail entries → CONFIRMED (they're already done)
+    prisma.changeRequest.updateMany({
+      where: { type: { not: 'DATE_CHANGE' }, status: 'NEW' },
+      data: { status: 'CONFIRMED', confirmedAt: now },
+    }),
+    // 2. Expired change request quotes → CANCELLED
+    prisma.changeRequest.updateMany({
+      where: {
+        status: { in: ['NEW', 'QUOTED', 'CUSTOMER_PAYMENT_PENDING'] },
+        expiresAt: { lt: now },
+      },
+      data: { status: 'CANCELLED' },
+    }),
+    // 3. Cancellation records where booking is already CANCELLED → resolve the record
+    prisma.$executeRaw`
+      UPDATE cancellations SET status = 'CANCELLED', cancelled_at = NOW()
+      WHERE status IN ('CANCEL_REQUESTED', 'IN_PROGRESS')
+      AND booking_id IN (
+        SELECT id FROM master_bookings WHERE booking_status = 'CANCELLED'
+      )
+    `,
+  ]);
+
   const [
     totalBookings,
     confirmedToday,
@@ -28,7 +54,18 @@ export const GET = withAdmin(async (_req: NextRequest) => {
     prisma.masterBooking.count(),
     prisma.masterBooking.count({ where: { bookingStatus: 'CONFIRMED', createdAt: { gte: dayStartUTC } } }),
     prisma.masterBooking.count({ where: { bookingStatus: 'CANCELLED', updatedAt: { gte: dayStartUTC } } }),
-    prisma.changeRequest.count({ where: { status: { in: ['NEW', 'QUOTED', 'CUSTOMER_PAYMENT_PENDING'] } } }),
+    prisma.changeRequest.count({
+      where: {
+        AND: [
+          { status: { in: ['NEW', 'QUOTED', 'CUSTOMER_PAYMENT_PENDING'] } },
+          { type: 'DATE_CHANGE' }, // Seat changes are audit trail — not pending work
+          { OR: [
+            { expiresAt: null },           // no expiry set
+            { expiresAt: { gte: now } },   // not yet expired
+          ]},
+        ],
+      },
+    }),
     prisma.cancellationRecord.count({ where: { status: { in: ['CANCEL_REQUESTED', 'IN_PROGRESS'] } } }),
     prisma.bookingPayment.aggregate({
       where: { status: 'SUCCEEDED', paidAt: { gte: weekStart } },

@@ -215,6 +215,7 @@ export async function getCancellationByBookingId(bookingId: string) {
 export async function createChangeRequest(data: {
   bookingId: string;
   type: 'DATE_CHANGE' | 'PASSENGER_UPDATE' | 'SEAT_CHANGE' | 'BAGGAGE_CHANGE' | 'UPGRADE' | 'NAME_CORRECTION';
+  status?: 'NEW' | 'QUOTED' | 'CUSTOMER_PAYMENT_PENDING' | 'CONFIRMED' | 'REJECTED' | 'CANCELLED';
   requestedBy: string;
   originalData?: object;
   requestedData?: object;
@@ -227,6 +228,7 @@ export async function createChangeRequest(data: {
   providerQuoteId?: string;
   providerResponse?: object;
   expiresAt?: Date;
+  confirmedAt?: Date;
   notes?: string;
 }) {
   return prisma.changeRequest.create({ data: data as any });

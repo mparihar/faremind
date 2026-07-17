@@ -51,7 +51,9 @@ const CATEGORIES = [
   'Booking Issue',
   'Payment Problem',
   'Cancellation',
+  'Cancellation Request',
   'Change Request',
+  'Flight Change Request',
   'Baggage Claim',
   'Refund Query',
   'Technical Issue',
@@ -453,7 +455,13 @@ export default function SupportQueuePage() {
                       </td>
                       <td className="px-5 py-4">
                         <div className="flex items-center gap-2">
-                          <span className={`font-bold text-sm font-mono ${ticket.channel === 'WHATSAPP' ? 'text-green-400' : 'text-[#1ABC9C]'}`}>{ticketNum}</span>
+                          <a
+                            href={`/admin/support-queue/${ticket.id}`}
+                            onClick={e => { e.preventDefault(); e.stopPropagation(); router.push(`/admin/support-queue/${ticket.id}`); }}
+                            className={`font-bold text-sm font-mono hover:underline underline-offset-2 transition-colors ${ticket.channel === 'WHATSAPP' ? 'text-green-400 hover:text-green-300' : 'text-[#1ABC9C] hover:text-[#16a085]'}`}
+                          >
+                            {ticketNum}
+                          </a>
                           {ticket.channel === 'WHATSAPP' && (
                             <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-full text-[9px] font-black bg-green-500/15 text-green-400 border border-green-500/20 uppercase tracking-wide">
                               WA
@@ -485,6 +493,16 @@ export default function SupportQueuePage() {
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-500/15 text-red-400 border border-red-500/20">
                             <ShieldAlert size={11} />
                             Failed Booking
+                          </span>
+                        ) : ticket.category === 'Cancellation Request' || ticket.category === 'Cancellation' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-500/10 text-red-400 border border-red-400/20">
+                            <XCircle size={11} />
+                            {ticket.category}
+                          </span>
+                        ) : ticket.category === 'Flight Change Request' || ticket.category === 'Change Request' ? (
+                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-purple-500/10 text-purple-400 border border-purple-400/20">
+                            <Plane size={11} />
+                            {ticket.category}
                           </span>
                         ) : (
                           <span className="text-slate-400 text-sm">{ticket.category}</span>

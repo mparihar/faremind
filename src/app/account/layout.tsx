@@ -24,7 +24,7 @@ const SIDEBAR_NAV = [
   { href: '/account/refunds', label: 'Refunds & Credits', icon: CreditCard },
   { href: '/account/notifications', label: 'Notifications', icon: Bell },
   { href: '/account/profile', label: 'Profile', icon: User },
-  { href: '/support', label: 'Support', icon: Headphones },
+  { href: '/account/support', label: 'Support', icon: Headphones },
 ];
 
 const ADMIN_NAV = [

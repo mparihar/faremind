@@ -299,7 +299,9 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                           const Icon = item.icon;
                           const href = item.href === '/manage-booking' && user
                             ? user.role === 'FAREMIND_AGENT' ? '/agent/bookings' : '/account/manage-booking'
-                            : item.href;
+                            : item.href === '/support' && user
+                              ? user.role === 'FAREMIND_AGENT' ? '/agent/support' : '/account/support'
+                              : item.href;
                           return (
                             <button
                               key={item.label}

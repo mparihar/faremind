@@ -127,7 +127,7 @@ export default function AdminDashboardPage() {
         <StatCard label="Confirmed Today"  value={stats?.confirmedToday ?? 0}      icon={TrendingUp}    color="bg-emerald-400/10 text-emerald-400" sub="bookings confirmed today" href="/admin/bookings" />
         <StatCard label="Cancelled Today"  value={stats?.cancelledToday ?? 0}      icon={XCircle}       color="bg-red-400/10 text-red-400" href="/admin/bookings" />
         <StatCard label="Pending Work"     value={stats?.pendingWork ?? 0}          icon={AlertTriangle} color="bg-amber-400/10 text-amber-400"
-          sub={`${stats?.pendingChanges ?? 0} changes · ${stats?.pendingCancellations ?? 0} cancellations`} href="/admin/support-queue" />
+          sub={`${stats?.pendingChanges ?? 0} date changes · ${stats?.pendingCancellations ?? 0} cancellations`} href="/admin/support-queue" />
         <StatCard label="Week Revenue"     value={fmt(stats?.weekRevenue ?? 0)}     icon={DollarSign}    color="bg-[#1ABC9C]/10 text-[#1ABC9C]" sub="last 7 days" />
         <StatCard label="Month Revenue"    value={fmt(stats?.monthRevenue ?? 0)}    icon={DollarSign}    color="bg-purple-400/10 text-purple-400" sub="this month" />
         <StatCard label="Price Alerts"     value={stats?.openAlerts ?? 0}           icon={Bell}          color="bg-orange-400/10 text-orange-400" sub="open alerts" />

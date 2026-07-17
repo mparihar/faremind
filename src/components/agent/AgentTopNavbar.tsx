@@ -16,6 +16,7 @@ import {
   ChevronDown,
   Menu,
   X,
+  Headphones,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -25,6 +26,7 @@ const PRIMARY_NAV = [
   { href: '/agent/dashboard', label: 'Dashboard', icon: LayoutDashboard },
   { href: '/agent/new-booking', label: 'New Booking', icon: PlaneTakeoff },
   { href: '/agent/bookings', label: 'My Bookings', icon: Briefcase },
+  { href: '/agent/support', label: 'Contact Support', icon: Headphones },
 ];
 
 // ── Dropdown nav links (inside profile menu) ─────────────────────────────────

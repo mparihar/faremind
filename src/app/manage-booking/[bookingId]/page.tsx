@@ -622,7 +622,7 @@ export default function BookingDetailPage() {
                 <p className="text-white text-sm font-semibold">Need help with your booking?</p>
                 <p className="text-slate-500 text-[11px]">Our support team is available 24/7 to assist you.</p>
               </div>
-              <a href="mailto:support@faremind.ai" className="px-4 py-2 rounded-lg border border-white/10 text-slate-300 text-xs font-semibold hover:bg-white/[0.04] transition-all shrink-0">
+              <a href="/support" className="px-4 py-2 rounded-lg border border-white/10 text-slate-300 text-xs font-semibold hover:bg-white/[0.04] transition-all shrink-0">
                 Contact Support
               </a>
             </div>

@@ -556,32 +556,140 @@ export function RefundModal({ booking, onClose }: { booking: any; onClose: () =>
 export function SupportModal({ booking, onClose }: { booking: any; onClose: () => void }) {
   const [subject, setSubject] = useState('');
   const [message, setMessage] = useState('');
+  const [category, setCategory] = useState('');
+  const [sending, setSending] = useState(false);
   const [sent, setSent] = useState(false);
-  const iCls = 'w-full px-3 py-2.5 bg-slate-800 border border-slate-600 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all';
+  const [ticketNumber, setTicketNumber] = useState('');
+  const [error, setError] = useState('');
+
+  const bookingRef = booking.masterBookingReference || booking.masterPnr || '';
+  const customerName = booking.customerName || '';
+  const customerEmail = booking.customerEmail || '';
+  const iCls = 'w-full px-4 py-3 bg-slate-800/60 border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] transition-all placeholder:text-slate-600';
+
+  async function handleSend() {
+    if (!message.trim()) return;
+    setSending(true);
+    setError('');
+    try {
+      const res = await fetch('/api/support-tickets', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: customerName,
+          email: customerEmail,
+          subject: subject.trim() || `Support request for ${bookingRef}`,
+          message: message.trim(),
+          category: category || 'other',
+          bookingRef: bookingRef || null,
+        }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setTicketNumber(data.ticketNumber || '');
+        setSent(true);
+      } else {
+        setError(data.error || 'Something went wrong. Please try again.');
+      }
+    } catch {
+      setError('Network error. Please check your connection and try again.');
+    }
+    setSending(false);
+  }
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/60 backdrop-blur-sm" onClick={onClose}>
       <motion.div initial={{ opacity: 0, scale: 0.95 }} animate={{ opacity: 1, scale: 1 }}
-        className="w-full max-w-md bg-[#0f1525] border border-white/10 rounded-2xl p-6" onClick={e => e.stopPropagation()}>
-        <div className="flex items-center justify-between mb-5"><h3 className="text-white font-bold text-lg">Contact Support</h3>
-          <button onClick={onClose} className="text-slate-500 hover:text-white"><X size={18} /></button></div>
-        {sent ? (
-          <div className="text-center py-6">
-            <div className="w-14 h-14 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 flex items-center justify-center mx-auto mb-3"><Check size={28} className="text-[#1ABC9C]" /></div>
-            <p className="text-white font-bold mb-1">Message Sent</p><p className="text-slate-400 text-sm mb-4">Our team will respond within 24 hours.</p>
-            <button onClick={onClose} className="px-6 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-semibold text-sm">Done</button>
-          </div>
-        ) : (
-          <div className="space-y-3">
-            <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl px-3 py-2 text-sm text-slate-400">
-              Booking: <span className="text-white font-medium font-mono">{booking.masterBookingReference || booking.masterPnr}</span>
+        className="w-full max-w-lg bg-[#0f1525] border border-white/10 rounded-2xl overflow-hidden" onClick={e => e.stopPropagation()}>
+        {/* Header */}
+        <div className="flex items-center justify-between px-6 py-4 border-b border-white/[0.06]">
+          <div className="flex items-center gap-2.5">
+            <div className="w-9 h-9 rounded-xl bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 flex items-center justify-center">
+              <Mail size={16} className="text-[#1ABC9C]" />
             </div>
-            <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Subject</label>
-              <input value={subject} onChange={e => setSubject(e.target.value)} placeholder="e.g. Refund inquiry" className={iCls} /></div>
-            <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Message</label>
-              <textarea value={message} onChange={e => setMessage(e.target.value)} rows={4} placeholder="Describe your issue…" className={`${iCls} resize-none`} /></div>
-            <button onClick={() => { if (message.trim()) setSent(true); }} disabled={!message.trim()} className="w-full py-3 rounded-xl bg-[#1ABC9C] text-white font-bold text-sm disabled:opacity-40 transition-all">Send Message</button>
+            <div>
+              <h3 className="text-white font-bold text-base">Contact Support</h3>
+              <p className="text-slate-500 text-[11px]">{bookingRef}</p>
+            </div>
           </div>
-        )}
+          <button onClick={onClose} className="p-1.5 rounded-lg text-slate-500 hover:text-white hover:bg-white/[0.06] transition-all">
+            <X size={18} />
+          </button>
+        </div>
+
+        {/* Body */}
+        <div className="px-6 py-5 max-h-[70vh] overflow-y-auto">
+          {sent ? (
+            <div className="text-center py-6">
+              <div className="w-14 h-14 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 flex items-center justify-center mx-auto mb-3">
+                <Check size={26} className="text-[#1ABC9C]" />
+              </div>
+              <p className="text-white font-bold text-lg mb-1">Ticket Created</p>
+              {ticketNumber && (
+                <div className="inline-flex items-center gap-2 px-4 py-2 bg-[#1ABC9C]/10 border border-[#1ABC9C]/20 rounded-xl mb-3">
+                  <span className="text-slate-400 text-sm">Ticket #</span>
+                  <span className="text-[#1ABC9C] font-black text-lg font-mono">{ticketNumber}</span>
+                </div>
+              )}
+              <p className="text-slate-400 text-sm">Our support team will respond to <strong className="text-white">{customerEmail}</strong> within 24 hours.</p>
+              <button onClick={onClose} className="mt-5 px-6 py-2.5 rounded-xl bg-[#1ABC9C] text-white font-semibold text-sm hover:bg-[#16a085] transition-all">
+                Done
+              </button>
+            </div>
+          ) : (
+            <div className="space-y-3">
+              {error && (
+                <div className="px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm font-medium">{error}</div>
+              )}
+
+              {/* Booking context */}
+              <div className="flex items-center gap-3 px-4 py-3 bg-white/[0.03] border border-white/[0.06] rounded-xl">
+                <div className="w-7 h-7 rounded-lg bg-slate-700 flex items-center justify-center text-[10px] font-bold text-white shrink-0">
+                  {customerName.charAt(0).toUpperCase() || '?'}
+                </div>
+                <div className="flex-1 min-w-0">
+                  <p className="text-white text-sm font-semibold truncate">{customerName}</p>
+                  <p className="text-slate-500 text-[11px] truncate">{customerEmail}</p>
+                </div>
+                <span className="text-[#1ABC9C] text-xs font-bold font-mono bg-[#1ABC9C]/10 px-2 py-0.5 rounded-full">{bookingRef}</span>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Category</label>
+                <select value={category} onChange={e => setCategory(e.target.value)}
+                  className={`${iCls} cursor-pointer bg-[#0f1525]`}>
+                  <option value="" disabled className="bg-white text-slate-900">Select a topic</option>
+                  <option value="cancellation" className="bg-white text-slate-900">Cancellation & Refund</option>
+                  <option value="change" className="bg-white text-slate-900">Flight Change</option>
+                  <option value="ticket" className="bg-white text-slate-900">E-Ticket / Check-In</option>
+                  <option value="baggage" className="bg-white text-slate-900">Baggage</option>
+                  <option value="payment" className="bg-white text-slate-900">Payment Issue</option>
+                  <option value="other" className="bg-white text-slate-900">Other</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Subject</label>
+                <input value={subject} onChange={e => setSubject(e.target.value)}
+                  placeholder="Brief description of your issue" className={iCls} />
+              </div>
+
+              <div>
+                <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Message <span className="text-red-400">*</span></label>
+                <textarea value={message} onChange={e => setMessage(e.target.value)} rows={4}
+                  placeholder="Please describe your issue in detail…"
+                  className={`${iCls} resize-none`} />
+              </div>
+
+              <button onClick={handleSend} disabled={!message.trim() || sending}
+                className="w-full py-3 rounded-xl bg-[#1ABC9C] hover:bg-[#16a085] text-white font-bold text-sm disabled:opacity-40 transition-all flex items-center justify-center gap-2">
+                {sending
+                  ? <><span className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" /> Sending…</>
+                  : <><Mail size={14} /> Send Message</>}
+              </button>
+            </div>
+          )}
+        </div>
       </motion.div>
     </div>
   );
