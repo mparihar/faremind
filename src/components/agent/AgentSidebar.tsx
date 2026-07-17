@@ -20,6 +20,7 @@ import {
   RotateCcw,
   Headphones,
   HelpCircle,
+  CreditCard,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -34,6 +35,7 @@ const AGENT_NAV = [
   { href: '/agent/passenger-updates', label: 'Passenger Updates', icon: UserCog },
   { href: '/agent/post-booking', label: 'Post-Booking', icon: RotateCcw },
   { href: '/agent/cancellations', label: 'Cancellations', icon: XCircle },
+  { href: '/agent/refunds', label: 'Refunds & Credits', icon: CreditCard },
   { href: '/agent/duffel-assistant', label: 'Duffel Assistant', icon: MessageCircle },
   { href: '/agent/notifications', label: 'Notifications', icon: Bell },
   { href: '/agent/support', label: 'Contact Support', icon: HelpCircle },
