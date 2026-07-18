@@ -323,6 +323,10 @@ async function searchMystifly(params: {
       .map((itin: any, idx: number) => { try { return normalizeMystiflyOffer(itin); } catch (e) { console.warn(`[Mystifly] Normalizer failed for itin #${idx}:`, (e as Error).message); return null; } })
       .filter(Boolean) as UnifiedFlight[];
 
+    // ── Pipeline diagnostic ──
+    const v2Refundable = flights.filter(f => f.isRefundable).length;
+    console.log(`[Mystifly v2.2] Raw itineraries: ${itineraries.length} → Denormalized: ${denormalized.length} → Normalized: ${flights.length} (${v2Refundable} refundable)`);
+
     // Tag all v2/v2.2 flights as branded fares
     for (const f of flights) f.fareType = 'branded';
 
@@ -474,6 +478,10 @@ async function searchMystiflyLowestFare(params: {
       })
       .filter(Boolean) as UnifiedFlight[];
 
+    // ── Pipeline diagnostic ──
+    const v1Refundable = flights.filter(f => f.isRefundable).length;
+    console.log(`[Mystifly v1] Raw itineraries: ${denormalized.length} → Normalized: ${flights.length} (${v1Refundable} refundable)`);
+
     // Tag all v1 flights as lowest fares
     for (const f of flights) f.fareType = 'lowest';
 
@@ -544,6 +552,8 @@ export async function searchFlights(params: {
   // ── Final summary ──
   const totalLowest = rankedFlights.filter(f => f.fareType === 'lowest').length;
   const totalBranded = rankedFlights.filter(f => f.fareType === 'branded').length;
+  const totalRefundable = rankedFlights.filter(f => f.isRefundable).length;
+  console.log(`[Search] Final: ${allFlights.length} raw → ${aggregatedFlights.length} aggregated → ${rankedFlights.length} ranked (lowest=${totalLowest}, branded=${totalBranded}, refundable=${totalRefundable})`);
 
   return { flights: rankedFlights, providers: providerResults, searchId, totalTimeMs: Date.now() - overallStart, usedMockData: false, aggregationStats };
 }
