@@ -2775,10 +2775,16 @@ model LimitOrder {
   airlinePreferenceMode  String               @default("ACCEPT") @map("airline_preference_mode") // ACCEPT or EXCLUDE
   airlinePreferences     String[]             @map("airline_preferences") // IATA airline codes
 
-  // Windows
-  bookingWindowDays      Int                  @default(30) @map("booking_window_days")
-  expirationDays         Int?                 @map("expiration_days")
-  expiresAt              DateTime?            @map("expires_at")
+  // Lifecycle — enforced by system
+  travelWindowDays       Int                  @default(180) @map("travel_window_days")
+  validityDays           Int                  @default(90) @map("validity_days")
+  expiresAt              DateTime             @map("expires_at") // createdAt + validityDays
+  purgeAt                DateTime?            @map("purge_at")   // expiresAt + purgeDelayHours
+  expiredAt              DateTime?            @map("expired_at") // actual expiration timestamp
+  deletedAt              DateTime?            @map("deleted_at") // purge completion timestamp
+  deletionReason         String?              @map("deletion_reason")
+  minPurchaseLeadTimeHours Int                @default(24) @map("min_purchase_lead_time_hours")
+  policySnapshot         Json?                @map("policy_snapshot")
 
   // Execution
   executionMode          LimitOrderExecMode   @default(NOTIFY_ONLY) @map("execution_mode")
@@ -2817,6 +2823,8 @@ model LimitOrder {
 
   @@index([userId])
   @@index([status])
+  @@index([status, expiresAt])
+  @@index([status, purgeAt])
   @@index([origin, destination, departureDate])
   @@index([acceptedOrigins])
   @@index([acceptedDestinations])

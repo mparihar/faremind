@@ -10,6 +10,17 @@
 import { FastifyPluginAsync } from 'fastify';
 import { prisma } from '../lib/db';
 import crypto from 'crypto';
+import {
+  validateTravelBookingWindow,
+  computeExpiresAt,
+  computePurgeAt,
+  buildPolicySnapshot,
+  isOrderExpired,
+  DEFAULT_TRAVEL_WINDOW_DAYS,
+  DEFAULT_VALIDITY_DAYS,
+  DEFAULT_PURGE_DELAY_HOURS,
+  DEFAULT_MIN_PURCHASE_LEAD_TIME_HOURS,
+} from '../services/limit-order-validator';
 
 const plugin: FastifyPluginAsync = async (fastify) => {
 
@@ -34,19 +45,22 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
 
       const depDate = new Date(body.departureDate);
-      if (depDate <= new Date()) {
-        return reply.code(400).send({ error: 'departureDate must be in the future' });
+
+      // ── Travel Booking Window (180-day) validation ──
+      const travelValidation = validateTravelBookingWindow(depDate);
+      if (!travelValidation.valid) {
+        return reply.code(400).send({
+          error: travelValidation.message,
+          code: travelValidation.code,
+          maximumAllowedDepartureDate: travelValidation.maximumAllowedDepartureDate,
+        });
       }
 
-      // Compute expiration
-      let expiresAt: Date | null = null;
-      if (body.expirationDays) {
-        expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + Number(body.expirationDays));
-      } else {
-        // Default: expire at departure date
-        expiresAt = depDate;
-      }
+      // ── Fixed 90-day validity — no user override ──
+      const now = new Date();
+      const expiresAt = computeExpiresAt(now, DEFAULT_VALIDITY_DAYS);
+      const purgeAt = computePurgeAt(expiresAt, DEFAULT_PURGE_DELAY_HOURS);
+      const policySnapshot = buildPolicySnapshot();
 
       // Validate auto-purchase requires payment method
       const execMode = body.executionMode || 'NOTIFY_ONLY';
@@ -58,7 +72,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // Compute initial nextEvaluationAt (1 hour from now for active orders)
       const status = body.status === 'ACTIVE' ? 'ACTIVE' : 'DRAFT';
-      const now = new Date();
       const nextEval = status === 'ACTIVE' ? new Date(now.getTime() + 60 * 60 * 1000) : null;
 
       // Build accepted airport arrays — defaults to single origin/destination if not provided
@@ -94,9 +107,13 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           cabinClass: body.cabinClass || 'ECONOMY',
           airlinePreferenceMode: body.airlinePreferenceMode || 'ACCEPT',
           airlinePreferences: body.airlinePreferences || [],
-          bookingWindowDays: body.bookingWindowDays ?? 30,
-          expirationDays: body.expirationDays ? Number(body.expirationDays) : null,
+          // Lifecycle — system-enforced
+          travelWindowDays: DEFAULT_TRAVEL_WINDOW_DAYS,
+          validityDays: DEFAULT_VALIDITY_DAYS,
           expiresAt,
+          purgeAt,
+          minPurchaseLeadTimeHours: DEFAULT_MIN_PURCHASE_LEAD_TIME_HOURS,
+          policySnapshot: policySnapshot as any,
           executionMode: execMode,
           status,
           stripeCustomerId: body.stripeCustomerId || null,
@@ -229,7 +246,23 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         },
       });
       if (!order) return reply.code(404).send({ error: 'Limit order not found' });
-      return { success: true, order };
+
+      // Add lifecycle metadata
+      const lifecycle: any = {
+        canRenew: false,
+        canCreateNew: true,
+        renewalAllowed: false,
+      };
+      if (isOrderExpired(order)) {
+        lifecycle.expired = true;
+        lifecycle.message = 'This Limit Order has expired. Create a new Limit Order to continue monitoring.';
+      } else {
+        const daysRemaining = Math.max(0, Math.ceil((new Date(order.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+        lifecycle.expired = false;
+        lifecycle.daysRemaining = daysRemaining;
+      }
+
+      return { success: true, order, lifecycle };
     } catch (err: any) {
       fastify.log.error(err, '[limit-orders] GET /:id failed');
       reply.code(500).send({ error: err.message || 'Failed to get limit order' });
@@ -244,6 +277,16 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const existing = await prisma.limitOrder.findUnique({ where: { id } });
       if (!existing) return reply.code(404).send({ error: 'Limit order not found' });
+
+      // Block edits on expired orders
+      if (isOrderExpired(existing)) {
+        return reply.code(400).send({
+          error: 'This Limit Order has expired and cannot be edited. Create a new Limit Order.',
+          code: 'LIMIT_ORDER_EXPIRED',
+          canRenew: false,
+          canCreateNew: true,
+        });
+      }
 
       // Only allow edits if DRAFT or ACTIVE
       if (!['DRAFT', 'ACTIVE'].includes(existing.status)) {
@@ -270,12 +313,21 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         }
       }
 
-      // Recompute expiration if expirationDays changed
-      if (body.expirationDays !== undefined) {
-        const expiresAt = new Date();
-        expiresAt.setDate(expiresAt.getDate() + Number(body.expirationDays));
-        updateData.expiresAt = expiresAt;
+      // Re-validate 180-day window if departure date changed
+      if (body.departureDate) {
+        const newDepDate = new Date(body.departureDate);
+        const windowCheck = validateTravelBookingWindow(newDepDate);
+        if (!windowCheck.valid) {
+          return reply.code(400).send({
+            error: windowCheck.message,
+            code: windowCheck.code,
+            maximumAllowedDepartureDate: windowCheck.maximumAllowedDepartureDate,
+          });
+        }
+        updateData.departureDate = newDepDate;
       }
+
+      // NEVER modify expiresAt, createdAt, or validityDays on update
 
       const order = await prisma.limitOrder.update({ where: { id }, data: updateData });
 
@@ -307,6 +359,17 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         include: { passengers: true },
       });
       if (!existing) return reply.code(404).send({ error: 'Limit order not found' });
+
+      // Block activation of expired orders
+      if (isOrderExpired(existing)) {
+        return reply.code(400).send({
+          error: 'This Limit Order has expired and cannot be activated. Create a new Limit Order.',
+          code: 'LIMIT_ORDER_EXPIRED',
+          canRenew: false,
+          canCreateNew: true,
+        });
+      }
+
       if (!['DRAFT'].includes(existing.status)) {
         return reply.code(400).send({ error: `Cannot activate an order with status ${existing.status}` });
       }
@@ -375,6 +438,15 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const body = request.body as any;
       const existing = await prisma.limitOrder.findUnique({ where: { id } });
       if (!existing) return reply.code(404).send({ error: 'Limit order not found' });
+
+      // Block pausing expired orders
+      if (isOrderExpired(existing)) {
+        return reply.code(400).send({
+          error: 'This Limit Order has expired and cannot be paused.',
+          code: 'LIMIT_ORDER_EXPIRED',
+        });
+      }
+
       if (!['ACTIVE', 'MONITORING', 'MATCHED', 'AWAITING_CUSTOMER'].includes(existing.status)) {
         return reply.code(400).send({ error: `Cannot pause an order with status ${existing.status}` });
       }
@@ -413,10 +485,33 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: `Cannot resume an order with status ${existing.status}. Only paused (DRAFT) orders can be resumed.` });
       }
 
-      // Check if expired while paused
-      if (existing.expiresAt && existing.expiresAt < new Date()) {
-        await prisma.limitOrder.update({ where: { id }, data: { status: 'EXPIRED' } });
-        return reply.code(400).send({ error: 'This order has expired while paused.' });
+      // Check if expired while paused — set full expiration metadata
+      if (isOrderExpired(existing)) {
+        const now = new Date();
+        await prisma.limitOrder.update({
+          where: { id },
+          data: {
+            status: 'EXPIRED',
+            expiredAt: now,
+            purgeAt: computePurgeAt(now),
+            nextEvaluationAt: null,
+          },
+        });
+        await prisma.limitOrderEvent.create({
+          data: {
+            limitOrderId: id,
+            eventType: 'EXPIRED',
+            eventTitle: 'Limit order expired while paused',
+            eventDescription: 'The 90-day validity period ended while the order was paused. Pausing does not extend validity.',
+            actorType: 'system',
+          },
+        });
+        return reply.code(400).send({
+          error: 'This Limit Order expired while paused. Pausing does not extend validity. Create a new Limit Order.',
+          code: 'LIMIT_ORDER_EXPIRED',
+          canRenew: false,
+          canCreateNew: true,
+        });
       }
 
       const now = new Date();

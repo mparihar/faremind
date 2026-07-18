@@ -16,6 +16,7 @@ import { prisma } from '../lib/db';
 import crypto from 'crypto';
 import type { UnifiedFlight } from '../lib/types';
 import { notificationService } from './notification-service';
+import { isOrderExpired, computePurgeAt } from './limit-order-validator';
 
 interface SearchMeta {
   origin: string;
@@ -61,6 +62,20 @@ export async function matchSearchResultsAgainstLimitOrders(
 
     for (const order of activeOrders) {
       try {
+        // ── Expiration double-check — catch orders the cron hasn't processed yet ──
+        if (isOrderExpired(order)) {
+          console.log(`[limit-order-matcher] Order ${order.id} is expired — skipping and marking.`);
+          await prisma.limitOrder.update({
+            where: { id: order.id },
+            data: {
+              status: 'EXPIRED',
+              expiredAt: new Date(),
+              purgeAt: computePurgeAt(new Date()),
+              nextEvaluationAt: null,
+            },
+          });
+          continue;
+        }
         await evaluateOrderAgainstFlights(order, flights, 'LIVE_SEARCH');
       } catch (err) {
         console.error(`[limit-order-matcher] Error evaluating order ${order.id}:`, err);

@@ -16,6 +16,10 @@ import { prisma } from '../lib/db';
 import { searchFlights } from './orchestrator';
 import { evaluateOrderAgainstFlights } from './limit-order-matcher';
 import { applyMarkupToOffers } from './markup-service';
+import {
+  computePurgeAt,
+  DEFAULT_MIN_PURCHASE_LEAD_TIME_HOURS,
+} from './limit-order-validator';
 import type { UnifiedFlight } from '../lib/types';
 
 /**
@@ -137,35 +141,148 @@ export async function runLimitOrderSchedulerCycle(): Promise<{
 }
 
 /**
- * Expire limit orders that have passed their expiration date or departure date.
+ * Expire limit orders that have passed their expiration date, departure date,
+ * or are within the minimum purchase lead time.
+ *
+ * Enhanced for lifecycle enforcement:
+ * - Sets expiredAt timestamp
+ * - Sets purgeAt for scheduled deletion
+ * - Creates audit events for each expired order
+ * - Handles minimumPurchaseLeadTimeHours
  */
 export async function expireStaleOrders(): Promise<number> {
   const now = new Date();
 
-  // Expire orders past expiresAt
-  const expiredByExpiry = await prisma.limitOrder.updateMany({
+  // ── Step 1: Expire by expiresAt (90-day validity) ──
+  const byExpiry = await prisma.limitOrder.findMany({
     where: {
-      status: { in: ['ACTIVE', 'MONITORING', 'DRAFT', 'AWAITING_CUSTOMER'] },
+      status: { in: ['ACTIVE', 'MONITORING', 'DRAFT', 'AWAITING_CUSTOMER', 'MATCHED'] },
       expiresAt: { lte: now },
     },
-    data: { status: 'EXPIRED', nextEvaluationAt: null },
+    select: { id: true, userId: true, origin: true, destination: true },
   });
 
-  // Expire orders past departure date
-  const expiredByDeparture = await prisma.limitOrder.updateMany({
+  // ── Step 2: Expire by departure date passed ──
+  const byDeparture = await prisma.limitOrder.findMany({
     where: {
-      status: { in: ['ACTIVE', 'MONITORING', 'DRAFT', 'AWAITING_CUSTOMER'] },
+      status: { in: ['ACTIVE', 'MONITORING', 'DRAFT', 'AWAITING_CUSTOMER', 'MATCHED'] },
       departureDate: { lt: now },
+      id: { notIn: byExpiry.map(o => o.id) },
     },
-    data: { status: 'EXPIRED', nextEvaluationAt: null },
+    select: { id: true, userId: true, origin: true, destination: true },
   });
 
-  const totalExpired = expiredByExpiry.count + expiredByDeparture.count;
-  if (totalExpired > 0) {
-    console.log(`[limit-order-scheduler] Expired ${totalExpired} stale orders.`);
+  // ── Step 3: Expire by minimum purchase lead time (24h before departure) ──
+  const leadTimeCutoff = new Date(now.getTime() + DEFAULT_MIN_PURCHASE_LEAD_TIME_HOURS * 60 * 60 * 1000);
+  const existingIds = [...byExpiry.map(o => o.id), ...byDeparture.map(o => o.id)];
+  const byLeadTime = await prisma.limitOrder.findMany({
+    where: {
+      status: { in: ['ACTIVE', 'MONITORING'] },
+      departureDate: { lte: leadTimeCutoff },
+      id: { notIn: existingIds },
+    },
+    select: { id: true, userId: true, origin: true, destination: true },
+  });
+
+  const allToExpire = [...byExpiry, ...byDeparture, ...byLeadTime];
+  if (allToExpire.length === 0) return 0;
+
+  const allIds = allToExpire.map(o => o.id);
+  const purgeAt = computePurgeAt(now);
+
+  // Batch update all to EXPIRED
+  await prisma.limitOrder.updateMany({
+    where: { id: { in: allIds } },
+    data: {
+      status: 'EXPIRED',
+      expiredAt: now,
+      purgeAt,
+      nextEvaluationAt: null,
+    },
+  });
+
+  // Create audit events in bulk
+  await prisma.limitOrderEvent.createMany({
+    data: allToExpire.map(o => ({
+      limitOrderId: o.id,
+      eventType: 'EXPIRED',
+      eventTitle: 'Limit order expired',
+      eventDescription: byExpiry.find(e => e.id === o.id)
+        ? 'The 90-day validity period has ended. Order can no longer be monitored, matched, or booked.'
+        : byDeparture.find(e => e.id === o.id)
+        ? 'The departure date has passed. Order expired automatically.'
+        : `Departure is within ${DEFAULT_MIN_PURCHASE_LEAD_TIME_HOURS}h. Order expired to prevent unsafe last-minute purchase.`,
+      actorType: 'system',
+    })),
+  });
+
+  console.log(`[limit-order-scheduler] Expired ${allToExpire.length} orders (${byExpiry.length} by validity, ${byDeparture.length} by departure, ${byLeadTime.length} by lead time).`);
+  return allToExpire.length;
+}
+
+/**
+ * Purge expired orders after the configured delay.
+ * Permanently deletes operational data, leaving only audit metadata.
+ *
+ * Safety checks:
+ * - Only purges orders with status = EXPIRED and purgeAt <= now
+ * - Skips orders with active purchase workflows (status PURCHASING)
+ * - Transactionally deletes passengers, matches, events, then marks order
+ */
+export async function purgeExpiredOrders(): Promise<number> {
+  const now = new Date();
+
+  const toPurge = await prisma.limitOrder.findMany({
+    where: {
+      status: 'EXPIRED',
+      purgeAt: { lte: now },
+      deletedAt: null,
+    },
+    select: { id: true },
+    take: 100, // Process max 100 per cycle
+  });
+
+  if (toPurge.length === 0) return 0;
+
+  let purged = 0;
+
+  for (const order of toPurge) {
+    try {
+      // Transactional delete of dependent records + mark order
+      await prisma.$transaction(async (tx) => {
+        // Delete passengers
+        await tx.limitOrderPassenger.deleteMany({ where: { limitOrderId: order.id } });
+        // Delete matches
+        await tx.limitOrderMatch.deleteMany({ where: { limitOrderId: order.id } });
+        // Delete events
+        await tx.limitOrderEvent.deleteMany({ where: { limitOrderId: order.id } });
+        // Mark order as purged (tombstone — keeps minimal audit data)
+        await tx.limitOrder.update({
+          where: { id: order.id },
+          data: {
+            deletedAt: now,
+            deletionReason: 'EXPIRED_PURGE',
+            // Clear sensitive operational data
+            airlinePreferences: [],
+            acceptedOrigins: [],
+            acceptedDestinations: [],
+            stripePaymentMethodId: null,
+            stripeCustomerId: null,
+          },
+        });
+      });
+      purged++;
+    } catch (err) {
+      console.error(`[limit-order-scheduler] Purge failed for order ${order.id}:`, err);
+      // Don't stop — continue with other orders
+    }
   }
 
-  return totalExpired;
+  if (purged > 0) {
+    console.log(`[limit-order-scheduler] Purged ${purged}/${toPurge.length} expired orders.`);
+  }
+
+  return purged;
 }
 
 /**

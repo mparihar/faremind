@@ -99,6 +99,12 @@ export default function LimitOrderDetailPage({ params }: { params: Promise<{ id:
   const matches = order.matches || [];
   const visibleEvents = showAllEvents ? events : events.slice(0, 8);
 
+  const isExpired = order.status === 'EXPIRED';
+  const daysRemaining = order.expiresAt
+    ? Math.max(0, Math.ceil((new Date(order.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)))
+    : 0;
+  const showExpirationWarning = daysRemaining <= 7 && daysRemaining > 0 && !isExpired;
+
   return (
     <div className="max-w-3xl">
       {/* Back */}
@@ -143,6 +149,33 @@ export default function LimitOrderDetailPage({ params }: { params: Promise<{ id:
         </div>
       </div>
 
+      {/* Expired Order Banner */}
+      {isExpired && (
+        <div className="p-5 rounded-2xl bg-red-500/5 border border-red-500/15 mb-6">
+          <div className="flex items-start gap-3">
+            <AlertTriangle size={18} className="text-red-400 shrink-0 mt-0.5" />
+            <div className="flex-1">
+              <p className="text-white font-bold text-sm mb-1">This Limit Order has expired</p>
+              <p className="text-slate-400 text-xs mb-3">It is no longer being monitored. Limit Orders cannot be renewed, extended, or reactivated.</p>
+              <Link href="/account/limit-orders/create"
+                className="inline-flex items-center gap-2 px-5 py-2.5 rounded-xl bg-[#1ABC9C] text-white text-sm font-bold hover:bg-[#16a085] transition-all">
+                <Plane size={14} /> Create New Limit Order
+              </Link>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Expiration Warning */}
+      {showExpirationWarning && (
+        <div className="flex items-center gap-2 px-4 py-3 rounded-xl bg-amber-500/8 border border-amber-500/15 mb-6 text-xs">
+          <Clock size={14} className="text-amber-400 shrink-0" />
+          <p className="text-amber-400">
+            This Limit Order expires in <strong className="text-white">{daysRemaining} day{daysRemaining !== 1 ? 's' : ''}</strong>. It cannot be renewed. To continue monitoring after expiration, create a new Limit Order.
+          </p>
+        </div>
+      )}
+
       {/* Order Details Grid */}
       <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-6">
         {/* Fare */}
@@ -159,13 +192,20 @@ export default function LimitOrderDetailPage({ params }: { params: Promise<{ id:
         <div className="bg-white/[0.03] border border-white/[0.06] rounded-2xl p-5">
           <div className="flex items-center gap-2 mb-3">
             <Calendar size={14} className="text-[#1ABC9C]" />
-            <h3 className="text-white font-bold text-sm">Travel Date</h3>
+            <h3 className="text-white font-bold text-sm">Lifecycle</h3>
           </div>
-          <p className="text-white text-xl font-black">{fmtDate(order.departureDate)}</p>
-          <p className="text-slate-500 text-xs mt-1">
-            {order.expiresAt ? `Expires ${fmtDate(order.expiresAt)}` : 'No expiration'}
-            {order.maxDurationMinutes ? ` · Max ${order.maxDurationMinutes / 60}h` : ''}
-          </p>
+          <p className="text-white text-lg font-black">{fmtDate(order.departureDate)}</p>
+          <div className="space-y-1 mt-2">
+            <p className="text-slate-500 text-xs">Created: {fmtDate(order.createdAt)}</p>
+            <p className="text-slate-500 text-xs">Expires: {order.expiresAt ? fmtDate(order.expiresAt) : 'N/A'}</p>
+            {!isExpired && (
+              <p className={`text-xs font-bold ${daysRemaining <= 7 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                {daysRemaining} day{daysRemaining !== 1 ? 's' : ''} remaining
+              </p>
+            )}
+            {order.maxDurationMinutes && <p className="text-slate-600 text-[10px]">Max {order.maxDurationMinutes / 60}h flight</p>}
+            <p className="text-slate-600 text-[10px]">No renewal · No auto-renew</p>
+          </div>
         </div>
 
         {/* Execution */}

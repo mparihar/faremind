@@ -208,11 +208,16 @@ export default function LimitOrdersPage() {
                       {order._count.matches} match{order._count.matches > 1 ? 'es' : ''}
                     </span>
                   ) : null}
-                  {order.expiresAt && (
-                    <span className="text-slate-500">
-                      Expires {fmtDate(order.expiresAt)}
-                    </span>
-                  )}
+                  {order.expiresAt && (() => {
+                    const dr = Math.max(0, Math.ceil((new Date(order.expiresAt).getTime() - Date.now()) / (1000 * 60 * 60 * 24)));
+                    const isExp = order.status === 'EXPIRED' || dr <= 0;
+                    return (
+                      <span className={`flex items-center gap-1.5 ${isExp ? 'text-slate-600' : dr <= 7 ? 'text-amber-400' : 'text-emerald-400'}`}>
+                        <Clock size={11} />
+                        {isExp ? 'Expired' : `${dr}d remaining`}
+                      </span>
+                    );
+                  })()}
                 </div>
 
                 {/* Actions */}

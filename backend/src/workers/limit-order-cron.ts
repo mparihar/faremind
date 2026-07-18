@@ -2,12 +2,13 @@
  * Limit Order Scheduler — Background Worker
  *
  * Runs on a configurable interval (default: every hour) to:
- * 1. Evaluate active limit orders whose nextEvaluationAt has passed
- * 2. Expire stale orders (past departure date or expiration)
+ * 1. Expire stale orders (past validity, departure, or lead time)
+ * 2. Evaluate active limit orders whose nextEvaluationAt has passed
+ * 3. Purge expired orders after the configured delay
  *
  * Registered in the Fastify startup lifecycle.
  */
-import { runLimitOrderSchedulerCycle, expireStaleOrders } from '../services/limit-order-scheduler';
+import { runLimitOrderSchedulerCycle, expireStaleOrders, purgeExpiredOrders } from '../services/limit-order-scheduler';
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
 const DEFAULT_INTERVAL_MS = 60 * 60 * 1000; // 1 hour
@@ -54,11 +55,14 @@ async function runSchedulerCycle(): Promise<void> {
     // Step 2: Run evaluation cycle
     const stats = await runLimitOrderSchedulerCycle();
 
+    // Step 3: Purge expired orders past their purge delay
+    const purged = await purgeExpiredOrders();
+
     const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
     console.log(
       `[limit-order-cron] ✅ Cycle complete in ${elapsed}s | ` +
       `Orders: ${stats.ordersEvaluated} | Routes: ${stats.routesSearched} | ` +
-      `Matches: ${stats.matchesFound} | Expired: ${expired} | Errors: ${stats.errors}`
+      `Matches: ${stats.matchesFound} | Expired: ${expired} | Purged: ${purged} | Errors: ${stats.errors}`
     );
   } catch (err) {
     console.error('[limit-order-cron] ❌ Scheduler cycle failed:', err);

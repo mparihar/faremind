@@ -13,6 +13,20 @@ import { AIRPORTS } from '@/data/airports';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
+// Lifecycle constants — matching backend enforcement
+const TRAVEL_WINDOW_DAYS = 180;
+const VALIDITY_DAYS = 90;
+
+const today = new Date();
+const todayStr = today.toISOString().split('T')[0];
+const maxDepDate = new Date(today);
+maxDepDate.setDate(maxDepDate.getDate() + TRAVEL_WINDOW_DAYS);
+const maxDepDateStr = maxDepDate.toISOString().split('T')[0];
+
+const expiresDate = new Date(today);
+expiresDate.setDate(expiresDate.getDate() + VALIDITY_DAYS);
+const expiresDateStr = expiresDate.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+
 const STEPS = [
   { label: 'Route', icon: Plane },
   { label: 'Criteria', icon: DollarSign },
@@ -36,21 +50,6 @@ const DURATION_OPTIONS = [
   { value: '1800', label: 'Under 30 Hours' },
 ];
 
-const WINDOW_OPTIONS = [
-  { value: '30', label: 'Within 30 Days' },
-  { value: '60', label: 'Within 60 Days' },
-  { value: '90', label: 'Within 90 Days' },
-  { value: '180', label: 'Within 180 Days' },
-];
-
-const EXPIRY_OPTIONS = [
-  { value: '7', label: '7 Days' },
-  { value: '14', label: '14 Days' },
-  { value: '30', label: '30 Days' },
-  { value: '60', label: '60 Days' },
-  { value: '90', label: '90 Days' },
-  { value: '', label: 'Until Departure' },
-];
 
 const POPULAR_AIRLINES = [
   { code: 'UA', name: 'United' }, { code: 'DL', name: 'Delta' },
@@ -105,7 +104,6 @@ interface FormData {
   minFare: string; maxFare: string; maxDurationMinutes: string; cabinClass: string;
   // Preferences
   airlinePreferenceMode: 'ACCEPT' | 'EXCLUDE'; airlinePreferences: string[];
-  bookingWindowDays: string; expirationDays: string;
   // Execution
   executionMode: 'NOTIFY_ONLY' | 'AUTO_PURCHASE';
 }
@@ -131,7 +129,7 @@ export default function CreateLimitOrderPage() {
     passengers: [emptyPassenger('adult')],
     minFare: '', maxFare: '', maxDurationMinutes: '', cabinClass: 'ECONOMY',
     airlinePreferenceMode: 'ACCEPT', airlinePreferences: [],
-    bookingWindowDays: '30', expirationDays: '30', executionMode: 'NOTIFY_ONLY',
+    executionMode: 'NOTIFY_ONLY',
   });
 
   const update = (k: keyof FormData, v: any) => setForm(p => ({ ...p, [k]: v }));
@@ -264,7 +262,12 @@ export default function CreateLimitOrderPage() {
   };
 
   const canProceed = (): boolean => {
-    if (step === 0) return form.acceptedOrigins.length > 0 && form.acceptedDestinations.length > 0 && !!form.departureDate;
+    if (step === 0) {
+      if (!form.acceptedOrigins.length || !form.acceptedDestinations.length || !form.departureDate) return false;
+      // Enforce travel booking window in UI
+      if (form.departureDate < todayStr || form.departureDate > maxDepDateStr) return false;
+      return true;
+    }
     if (step === 1) return !!form.minFare && !!form.maxFare && Number(form.minFare) <= Number(form.maxFare);
     if (step === 4 && form.executionMode === 'AUTO_PURCHASE') {
       // All passengers must be confirmed with required fields
@@ -302,8 +305,6 @@ export default function CreateLimitOrderPage() {
           cabinClass: form.cabinClass,
           airlinePreferenceMode: form.airlinePreferenceMode,
           airlinePreferences: form.airlinePreferences,
-          bookingWindowDays: Number(form.bookingWindowDays) || 30,
-          expirationDays: form.expirationDays ? Number(form.expirationDays) : undefined,
           executionMode: form.executionMode,
           passengers: form.executionMode === 'AUTO_PURCHASE' ? form.passengers : [],
           status: 'ACTIVE',
@@ -499,12 +500,46 @@ export default function CreateLimitOrderPage() {
                   </span>
                 </div>
               )}
+              {/* Travel Booking Window Banner */}
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-blue-500/8 border border-blue-500/15 text-[11px]">
+                <Calendar size={12} className="text-blue-400 shrink-0" />
+                <div>
+                  <p className="text-blue-400 font-bold">Travel Booking Window</p>
+                  <p className="text-slate-400">Limit Orders are available only for flights departing within the next <strong className="text-white">180 days</strong>.</p>
+                </div>
+              </div>
 
               <div className="grid grid-cols-2 gap-4">
-                <Input label="Departure Date" type="date" value={form.departureDate} onChange={(v: string) => update('departureDate', v)} required />
+                <div>
+                  <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Departure Date *</label>
+                  <input type="date" value={form.departureDate} min={todayStr} max={maxDepDateStr}
+                    onChange={e => update('departureDate', e.target.value)}
+                    className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm focus:border-[#1ABC9C]/40 focus:outline-none transition-all" />
+                  <p className="text-slate-600 text-[10px] mt-1">Latest: {maxDepDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</p>
+                  {form.departureDate && form.departureDate > maxDepDateStr && (
+                    <p className="text-red-400 text-[10px] mt-1 flex items-center gap-1">
+                      <AlertTriangle size={10} /> This departure date is outside the supported Limit Order window.
+                    </p>
+                  )}
+                </div>
                 {form.tripType === 'ROUND_TRIP' && (
-                  <Input label="Return Date" type="date" value={form.returnDate} onChange={(v: string) => update('returnDate', v)} />
+                  <div>
+                    <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-1.5">Return Date</label>
+                    <input type="date" value={form.returnDate} min={form.departureDate || todayStr} max={maxDepDateStr}
+                      onChange={e => update('returnDate', e.target.value)}
+                      className="w-full px-3.5 py-2.5 rounded-xl bg-white/[0.04] border border-white/[0.08] text-white text-sm focus:border-[#1ABC9C]/40 focus:outline-none transition-all" />
+                  </div>
                 )}
+              </div>
+
+              {/* Limit Order Validity Banner */}
+              <div className="flex items-center gap-2 px-3 py-2.5 rounded-xl bg-amber-500/8 border border-amber-500/15 text-[11px]">
+                <Clock size={12} className="text-amber-400 shrink-0" />
+                <div>
+                  <p className="text-amber-400 font-bold">Limit Order Validity</p>
+                  <p className="text-slate-400">Your Limit Order will remain active for <strong className="text-white">90 days</strong>. After that, it will expire and be removed. To continue monitoring, you must create a new Limit Order.</p>
+                  <p className="text-slate-500 mt-0.5">Valid until: <strong className="text-white">{expiresDateStr}</strong></p>
+                </div>
               </div>
 
               {/* Passengers */}
@@ -607,29 +642,27 @@ export default function CreateLimitOrderPage() {
                   ))}
                 </div>
               </div>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Booking Window</label>
-                <div className="grid grid-cols-2 gap-2">
-                  {WINDOW_OPTIONS.map(opt => (
-                    <button key={opt.value} onClick={() => update('bookingWindowDays', opt.value)}
-                      className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${form.bookingWindowDays === opt.value
-                        ? 'bg-[#1ABC9C]/15 text-[#1ABC9C] border border-[#1ABC9C]/25'
-                        : 'bg-white/[0.04] text-slate-400 border border-white/[0.08] hover:text-white'
-                      }`}>{opt.label}</button>
-                  ))}
+
+              {/* Lifecycle — System Enforced (read-only) */}
+              <div className="p-4 rounded-xl bg-white/[0.02] border border-white/[0.06] space-y-3">
+                <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">Limit Order Lifecycle</p>
+                <div className="grid grid-cols-2 gap-3">
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+                    <Calendar size={12} className="text-[#1ABC9C]" />
+                    <div>
+                      <p className="text-white text-xs font-bold">Validity: 90 Days</p>
+                      <p className="text-slate-500 text-[10px]">Expires: {expiresDateStr}</p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 px-3 py-2 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+                    <Shield size={12} className="text-slate-400" />
+                    <div>
+                      <p className="text-white text-xs font-bold">No Renewal</p>
+                      <p className="text-slate-500 text-[10px]">Create new after expiry</p>
+                    </div>
+                  </div>
                 </div>
-              </div>
-              <div>
-                <label className="block text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-2">Limit Order Expiration</label>
-                <div className="grid grid-cols-3 gap-2">
-                  {EXPIRY_OPTIONS.map(opt => (
-                    <button key={opt.value || 'dep'} onClick={() => update('expirationDays', opt.value)}
-                      className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all ${form.expirationDays === opt.value
-                        ? 'bg-[#1ABC9C]/15 text-[#1ABC9C] border border-[#1ABC9C]/25'
-                        : 'bg-white/[0.04] text-slate-400 border border-white/[0.08] hover:text-white'
-                      }`}>{opt.label}</button>
-                  ))}
-                </div>
+                <p className="text-slate-600 text-[10px]">Auto-renew is not supported. Editing or pausing does not extend validity.</p>
               </div>
             </div>
           )}
@@ -818,7 +851,7 @@ export default function CreateLimitOrderPage() {
                 {form.executionMode === 'AUTO_PURCHASE' ? <Zap size={14} className="text-cyan-400" /> : <Bell size={14} className="text-amber-400" />}
                 <div>
                   <p className="text-white font-bold text-sm">{form.executionMode === 'AUTO_PURCHASE' ? 'Auto-Purchase' : 'Notify Only'}</p>
-                  <p className="text-slate-500 text-xs">Window: {form.bookingWindowDays} days · Expires: {form.expirationDays ? `${form.expirationDays} days` : 'At departure'}</p>
+                  <p className="text-slate-500 text-xs">Validity: 90 days · Expires: {expiresDateStr} · No renewal</p>
                 </div>
               </div>
             </div>
