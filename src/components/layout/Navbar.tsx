@@ -267,6 +267,20 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                 );
               })}
 
+              {/* Limit Orders — always visible, same auth flow as Travel DNA */}
+              <button
+                onClick={() => authGuardedNav('/account/limit-orders')}
+                className={cn(
+                  'relative flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200',
+                  pathname.startsWith('/account/limit-orders')
+                    ? 'text-white bg-white/[0.08] border border-white/[0.08]'
+                    : 'text-[#1ABC9C] hover:text-white hover:bg-white/[0.05] border border-transparent'
+                )}
+              >
+                <TrendingDown className="w-4 h-4" />
+                Limit Orders
+              </button>
+
               {/* Support Dropdown */}
               <div ref={helpRef} className="relative">
                 <button
@@ -518,6 +532,22 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                     </div>
                   </div>
                 )}
+
+                {/* Mobile Limit Orders */}
+                <div className="pt-2 border-t border-white/[0.06]">
+                  <button
+                    onClick={() => { setMobileOpen(false); authGuardedNav('/account/limit-orders'); }}
+                    className={cn(
+                      'flex items-center gap-3 w-full px-4 py-3 rounded-xl text-sm font-medium transition-all',
+                      pathname.startsWith('/account/limit-orders')
+                        ? 'text-[#1ABC9C] bg-[#1ABC9C]/10 border border-[#1ABC9C]/20'
+                        : 'text-[#1ABC9C] hover:text-white hover:bg-white/[0.04]'
+                    )}
+                  >
+                    <TrendingDown className="w-5 h-5" />
+                    Limit Orders
+                  </button>
+                </div>
 
                 {/* Mobile Support */}
                 <div className="pt-2 border-t border-white/[0.06]">
