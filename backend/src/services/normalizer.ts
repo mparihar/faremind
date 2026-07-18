@@ -423,7 +423,7 @@ export function mergeAndRankFlights(flights: UnifiedFlight[]): UnifiedFlight[] {
     // Filter out invalid offers (no price, no duration, no segments)
     if (f.totalPrice <= 0 || f.totalDuration <= 0 || f.segments.length === 0) continue;
 
-    const key = `${f.airline.code}-${f.segments[0]?.departure.time}-${f.segments[0]?.departure.airport}-${f.totalPrice}`;
+    const key = `${f.airline.code}-${f.segments[0]?.departure.time}-${f.segments[0]?.departure.airport}-${f.totalPrice}-${f.isRefundable ? 'R' : 'NR'}`;
 
     if (seen.has(key)) {
       // Duplicate found — check if this flight has richer data and should replace
