@@ -6,6 +6,7 @@ import {
   Wallet, Shield, TrendingDown, Heart, Armchair, Calendar,
   Luggage, ArrowUpCircle, HelpCircle, ChevronRight, CheckCircle2,
   Loader2, AlertTriangle, CreditCard, Lock, ArrowLeft, Hash, Ticket,
+  ChevronDown, MapPin, User,
 } from 'lucide-react';
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardNumberElement, CardExpiryElement, CardCvcElement, useStripe, useElements } from '@stripe/react-stripe-js';
@@ -27,6 +28,19 @@ const SERVICE_TYPES = [
   { value: 'OTHER', label: 'Other', icon: HelpCircle, color: 'from-slate-500 to-slate-600', desc: 'Other services or custom payment' },
 ];
 
+const COUNTRIES = [
+  'United States', 'United Kingdom', 'Canada', 'Australia', 'Germany',
+  'France', 'India', 'Japan', 'Singapore', 'UAE', 'Other',
+] as const;
+
+function countryToCode(country: string): string {
+  const map: Record<string, string> = {
+    'United States': 'US', 'United Kingdom': 'GB', 'Canada': 'CA', 'Australia': 'AU',
+    'Germany': 'DE', 'France': 'FR', 'India': 'IN', 'Japan': 'JP', 'Singapore': 'SG', 'UAE': 'AE',
+  };
+  return map[country] || 'US';
+}
+
 const STRIPE_ELEM_OPTIONS = {
   style: {
     base: { color: '#fff', fontSize: '14px', fontFamily: 'Inter, sans-serif', '::placeholder': { color: '#64748b' } },
@@ -43,8 +57,21 @@ function PaymentForm({ clientSecret, paymentId, onSuccess }: { clientSecret: str
   const [processing, setProcessing] = useState(false);
   const [error, setError] = useState('');
 
+  // Billing details
+  const [cardholderName, setCardholderName] = useState('');
+  const [billingCountry, setBillingCountry] = useState('United States');
+  const [billingAddress, setBillingAddress] = useState('');
+  const [billingCity, setBillingCity] = useState('');
+  const [billingZip, setBillingZip] = useState('');
+
+  const billingComplete = cardholderName.trim().length > 0 &&
+    billingAddress.trim().length > 0 &&
+    billingCity.trim().length > 0 &&
+    billingZip.trim().length > 0;
+
   async function handlePay() {
     if (!stripe || !elements) return;
+    if (!billingComplete) { setError('Please fill in all billing details.'); return; }
     setProcessing(true);
     setError('');
 
@@ -52,7 +79,18 @@ function PaymentForm({ clientSecret, paymentId, onSuccess }: { clientSecret: str
     if (!cardNumber) { setError('Card not loaded'); setProcessing(false); return; }
 
     const result = await stripe.confirmCardPayment(clientSecret, {
-      payment_method: { card: cardNumber },
+      payment_method: {
+        card: cardNumber,
+        billing_details: {
+          name: cardholderName,
+          address: {
+            line1: billingAddress,
+            city: billingCity,
+            postal_code: billingZip,
+            country: countryToCode(billingCountry),
+          },
+        },
+      },
     });
 
     if (result.error) {
@@ -77,34 +115,86 @@ function PaymentForm({ clientSecret, paymentId, onSuccess }: { clientSecret: str
     }
   }
 
+  const inputCls = 'w-full px-4 py-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C]/40 transition-all placeholder:text-slate-600';
+
   return (
     <div className="space-y-4">
+      {/* Cardholder Name */}
       <div>
-        <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Card Number</label>
+        <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide flex items-center gap-1">
+          <User size={9} /> Cardholder Name <span className="text-red-400">*</span>
+        </label>
+        <input type="text" placeholder="John Doe" value={cardholderName}
+          onChange={e => setCardholderName(e.target.value)} autoComplete="cc-name" className={inputCls} />
+      </div>
+
+      {/* Card Number */}
+      <div>
+        <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Card Number <span className="text-red-400">*</span></label>
         <div className="px-4 py-3.5 bg-white/[0.04] border border-white/[0.08] rounded-xl">
           <CardNumberElement options={STRIPE_ELEM_OPTIONS} />
         </div>
       </div>
+
+      {/* Expiry + CVC */}
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Expiry</label>
+          <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Expiry <span className="text-red-400">*</span></label>
           <div className="px-4 py-3.5 bg-white/[0.04] border border-white/[0.08] rounded-xl">
             <CardExpiryElement options={STRIPE_ELEM_OPTIONS} />
           </div>
         </div>
         <div>
-          <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">CVC</label>
+          <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">CVC <span className="text-red-400">*</span></label>
           <div className="px-4 py-3.5 bg-white/[0.04] border border-white/[0.08] rounded-xl">
             <CardCvcElement options={STRIPE_ELEM_OPTIONS} />
           </div>
         </div>
       </div>
+
+      {/* Billing Address */}
+      <div className="border-t border-white/[0.06] pt-4">
+        <p className="text-[10px] text-slate-500 uppercase font-bold mb-3 tracking-wide flex items-center gap-1">
+          <MapPin size={9} /> Billing Address
+        </p>
+        <div className="space-y-3">
+          {/* Country */}
+          <div className="relative">
+            <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Country <span className="text-red-400">*</span></label>
+            <select value={billingCountry} onChange={e => setBillingCountry(e.target.value)}
+              className={`${inputCls} appearance-none`}>
+              {COUNTRIES.map(c => <option key={c} value={c}>{c}</option>)}
+            </select>
+            <ChevronDown className="absolute right-3 top-[calc(50%+8px)] -translate-y-1/2 w-4 h-4 text-slate-500 pointer-events-none" />
+          </div>
+          {/* Address Line */}
+          <div>
+            <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Address Line <span className="text-red-400">*</span></label>
+            <input type="text" placeholder="123 Main Street" value={billingAddress}
+              onChange={e => setBillingAddress(e.target.value)} autoComplete="street-address" className={inputCls} />
+          </div>
+          {/* City + ZIP */}
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">City <span className="text-red-400">*</span></label>
+              <input type="text" placeholder="New York" value={billingCity}
+                onChange={e => setBillingCity(e.target.value)} autoComplete="address-level2" className={inputCls} />
+            </div>
+            <div>
+              <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">ZIP / Postal Code <span className="text-red-400">*</span></label>
+              <input type="text" placeholder="10001" value={billingZip}
+                onChange={e => setBillingZip(e.target.value)} autoComplete="postal-code" className={inputCls} />
+            </div>
+          </div>
+        </div>
+      </div>
+
       {error && (
         <div className="px-4 py-3 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm flex items-center gap-2">
           <AlertTriangle size={14} /> {error}
         </div>
       )}
-      <button onClick={handlePay} disabled={processing || !stripe}
+      <button onClick={handlePay} disabled={processing || !stripe || !billingComplete}
         className="w-full py-3.5 rounded-xl bg-[#1ABC9C] hover:bg-[#16a085] text-white font-bold text-sm disabled:opacity-40 transition-all flex items-center justify-center gap-2 shadow-lg shadow-[#1ABC9C]/20">
         {processing ? <Loader2 size={16} className="animate-spin" /> : <Lock size={14} />}
         {processing ? 'Processing…' : 'Pay Now'}
