@@ -55,6 +55,12 @@ export interface ScoreBreakdown {
 
 export type FlightTag = 'best_value' | 'cheapest' | 'fastest';
 
+export interface TaxBreakdownItem {
+  code: string;    // Tax code (e.g. 'YRI', 'US2', 'IN')
+  amount: number;  // Tax amount
+  label?: string;  // Human-readable label (e.g. 'Carrier-Imposed Fuel Surcharge')
+}
+
 export interface UnifiedFlight {
   id: string;
   provider: Provider;
@@ -62,8 +68,10 @@ export interface UnifiedFlight {
   airline: AirlineInfo;
   segments: FlightSegment[];
   totalPrice: number;
-  baseFare?: number;    // Provider base fare (before taxes) — from Mystifly BaseFare / Duffel base_amount
-  taxAmount?: number;   // Provider tax amount — from Mystifly Taxes / Duffel tax_amount
+  baseFare?: number;         // Provider base fare (before taxes)
+  taxAmount?: number;        // Provider total tax amount
+  taxBreakdown?: TaxBreakdownItem[]; // Detailed tax line items from provider
+  providerTotalFare?: number; // Raw provider fare (same as totalPrice — no markup)
   currency: string;
   cabinClass: CabinClass;
   fareRules: FareRules;
@@ -76,12 +84,7 @@ export interface UnifiedFlight {
   seatsRemaining?: number;
   tags?: FlightTag[];
   breakdown?: ScoreBreakdown;
-  offerExpiresAt?: string; // ISO 8601 — provider offer expiry timestamp
-
-  // ── Internal markup (never shown to customer) ──
-  providerTotalFare?: number;
-  fareMindMarkupAmount?: number;
-  markupRuleId?: string;
+  offerExpiresAt?: string;
 
   // ── Provider aggregation metadata (admin/debug only) ──
   aggregationMeta?: AggregationMeta;

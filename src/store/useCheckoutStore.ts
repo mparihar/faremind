@@ -136,7 +136,7 @@ interface CheckoutStore {
   selectedAncillaries: NormalizedAncillary[];
 
   // Computed fees from fee engine (cached from /api/fees/compute)
-  computedFees: { serviceFee: number; markupFee: number; protectionFee: number; protectionFeeTotal: number; insuranceFee: number; insuranceFeeTotal: number } | null;
+  computedFees: { serviceFee: number; protectionFee: number; protectionFeeTotal: number; insuranceFee: number; insuranceFeeTotal: number } | null;
 
   // Step 5 — Review
   acceptedTerms: boolean;

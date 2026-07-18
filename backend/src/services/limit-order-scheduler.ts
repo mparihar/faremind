@@ -15,7 +15,6 @@
 import { prisma } from '../lib/db';
 import { searchFlights } from './orchestrator';
 import { evaluateOrderAgainstFlights } from './limit-order-matcher';
-import { applyMarkupToOffers } from './markup-service';
 import {
   computePurgeAt,
   DEFAULT_MIN_PURCHASE_LEAD_TIME_HOURS,
@@ -87,9 +86,6 @@ export async function runLimitOrderSchedulerCycle(): Promise<{
         const flights = result.flights as UnifiedFlight[];
 
         if (flights.length > 0) {
-          // Apply markup so fares are comparable to what customers see
-          await applyMarkupToOffers(flights);
-
           stats.routesSearched++;
 
           // Evaluate each order against the results

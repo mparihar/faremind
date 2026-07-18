@@ -4,7 +4,6 @@ import { logSearch } from '@/lib/db-queries';
 import { rankFlightOffers } from '@/lib/ai-scoring';
 import { rankFlightOffers as rankFlightOffersV3 } from '@/lib/ranking/core/rankOffers';
 import type { RankingOffer } from '@/lib/ranking/types';
-import { applyMarkupToOffers, applyMarkupToRoundTripOptions } from '@/lib/services/markup-service';
 import type { AiUserPreferences, WeightPresetName, AiSortMode } from '@/lib/ai-scoring/types';
 import type { RoundTripUserPrefs } from '@/lib/round-trip-types';
 import { prisma } from '@/lib/db';
@@ -98,8 +97,6 @@ export async function GET(request: NextRequest) {
           date: date!, returnDate, adults, children, infants, cabin,
         });
 
-        // Apply internal markup before AI ranking
-        await applyMarkupToRoundTripOptions(rtResult.options);
       }
 
       // Cache results so flex-date strip gets an instant hit for the center tile
@@ -394,8 +391,6 @@ export async function GET(request: NextRequest) {
     }
 
 
-    // ── Apply internal markup before AI ranking ──────────────────────────
-    await applyMarkupToOffers(backendFlights);
 
     // ── Unified AI Ranking (ONE_WAY) ───────────────────────────────────────
     const sortMode = searchParams.get('sort') as AiSortMode | null;

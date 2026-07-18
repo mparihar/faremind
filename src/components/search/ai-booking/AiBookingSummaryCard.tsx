@@ -319,9 +319,34 @@ export default function AiBookingSummaryCard({
             <span className="text-white/60">Base fare</span>
             <span className="text-white/80 font-medium">{formatPrice(priceSummary.baseFare, currency)}</span>
           </div>
-          <div className="flex justify-between text-[12px]">
-            <span className="text-white/60">Taxes & fees</span>
-            <span className="text-white/80 font-medium">{formatPrice(priceSummary.taxes, currency)}</span>
+          {/* Taxes & fees — expandable */}
+          <div>
+            <button
+              type="button"
+              onClick={() => {
+                const el = document.getElementById('ai-tax-breakdown');
+                if (el) el.classList.toggle('hidden');
+              }}
+              className="flex justify-between text-[12px] w-full group"
+            >
+              <span className="text-white/60 group-hover:text-white/80 transition-colors flex items-center gap-1">
+                Taxes, fees & charges
+                {priceSummary.taxBreakdown && priceSummary.taxBreakdown.length > 0 && (
+                  <svg className="w-3 h-3 opacity-60" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                )}
+              </span>
+              <span className="text-white/80 font-medium">{formatPrice(priceSummary.taxes, currency)}</span>
+            </button>
+            {priceSummary.taxBreakdown && priceSummary.taxBreakdown.length > 0 && (
+              <div id="ai-tax-breakdown" className="hidden mt-1 ml-2 space-y-0.5 border-l border-white/10 pl-2">
+                {priceSummary.taxBreakdown.map((t, i) => (
+                  <div key={i} className="flex justify-between text-[10px]">
+                    <span className="text-white/40">{t.label || t.code}</span>
+                    <span className="text-white/50">{formatPrice(t.amount, currency)}</span>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
           <div className="flex justify-between text-[12px]">
             <span className="text-white/60">Service fee</span>

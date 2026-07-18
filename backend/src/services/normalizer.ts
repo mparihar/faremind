@@ -206,6 +206,22 @@ export function normalizeAmadeusOffer(offer: any, dictionaries?: any): UnifiedFl
  *     }]
  *   }
  */
+// ── Tax code → human-readable label mapping ──
+const TAX_CODE_LABELS: Record<string, string> = {
+  YQF: 'Carrier-Imposed Fuel Surcharge', YQI: 'Carrier-Imposed Surcharge',
+  YRI: 'Carrier-Imposed Fuel Surcharge', YRF: 'Carrier-Imposed Surcharge',
+  US: 'US Transportation Tax', US2: 'US Transportation Tax',
+  P2: 'Aviation Security Fee', AY: 'Passenger Civil Aviation Security Fee',
+  XA: 'APHIS User Fee', XY: 'Immigration User Fee', XY2: 'Immigration User Fee',
+  YC: 'Customs User Fee', XF: 'Passenger Facility Charge',
+  IN: 'India User Development Fee', IN7: 'India GST',
+  CJ: 'Security Charge', RN: 'Government Tax',
+  GB: 'UK Air Passenger Duty', UB: 'UK Passenger Service Charge',
+  QX: 'Service Charge', WY: 'Passenger Service Charge',
+  TP: 'Airport Tax', OI: 'Insurance Surcharge',
+  FR: 'France Aviation Tax', DE: 'Germany Aviation Tax',
+};
+
 export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
   // v2.2 denormalized: FSC at root. v1 flat: FSC inside AirItineraryPricingInfo.
   const fareSourceCode = itinerary.FareSourceCode
@@ -351,6 +367,15 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
       pricingInfo.IsRefundable === true;
     isChangeable = false; // Unknown — don't claim it
   }
+  // ── Tax breakdown — pass through provider tax line items ──
+  const rawTaxBreakUp: Array<{ Amount: string; TaxCode: string }> = pricingInfo._taxBreakUp || [];
+  const taxBreakdown = rawTaxBreakUp
+    .filter(t => parseFloat(t.Amount || '0') > 0)
+    .map(t => ({
+      code: t.TaxCode,
+      amount: Math.round(parseFloat(t.Amount || '0') * 100) / 100,
+      label: TAX_CODE_LABELS[t.TaxCode] || t.TaxCode,
+    }));
 
   return {
     id: generateId(),
@@ -365,7 +390,8 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
     totalPrice,
     baseFare: providerBaseFare,
     taxAmount: providerTaxAmount,
-    providerTotalFare: totalPrice, // Raw Mystifly fare — used by confirm route price-change guard
+    taxBreakdown: taxBreakdown.length > 0 ? taxBreakdown : undefined,
+    providerTotalFare: totalPrice, // Raw provider fare — no markup
     currency,
     cabinClass,
     fareRules: {

@@ -3,7 +3,6 @@ import { searchFlights, getProviderStatus } from '../services/orchestrator';
 import { logSearch } from '../lib/db-queries';
 import { scoreFlights, WEIGHTS } from '../lib/flight/score';
 import { cacheGet, cacheSet, searchKey } from '../services/cache';
-import { applyMarkupToOffers } from '../services/markup-service';
 import type { UnifiedFlight } from '../lib/types';
 import { matchSearchResultsAgainstLimitOrders } from '../services/limit-order-matcher';
 
@@ -98,8 +97,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       let rankedFlights = mergedFlights;
 
-      // ── Apply internal markup before scoring ─────────────────────────────
-      await applyMarkupToOffers(rankedFlights);
 
       if (mergedFlights.length > 0) {
         const metrics = mergedFlights.map((f) => ({ id: f.id, price: f.totalPrice, durationMin: f.totalDuration, stops: f.stops }));

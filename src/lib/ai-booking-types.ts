@@ -41,6 +41,7 @@ export interface AiFareDetails {
   totalPrice: number;
   providerBaseFare?: number;   // Actual provider base fare (before taxes)
   providerTaxAmount?: number;  // Actual provider tax amount
+  taxBreakdown?: Array<{ code: string; amount: number; label?: string }>; // Tax line items
   currency: string;
 
   // Baggage
@@ -136,6 +137,7 @@ export interface AiPriceSummary {
   baseFare: number;            // baseFarePerPax × passengerCount
   serviceFee: number;
   taxes: number;
+  taxBreakdown?: Array<{ code: string; amount: number; label?: string }>; // Detailed tax line items
   protectionFee: number;       // sum of protected passengers
   baggageFee: number;
   insuranceFee: number;

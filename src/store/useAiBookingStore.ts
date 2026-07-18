@@ -140,6 +140,7 @@ function computePriceSummary(
     baseFare,
     serviceFee,
     taxes,
+    taxBreakdown: fareDetails.taxBreakdown,
     protectionFee,
     baggageFee,
     insuranceFee,
@@ -234,6 +235,7 @@ export function buildFareDetails(
     // Scale provider base fare / tax proportionally for the fare tier
     providerBaseFare: flight.baseFare ? Math.round(flight.baseFare * multiplier) : undefined,
     providerTaxAmount: flight.taxAmount ? Math.round(flight.taxAmount * multiplier) : undefined,
+    taxBreakdown: flight.taxBreakdown,
     currency: flight.currency || 'USD',
     carryOnPieces: flight.baggage.carryOn || 1,
     checkedBags,

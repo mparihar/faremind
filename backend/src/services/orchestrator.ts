@@ -254,14 +254,27 @@ async function searchMystifly(params: {
             originDestinationOptions.push({ FlightSegments: segs });
           }
 
-          // Build pricing in v1 format
+          // Build pricing from v2.2 fare — extract base fare + tax breakdown
           let totalAmount = 0;
+          let totalBaseFare = 0;
+          let totalTaxAmount = 0;
           let currency = fare?.Currency || 'USD';
+          const taxBreakUp: Array<{ Amount: string; TaxCode: string }> = [];
+
           if (fare?.PassengerFare) {
             for (const pf of fare.PassengerFare) {
-              totalAmount += parseFloat(pf.TotalFare || '0') * (pf.Quantity || 1);
+              const qty = pf.Quantity || 1;
+              totalAmount += parseFloat(pf.TotalFare || '0') * qty;
+              totalBaseFare += parseFloat(pf.BaseFare || '0') * qty;
+              // Collect tax breakdown items
+              if (Array.isArray(pf.TaxBreakUp)) {
+                for (const tax of pf.TaxBreakUp) {
+                  taxBreakUp.push({ Amount: String(parseFloat(tax.Amount || '0') * qty), TaxCode: tax.TaxCode || '' });
+                }
+              }
             }
           }
+          totalTaxAmount = Math.round((totalAmount - totalBaseFare) * 100) / 100;
 
           // Extract LIVE penalties from API — no guessing
           const penaltyDetail = penalties?.Penaltydetails?.[0];
@@ -278,9 +291,11 @@ async function searchMystifly(params: {
             AirItineraryPricingInfo: {
               ItinTotalFare: {
                 TotalFare: { Amount: String(totalAmount), CurrencyCode: currency },
+                BaseFare: { Amount: String(totalBaseFare), CurrencyCode: currency },
+                TotalTax: { Amount: String(totalTaxAmount), CurrencyCode: currency },
               },
-              // LIVE from API — not hardcoded
               IsRefundable: refundAllowed,
+              _taxBreakUp: taxBreakUp,
             },
             IsRefundable: refundAllowed,
             // Pass live penalty data to normalizer
@@ -432,12 +447,24 @@ async function searchMystiflyLowestFare(params: {
           }
 
           let totalAmount = 0;
+          let totalBaseFare = 0;
+          let totalTaxAmount = 0;
           let currency = fare?.Currency || 'USD';
+          const taxBreakUp: Array<{ Amount: string; TaxCode: string }> = [];
+
           if (fare?.PassengerFare) {
             for (const pf of fare.PassengerFare) {
-              totalAmount += parseFloat(pf.TotalFare || '0') * (pf.Quantity || 1);
+              const qty = pf.Quantity || 1;
+              totalAmount += parseFloat(pf.TotalFare || '0') * qty;
+              totalBaseFare += parseFloat(pf.BaseFare || '0') * qty;
+              if (Array.isArray(pf.TaxBreakUp)) {
+                for (const tax of pf.TaxBreakUp) {
+                  taxBreakUp.push({ Amount: String(parseFloat(tax.Amount || '0') * qty), TaxCode: tax.TaxCode || '' });
+                }
+              }
             }
           }
+          totalTaxAmount = Math.round((totalAmount - totalBaseFare) * 100) / 100;
 
           const penaltyDetail = penalties?.Penaltydetails?.[0];
           const refundAllowed = penaltyDetail?.RefundAllowed === true;
@@ -453,8 +480,11 @@ async function searchMystiflyLowestFare(params: {
             AirItineraryPricingInfo: {
               ItinTotalFare: {
                 TotalFare: { Amount: String(totalAmount), CurrencyCode: currency },
+                BaseFare: { Amount: String(totalBaseFare), CurrencyCode: currency },
+                TotalTax: { Amount: String(totalTaxAmount), CurrencyCode: currency },
               },
               IsRefundable: refundAllowed,
+              _taxBreakUp: taxBreakUp,
             },
             IsRefundable: refundAllowed,
             _penalties: { refundAllowed, changeAllowed, changePenaltyAmount, refundPenaltyAmount, penaltyCurrency },

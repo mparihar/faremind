@@ -42,7 +42,7 @@ export interface BookingContext {
 }
 
 export interface ComputedCharge {
-  chargeType: 'SERVICE_FEE' | 'MARKUP_FEE' | 'PRICE_DROP_PROTECTION' | 'TRAVEL_INSURANCE';
+  chargeType: 'SERVICE_FEE' | 'PRICE_DROP_PROTECTION' | 'TRAVEL_INSURANCE';
   sourceType: 'PLATFORM' | 'PROVIDER' | 'ADMIN_CONFIG';
   ruleId: string | null;
   passengerId?: string;
@@ -189,7 +189,7 @@ export async function calculateCommercialFees(ctx: BookingContext): Promise<FeeC
     orderBy: { priority: 'desc' },
   });
 
-  for (const feeType of ['SERVICE_FEE', 'MARKUP_FEE'] as const) {
+  for (const feeType of ['SERVICE_FEE'] as const) {
     const matchingRules = platformRules.filter(r =>
       r.feeType === feeType &&
       isRuleActive(r) &&
@@ -221,8 +221,7 @@ export async function calculateCommercialFees(ctx: BookingContext): Promise<FeeC
       ctx.bookingTotalBeforeFees,
     );
 
-    if (feeType === 'SERVICE_FEE') serviceFee = amount;
-    if (feeType === 'MARKUP_FEE') markupFee = amount;
+    serviceFee = amount;
 
     charges.push({
       chargeType: feeType,
@@ -233,7 +232,7 @@ export async function calculateCommercialFees(ctx: BookingContext): Promise<FeeC
       quantity: eligible.length,
       percentageValue: Number(rule.percentageValue ?? 0),
       totalAmount: amount,
-      displayToCustomer: feeType === 'SERVICE_FEE', // Markup is never shown to customer
+      displayToCustomer: true,
       ruleSnapshot: JSON.parse(JSON.stringify(rule)),
     });
   }

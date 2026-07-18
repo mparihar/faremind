@@ -79,11 +79,7 @@ export interface RoundTripOption {
   badges?: RoundTripBadge[];
   scoreBreakdown?: RoundTripScoreBreakdown; // debug only
   offerExpiresAt?: string; // ISO 8601 — provider offer expiry timestamp
-
-  // ── Internal markup (never shown to customer) ──
-  providerTotalFare?: number;
-  fareMindMarkupAmount?: number;
-  markupRuleId?: string;
+  providerTotalFare?: number; // Raw provider fare (same as totalPrice)
 }
 
 // ─── User preferences fed into the ranker ───────────────────────────────────

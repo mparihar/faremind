@@ -34,7 +34,7 @@ interface PlatformFeeRule {
   updatedByAdmin?: { fullName: string; email: string } | null;
 }
 
-const FEE_TYPES = ['SERVICE_FEE', 'MARKUP_FEE'] as const;
+const FEE_TYPES = ['SERVICE_FEE'] as const;
 const CALC_MODELS = ['FIXED_PER_BOOKING', 'FIXED_PER_TRAVELER', 'PERCENTAGE_OF_FARE', 'PERCENTAGE_OF_BOOKING_TOTAL', 'HYBRID'] as const;
 const PROVIDER_SCOPES = ['ALL', 'DUFFEL', 'MYSTIFLY', 'OTHER'] as const;
 const CABIN_SCOPES = ['ALL', 'ECONOMY', 'ECONOMY_BASIC', 'ECONOMY_STANDARD', 'ECONOMY_FLEX', 'PREMIUM_ECONOMY', 'BUSINESS', 'FIRST'] as const;

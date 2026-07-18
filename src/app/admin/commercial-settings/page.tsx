@@ -7,11 +7,11 @@ const SECTIONS = [
   {
     href: '/admin/commercial-settings/platform-fees',
     title: 'Platform Fees',
-    description: 'Manage service fees and markup rules. Service fees are displayed to customers; markup is internal only.',
+    description: 'Manage service fee rules. Service fees are displayed to customers as a separate line item.',
     icon: DollarSign,
     color: 'from-orange-500 to-amber-500',
     border: 'border-orange-500/30',
-    badges: ['Service Fee', 'Markup Fee'],
+    badges: ['Service Fee'],
   },
   {
     href: '/admin/commercial-settings/protection-products',
@@ -99,8 +99,7 @@ export default function CommercialSettingsPage() {
       <div className="mt-8 p-4 rounded-xl bg-slate-800/50 border border-slate-700/50">
         <h3 className="text-sm font-bold text-slate-300 mb-2">💡 How it works</h3>
         <ul className="text-xs text-slate-400 space-y-1.5">
-          <li>• <strong className="text-slate-300">Service Fee</strong> is shown as a separate line item to customers.</li>
-          <li>• <strong className="text-slate-300">Markup Fee</strong> is internal — it&apos;s added to the displayed fare but never shown separately.</li>
+          <li>• <strong className="text-slate-300">Service Fee</strong> is shown as a separate line item to customers. Provider fare (base fare + taxes) is passed through as-is.</li>
           <li>• <strong className="text-slate-300">Price Protection</strong> & <strong className="text-slate-300">Travel Insurance</strong> are optional products customers can add.</li>
           <li>• Rules are matched by provider, cabin, trip type, and route scope. Highest priority rule wins.</li>
           <li>• All applied fees are snapshotted at booking time for audit compliance.</li>
