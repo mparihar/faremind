@@ -99,6 +99,8 @@ export function normalizeDuffelOffer(offer: DuffelOffer): UnifiedFlight {
     },
     segments,
     totalPrice,
+    baseFare: offer.base_amount ? parseFloat(offer.base_amount) : undefined,
+    taxAmount: offer.tax_amount ? parseFloat(offer.tax_amount) : undefined,
     currency: offer.total_currency,
     cabinClass,
     fareRules: {

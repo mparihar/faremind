@@ -85,7 +85,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const basePriceNum = parseFloat(base_price);
       const travelers    = parseInt(traveler_count, 10) || 1;
-      // base_price is the all-passenger total (with markup)
+      // base_price is the all-passenger total (exact provider fare)
       // Derive per-person for display, but compute tier totals from the original total
       // to avoid rounding loss (e.g. $2176 / 3 = $725.33 → $725 × 3 = $2175 ≠ $2176)
       const perPersonBase = Math.round(basePriceNum / travelers);

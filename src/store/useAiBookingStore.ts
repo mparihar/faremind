@@ -227,14 +227,18 @@ export function buildFareDetails(
     ? 'Lowest cost option — ideal for simple trips'
     : 'Balanced value with checked bag and flexibility';
 
+  // Scale provider base fare / tax proportionally for the fare tier
+  // Derive missing piece from totalPrice if only one is available
+  const rawBase = flight.baseFare ?? (flight.totalPrice - (flight.taxAmount ?? 0));
+  const rawTax = flight.taxAmount ?? (flight.totalPrice - (flight.baseFare ?? flight.totalPrice));
+
   return {
     fareClass,
     name: FARE_CLASS_NAMES[fareClass],
     basePrice,
     totalPrice,
-    // Scale provider base fare / tax proportionally for the fare tier
-    providerBaseFare: flight.baseFare ? Math.round(flight.baseFare * multiplier) : undefined,
-    providerTaxAmount: flight.taxAmount ? Math.round(flight.taxAmount * multiplier) : undefined,
+    providerBaseFare: rawBase > 0 ? Math.round(rawBase * multiplier) : undefined,
+    providerTaxAmount: rawTax > 0 ? Math.round(rawTax * multiplier) : undefined,
     taxBreakdown: flight.taxBreakdown,
     currency: flight.currency || 'USD',
     carryOnPieces: flight.baggage.carryOn || 1,
@@ -418,10 +422,13 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     const flight = selectedFlight;
     let providerBaseFare: number | undefined;
     let providerTaxAmount: number | undefined;
-    if (flight?.baseFare && flight.taxAmount && flight.totalPrice > 0) {
+    if (flight && flight.totalPrice > 0) {
       const ratio = fare.totalPrice / flight.totalPrice;
-      providerBaseFare = Math.round(flight.baseFare * ratio);
-      providerTaxAmount = Math.round(flight.taxAmount * ratio);
+      // Use actual provider data; derive the missing piece from totalPrice
+      const flightBase = flight.baseFare ?? (flight.totalPrice - (flight.taxAmount ?? 0));
+      const flightTax = flight.taxAmount ?? (flight.totalPrice - (flight.baseFare ?? flight.totalPrice));
+      providerBaseFare = Math.round(flightBase * ratio);
+      providerTaxAmount = Math.round(flightTax * ratio);
       // Ensure they sum to totalPrice (fix rounding)
       const diff = fare.totalPrice - (providerBaseFare + providerTaxAmount);
       if (diff !== 0) providerTaxAmount += diff;
@@ -434,6 +441,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
       totalPrice: fare.totalPrice,
       providerBaseFare,
       providerTaxAmount,
+      taxBreakdown: selectedFlight?.taxBreakdown,
       currency: fare.currency,
       carryOnPieces: fare.baggage.carryOnPieces,
       checkedBags: fare.baggage.checked,
