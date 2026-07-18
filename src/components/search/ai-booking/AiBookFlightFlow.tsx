@@ -979,7 +979,7 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
               <div className="flex items-center justify-between text-[12px] text-slate-500">
                 <span>{store.selectedFlight.airline.name}</span>
                 <span className="text-[#F97316] font-bold">
-                  {fmt(store.priceSummary.baseFare)}
+                  {fmt(store.priceSummary.baseFare + store.priceSummary.taxes)}
                   {store.passengerCount > 1 && (
                     <span className="text-slate-400 font-normal ml-1">({store.passengerCount} pax)</span>
                   )}
