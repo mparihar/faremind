@@ -44,11 +44,28 @@ function computeBookingPricing(
   fallbackBase: number,
   extraBags: number,
   protection: boolean,
+  sourceFlight?: { baseFare?: number; taxAmount?: number; totalPrice: number; taxBreakdown?: Array<{ code: string; amount: number; label?: string }> } | null,
 ) {
   const fareBase      = selectedFare?.totalPrice ?? fallbackBase;
   const protectionFee = protection ? (selectedFare?.protectionFee ?? Math.min(Math.max(Math.round(fareBase * 0.06), 49), 399)) : 0;
   const baggageFee    = extraBags * 35;
-  return { fareBase, protectionFee, baggageFee, total: fareBase + protectionFee + baggageFee };
+
+  // Split fareBase into baseFare + taxes using provider data
+  const sf = sourceFlight;
+  let baseFare = fareBase;
+  let taxes = 0;
+  if (sf && sf.totalPrice > 0) {
+    const ratio = fareBase / sf.totalPrice;
+    const rawBase = sf.baseFare ?? (sf.totalPrice - (sf.taxAmount ?? 0));
+    const rawTax = sf.taxAmount ?? (sf.totalPrice - (sf.baseFare ?? sf.totalPrice));
+    baseFare = Math.round(rawBase * ratio);
+    taxes = Math.round(rawTax * ratio);
+    // Fix rounding so base + tax = fareBase
+    const diff = fareBase - (baseFare + taxes);
+    if (diff !== 0) taxes += diff;
+  }
+
+  return { fareBase, baseFare, taxes, taxBreakdown: sf?.taxBreakdown, protectionFee, baggageFee, total: fareBase + protectionFee + baggageFee };
 }
 
 // ─── Segment display helpers ──────────────────────────────────────────────────
@@ -283,8 +300,19 @@ function ItineraryReviewStep({
           <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider mb-3">Price Breakdown</p>
           <div className="space-y-2">
             <div className="flex justify-between text-sm">
-              <span className="text-slate-500">Selected fare</span>
-              <span className="text-slate-900 font-medium">{formatPrice(pricing.fareBase, currency)}</span>
+              <span className="text-slate-500">Base fare</span>
+              <span className="text-slate-900 font-medium">{formatPrice(pricing.baseFare, currency)}</span>
+            </div>
+            <div>
+              <button type="button" onClick={() => { const el = document.getElementById('bk-tax-bd-1'); if (el) el.classList.toggle('hidden'); }} className="flex justify-between text-sm w-full text-slate-500 hover:text-slate-700 transition-colors">
+                <span className="flex items-center gap-1">Taxes, fees &amp; charges{pricing.taxBreakdown && pricing.taxBreakdown.length > 0 && (<svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)}</span>
+                <span className="text-slate-900 font-medium">{formatPrice(pricing.taxes, currency)}</span>
+              </button>
+              {pricing.taxBreakdown && pricing.taxBreakdown.length > 0 && (
+                <div id="bk-tax-bd-1" className="hidden mt-1 ml-3 space-y-0.5 border-l-2 border-slate-200 pl-3">
+                  {pricing.taxBreakdown.map((t, i) => (<div key={i} className="flex justify-between text-xs text-slate-400"><span>{t.label || t.code}</span><span>{formatPrice(t.amount, currency)}</span></div>))}
+                </div>
+              )}
             </div>
             {pricing.protectionFee > 0 && (
               <div className="flex justify-between text-sm">
@@ -730,7 +758,8 @@ function ReviewStep({
         </Section>
 
         <Section title="Price Breakdown">
-          <ReviewRow label="Selected fare" value={formatPrice(pricing.fareBase, currency)} />
+          <ReviewRow label="Base fare" value={formatPrice(pricing.baseFare, currency)} />
+          <ReviewRow label="Taxes, fees & charges" value={formatPrice(pricing.taxes, currency)} />
           {pricing.baggageFee > 0   && <ReviewRow label="Extra bags"       value={`+${formatPrice(pricing.baggageFee, currency)}`} />}
           {pricing.protectionFee > 0 && <ReviewRow label="Price protection" value={`+${formatPrice(pricing.protectionFee, currency)}`} accent />}
           <div className="border-t border-slate-100 pt-3 mt-1 flex justify-between items-center">
@@ -903,7 +932,11 @@ function OrderSummary({ routeLabel, airlineName, fareName, extraBags, protection
       <div className="space-y-2.5 pb-4 border-b border-slate-100 text-sm">
         <div className="flex justify-between">
           <span className="text-slate-500">Base fare</span>
-          <span className="text-slate-900">{formatPrice(pricing.fareBase, currency)}</span>
+          <span className="text-slate-900">{formatPrice(pricing.baseFare, currency)}</span>
+          </div>
+          <div className="flex justify-between text-sm">
+          <span className="text-slate-500">Taxes, fees & charges</span>
+          <span className="text-slate-900">{formatPrice(pricing.taxes, currency)}</span>
         </div>
         {extraBags > 0 && (
           <div className="flex justify-between">
@@ -974,7 +1007,7 @@ function BookingContent() {
   const base         = selectedFare?.totalPrice ?? fallbackBase;
   const currency     = selectedFare?.currency ?? roundTrip?.currency ?? flight?.currency ?? 'USD';
   const displaySegs  = getDisplaySegments(flight, roundTrip);
-  const pricing      = computeBookingPricing(selectedFare, fallbackBase, extraBags, priceDropProtection);
+  const pricing      = computeBookingPricing(selectedFare, fallbackBase, extraBags, priceDropProtection, roundTrip ?? flight);
 
   // Look up full FareOption from fare store payload (for feature checklist)
   const fareOption: FareOption | null = (() => {

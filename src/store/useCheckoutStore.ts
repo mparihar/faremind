@@ -66,6 +66,9 @@ export interface PerPassengerPrice {
 export interface PricingBreakdown {
   perPassenger: PerPassengerPrice[];
   fareTotal: number;
+  totalBaseFare: number;   // sum of perPassenger baseFare
+  totalTaxes: number;      // sum of perPassenger taxes
+  taxBreakdown?: Array<{ code: string; amount: number; label?: string }>;
   seatFees: number;
   mealFees: number;
   baggageFees: number;
@@ -463,8 +466,13 @@ export function buildLocalPricing(store: CheckoutStore, pricingConfig?: PricingC
   const subtotal = allPaxFareTotal
     + seatFees + mealFees + baggageFees + protectionFee + insuranceFee + serviceFee;
 
+  const totalBaseFare = perPassenger.reduce((s, p) => s + p.baseFare, 0);
+  const totalTaxes = perPassenger.reduce((s, p) => s + p.taxes, 0);
+
   return {
     perPassenger, fareTotal: allPaxFareTotal,
+    totalBaseFare, totalTaxes,
+    taxBreakdown: sourceFlight?.taxBreakdown,
     seatFees, mealFees, baggageFees,
     protectionFee, insuranceFee, serviceFee,
     subtotal, total: subtotal,

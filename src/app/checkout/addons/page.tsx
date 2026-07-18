@@ -623,7 +623,33 @@ function PriceSummary({
       <div className="space-y-1.5 text-sm">
         <div className="flex justify-between text-slate-600">
           <span>Base fare</span>
-          <span>{fmt(pricing.fareTotal)}</span>
+          <span>{fmt(pricing.totalBaseFare)}</span>
+        </div>
+        {/* Taxes & fees — expandable */}
+        <div>
+          <button
+            type="button"
+            onClick={() => { const el = document.getElementById('addons-tax-bd'); if (el) el.classList.toggle('hidden'); }}
+            className="flex justify-between text-sm w-full text-slate-600 hover:text-slate-800 transition-colors"
+          >
+            <span className="flex items-center gap-1">
+              Taxes, fees &amp; charges
+              {pricing.taxBreakdown && pricing.taxBreakdown.length > 0 && (
+                <svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+              )}
+            </span>
+            <span>{fmt(pricing.totalTaxes)}</span>
+          </button>
+          {pricing.taxBreakdown && pricing.taxBreakdown.length > 0 && (
+            <div id="addons-tax-bd" className="hidden mt-1 ml-3 space-y-0.5 border-l-2 border-slate-200 pl-3">
+              {pricing.taxBreakdown.map((t, i) => (
+                <div key={i} className="flex justify-between text-xs text-slate-400">
+                  <span>{t.label || t.code}</span>
+                  <span>{fmt(t.amount)}</span>
+                </div>
+              ))}
+            </div>
+          )}
         </div>
         {pricing.seatFees > 0 && (
           <div className="flex justify-between text-slate-600">

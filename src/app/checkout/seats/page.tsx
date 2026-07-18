@@ -449,16 +449,22 @@ function ItineraryPanel({
 
         {/* Base fares */}
         <div className="space-y-2 text-sm">
-          {pricing.perPassenger.map((pp, i) => (
-            <div key={pp.passengerId} className="flex justify-between">
-              <span className="text-slate-500">
-                Pax {i + 1} flight
-              </span>
-              <span className="font-medium text-slate-800">
-                {formatPrice(pp.subtotal, currency)}
-              </span>
-            </div>
-          ))}
+          <div className="flex justify-between">
+            <span className="text-slate-500">Base fare</span>
+            <span className="font-medium text-slate-800">{formatPrice(pricing.totalBaseFare, currency)}</span>
+          </div>
+          {/* Taxes — expandable */}
+          <div>
+            <button type="button" onClick={() => { const el = document.getElementById('seats-tax-bd'); if (el) el.classList.toggle('hidden'); }} className="flex justify-between text-sm w-full text-slate-500 hover:text-slate-700 transition-colors">
+              <span className="flex items-center gap-1">Taxes, fees &amp; charges{pricing.taxBreakdown && pricing.taxBreakdown.length > 0 && (<svg className="w-3 h-3 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>)}</span>
+              <span className="text-slate-500">{formatPrice(pricing.totalTaxes, currency)}</span>
+            </button>
+            {pricing.taxBreakdown && pricing.taxBreakdown.length > 0 && (
+              <div id="seats-tax-bd" className="hidden mt-1 ml-3 space-y-0.5 border-l-2 border-slate-200 pl-3">
+                {pricing.taxBreakdown.map((t, i) => (<div key={i} className="flex justify-between text-xs text-slate-400"><span>{t.label || t.code}</span><span>{formatPrice(t.amount, currency)}</span></div>))}
+              </div>
+            )}
+          </div>
 
           {pricing.serviceFee > 0 && (
             <div className="flex justify-between">

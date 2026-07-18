@@ -198,6 +198,15 @@ async function searchMystifly(params: {
       const penaltiesMap = new Map<number, any>();
       for (const p of penaltiesList) penaltiesMap.set(p.PenaltiesInfoRef, p);
 
+      // ── DIAGNOSTIC: raw penalty data from API ──
+      const refundPenalties = penaltiesList.filter((p: any) => p.Penaltydetails?.[0]?.RefundAllowed === true);
+      console.log(`[Mystifly v2.2] PenaltiesInfoList: ${penaltiesList.length} entries, ${refundPenalties.length} have RefundAllowed=true`);
+      if (refundPenalties.length > 0) {
+        console.log(`[Mystifly v2.2] First refundable penalty: ${JSON.stringify(refundPenalties[0]).slice(0, 300)}`);
+      }
+      if (penaltiesList.length > 0 && refundPenalties.length === 0) {
+        console.log(`[Mystifly v2.2] First penalty sample: ${JSON.stringify(penaltiesList[0]).slice(0, 300)}`);
+      }
       denormalized = itineraries.map((itin: any) => {
         try {
           const ods = itin.OriginDestinations || [];
@@ -284,6 +293,11 @@ async function searchMystifly(params: {
           const refundPenaltyAmount = parseFloat(penaltyDetail?.RefundPenaltyAmount || '0');
           const penaltyCurrency = penaltyDetail?.Currency || '';
 
+          // ── DIAGNOSTIC: trace refundable from raw API ──
+          if (refundAllowed) {
+            console.log(`[Mystifly v2.2 REFUNDABLE] ✅ airline=${itin.ValidatingCarrier} FSC=${resolvedFSC?.slice(0,20)}... refundAllowed=${refundAllowed} rawPenalty=${JSON.stringify(penaltyDetail)?.slice(0,200)}`);
+          }
+
           return {
             FareSourceCode: resolvedFSC,
             ValidatingAirlineCode: itin.ValidatingCarrier || '',
@@ -339,8 +353,19 @@ async function searchMystifly(params: {
       .filter(Boolean) as UnifiedFlight[];
 
     // ── Pipeline diagnostic ──
-    const v2Refundable = flights.filter(f => f.isRefundable).length;
+    const v2Refundable = flights.filter(f => f.fareRules.refundable).length;
     console.log(`[Mystifly v2.2] Raw itineraries: ${itineraries.length} → Denormalized: ${denormalized.length} → Normalized: ${flights.length} (${v2Refundable} refundable)`);
+    if (v2Refundable > 0) {
+      const refundableFlights = flights.filter(f => f.fareRules.refundable);
+      for (const rf of refundableFlights) {
+        console.log(`  ✅ REFUNDABLE: ${rf.airline.code} $${rf.totalPrice} base=$${rf.baseFare ?? '?'} tax=$${rf.taxAmount ?? '?'} FSC=${rf.providerOfferId?.slice(0,20)}...`);
+      }
+    }
+    // Also log a few non-refundable for comparison
+    const nonRefSample = flights.filter(f => !f.fareRules.refundable).slice(0, 2);
+    for (const nrf of nonRefSample) {
+      console.log(`  ❌ NON-REFUNDABLE: ${nrf.airline.code} $${nrf.totalPrice} base=$${nrf.baseFare ?? '?'} tax=$${nrf.taxAmount ?? '?'}`);
+    }
 
     // Tag all v2/v2.2 flights as branded fares
     for (const f of flights) f.fareType = 'branded';
@@ -509,7 +534,7 @@ async function searchMystiflyLowestFare(params: {
       .filter(Boolean) as UnifiedFlight[];
 
     // ── Pipeline diagnostic ──
-    const v1Refundable = flights.filter(f => f.isRefundable).length;
+    const v1Refundable = flights.filter(f => f.fareRules.refundable).length;
     console.log(`[Mystifly v1] Raw itineraries: ${denormalized.length} → Normalized: ${flights.length} (${v1Refundable} refundable)`);
 
     // Tag all v1 flights as lowest fares

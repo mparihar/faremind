@@ -630,10 +630,42 @@ export default function CheckoutItineraryPage() {
                         </div>
                       </div>
 
-                      {/* Fare & Taxes */}
+                      {/* Base Fare */}
                       <div>
-                        <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-1">Total Fare</p>
-                        <p className="text-lg font-bold text-slate-900">{formatPrice(fareAndTaxes, currency)}</p>
+                        <div className="flex justify-between text-sm">
+                          <span className="text-slate-600">Base fare</span>
+                          <span className="font-medium text-slate-900">{formatPrice(pricing.totalBaseFare, currency)}</span>
+                        </div>
+                      </div>
+
+                      {/* Taxes & Fees — expandable */}
+                      <div>
+                        <button
+                          type="button"
+                          onClick={() => {
+                            const el = document.getElementById('checkout-tax-breakdown');
+                            if (el) el.classList.toggle('hidden');
+                          }}
+                          className="flex justify-between text-sm w-full group"
+                        >
+                          <span className="text-slate-600 group-hover:text-slate-800 transition-colors flex items-center gap-1">
+                            Taxes, fees &amp; charges
+                            {pricing.taxBreakdown && pricing.taxBreakdown.length > 0 && (
+                              <svg className="w-3.5 h-3.5 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                            )}
+                          </span>
+                          <span className="font-medium text-slate-900">{formatPrice(pricing.totalTaxes, currency)}</span>
+                        </button>
+                        {pricing.taxBreakdown && pricing.taxBreakdown.length > 0 && (
+                          <div id="checkout-tax-breakdown" className="hidden mt-1.5 ml-3 space-y-0.5 border-l-2 border-slate-200 pl-3">
+                            {pricing.taxBreakdown.map((t, i) => (
+                              <div key={i} className="flex justify-between text-xs">
+                                <span className="text-slate-400">{t.label || t.code}</span>
+                                <span className="text-slate-400">{formatPrice(t.amount, currency)}</span>
+                              </div>
+                            ))}
+                          </div>
+                        )}
                       </div>
 
                       {/* Service Fee */}
