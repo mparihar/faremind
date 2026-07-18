@@ -540,6 +540,14 @@ export interface MystiflySearchParams {
   searchVersion?: string; // 'v1' | 'v2' | 'v2.2'
   /** Multi-city legs — when provided, origin/destination/departureDate/returnDate are ignored */
   legs?: MultiCityLeg[];
+  /** Filter to refundable fares only. Default: false (return all fares) */
+  isRefundable?: boolean;
+  /** Include nearby airports in search. Default: false */
+  nearByAirports?: boolean;
+  /** Search for resident fares. Default: false */
+  isResidentFare?: boolean;
+  /** Whether infant has a seat. Default: false (lap infant) */
+  isInfantWithSeat?: boolean;
 }
 
 /**
@@ -598,13 +606,13 @@ export async function searchFlights(params: MystiflySearchParams): Promise<any> 
       AirTripType: airTripType,
     },
     PricingSourceType: params.pricingSource || 'All',
-    IsRefundable: false,
+    IsRefundable: params.isRefundable ?? false,
     PassengerTypeQuantities: passengerQuantities,
     RequestOptions: params.maxResults || 'TwoHundred',
-    NearByAirports: false,
-    IsResidentFare: false,
+    NearByAirports: params.nearByAirports ?? false,
+    IsResidentFare: params.isResidentFare ?? false,
     Target: MYSTIFLY_TARGET,
-    IsInfantWithSeat: false,
+    IsInfantWithSeat: params.isInfantWithSeat ?? false,
   };
 
   // Determine search API version (default v2.2)
