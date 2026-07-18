@@ -97,6 +97,17 @@ export interface CancelResult {
   raw: unknown;
 }
 
+export interface NormalizedProviderRefundStatus {
+  status: 'PENDING' | 'PROCESSING' | 'SETTLED' | 'REJECTED' | 'FAILED' | 'UNKNOWN';
+  providerRefundId?: string;
+  settlementReference?: string;
+  reimbursedAmount?: number;
+  currency?: string;
+  settledAt?: string;
+  rawStatus?: string;
+  rawResponse: unknown;
+}
+
 export interface SeatMapRow {
   row: number;
   seats: SeatMapSeat[];
@@ -223,6 +234,14 @@ export interface IBookingProvider {
     confirmedAt: string;
     raw: unknown;
   }>;
+
+  // ── Reimbursement monitoring ────────────────────
+
+  /** Check provider refund/settlement status for reimbursement tracking */
+  getProviderRefundStatus(
+    refundRequestId: string,
+    orderId: string,
+  ): Promise<NormalizedProviderRefundStatus>;
 }
 
 // ═══════════════════════════════════════════════
@@ -441,6 +460,40 @@ export class DuffelAdapter implements IBookingProvider {
       confirmedAt: confirmed.confirmed_at || new Date().toISOString(),
       raw: confirmed,
     };
+  }
+
+  // ── Reimbursement monitoring ─────────────────────────────────────────
+
+  async getProviderRefundStatus(
+    refundRequestId: string,
+    orderId: string,
+  ): Promise<NormalizedProviderRefundStatus> {
+    // Duffel: check order cancellation/refund status
+    // For now, Duffel handles settlement internally — treat all completed cancellations as settled
+    try {
+      const order = await duffelClient.getOrder(orderId);
+      const rawStatus = (order as any)?.payment_status?.refund_status || 'unknown';
+
+      let status: NormalizedProviderRefundStatus['status'] = 'UNKNOWN';
+      if (rawStatus === 'refunded' || rawStatus === 'settled') status = 'SETTLED';
+      else if (rawStatus === 'pending') status = 'PENDING';
+      else if (rawStatus === 'processing') status = 'PROCESSING';
+      else if (rawStatus === 'failed') status = 'FAILED';
+      else if (rawStatus === 'rejected') status = 'REJECTED';
+
+      return {
+        status,
+        rawStatus,
+        providerRefundId: orderId,
+        rawResponse: order,
+      };
+    } catch (err) {
+      return {
+        status: 'UNKNOWN',
+        rawStatus: 'error',
+        rawResponse: { error: err instanceof Error ? err.message : String(err) },
+      };
+    }
   }
 }
 
@@ -1010,6 +1063,76 @@ export class MystiflyAdapter implements IBookingProvider {
       confirmedAt: new Date().toISOString(),
       raw: result,
     };
+  }
+
+  // ── Reimbursement monitoring ─────────────────────────────────────────
+
+  async getProviderRefundStatus(
+    refundRequestId: string,
+    orderId: string,
+  ): Promise<NormalizedProviderRefundStatus> {
+    // Mystifly: use searchPtrStatus to check void/refund PTR settlement
+    // refundRequestId is our quoteId format: mystifly_void_{mfRef}_{ptrId} or mystifly_refund_{mfRef}_{ptrId}
+    const mfRef = orderId || refundRequestId.replace(/^mystifly_(void|refund)_/, '').replace(/_\d+$/, '');
+
+    try {
+      const ptrResult = await mystiflyClient.searchPtrStatus(mfRef);
+      const data = ptrResult?.Data || ptrResult;
+      const ptrRecords = data?.PostTicketingRequests || data?.Records || [];
+
+      // Find the relevant PTR record (void or refund)
+      const relevantPtr = Array.isArray(ptrRecords)
+        ? ptrRecords.find((r: any) =>
+            r.PtrType === 'Void' || r.PtrType === 'Refund' ||
+            r.ptrType === 'void' || r.ptrType === 'refund'
+          )
+        : null;
+
+      if (!relevantPtr) {
+        return {
+          status: 'UNKNOWN',
+          rawStatus: 'no_ptr_found',
+          rawResponse: ptrResult,
+        };
+      }
+
+      // Map Mystifly PTR statuses to normalized statuses
+      const ptrStatus = (relevantPtr.Status || relevantPtr.status || '').toLowerCase();
+      let normalizedStatus: NormalizedProviderRefundStatus['status'] = 'UNKNOWN';
+
+      if (['settled', 'completed', 'processed', 'approved', 'refunded', 'voided'].includes(ptrStatus)) {
+        normalizedStatus = 'SETTLED';
+      } else if (['processing', 'in_progress', 'inprogress'].includes(ptrStatus)) {
+        normalizedStatus = 'PROCESSING';
+      } else if (['pending', 'submitted', 'open', 'new'].includes(ptrStatus)) {
+        normalizedStatus = 'PENDING';
+      } else if (['rejected', 'denied', 'declined'].includes(ptrStatus)) {
+        normalizedStatus = 'REJECTED';
+      } else if (['failed', 'error', 'cancelled'].includes(ptrStatus)) {
+        normalizedStatus = 'FAILED';
+      }
+
+      return {
+        status: normalizedStatus,
+        rawStatus: ptrStatus,
+        providerRefundId: relevantPtr.PtrId?.toString() || relevantPtr.UniqueId || null,
+        settlementReference: relevantPtr.SettlementReference || relevantPtr.TransactionId || null,
+        reimbursedAmount: relevantPtr.RefundAmount != null
+          ? parseFloat(String(relevantPtr.RefundAmount))
+          : relevantPtr.Amount != null
+            ? parseFloat(String(relevantPtr.Amount))
+            : undefined,
+        currency: relevantPtr.Currency || 'USD',
+        settledAt: relevantPtr.SettledAt || relevantPtr.ProcessedAt || relevantPtr.CompletedAt || null,
+        rawResponse: ptrResult,
+      };
+    } catch (err) {
+      return {
+        status: 'UNKNOWN',
+        rawStatus: 'error',
+        rawResponse: { error: err instanceof Error ? err.message : String(err) },
+      };
+    }
   }
 }
 

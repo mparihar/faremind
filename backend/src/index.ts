@@ -40,7 +40,9 @@ import mystiflyBookingPlugin from './routes/mystifly-booking';
 import mystiflyPtrPlugin     from './routes/mystifly-ptr';
 import rankingPlugin         from './ranking/route';
 import limitOrdersPlugin     from './routes/limit-orders';
+import adminCancellationQueuePlugin from './routes/admin-cancellation-queue';
 import { startLimitOrderScheduler, stopLimitOrderScheduler } from './workers/limit-order-cron';
+import { startRefundReconciliationScheduler, stopRefundReconciliationScheduler } from './workers/refund-reconciliation-cron';
 
 const PORT = parseInt(process.env.PORT || process.env.BACKEND_PORT || '3001');
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -152,6 +154,7 @@ async function main() {
   fastify.register(mystiflyPtrPlugin,         { prefix: '/api/mystifly-ptr' });
   fastify.register(rankingPlugin,             { prefix: '/api/ranking' });
   fastify.register(limitOrdersPlugin,          { prefix: '/api/limit-orders' });
+  fastify.register(adminCancellationQueuePlugin, { prefix: '/api/admin/cancellation-queue' });
 
   // ─── 404 / error handlers ────────────────────────────────────────────────
 
@@ -171,9 +174,10 @@ async function main() {
 
     // Start background workers
     startLimitOrderScheduler();
+    startRefundReconciliationScheduler();
 
     // Graceful shutdown
-    const shutdown = () => { stopLimitOrderScheduler(); fastify.close(); };
+    const shutdown = () => { stopLimitOrderScheduler(); stopRefundReconciliationScheduler(); fastify.close(); };
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
   } catch (err) {

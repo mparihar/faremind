@@ -1,10 +1,11 @@
 /**
- * Manage-Booking Routes — Post-Booking Management API
- * NEW route plugin — does NOT modify any existing routes.
+ * Manage-Booking Routes â€” Post-Booking Management API
+ * NEW route plugin â€” does NOT modify any existing routes.
  */
 
 import { FastifyPluginAsync } from 'fastify';
 import { getProvider } from '../services/provider-adapter';
+import { initiateCancellation } from '../services/cancellation-orchestrator';
 import * as mbq from '../lib/manage-booking-queries';
 import * as emails from '../lib/manage-booking-emails';
 import { prisma } from '../lib/db';
@@ -67,7 +68,7 @@ async function getAdminServiceFee(booking: any): Promise<number> {
     const baseFare = Number(booking.totalAmount);
 
     const matchedRule = rules.find(matchesRule);
-    if (!matchedRule) return 0; // no active rule configured — no fee
+    if (!matchedRule) return 0; // no active rule configured â€” no fee
 
 
     if (matchedRule.calculationModel === 'FIXED_PER_BOOKING') {
@@ -80,14 +81,14 @@ async function getAdminServiceFee(booking: any): Promise<number> {
       return Math.round(Number(matchedRule.fixedAmount ?? 20) * passengersCount + baseFare * (Number(matchedRule.percentageValue ?? 0) / 100));
     }
 
-    return 0; // unknown model — no fee
+    return 0; // unknown model â€” no fee
   } catch (err) {
     console.error('[getAdminServiceFee] Error calculating admin service fee:', err);
-    return 0; // DB error — no fee rather than guess
+    return 0; // DB error â€” no fee rather than guess
   }
 }
 
-// ── Idempotency lock for cancellation operations ──────────────────────────────
+// â”€â”€ Idempotency lock for cancellation operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
 // Prevents duplicate void/refund calls from double-clicks or retries.
 // Key: bookingId, Value: timestamp when lock was acquired.
 const cancellationLocks = new Map<string, number>();
@@ -113,23 +114,23 @@ function releaseCancelLock(bookingId: string): void {
  */
 async function createCancellationSupportTicket(booking: any, reason: string): Promise<void> {
   try {
-    const route = `${booking.originAirport} → ${booking.destinationAirport}`;
+    const route = `${booking.originAirport} â†’ ${booking.destinationAirport}`;
     const amount = fmtCurrency(Number(booking.totalAmount), booking.currency);
     const passengerCount = booking.passengers?.length ?? 0;
     const passengerList = (booking.passengers || []).map((p: any) =>
-      `  • ${p.firstName} ${p.lastName} (${p.passengerType || 'Adult'})${p.ticketNumber ? ` — Ticket: ${p.ticketNumber}` : ''}`
+      `  â€¢ ${p.firstName} ${p.lastName} (${p.passengerType || 'Adult'})${p.ticketNumber ? ` â€” Ticket: ${p.ticketNumber}` : ''}`
     ).join('\n');
     const pnrList = (booking.pnrs || []).map((p: any) =>
-      `  • ${p.pnrCode} (${p.providerName || booking.primaryProvider || 'N/A'}) — Status: ${p.status || 'Unknown'}`
+      `  â€¢ ${p.pnrCode} (${p.providerName || booking.primaryProvider || 'N/A'}) â€” Status: ${p.status || 'Unknown'}`
     ).join('\n');
 
     await prisma.supportTicket.create({
       data: {
-        subject: `Cancellation Assistance Required: ${booking.masterBookingReference} — ${booking.customerName ?? 'Customer'}`,
+        subject: `Cancellation Assistance Required: ${booking.masterBookingReference} â€” ${booking.customerName ?? 'Customer'}`,
         description: [
           `A cancellation could not be processed automatically for booking ${booking.masterBookingReference}.`,
           '',
-          '── Booking Details ──',
+          'â”€â”€ Booking Details â”€â”€',
           `Reference: ${booking.masterBookingReference}`,
           `Airline PNR: ${booking.masterPnr ?? 'N/A'}`,
           `Route: ${route}`,
@@ -139,17 +140,17 @@ async function createCancellationSupportTicket(booking: any, reason: string): Pr
           `Booking Status: ${booking.bookingStatus ?? 'N/A'}`,
           `Ticketing Status: ${booking.ticketingStatus ?? 'N/A'}`,
           '',
-          '── Customer ──',
+          'â”€â”€ Customer â”€â”€',
           `Name: ${booking.customerName ?? 'N/A'}`,
           `Email: ${booking.customerEmail ?? 'N/A'}`,
           '',
-          `── Passengers (${passengerCount}) ──`,
+          `â”€â”€ Passengers (${passengerCount}) â”€â”€`,
           passengerList || '  No passenger data available',
           '',
-          '── PNR Records ──',
+          'â”€â”€ PNR Records â”€â”€',
           pnrList || '  No PNR data available',
           '',
-          '── Failure Reason ──',
+          'â”€â”€ Failure Reason â”€â”€',
           reason,
           '',
           'Action Required: Please review this booking and manually process the cancellation with the airline provider.',
@@ -190,7 +191,7 @@ async function createFlightChangeSupportTicket(
   newDepartureDate?: string,
 ): Promise<void> {
   try {
-    const route = `${booking.originAirport} → ${booking.destinationAirport}`;
+    const route = `${booking.originAirport} â†’ ${booking.destinationAirport}`;
     const amount = fmtCurrency(Number(booking.totalAmount), booking.currency);
     const providerPnr = booking.pnrs?.find((p: any) => p.providerOrderId);
     const airlinePnr = providerPnr?.airlinePnr || booking.masterPnr || 'N/A';
@@ -198,7 +199,7 @@ async function createFlightChangeSupportTicket(
 
     await prisma.supportTicket.create({
       data: {
-        subject: `Flight Change Assistance: ${booking.masterBookingReference} — ${booking.customerName ?? 'Customer'}`,
+        subject: `Flight Change Assistance: ${booking.masterBookingReference} â€” ${booking.customerName ?? 'Customer'}`,
         description: [
           `A flight change could not be processed automatically for booking ${booking.masterBookingReference}.`,
           '',
@@ -246,10 +247,10 @@ async function createFlightChangeSupportTicket(
 async function sendBookingOtpEmail(toEmail: string, toName: string, otp: string): Promise<void> {
   const apiKey = process.env.BREVO_API_KEY;
   if (!apiKey) {
-    console.warn(`[manage-booking] BREVO_API_KEY not set — OTP for ${toEmail}: ${otp}`);
+    console.warn(`[manage-booking] BREVO_API_KEY not set â€” OTP for ${toEmail}: ${otp}`);
     return;
   }
-  const emailSubject = `${otp} — Your FAREMIND booking access code`;
+  const emailSubject = `${otp} â€” Your FAREMIND booking access code`;
   const html = `
     <div style="font-family:sans-serif;max-width:480px;margin:0 auto;padding:32px">
       <h2 style="color:#1ABC9C;margin-bottom:8px">Your FAREMIND booking access code</h2>
@@ -284,7 +285,7 @@ async function sendBookingOtpEmail(toEmail: string, toName: string, otp: string)
 
 const plugin: FastifyPluginAsync = async (fastify) => {
 
-  // ── Guest Lookup ────────────────────────────────────────────────────────────
+  // â”€â”€ Guest Lookup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.post('/lookup', async (request, reply) => {
     try {
       const { bookingRef, lastName } = request.body as { bookingRef?: string; lastName?: string };
@@ -326,7 +327,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/lookup/verify-otp]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── User Bookings ───────────────────────────────────────────────────────────
+  // â”€â”€ User Bookings â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.get('/user/:userId/bookings', async (request, reply) => {
     try {
       const { userId } = request.params as { userId: string };
@@ -377,7 +378,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/user/bookings]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Booking Detail ──────────────────────────────────────────────────────────
+  // â”€â”€ Booking Detail â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.get('/:bookingId', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -387,7 +388,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/detail]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Available Actions ───────────────────────────────────────────────────────
+  // â”€â”€ Available Actions â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.get('/:bookingId/actions', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -398,7 +399,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const existingCancel = await mbq.getCancellationByBookingId(bookingId);
       const primaryPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
 
-      // ── Resolve fare rules ────────────────────────────────────────────────
+      // â”€â”€ Resolve fare rules â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       // If stored fare rules are both false (the schema default), this booking
       // was likely created before the policy was carried through the checkout
       // flow. Query the live provider order as a fallback.
@@ -427,7 +428,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
                 cancellationFee: resolvedCancellationFee,
                 changeFee: resolvedChangeFee,
               },
-            }).catch(() => {}); // Non-critical — silent fail
+            }).catch(() => {}); // Non-critical â€” silent fail
           }
         } catch (providerErr) {
           fastify.log.warn({ err: providerErr }, '[manage-booking/actions] Live fare rules lookup failed, using stored defaults');
@@ -461,7 +462,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/actions]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Cancel: Quote / Eligibility ─────────────────────────────────────────────
+  // â”€â”€ Cancel: Quote / Eligibility â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.post('/:bookingId/cancel/quote', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -477,9 +478,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const primaryPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
       const isRefundable = primaryPnr?.refundable ?? false;
 
-      // ── Provider order must exist to proceed ──────────────────────────────
+      // â”€â”€ Provider order must exist to proceed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (!providerPnr?.providerOrderId) {
-        fastify.log.warn({ bookingId }, '[manage-booking/cancel/quote] No provider order linked — creating support ticket');
+        fastify.log.warn({ bookingId }, '[manage-booking/cancel/quote] No provider order linked â€” creating support ticket');
         await createCancellationSupportTicket(booking, 'No provider order linked to this booking. Live cancellation quote could not be retrieved.');
         return reply.code(422).send({
           error: 'We could not retrieve live cancellation details from the airline for this booking. A support ticket has been created and our team will contact you shortly to assist with the cancellation.',
@@ -488,7 +489,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // ── Fetch live cancellation quote from provider ───────────────────────
+      // â”€â”€ Fetch live cancellation quote from provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       let quote;
       try {
         const provider = getProvider(booking.primaryProvider);
@@ -505,7 +506,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
         fastify.log.error({ providerErr: cleanMsg }, '[manage-booking/cancel/quote] Provider quote failed');
 
-        // Detect "not eligible for refund" — offer Cancel Anyway (no refund)
+        // Detect "not eligible for refund" â€” offer Cancel Anyway (no refund)
         const isNonRefundable = /not eligible for refund|non.?refundable|no refund/i.test(cleanMsg);
 
         if (isNonRefundable) {
@@ -525,7 +526,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             quoteId: `mystifly_cancel_norefund_${providerPnr.providerOrderId}`,
             bookingReference: booking.masterBookingReference,
             airlinePnr: booking.masterPnr || primaryPnr?.pnrCode || null,
-            route: `${booking.originAirport} → ${booking.destinationAirport}`,
+            route: `${booking.originAirport} â†’ ${booking.destinationAirport}`,
             departureDate: booking.departureDate,
             bookingStatus: booking.bookingStatus,
             cancellationMethod: 'CANCEL',
@@ -536,7 +537,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           });
         }
 
-        // Other errors — show actual message + support ticket
+        // Other errors â€” show actual message + support ticket
         await createCancellationSupportTicket(booking, `Provider error: ${cleanMsg}`);
         return reply.code(502).send({
           error: `${cleanMsg}. Please contact FareMind Support at support@faremind.ai`,
@@ -545,7 +546,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // ── Use provider-returned penalty breakdown when available ─────────
+      // â”€â”€ Use provider-returned penalty breakdown when available â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const cancellationMethod = quote.method || 'REFUND'; // VOID or REFUND
       const providerAirlinePenalty = quote.airlinePenalty ?? 0;
       const providerSupplierFee = quote.supplierFee ?? 0;
@@ -559,7 +560,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         airlinePenalty = providerAirlinePenalty;
         refundAmount = quote.refundAmount;
       } else {
-        // REFUND path — use provider data if available, else calculate from refundable flag
+        // REFUND path â€” use provider data if available, else calculate from refundable flag
         if (providerAirlinePenalty > 0 || quote.refundAmount > 0) {
           airlinePenalty = providerAirlinePenalty;
           refundAmount = quote.refundAmount;
@@ -570,7 +571,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         }
       }
 
-      // ── FareMind service fee — only for refundable bookings, per passenger ──
+      // â”€â”€ FareMind service fee â€” only for refundable bookings, per passenger â”€â”€
       const isBookingRefundable = isRefundable || (cancellationMethod === 'VOID') || refundAmount > 0;
       const FAREMIND_FEE = isBookingRefundable ? await getAdminServiceFee(booking) : 0;
 
@@ -599,13 +600,13 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         quoteId: quote.quoteId,
         bookingReference: booking.masterBookingReference,
         airlinePnr: booking.masterPnr || primaryPnr?.pnrCode || null,
-        route: `${booking.originAirport} → ${booking.destinationAirport}`,
+        route: `${booking.originAirport} â†’ ${booking.destinationAirport}`,
         departureDate: booking.departureDate,
         bookingStatus: booking.bookingStatus,
         cancellationAllowed: true,
         airlinePermitted: true,
-        cancellationMethod,   // 'VOID' or 'REFUND' — for agent/internal use
-        cancellationType,     // 'IMMEDIATE_VOID' or 'REFUND' — for UI display
+        cancellationMethod,   // 'VOID' or 'REFUND' â€” for agent/internal use
+        cancellationType,     // 'IMMEDIATE_VOID' or 'REFUND' â€” for UI display
         refundability,
         originalAmount,
         currency: booking.currency,
@@ -618,17 +619,17 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         refundCurrency: quote.refundCurrency,
         refundTo: quote.refundTo,
         refundMethod: 'ORIGINAL_PAYMENT',
-        refundTimeline: cancellationMethod === 'VOID' ? '3–5 business days' : '5–10 business days',
+        refundTimeline: cancellationMethod === 'VOID' ? '3â€“5 business days' : '5â€“10 business days',
         warningMessage,
         pnrs,
         expiresAt: quote.expiresAt,
       };
 
-      // No fallback — all cancellation quotes must come from the live provider API
+      // No fallback â€” all cancellation quotes must come from the live provider API
     } catch (e) { fastify.log.error(e, '[manage-booking/cancel/quote]'); reply.code(500).send({ error: 'Failed to get cancellation eligibility. Please try again or contact support.' }); }
   });
 
-  // ── Cancel: Confirm ─────────────────────────────────────────────────────────
+  // â”€â”€ Cancel: Confirm â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.post('/:bookingId/cancel/confirm', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -638,7 +639,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
       if (booking.bookingStatus === 'CANCELLED') return reply.code(400).send({ error: 'Booking is already cancelled' });
 
-      // ── Idempotency: prevent duplicate cancel operations ───────────────
+      // â”€â”€ Idempotency: prevent duplicate cancel operations â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       if (!acquireCancelLock(bookingId)) {
         return reply.code(409).send({
           error: 'A cancellation is already in progress for this booking. Please wait a moment and try again.',
@@ -646,19 +647,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const resolvedRefundMethod = refundMethod === 'AIRLINE_CREDIT' ? 'AIRLINE_CREDIT' : 'ORIGINAL_PAYMENT';
-      const originalAmount = Number(booking.totalAmount);
-      const route = `${booking.originAirport} → ${booking.destinationAirport}`;
-
-      await mbq.createBookingEvent({ bookingId, eventType: 'CANCELLATION_STARTED', eventTitle: 'Cancellation in progress', actorType: 'customer', actorId: booking.userId || undefined });
-
-      // ── Execute via provider ──────────────────────────────────────────────
-      let result: { cancellationId: string; refundAmount: number; refundCurrency: string; raw: unknown };
-      const isEstimate = quoteId.startsWith('est_');
-
-      // ── Quote expiry check ─────────────────────────────────────────────
-      // Void quotes expire in ~15 min, refund quotes in ~30 min.
-      // Check the stored quote payload's expiresAt before executing.
+      // â”€â”€ Quote expiry check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const storedQuote = await prisma.bookingProviderPayload.findFirst({
         where: { bookingId, payloadType: 'cancellation_quote', providerReference: quoteId },
         orderBy: { createdAt: 'desc' },
@@ -676,8 +665,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         }
       }
 
-      if (isEstimate) {
-        // Estimate-based quotes are no longer allowed — escalate to admin support
+      // â”€â”€ Estimate-based quotes rejected â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      if (quoteId.startsWith('est_')) {
         fastify.log.warn({ bookingId, quoteId }, '[manage-booking/cancel/confirm] Estimate-based quoteId rejected');
         await createCancellationSupportTicket(booking, 'Customer attempted to confirm cancellation with an estimate-based quote (no live provider data). Requires manual admin processing.');
         releaseCancelLock(bookingId);
@@ -686,308 +675,40 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           code: 'ESTIMATE_QUOTE_NOT_ALLOWED',
           supportTicketCreated: true,
         });
-      } else {
-        try {
-          const provider = getProvider(booking.primaryProvider);
-          const duffelResult = await provider.confirmCancellation(quoteId);
-          result = {
-            cancellationId: duffelResult.cancellationId,
-            refundAmount: duffelResult.refundAmount,
-            refundCurrency: duffelResult.refundCurrency,
-            raw: duffelResult.raw,
-          };
-          await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_confirmed', providerReference: result.cancellationId, payloadJson: result.raw as object });
-        } catch (providerErr) {
-          const rawMsg = providerErr instanceof Error ? providerErr.message : String(providerErr);
-          // Strip internal provider prefixes and emails for customer-facing display
-          const cleanMsg = rawMsg
-            .replace(/^Mystifly cancellation failed:\s*/i, '')
-            .replace(/^Mystifly (void|refund) failed:\s*/i, '')
-            .replace(/^Mystifly API error \(\d+\):\s*/i, '')
-            .replace(/Request Cancellation to\s+\S+@\S+/gi, '')
-            .replace(/\s+/g, ' ')
-            .trim();
-
-          // Detect transient provider server errors (HTTP 500, 502, 503)
-          const isTransientServerError = /\(50[023]\)|internal server error|service unavailable|bad gateway/i.test(rawMsg);
-          const customerMsg = isTransientServerError
-            ? 'The airline\'s system is temporarily unavailable. A support ticket has been created and our team will assist you shortly. Please try again in a few minutes.'
-            : `${cleanMsg || 'The airline could not process the cancellation'}. Please contact FareMind Support at support@faremind.ai`;
-
-          const providerOrder = booking.pnrs.find((p: any) => p.providerOrderId)?.providerOrderId ?? 'N/A';
-          const ticketNumbers = (booking.passengers || []).map((p: any) => p.ticketNumber).filter(Boolean).join(', ') || 'N/A';
-          fastify.log.error({ err: rawMsg, quoteId, bookingId }, '[manage-booking/cancel/confirm] Provider cancellation failed');
-          await createCancellationSupportTicket(
-            booking,
-            [
-              `Cancel confirm failed (stage: provider_execute)`,
-              `Quote ID: ${quoteId}`,
-              `Provider Order ID: ${providerOrder}`,
-              `Ticket Numbers: ${ticketNumbers}`,
-              `Amount: ${fmtCurrency(Number(booking.totalAmount), booking.currency)}`,
-              `Error: ${rawMsg}`,
-            ].join('\n')
-          );
-          releaseCancelLock(bookingId);
-          return reply.code(502).send({ error: customerMsg, code: 'PROVIDER_CANCEL_FAILED', supportTicketCreated: true });
-        }
       }
 
-      // ── Database updates (atomic-ish) ─────────────────────────────────────
-      const primaryPnr = booking.pnrs.find((p: any) => p.isPrimary) ?? booking.pnrs[0];
-      const isRefundable = primaryPnr?.refundable ?? false;
-
-      // Determine cancellation method from quoteId encoding
-      const isVoid = quoteId.startsWith('mystifly_void_');
-      const isCancelAnyway = quoteId.startsWith('mystifly_cancel_norefund_');
-      const cancellationMethod = isVoid ? 'VOID' : isCancelAnyway ? 'CANCEL' : 'REFUND';
-
-      // FareMind service fee — only for refundable bookings (per passenger via getAdminServiceFee)
-      // Cancel-anyway = non-refundable, no fee
-      const isBookingRefundable = !isCancelAnyway && (isRefundable || isVoid || result.refundAmount > 0);
-      const adminFee = isBookingRefundable ? await getAdminServiceFee(booking) : 0;
-
-      const netRefundAmount = result.refundAmount > 0 ? Math.max(0, result.refundAmount - adminFee) : 0;
-      const fareMindFee = isBookingRefundable && netRefundAmount > 0 ? adminFee : 0;
-      const airlinePenalty = Math.max(0, originalAmount - result.refundAmount);
-      const totalPenalty = Math.max(0, originalAmount - netRefundAmount);
-
-      const isFullRefund = netRefundAmount >= originalAmount - 1; // 1 USD tolerance
-      const newPaymentStatus = netRefundAmount <= 0
-        ? 'NO_REFUND'
-        : isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
-
-      // Void = voided immediately; Cancel-anyway = cancelled (no refund); Refund = pending
-      const newTicketingStatus = isVoid ? 'VOIDED' : isCancelAnyway ? 'CANCELLED' : 'REFUND_PENDING';
-
-      await prisma.masterBooking.update({
-        where: { id: bookingId },
-        data: { bookingStatus: 'CANCELLED', paymentStatus: newPaymentStatus as any, ticketingStatus: newTicketingStatus as any },
-      });
-
-      // Mark all PNRs cancelled
-      await prisma.bookingPnr.updateMany({ where: { bookingId }, data: { status: 'CANCELLED' } });
-      // Mark all journeys and segments cancelled
-      await prisma.bookingJourney.updateMany({ where: { bookingId }, data: { journeyStatus: 'cancelled' } });
-      await prisma.bookingSegment.updateMany({ where: { bookingId }, data: { segmentStatus: 'cancelled' } });
-
-      // Persist cancellation record
-      const cancel = await mbq.createCancellationRecord({
-        bookingId, requestedBy: booking.userId || booking.customerEmail, originalAmount,
-        penaltyAmount: totalPenalty, airlinePenalty, refundAmount: netRefundAmount,
-        currency: result.refundCurrency, refundMethod: resolvedRefundMethod as any,
-        providerCancelId: result.cancellationId, providerResponse: result.raw as object,
-        notes: isEstimate ? 'Manual cancellation — provider order not linked' : undefined,
-      } as any);
-
-      // Update cancellation record status — provider already confirmed the cancellation
-      await mbq.updateCancellationStatus(
-        cancel.id,
-        netRefundAmount > 0 ? 'REFUND_PENDING' : 'CANCELLED',
-      );
-
-      // Create refund record & process live Stripe refund
-      if (netRefundAmount > 0) {
-        const refundRecord = await prisma.bookingRefund.create({
-          data: {
-            bookingId,
-            cancellationId: cancel.id,
-            amount: netRefundAmount,
-            currency: result.refundCurrency,
-            method: resolvedRefundMethod as any,
-            status: 'INITIATED',
-            processingDays: 10,
-          },
-        });
-
-        // ── Fire-and-forget: Stripe refund, events, notifications ──────────
-        // These run in the background so the response returns immediately to the user
-        (async () => {
-          try {
-            // Stripe Refund
-            const payment = await prisma.bookingPayment.findFirst({
-              where: { bookingId, status: 'SUCCEEDED' },
-              orderBy: { paidAt: 'desc' },
-            });
-
-            if (payment?.stripePaymentIntentId) {
-              try {
-                const refundAmountCents = Math.round(netRefundAmount * 100);
-                const stripeRefund = await stripe.refunds.create({
-                  payment_intent: payment.stripePaymentIntentId,
-                  amount: refundAmountCents,
-                  reason: 'requested_by_customer',
-                  metadata: {
-                    bookingId,
-                    bookingReference: booking.masterBookingReference,
-                    cancellationId: cancel.id,
-                    netRefundAmount: String(netRefundAmount),
-                    adminFeeDeducted: String(fareMindFee),
-                  },
-                });
-
-                fastify.log.info(
-                  `[Stripe] ✅ Refund created: ${stripeRefund.id} — $${(stripeRefund.amount / 100).toFixed(2)} ${stripeRefund.currency} → ${payment.stripePaymentIntentId}`
-                );
-
-                await prisma.bookingRefund.update({
-                  where: { id: refundRecord.id },
-                  data: {
-                    status: stripeRefund.status === 'succeeded' ? 'COMPLETED' : 'PROCESSING',
-                    stripeRefundId: stripeRefund.id,
-                    completedAt: stripeRefund.status === 'succeeded' ? new Date() : undefined,
-                  },
-                }).catch(() => {});
-
-                await mbq.createBookingEvent({
-                  bookingId, eventType: 'REFUND_PROCESSED', eventTitle: 'Refund processed via Stripe',
-                  eventDescription: `Stripe refund ${stripeRefund.id}: ${fmtCurrency(netRefundAmount, result.refundCurrency)} refunded to original payment method.`,
-                  actorType: 'system',
-                });
-
-                // Mark cancellation record as fully refunded
-                if (stripeRefund.status === 'succeeded') {
-                  await mbq.updateCancellationStatus(cancel.id, 'REFUNDED').catch(() => {});
-                }
-              } catch (stripeErr: any) {
-                fastify.log.error({ stripeErr }, `[Stripe] ❌ Refund failed for PI ${payment.stripePaymentIntentId}`);
-
-                await prisma.bookingRefund.update({
-                  where: { id: refundRecord.id },
-                  data: { status: 'FAILED', failedAt: new Date(), failureReason: stripeErr.message },
-                }).catch(() => {});
-
-                await createCancellationSupportTicket(
-                  booking,
-                  `Stripe refund failed for PaymentIntent ${payment.stripePaymentIntentId}: ${stripeErr.message}. Net refund amount: ${fmtCurrency(netRefundAmount, result.refundCurrency)}. Please process refund manually.`
-                );
-
-                await mbq.createBookingEvent({
-                  bookingId, eventType: 'REFUND_FAILED', eventTitle: 'Stripe refund failed — support ticket created',
-                  eventDescription: `Refund of ${fmtCurrency(netRefundAmount, result.refundCurrency)} could not be processed via Stripe. A support ticket has been created for manual refund processing. Error: ${stripeErr.message}`,
-                  actorType: 'system',
-                });
-              }
-            } else {
-              fastify.log.warn({ bookingId }, '[manage-booking/cancel/confirm] No Stripe PaymentIntent found — refund requires manual processing');
-
-              await createCancellationSupportTicket(
-                booking,
-                `No Stripe PaymentIntent found for this booking. Net refund amount: ${fmtCurrency(netRefundAmount, result.refundCurrency)}. Please process refund manually.`
-              );
-
-              await prisma.bookingRefund.update({
-                where: { id: refundRecord.id },
-                data: { status: 'PROCESSING' },
-              }).catch(() => {});
-            }
-          } catch (bgErr) {
-            fastify.log.error(bgErr, '[manage-booking/cancel/confirm] Background refund processing error');
-          }
-        })(); // fire-and-forget — don't await
-      }
-
-      // ── Fire-and-forget: Events & Notifications (for all cancellations) ──
-      (async () => {
-        try {
-          await mbq.createBookingEvent({
-            bookingId, eventType: 'BOOKING_CANCELLED', eventTitle: 'Booking cancelled',
-            eventDescription: `Refund: ${fmtCurrency(netRefundAmount, result.refundCurrency)} via ${resolvedRefundMethod === 'AIRLINE_CREDIT' ? 'Airline Credit' : 'Original Payment'}`,
-            actorType: 'system',
-          });
-
-          const fmtRef = fmtCurrency(netRefundAmount, result.refundCurrency);
-          const fmtOrig = fmtCurrency(originalAmount, booking.currency);
-          const fmtPenalty = fmtCurrency(totalPenalty, booking.currency);
-
-          if (booking.customerEmail) {
-            fireNotification({
-              event_type: 'BOOKING_CANCELLED',
-              booking_id: bookingId,
-              customer_email: booking.customerEmail,
-              data: {
-                booking_reference: booking.masterBookingReference,
-                pnr: booking.masterPnr,
-                customer_name: booking.customerName ?? '',
-                customer_email: booking.customerEmail,
-                origin: booking.originAirport,
-                destination: booking.destinationAirport,
-                route,
-                refund_amount: netRefundAmount > 0 ? fmtRef : 'Non-refundable',
-                refund_status: netRefundAmount > 0 ? 'Pending' : 'Not Applicable',
-              },
-            });
-          }
-
-          emails.sendAdminCancellationEmail({
-            bookingRef: booking.masterBookingReference, customerName: booking.customerName, customerEmail: booking.customerEmail,
-            route, originalAmount: fmtOrig, penaltyAmount: fmtPenalty, refundAmount: fmtRef,
-            refundMethod: resolvedRefundMethod === 'AIRLINE_CREDIT' ? 'Airline Credit' : 'Original Payment Method',
-            pnrs: booking.pnrs.map(p => p.pnrCode).join(', '),
-            cancellationId: result.cancellationId,
-          }).catch((err: unknown) => fastify.log.warn({ err }, '[manage-booking] admin cancel email failed'));
-
-          // ── Agent notification ──────────────────────────────────────
-          // If this booking was made by an agent, notify them too
-          if ((booking as any).agentUserId) {
-            try {
-              const agentUser = await prisma.user.findUnique({
-                where: { id: (booking as any).agentUserId },
-                select: { email: true, firstName: true, lastName: true },
-              });
-              if (agentUser?.email) {
-                const agentName = [agentUser.firstName, agentUser.lastName].filter(Boolean).join(' ') || 'Agent';
-                emails.sendAgentCancellationEmail({
-                  agentEmail: agentUser.email,
-                  agentName,
-                  bookingRef: booking.masterBookingReference,
-                  customerName: booking.customerName ?? '',
-                  customerEmail: booking.customerEmail ?? '',
-                  route,
-                  originalAmount: fmtOrig,
-                  penaltyAmount: fmtPenalty,
-                  refundAmount: fmtRef,
-                  refundMethod: resolvedRefundMethod === 'AIRLINE_CREDIT' ? 'Airline Credit' : 'Original Payment Method',
-                  pnrs: booking.pnrs.map(p => p.pnrCode).join(', '),
-                  cancellationId: result.cancellationId,
-                }).catch((err: unknown) => fastify.log.warn({ err }, '[manage-booking] agent cancel email failed'));
-              }
-            } catch (agentErr) {
-              fastify.log.warn({ agentErr }, '[manage-booking] Failed to look up agent for cancellation notification');
-            }
-          }
-        } catch (notifErr) {
-          fastify.log.error(notifErr, '[manage-booking/cancel/confirm] Background notification error');
-        }
-      })();
-
+      // â”€â”€ Delegate to orchestrator â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      const result = await initiateCancellation({ bookingId, quoteId, refundMethod }, booking);
       releaseCancelLock(bookingId);
-      return {
-        success: true,
-        cancellationId: cancel.id,
-        bookingReference: booking.masterBookingReference,
-        cancellationMethod,   // 'VOID' or 'REFUND'
-        refundAmount: netRefundAmount,
-        refundCurrency: result.refundCurrency,
-        refundTimeline: isVoid ? '3–5 business days' : '5–10 business days',
-        refundMethod: resolvedRefundMethod,
-      };
-    } catch (e) {
+      return result;
+
+    } catch (e: any) {
       const failedBookingId = (request.params as any)?.bookingId;
       if (failedBookingId) releaseCancelLock(failedBookingId);
+
+      // Check if it's an orchestrator error with structured info
+      if (e.code === 'PROVIDER_CANCEL_FAILED') {
+        return reply.code(502).send({
+          error: e.message,
+          code: e.code,
+          supportTicketCreated: e.supportTicketCreated || false,
+        });
+      }
+
       fastify.log.error(e, '[manage-booking/cancel/confirm]');
       reply.code(500).send({ error: 'Cancellation failed. Please try again or contact support.' });
     }
   });
 
-  // ── Seat Map ────────────────────────────────────────────────────────────────
+
+  // â”€â”€ Seat Map â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.get('/:bookingId/seats/:sliceId', async (request, reply) => {
     try {
       const { bookingId, sliceId } = request.params as { bookingId: string; sliceId: string };
       const booking = await mbq.getMasterBookingFull(bookingId);
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
 
-      // Only use real provider APIs — no mock fallback
+      // Only use real provider APIs â€” no mock fallback
       const providerPnr = booking.pnrs.find(p => p.providerOrderId);
       if (providerPnr?.providerOrderId) {
         try {
@@ -1008,7 +729,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/seats]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Seat Select ─────────────────────────────────────────────────────────────────
+  // â”€â”€ Seat Select â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.post('/:bookingId/seats/select', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -1028,9 +749,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         if (providerPnr?.providerOrderId && serviceId) {
           try {
             // TODO: Implement Mystifly SeatSelection API call here
-            fastify.log.info(`[manage-booking/seats] Seat ${seatDesignator} — provider seat change API not yet wired for ${booking.primaryProvider}`);
+            fastify.log.info(`[manage-booking/seats] Seat ${seatDesignator} â€” provider seat change API not yet wired for ${booking.primaryProvider}`);
           } catch (providerErr) {
-            fastify.log.warn({ providerErr }, '[manage-booking/seats] Provider seat change failed — recording locally');
+            fastify.log.warn({ providerErr }, '[manage-booking/seats] Provider seat change failed â€” recording locally');
           }
         }
       } else {
@@ -1079,7 +800,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Create change request for audit trail
       await mbq.createChangeRequest({
         bookingId, type: 'SEAT_CHANGE',
-        status: 'CONFIRMED',   // Seat change already processed — mark as done
+        status: 'CONFIRMED',   // Seat change already processed â€” mark as done
         confirmedAt: new Date(),
         requestedBy: booking.userId || booking.customerEmail,
         originalData: existingSeat ? { seat: existingSeat.seatNumber } : undefined,
@@ -1092,12 +813,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         ? ' (confirmed with airline)'
         : providerSupportsSeatChange
           ? ' (pending airline confirmation)'
-          : ' (preference recorded — contact airline to confirm)';
+          : ' (preference recorded â€” contact airline to confirm)';
 
       await mbq.createBookingEvent({
         bookingId, eventType: 'SEAT_CHANGED',
         eventTitle: 'Seat changed',
-        eventDescription: `${existingSeat?.seatNumber || 'None'} → ${seatDesignator}${statusNote}`,
+        eventDescription: `${existingSeat?.seatNumber || 'None'} â†’ ${seatDesignator}${statusNote}`,
         actorType: 'customer',
       });
 
@@ -1137,12 +858,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           ? 'Seat confirmed with airline.'
           : providerSupportsSeatChange
             ? 'Seat preference recorded. Pending airline confirmation.'
-            : 'Seat preference recorded in FAREMIND. Post-booking seat changes are not available online for this provider — please contact the airline directly or manage at check-in.',
+            : 'Seat preference recorded in FAREMIND. Post-booking seat changes are not available online for this provider â€” please contact the airline directly or manage at check-in.',
       };
     } catch (e) { fastify.log.error(e, '[manage-booking/seats/select]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Passenger Update ────────────────────────────────────────────────────────────
+  // â”€â”€ Passenger Update â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.post('/:bookingId/passenger/update', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -1166,7 +887,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           providerSynced = true;
           fastify.log.info(`[manage-booking/passenger] Updated via ${booking.primaryProvider} for order ${providerPnr.providerOrderId}`);
         } catch (providerErr) {
-          fastify.log.warn({ providerErr }, '[manage-booking/passenger] Provider update failed — updating locally only');
+          fastify.log.warn({ providerErr }, '[manage-booking/passenger] Provider update failed â€” updating locally only');
         }
       }
 
@@ -1202,7 +923,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/passenger/update]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Provider Capabilities ───────────────────────────────────────────────────
+  // â”€â”€ Provider Capabilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.get('/:bookingId/capabilities', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -1232,7 +953,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/capabilities]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Date/Flight Change — Search for Options ────────────────────────────────
+  // â”€â”€ Date/Flight Change â€” Search for Options â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   // This calls Duffel's order_change_requests API to find alternative flights
   fastify.post('/:bookingId/change/search', async (request, reply) => {
     try {
@@ -1258,7 +979,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'Cannot change a booking for a flight that has already departed.' });
       }
 
-      // Find the provider order ID — check PNR first, then MasterBooking-level field
+      // Find the provider order ID â€” check PNR first, then MasterBooking-level field
       let providerPnr = booking.pnrs.find((p: any) => p.providerOrderId);
       let resolvedProviderOrderId = providerPnr?.providerOrderId
         || (booking as any).providerOrderId   // MasterBooking-level fallback
@@ -1270,7 +991,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
 
       if (!resolvedProviderOrderId) {
-        // No provider order anywhere — fall back to manual request
+        // No provider order anywhere â€” fall back to manual request
         const fallbackPnr = booking.pnrs.find((p: any) => p.isPrimary) ?? booking.pnrs[0];
         const storedChangeFee = fallbackPnr?.changeFee != null ? Number(fallbackPnr.changeFee) : 0;
         const changeReq = await mbq.createChangeRequest({
@@ -1305,7 +1026,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // Determine itinerary details — Duffel needs slice IDs from getOrder,
+      // Determine itinerary details â€” Duffel needs slice IDs from getOrder,
       // Mystifly handles this internally via PTR ReIssue
       let slicesToRemove: { slice_id: string }[] = [];
       let origin = booking.originAirport;
@@ -1440,7 +1161,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // Generic server error — still create a support ticket
+      // Generic server error â€” still create a support ticket
       if (ticketBooking) {
         await createFlightChangeSupportTicket(ticketBooking, e.message || 'Unknown error', reqDate);
       }
@@ -1449,7 +1170,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  // ── Date/Flight Change — Confirm a Change Offer ────────────────────────────
+  // â”€â”€ Date/Flight Change â€” Confirm a Change Offer â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.post('/:bookingId/change/confirm', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -1579,7 +1300,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     }
   });
 
-  // ── Legacy: Simple Date Change Request (manual fallback) ───────────────────
+  // â”€â”€ Legacy: Simple Date Change Request (manual fallback) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.post('/:bookingId/change/request', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -1604,7 +1325,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         bookingId,
         eventType: 'DATE_CHANGE_REQUESTED',
         eventTitle: 'Date change requested',
-        eventDescription: `New departure: ${newDepartureDate}${newReturnDate ? `, return: ${newReturnDate}` : ''}${reason ? ` — ${reason}` : ''}`,
+        eventDescription: `New departure: ${newDepartureDate}${newReturnDate ? `, return: ${newReturnDate}` : ''}${reason ? ` â€” ${reason}` : ''}`,
         actorType: 'customer',
         actorId: booking.userId || undefined,
       });
@@ -1636,7 +1357,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/change/request]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── E-Ticket ────────────────────────────────────────────────────────────────
+  // â”€â”€ E-Ticket â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.get('/:bookingId/eticket', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -1675,7 +1396,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/eticket]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Email Itinerary ─────────────────────────────────────────────────────────
+  // â”€â”€ Email Itinerary â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.post('/:bookingId/email-itinerary', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -1693,7 +1414,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         name: booking.customerName || 'Traveler',
         bookingRef: booking.masterBookingReference,
         pnr: booking.masterPnr || booking.masterBookingReference,
-        route: `${booking.originAirport} → ${booking.destinationAirport}`,
+        route: `${booking.originAirport} â†’ ${booking.destinationAirport}`,
         status: booking.bookingStatus || 'Confirmed',
         pdfBase64,
       });
@@ -1702,7 +1423,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/email-itinerary]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Timeline ────────────────────────────────────────────────────────────────
+  // â”€â”€ Timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.get('/:bookingId/timeline', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -1711,7 +1432,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/timeline]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Admin: Queue ────────────────────────────────────────────────────────────
+  // â”€â”€ Admin: Queue â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.get('/admin/queue', async (request, reply) => {
     try {
       const { type, status } = request.query as { type?: string; status?: string };
@@ -1720,7 +1441,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { fastify.log.error(e, '[manage-booking/admin/queue]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Admin: Notes ────────────────────────────────────────────────────────────
+  // â”€â”€ Admin: Notes â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.post('/admin/:bookingId/note', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -1739,7 +1460,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (e) { reply.code(500).send({ error: 'Server error' }); }
   });
 
-  // ── Add Baggage Endpoint ────────────────────────────────────────────────────
+  // â”€â”€ Add Baggage Endpoint â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.post('/:bookingId/baggage/add', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -1764,7 +1485,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   });
 
 
-  // ── Admin: Provider Payloads ────────────────────────────────────────────────
+  // â”€â”€ Admin: Provider Payloads â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.get('/admin/:bookingId/payloads', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };

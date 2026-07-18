@@ -1204,11 +1204,26 @@ model SupportTicket {
   failureAudit    BookingFailureAudit?   @relation(fields: [failureAuditId], references: [id], onDelete: SetNull)
   messages        SupportTicketMessage[]
 
+  // ── Cancellation workflow linkage ───────────────────────
+  ticketType        String?   @map("ticket_type")      // BOOKING_CANCELLATION, GENERAL, BOOKING_CHANGE, etc.
+  cancellationId    String?   @map("cancellation_id")  // Link to CancellationRecord
+  bookingRefundId   String?   @map("booking_refund_id") // Link to BookingRefund
+  queue             String?   @map("queue")            // CANCELLATION_SUPPORT, REFUND_RECONCILIATION_QUEUE
+  providerPnr       String?   @map("provider_pnr")
+  providerBookingRef String?  @map("provider_booking_ref")
+  correlationId     String?   @map("correlation_id")
+  escalatedAt       DateTime? @map("escalated_at")
+  closedAt          DateTime? @map("closed_at")
+
   @@index([assignedToId])
   @@index([status])
   @@index([category])
   @@index([channel])
   @@index([urgency])
+  @@index([ticketType])
+  @@index([cancellationId])
+  @@index([bookingRefundId])
+  @@index([queue])
   @@map("support_tickets")
 }
 
@@ -1389,12 +1404,70 @@ model BookingRefund {
   createdAt          DateTime     @default(now()) @map("created_at")
   updatedAt          DateTime     @updatedAt @map("updated_at")
 
+  // ── Provider reimbursement tracking ──────────────────────
+  provider                            String?   @map("provider")
+  providerPnr                         String?   @map("provider_pnr")
+  providerBookingReference            String?   @map("provider_booking_reference")
+  providerRefundRequestId             String?   @map("provider_refund_request_id")
+  providerSettlementReference         String?   @map("provider_settlement_reference")
+  providerExpectedReimbursementAmount Decimal?  @map("provider_expected_reimbursement_amount") @db.Decimal(10, 2)
+  actualProviderReimbursementAmount   Decimal?  @map("actual_provider_reimbursement_amount") @db.Decimal(10, 2)
+  fareMindCancellationFee             Decimal?  @map("faremind_cancellation_fee") @db.Decimal(10, 2)
+
+  // ── Separate status domains ─────────────────────────────
+  customerRefundStatus                String?   @map("customer_refund_status") // CUSTOMER_REFUND_NOT_STARTED | CUSTOMER_REFUND_PENDING | CUSTOMER_REFUNDED | CUSTOMER_REFUND_FAILED
+  providerReimbursementStatus         ProviderReimbursementStatus @default(NOT_STARTED) @map("provider_reimbursement_status")
+  reconciliationStatus                ReconciliationStatus @default(RECONCILIATION_PENDING) @map("reconciliation_status")
+
+  // ── Reimbursement monitoring ─────────────────────────────
+  providerReimbursedAt                DateTime? @map("provider_reimbursed_at")
+  reconciledAt                        DateTime? @map("reconciled_at")
+  lastProviderStatusCheckAt           DateTime? @map("last_provider_status_check_at")
+  nextProviderStatusCheckAt           DateTime? @map("next_provider_status_check_at")
+  providerStatusCheckCount            Int       @default(0) @map("provider_status_check_count")
+
+  // ── Linkage ─────────────────────────────────────────────
+  supportTicketId                     String?   @map("support_ticket_id")
+  idempotencyKey                      String?   @unique @map("idempotency_key")
+
   cancellation CancellationRecord? @relation(fields: [cancellationId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
   @@index([cancellationId])
   @@index([status])
+  @@index([providerReimbursementStatus, nextProviderStatusCheckAt])
+  @@index([provider, providerRefundRequestId])
+  @@index([providerPnr])
+  @@index([supportTicketId])
   @@map("booking_refunds")
+}
+
+// ── Provider Reimbursement Check Audit ────────────────────────────────────────
+// Every provider status poll is recorded here for auditability.
+model ProviderReimbursementCheck {
+  id                        String    @id @default(cuid())
+  bookingRefundId           String    @map("booking_refund_id")
+  provider                  String
+  providerRefundRequestId   String?   @map("provider_refund_request_id")
+  statusBefore              String    @map("status_before")
+  providerRawStatus         String?   @map("provider_raw_status")
+  normalizedStatus          String    @map("normalized_status")
+  attemptNumber             Int       @map("attempt_number")
+  requestedAt               DateTime  @map("requested_at")
+  respondedAt               DateTime? @map("responded_at")
+  success                   Boolean   @default(false)
+  errorCode                 String?   @map("error_code")
+  errorMessage              String?   @map("error_message")
+  providerResponseReference String?   @map("provider_response_reference")
+  settlementAmount          Decimal?  @map("settlement_amount") @db.Decimal(10, 2)
+  nextCheckAt               DateTime? @map("next_check_at")
+  correlationId             String?   @map("correlation_id")
+  createdAt                 DateTime  @default(now()) @map("created_at")
+
+  @@index([bookingRefundId])
+  @@index([provider, providerRefundRequestId])
+  @@index([createdAt])
+  @@map("provider_reimbursement_checks")
 }
 
 model BookingPassengerUpdate {
@@ -1738,6 +1811,10 @@ enum ChangeRequestStatus {
 
 enum CancellationStatus {
   CANCEL_REQUESTED
+  CANCEL_INITIATED
+  CANCEL_PROVIDER_PENDING
+  CANCEL_CONFIRMED
+  CANCEL_UNKNOWN
   IN_PROGRESS
   CANCELLED
   REFUND_PENDING
@@ -1756,6 +1833,26 @@ enum RefundStatus {
   COMPLETED
   FAILED
   PARTIAL
+  CUSTOMER_REFUND_PENDING
+  CUSTOMER_REFUNDED
+  CUSTOMER_REFUND_FAILED
+}
+
+enum ProviderReimbursementStatus {
+  NOT_STARTED
+  PENDING
+  PROCESSING
+  REIMBURSED
+  FAILED
+  OVERDUE
+}
+
+enum ReconciliationStatus {
+  RECONCILIATION_PENDING
+  MATCHED
+  MISMATCH
+  MANUAL_REVIEW
+  RECONCILIATION_COMPLETED
 }
 
 // Master Booking enums
