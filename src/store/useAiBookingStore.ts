@@ -158,6 +158,7 @@ export function buildFareDetails(
   flight: UnifiedFlight,
   fareClass: AiFareClass,
   pricingConfig?: PricingConfig | null,
+  roundTrip?: RoundTripOption | null,
 ): AiFareDetails {
   // Use DB fare tier multiplier if available, else fallback
   const dbTier = pricingConfig?.fareTiers?.find(t =>
@@ -229,8 +230,12 @@ export function buildFareDetails(
 
   // Scale provider base fare / tax proportionally for the fare tier
   // Derive missing piece from totalPrice if only one is available
-  const rawBase = flight.baseFare ?? (flight.totalPrice - (flight.taxAmount ?? 0));
-  const rawTax = flight.taxAmount ?? (flight.totalPrice - (flight.baseFare ?? flight.totalPrice));
+  // Use roundTrip as fallback source for baseFare/taxAmount (Mystifly round-trips)
+  const srcBase = flight.baseFare ?? roundTrip?.baseFare;
+  const srcTax = flight.taxAmount ?? roundTrip?.taxAmount;
+  const srcTotal = flight.totalPrice || roundTrip?.totalPrice || 0;
+  const rawBase = srcBase ?? (srcTotal - (srcTax ?? 0));
+  const rawTax = srcTax ?? (srcTotal - (srcBase ?? srcTotal));
 
   return {
     fareClass,
@@ -239,7 +244,7 @@ export function buildFareDetails(
     totalPrice,
     providerBaseFare: rawBase > 0 ? Math.round(rawBase * multiplier) : undefined,
     providerTaxAmount: rawTax > 0 ? Math.round(rawTax * multiplier) : undefined,
-    taxBreakdown: flight.taxBreakdown,
+    taxBreakdown: flight.taxBreakdown ?? roundTrip?.taxBreakdown,
     currency: flight.currency || 'USD',
     carryOnPieces: flight.baggage.carryOn || 1,
     checkedBags,
@@ -399,10 +404,10 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
   },
 
   selectFare: (fareClass) => {
-    const { selectedFlight, passengerCount, passengerProtections, protectionFee, addOns, passengerSeats } = get();
+    const { selectedFlight, selectedRoundTrip, passengerCount, passengerProtections, protectionFee, addOns, passengerSeats } = get();
     if (!selectedFlight) return;
 
-    const fareDetails = buildFareDetails(selectedFlight, fareClass);
+    const fareDetails = buildFareDetails(selectedFlight, fareClass, undefined, selectedRoundTrip);
     const priceSummary = computePriceSummary(fareDetails, passengerCount, passengerProtections, protectionFee, addOns, passengerSeats, get().computedFees, get().liveBaggagePrice);
 
     set({
@@ -414,19 +419,22 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
   },
 
   selectFareFromOption: (fare: FareOption) => {
-    const { passengerCount, passengerProtections, protectionFee, addOns, passengerSeats, selectedFlight } = get();
+    const { passengerCount, passengerProtections, protectionFee, addOns, passengerSeats, selectedFlight, selectedRoundTrip } = get();
 
     // Scale provider base fare / tax proportionally for this fare tier
     // e.g. if provider had baseFare=100, tax=20 (total=120) and this fare tier is 150,
     // scale to baseFare=125, tax=25 (total=150)
     const flight = selectedFlight;
+    // Use roundTrip as fallback source for baseFare/taxAmount (Mystifly round-trips)
+    const srcBase = flight?.baseFare ?? selectedRoundTrip?.baseFare;
+    const srcTax = flight?.taxAmount ?? selectedRoundTrip?.taxAmount;
+    const srcTotal = flight?.totalPrice || selectedRoundTrip?.totalPrice || 0;
     let providerBaseFare: number | undefined;
     let providerTaxAmount: number | undefined;
-    if (flight && flight.totalPrice > 0) {
-      const ratio = fare.totalPrice / flight.totalPrice;
-      // Use actual provider data; derive the missing piece from totalPrice
-      const flightBase = flight.baseFare ?? (flight.totalPrice - (flight.taxAmount ?? 0));
-      const flightTax = flight.taxAmount ?? (flight.totalPrice - (flight.baseFare ?? flight.totalPrice));
+    if (srcTotal > 0) {
+      const ratio = fare.totalPrice / srcTotal;
+      const flightBase = srcBase ?? (srcTotal - (srcTax ?? 0));
+      const flightTax = srcTax ?? (srcTotal - (srcBase ?? srcTotal));
       providerBaseFare = Math.round(flightBase * ratio);
       providerTaxAmount = Math.round(flightTax * ratio);
       // Ensure they sum to totalPrice (fix rounding)
@@ -441,7 +449,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
       totalPrice: fare.totalPrice,
       providerBaseFare,
       providerTaxAmount,
-      taxBreakdown: selectedFlight?.taxBreakdown,
+      taxBreakdown: selectedFlight?.taxBreakdown ?? selectedRoundTrip?.taxBreakdown,
       currency: fare.currency,
       carryOnPieces: fare.baggage.carryOnPieces,
       checkedBags: fare.baggage.checked,
