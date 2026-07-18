@@ -1,14 +1,32 @@
 /**
- * Limit Orders [id]/[action] API proxy — handles activate, pause, resume, cancel, authorize-payment
+ * Limit Orders [id]/[action] API proxy — handles activate, pause, resume, cancel, authorize-payment, passengers, saved-travelers
  */
 import { NextRequest, NextResponse } from 'next/server';
 
 const BACKEND = process.env.NEXT_PUBLIC_BACKEND_URL || 'http://localhost:3001';
 
+export async function GET(request: NextRequest, { params }: { params: Promise<{ id: string; action: string }> }) {
+  try {
+    const { id, action } = await params;
+    const validGetActions = ['saved-travelers', 'matches', 'events'];
+    if (!validGetActions.includes(action)) {
+      return NextResponse.json({ error: `Invalid GET action: ${action}` }, { status: 400 });
+    }
+
+    const res = await fetch(`${BACKEND}/api/limit-orders/${id}/${action}`, {
+      headers: { 'Content-Type': 'application/json' },
+    });
+    const data = await res.json();
+    return NextResponse.json(data, { status: res.status });
+  } catch (err: any) {
+    return NextResponse.json({ error: err.message }, { status: 500 });
+  }
+}
+
 export async function POST(request: NextRequest, { params }: { params: Promise<{ id: string; action: string }> }) {
   try {
     const { id, action } = await params;
-    const validActions = ['activate', 'pause', 'resume', 'cancel', 'authorize-payment'];
+    const validActions = ['activate', 'pause', 'resume', 'cancel', 'authorize-payment', 'passengers'];
     if (!validActions.includes(action)) {
       return NextResponse.json({ error: `Invalid action: ${action}` }, { status: 400 });
     }

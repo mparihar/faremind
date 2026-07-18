@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
-  ArrowLeft, Plane, DollarSign, Clock, Target, Bell, Zap,
+  ArrowLeft, Plane, DollarSign, Clock, Target, Bell, Zap, Users,
   CheckCircle2, XCircle, Pause, Play, AlertTriangle, Loader2,
   Eye, Calendar, CreditCard, Shield, Activity, ChevronDown,
 } from 'lucide-react';
@@ -37,6 +37,10 @@ const EVENT_ICONS: Record<string, any> = {
   NOTIFIED: Bell, UPDATED: Target, PAYMENT_AUTHORIZED: Shield,
   SUPPORT_TICKET_CREATED: AlertTriangle, EXPIRED: Clock,
 };
+
+const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+const fmtDate = (d: string) => { try { return new Date(d).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }); } catch { return d; } };
+const fmtTime = (d: string) => { try { return new Date(d).toLocaleString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }); } catch { return d; } };
 
 export default function LimitOrderDetailPage({ params }: { params: Promise<{ id: string }> }) {
   const { id } = use(params);
@@ -226,6 +230,54 @@ export default function LimitOrderDetailPage({ params }: { params: Promise<{ id:
               </div>
             ))}
           </div>
+        </div>
+      )}
+
+      {/* Passengers */}
+      {order.passengers && order.passengers.length > 0 && (
+        <div className="mb-6">
+          <h3 className="text-white font-bold text-sm mb-3 flex items-center gap-2">
+            <Users size={14} className="text-[#1ABC9C]" /> Passengers ({order.passengers.length})
+          </h3>
+          <div className="space-y-2">
+            {order.passengers.map((p: any) => (
+              <div key={p.id} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
+                <div className="flex items-center justify-between mb-1">
+                  <p className="text-white text-sm font-bold">
+                    {p.firstName} {p.middleName ? `${p.middleName} ` : ''}{p.lastName}
+                  </p>
+                  <div className="flex items-center gap-2">
+                    <span className="px-2 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wider bg-white/[0.06] text-slate-400 border border-white/[0.06]">
+                      {p.passengerType}
+                    </span>
+                    {p.isConfirmed ? (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-emerald-500/10 text-emerald-400 border border-emerald-500/20">Confirmed</span>
+                    ) : (
+                      <span className="px-2 py-0.5 rounded-full text-[9px] font-bold bg-amber-500/10 text-amber-400 border border-amber-500/20">Unconfirmed</span>
+                    )}
+                  </div>
+                </div>
+                <div className="flex flex-wrap gap-x-4 gap-y-1 text-xs text-slate-400">
+                  {p.gender && <span>Gender: {p.gender}</span>}
+                  {p.dateOfBirth && <span>DOB: {fmtDate(p.dateOfBirth)}</span>}
+                  {p.nationality && <span>Nationality: {p.nationality}</span>}
+                  {p.passportNumber && <span>Passport: •••{p.passportNumber.slice(-4)}</span>}
+                  {p.passportExpiry && <span>Expires: {fmtDate(p.passportExpiry)}</span>}
+                  {p.knownTravelerNumber && <span>KTN: {p.knownTravelerNumber}</span>}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
+
+      {/* Accepted Airports */}
+      {((order.acceptedOrigins && order.acceptedOrigins.length > 1) || (order.acceptedDestinations && order.acceptedDestinations.length > 1)) && (
+        <div className="mb-6 flex items-center gap-2 px-4 py-3 rounded-xl bg-white/[0.03] border border-white/[0.06] text-xs">
+          <Shield size={14} className="text-[#1ABC9C] shrink-0" />
+          <span className="text-slate-400">
+            Matching airports: <strong className="text-white">{(order.acceptedOrigins || []).join(', ')}</strong> → <strong className="text-white">{(order.acceptedDestinations || []).join(', ')}</strong>
+          </span>
         </div>
       )}
 

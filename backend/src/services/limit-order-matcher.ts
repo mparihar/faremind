@@ -15,6 +15,7 @@
 import { prisma } from '../lib/db';
 import crypto from 'crypto';
 import type { UnifiedFlight } from '../lib/types';
+import { notificationService } from './notification-service';
 
 interface SearchMeta {
   origin: string;
@@ -39,14 +40,18 @@ export async function matchSearchResultsAgainstLimitOrders(
     const destination = meta.destination.toUpperCase();
     const depDate = new Date(meta.departureDate);
 
-    // Query active limit orders for this route
+    // Query active limit orders where this route matches any accepted airport pair
     const activeOrders = await prisma.limitOrder.findMany({
       where: {
-        origin,
-        destination,
         status: { in: ['ACTIVE', 'MONITORING'] },
         departureDate: depDate,
         expiresAt: { gt: new Date() },
+        OR: [
+          // Multi-airport matching — search origin is in acceptedOrigins AND search dest is in acceptedDestinations
+          { acceptedOrigins: { has: origin }, acceptedDestinations: { has: destination } },
+          // Legacy fallback — exact origin/destination match (for orders created before multi-airport support)
+          { origin, destination, acceptedOrigins: { isEmpty: true } },
+        ],
       },
     });
 
@@ -216,7 +221,7 @@ export async function evaluateOrderAgainstFlights(
 
 async function triggerNotification(order: any, match: any, flight: UnifiedFlight): Promise<void> {
   try {
-    const user = await prisma.user.findUnique({ where: { id: order.userId }, select: { email: true, firstName: true, lastName: true } });
+    const user = await prisma.user.findUnique({ where: { id: order.userId }, select: { email: true, firstName: true, lastName: true, phone: true } });
     if (!user) return;
 
     // Import notify from backend lib
@@ -250,6 +255,25 @@ async function triggerNotification(order: any, match: any, flight: UnifiedFlight
         actorType: 'system',
       },
     });
+
+    // In-App notification (always)
+    await notificationService.sendInApp(order.userId, {
+      title: `Limit Order Match: $${Number(match.matchedFare).toFixed(0)} ${order.origin}→${order.destination}`,
+      body: `A ${match.matchedCabin} flight on ${match.matchedAirline || 'multiple airlines'} for $${Number(match.matchedFare).toFixed(2)} matches your limit order. Fare range: $${Number(order.minFare).toFixed(0)}–$${Number(order.maxFare).toFixed(0)}.`,
+      metadata: { limitOrderId: order.id, matchId: match.id, fare: Number(match.matchedFare), airline: match.matchedAirline },
+    });
+
+    // SMS notification (if enabled)
+    if (user.phone) {
+      await notificationService.sendSms(
+        user.phone,
+        {
+          title: 'FareMind Limit Order Match',
+          body: `Your limit order matched! $${Number(match.matchedFare).toFixed(0)} ${match.matchedCabin} on ${match.matchedAirline || 'multiple airlines'} for ${order.origin}→${order.destination}. Log in to book.`,
+        },
+        'LIMIT_ORDER_MATCHED',
+      );
+    }
 
     console.log(`[limit-order-matcher] 📧 Notification sent to ${user.email} for order ${order.id}`);
   } catch (err) {

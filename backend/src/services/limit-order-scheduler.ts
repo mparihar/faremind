@@ -54,7 +54,8 @@ export async function runLimitOrderSchedulerCycle(): Promise<{
     // Group orders by route + date to batch searches
     const routeGroups = new Map<string, typeof dueOrders>();
     for (const order of dueOrders) {
-      const key = `${order.origin}|${order.destination}|${order.departureDate.toISOString().split('T')[0]}`;
+      const retDate = order.returnDate ? order.returnDate.toISOString().split('T')[0] : '';
+      const key = `${order.origin}|${order.destination}|${order.departureDate.toISOString().split('T')[0]}|${retDate}`;
       if (!routeGroups.has(key)) routeGroups.set(key, []);
       routeGroups.get(key)!.push(order);
     }
@@ -63,18 +64,20 @@ export async function runLimitOrderSchedulerCycle(): Promise<{
 
     // Search each route and evaluate
     for (const [routeKey, orders] of routeGroups) {
-      const [origin, destination, date] = routeKey.split('|');
+      const [origin, destination, date, returnDate] = routeKey.split('|');
+      const refOrder = orders[0]; // Use first order's passenger counts for the search
 
       try {
-        console.log(`[limit-order-scheduler] Searching ${origin}→${destination} on ${date}...`);
+        console.log(`[limit-order-scheduler] Searching ${origin}→${destination} on ${date}${returnDate ? ` (RT: ${returnDate})` : ''}...`);
 
         const result = await searchFlights({
           origin,
           destination,
           date,
-          adults: 1,
-          children: 0,
-          infants: 0,
+          returnDate: returnDate || undefined,
+          adults: refOrder.adults,
+          children: refOrder.children,
+          infants: refOrder.infants,
         });
 
         const flights = result.flights as UnifiedFlight[];

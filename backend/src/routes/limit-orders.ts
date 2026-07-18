@@ -61,17 +61,32 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const now = new Date();
       const nextEval = status === 'ACTIVE' ? new Date(now.getTime() + 60 * 60 * 1000) : null;
 
+      // Build accepted airport arrays — defaults to single origin/destination if not provided
+      const primaryOrigin = body.origin.toUpperCase();
+      const primaryDest = body.destination.toUpperCase();
+      const acceptedOrigins: string[] = (body.acceptedOrigins && body.acceptedOrigins.length > 0)
+        ? body.acceptedOrigins.map((c: string) => c.toUpperCase())
+        : [primaryOrigin];
+      const acceptedDestinations: string[] = (body.acceptedDestinations && body.acceptedDestinations.length > 0)
+        ? body.acceptedDestinations.map((c: string) => c.toUpperCase())
+        : [primaryDest];
+
       const order = await prisma.limitOrder.create({
         data: {
           userId,
-          origin: body.origin.toUpperCase(),
-          destination: body.destination.toUpperCase(),
+          origin: primaryOrigin,
+          destination: primaryDest,
+          originCity: body.originCity || null,
+          destinationCity: body.destinationCity || null,
+          acceptedOrigins,
+          acceptedDestinations,
           departureDate: depDate,
           returnDate: body.returnDate ? new Date(body.returnDate) : null,
           tripType: body.tripType || 'ONE_WAY',
           adults: body.adults ?? 1,
           children: body.children ?? 0,
           infants: body.infants ?? 0,
+          infantsWithSeat: body.infantsWithSeat ?? 0,
           minFare: Number(body.minFare),
           maxFare: Number(body.maxFare),
           currency: body.currency || 'USD',
@@ -95,6 +110,32 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           agentName: body.agentName || null,
         },
       });
+
+      // Create passengers if provided
+      if (Array.isArray(body.passengers) && body.passengers.length > 0) {
+        await prisma.limitOrderPassenger.createMany({
+          data: body.passengers.map((p: any, i: number) => ({
+            limitOrderId: order.id,
+            passengerOrder: i + 1,
+            passengerType: p.passengerType || 'adult',
+            infantWithSeat: p.infantWithSeat ?? false,
+            firstName: p.firstName,
+            middleName: p.middleName || null,
+            lastName: p.lastName,
+            gender: p.gender || null,
+            dateOfBirth: p.dateOfBirth ? new Date(p.dateOfBirth) : null,
+            email: p.email || null,
+            phone: p.phone || null,
+            nationality: p.nationality || null,
+            passportNumber: p.passportNumber || null,
+            passportCountry: p.passportCountry || null,
+            passportExpiry: p.passportExpiry ? new Date(p.passportExpiry) : null,
+            knownTravelerNumber: p.knownTravelerNumber || null,
+            redressNumber: p.redressNumber || null,
+            isConfirmed: p.isConfirmed ?? false,
+          })),
+        });
+      }
 
       // Create audit event
       await prisma.limitOrderEvent.create({
@@ -182,8 +223,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         include: {
           matches: { orderBy: { createdAt: 'desc' }, take: 20 },
           events: { orderBy: { createdAt: 'desc' }, take: 30 },
+          passengers: { orderBy: { passengerOrder: 'asc' } },
           user: { select: { id: true, email: true, firstName: true, lastName: true } },
-          _count: { select: { matches: true, events: true } },
+          _count: { select: { matches: true, events: true, passengers: true } },
         },
       });
       if (!order) return reply.code(404).send({ error: 'Limit order not found' });
@@ -260,7 +302,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   fastify.post('/:id/activate', async (request, reply) => {
     try {
       const { id } = request.params as { id: string };
-      const existing = await prisma.limitOrder.findUnique({ where: { id } });
+      const existing = await prisma.limitOrder.findUnique({
+        where: { id },
+        include: { passengers: true },
+      });
       if (!existing) return reply.code(404).send({ error: 'Limit order not found' });
       if (!['DRAFT'].includes(existing.status)) {
         return reply.code(400).send({ error: `Cannot activate an order with status ${existing.status}` });
@@ -269,6 +314,32 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Validate auto-purchase has payment method
       if (existing.executionMode === 'AUTO_PURCHASE' && !existing.stripePaymentMethodId) {
         return reply.code(400).send({ error: 'Auto-purchase orders require a payment method before activation' });
+      }
+
+      // Validate auto-purchase passenger details
+      if (existing.executionMode === 'AUTO_PURCHASE') {
+        const expectedCount = existing.adults + existing.children + existing.infants;
+        if (existing.passengers.length < expectedCount) {
+          return reply.code(400).send({
+            error: `Auto-purchase orders require all ${expectedCount} passenger(s) to be added. Currently have ${existing.passengers.length}.`,
+          });
+        }
+        const unconfirmed = existing.passengers.filter(p => !p.isConfirmed);
+        if (unconfirmed.length > 0) {
+          return reply.code(400).send({
+            error: `All passengers must be confirmed before activation. ${unconfirmed.length} passenger(s) not yet confirmed.`,
+          });
+        }
+        // Validate required fields for each passenger
+        const errors: string[] = [];
+        for (const pax of existing.passengers) {
+          if (!pax.firstName || !pax.lastName) errors.push(`Passenger ${pax.passengerOrder}: missing name`);
+          if (!pax.dateOfBirth) errors.push(`Passenger ${pax.passengerOrder}: missing date of birth`);
+          if (pax.passengerType === 'adult' && !pax.gender) errors.push(`Passenger ${pax.passengerOrder}: missing gender`);
+        }
+        if (errors.length > 0) {
+          return reply.code(400).send({ error: `Passenger validation failed: ${errors.join('; ')}` });
+        }
       }
 
       const now = new Date();
@@ -504,6 +575,139 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     }
   });
 
+  // ── SAVED TRAVELERS ────────────────────────────────────────────────────────
+  fastify.get('/:id/saved-travelers', async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const order = await prisma.limitOrder.findUnique({ where: { id }, select: { userId: true } });
+      if (!order) return reply.code(404).send({ error: 'Limit order not found' });
+
+      // Get unique travelers from previous bookings
+      const rawPassengers = await prisma.bookingPassenger.findMany({
+        where: {
+          booking: { userId: order.userId },
+        },
+        orderBy: { createdAt: 'desc' },
+        take: 50,
+      });
+
+      // Deduplicate by firstName+lastName (case-insensitive)
+      const seen = new Set<string>();
+      const travelers = [];
+      for (const p of rawPassengers) {
+        const key = `${p.firstName.toLowerCase()}_${p.lastName.toLowerCase()}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        travelers.push({
+          id: p.id,
+          firstName: p.firstName,
+          middleName: p.middleName,
+          lastName: p.lastName,
+          email: p.email,
+          phone: p.phone,
+          gender: p.gender,
+          dateOfBirth: p.dateOfBirth,
+          nationality: p.nationality,
+          passportNumber: p.passportNumber,
+          passportCountry: p.passportCountry,
+          passportExpiry: p.passportExpiry,
+          passengerType: p.passengerType,
+        });
+      }
+
+      // Also include the user's own profile as a traveler option
+      const user = await prisma.user.findUnique({
+        where: { id: order.userId },
+        select: { firstName: true, lastName: true, email: true, phone: true },
+      });
+      if (user) {
+        const userKey = `${user.firstName.toLowerCase()}_${user.lastName.toLowerCase()}`;
+        if (!seen.has(userKey)) {
+          travelers.unshift({
+            id: 'user-profile',
+            firstName: user.firstName,
+            middleName: null,
+            lastName: user.lastName,
+            email: user.email,
+            phone: user.phone,
+            gender: null,
+            dateOfBirth: null,
+            nationality: null,
+            passportNumber: null,
+            passportCountry: null,
+            passportExpiry: null,
+            passengerType: 'adult',
+          });
+        }
+      }
+
+      return { success: true, travelers };
+    } catch (err: any) {
+      fastify.log.error(err, '[limit-orders] GET /:id/saved-travelers failed');
+      reply.code(500).send({ error: err.message || 'Failed to get saved travelers' });
+    }
+  });
+
+  // ── MANAGE PASSENGERS ──────────────────────────────────────────────────────
+  fastify.post('/:id/passengers', async (request, reply) => {
+    try {
+      const { id } = request.params as { id: string };
+      const body = request.body as any;
+      const existing = await prisma.limitOrder.findUnique({ where: { id } });
+      if (!existing) return reply.code(404).send({ error: 'Limit order not found' });
+
+      if (!Array.isArray(body.passengers) || body.passengers.length === 0) {
+        return reply.code(400).send({ error: 'passengers array is required' });
+      }
+
+      // Delete existing passengers and replace
+      await prisma.limitOrderPassenger.deleteMany({ where: { limitOrderId: id } });
+
+      const created = await prisma.limitOrderPassenger.createMany({
+        data: body.passengers.map((p: any, i: number) => ({
+          limitOrderId: id,
+          passengerOrder: i + 1,
+          passengerType: p.passengerType || 'adult',
+          infantWithSeat: p.infantWithSeat ?? false,
+          firstName: p.firstName,
+          middleName: p.middleName || null,
+          lastName: p.lastName,
+          gender: p.gender || null,
+          dateOfBirth: p.dateOfBirth ? new Date(p.dateOfBirth) : null,
+          email: p.email || null,
+          phone: p.phone || null,
+          nationality: p.nationality || null,
+          passportNumber: p.passportNumber || null,
+          passportCountry: p.passportCountry || null,
+          passportExpiry: p.passportExpiry ? new Date(p.passportExpiry) : null,
+          knownTravelerNumber: p.knownTravelerNumber || null,
+          redressNumber: p.redressNumber || null,
+          isConfirmed: p.isConfirmed ?? false,
+        })),
+      });
+
+      await prisma.limitOrderEvent.create({
+        data: {
+          limitOrderId: id,
+          eventType: 'UPDATED',
+          eventTitle: 'Passenger details updated',
+          eventDescription: `${body.passengers.length} passenger(s) saved.`,
+          actorType: body.actorType || 'customer',
+        },
+      });
+
+      const passengers = await prisma.limitOrderPassenger.findMany({
+        where: { limitOrderId: id },
+        orderBy: { passengerOrder: 'asc' },
+      });
+
+      return { success: true, passengers };
+    } catch (err: any) {
+      fastify.log.error(err, '[limit-orders] POST /:id/passengers failed');
+      reply.code(500).send({ error: err.message || 'Failed to save passengers' });
+    }
+  });
+
   // ── ADMIN: Stats ────────────────────────────────────────────────────────────
   fastify.get('/admin/stats', async (request, reply) => {
     try {
@@ -562,6 +766,46 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     } catch (err: any) {
       fastify.log.error(err, '[limit-orders] GET /admin/stats failed');
       reply.code(500).send({ error: err.message || 'Failed to get stats' });
+    }
+  });
+
+  // ── ADMIN: Notification Config ──────────────────────────────────────────────
+  fastify.get('/admin/notification-config', async (request, reply) => {
+    try {
+      const configRow = await prisma.systemConfig.findUnique({
+        where: { key: 'sms_notification_config' },
+      });
+      return { success: true, value: configRow?.value || null };
+    } catch (err: any) {
+      fastify.log.error(err, '[limit-orders] GET /admin/notification-config failed');
+      reply.code(500).send({ error: err.message || 'Failed to get notification config' });
+    }
+  });
+
+  fastify.put('/admin/notification-config', async (request, reply) => {
+    try {
+      const body = request.body as any;
+      if (!body.value) return reply.code(400).send({ error: 'value is required' });
+
+      await prisma.systemConfig.upsert({
+        where: { key: 'sms_notification_config' },
+        update: {
+          value: body.value,
+          description: body.description || 'SMS notification configuration',
+          updatedBy: body.updatedBy || 'admin',
+        },
+        create: {
+          key: 'sms_notification_config',
+          value: body.value,
+          description: body.description || 'SMS notification configuration',
+          updatedBy: body.updatedBy || 'admin',
+        },
+      });
+
+      return { success: true };
+    } catch (err: any) {
+      fastify.log.error(err, '[limit-orders] PUT /admin/notification-config failed');
+      reply.code(500).send({ error: err.message || 'Failed to save notification config' });
     }
   });
 };

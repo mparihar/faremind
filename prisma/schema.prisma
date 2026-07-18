@@ -2743,17 +2743,24 @@ model LimitOrder {
   id                     String               @id @default(cuid())
   userId                 String               @map("user_id")
 
-  // Route
-  origin                 String               // IATA code (e.g. JFK)
-  destination            String               // IATA code (e.g. LAX)
+  // Route — primary display airports
+  origin                 String               // Primary IATA code (e.g. JFK)
+  destination            String               // Primary IATA code (e.g. LAX)
   departureDate          DateTime             @map("departure_date")
   returnDate             DateTime?            @map("return_date")
   tripType               MbTripType           @default(ONE_WAY) @map("trip_type")
+
+  // Route — multi-airport matching
+  originCity             String?              @map("origin_city")        // e.g. "New York"
+  destinationCity        String?              @map("destination_city")   // e.g. "Los Angeles"
+  acceptedOrigins        String[]             @map("accepted_origins")   // ["JFK","LGA","EWR"]
+  acceptedDestinations   String[]             @map("accepted_destinations") // ["LAX","SNA"]
 
   // Passengers
   adults                 Int                  @default(1)
   children               Int                  @default(0)
   infants                Int                  @default(0)
+  infantsWithSeat        Int                  @default(0) @map("infants_with_seat")
 
   // Fare criteria
   minFare                Decimal              @map("min_fare") @db.Decimal(10, 2)
@@ -2806,10 +2813,13 @@ model LimitOrder {
   user                   User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
   matches                LimitOrderMatch[]
   events                 LimitOrderEvent[]
+  passengers             LimitOrderPassenger[]
 
   @@index([userId])
   @@index([status])
   @@index([origin, destination, departureDate])
+  @@index([acceptedOrigins])
+  @@index([acceptedDestinations])
   @@index([nextEvaluationAt, status])
   @@index([expiresAt])
   @@index([agentUserId])
@@ -2879,6 +2889,44 @@ model LimitOrderEvent {
   @@index([eventType])
   @@index([createdAt])
   @@map("limit_order_events")
+}
+
+model LimitOrderPassenger {
+  id                   String       @id @default(cuid())
+  limitOrderId         String       @map("limit_order_id")
+
+  passengerOrder       Int          @default(0) @map("passenger_order")
+  passengerType        String       @default("adult") @map("passenger_type") // adult, child, infant
+  infantWithSeat       Boolean      @default(false) @map("infant_with_seat")
+
+  // Identity
+  firstName            String       @map("first_name")
+  middleName           String?      @map("middle_name")
+  lastName             String       @map("last_name")
+  gender               String?      // male, female
+  dateOfBirth          DateTime?    @map("date_of_birth")
+  email                String?
+  phone                String?
+
+  // Travel documents
+  nationality          String?      // ISO country code
+  passportNumber       String?      @map("passport_number")
+  passportCountry      String?      @map("passport_country")
+  passportExpiry       DateTime?    @map("passport_expiry")
+  knownTravelerNumber  String?      @map("known_traveler_number")
+  redressNumber        String?      @map("redress_number")
+
+  // Confirmation
+  isConfirmed          Boolean      @default(false) @map("is_confirmed")
+
+  createdAt            DateTime     @default(now()) @map("created_at")
+  updatedAt            DateTime     @updatedAt @map("updated_at")
+
+  // Relations
+  limitOrder           LimitOrder   @relation(fields: [limitOrderId], references: [id], onDelete: Cascade)
+
+  @@index([limitOrderId])
+  @@map("limit_order_passengers")
 }
 
 enum LimitOrderStatus {
