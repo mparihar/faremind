@@ -407,24 +407,39 @@ function parseMystiflyDuration(duration: any): number {
 // ─── Merge & Deduplicate ───
 
 export function mergeAndRankFlights(flights: UnifiedFlight[]): UnifiedFlight[] {
-  // Sort: put 'lowest' fareType first so when v1 and v2 have the same dedup key
-  // (same flight, same price), the 'Lowest Fare' badge is preserved.
+  // Sort: put 'branded' (v2.2) first so richer data wins dedup over 'lowest' (v1).
+  // v2.2 has penalties, refundable status, fare family, baggage from PenaltiesInfoList.
+  // v1 has none of that — it only has price + flight info.
   const sorted = [...flights].sort((a, b) => {
-    if (a.fareType === 'lowest' && b.fareType !== 'lowest') return -1;
-    if (a.fareType !== 'lowest' && b.fareType === 'lowest') return 1;
+    if (a.fareType === 'branded' && b.fareType !== 'branded') return -1;
+    if (a.fareType !== 'branded' && b.fareType === 'branded') return 1;
     return 0;
   });
 
-  const seen = new Set<string>();
-  const unique = sorted.filter((f) => {
+  const seen = new Map<string, number>(); // key → index in unique[]
+  const unique: UnifiedFlight[] = [];
+
+  for (const f of sorted) {
     // Filter out invalid offers (no price, no duration, no segments)
-    if (f.totalPrice <= 0 || f.totalDuration <= 0 || f.segments.length === 0) return false;
+    if (f.totalPrice <= 0 || f.totalDuration <= 0 || f.segments.length === 0) continue;
 
     const key = `${f.airline.code}-${f.segments[0]?.departure.time}-${f.segments[0]?.departure.airport}-${f.totalPrice}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+
+    if (seen.has(key)) {
+      // Duplicate found — check if this flight has richer data and should replace
+      const existingIdx = seen.get(key)!;
+      const existing = unique[existingIdx];
+      // Prefer: refundable > non-refundable, branded > lowest
+      const incomingScore = (f.isRefundable ? 2 : 0) + (f.fareType === 'branded' ? 1 : 0);
+      const existingScore = (existing.isRefundable ? 2 : 0) + (existing.fareType === 'branded' ? 1 : 0);
+      if (incomingScore > existingScore) {
+        unique[existingIdx] = f; // Replace with richer data
+      }
+    } else {
+      seen.set(key, unique.length);
+      unique.push(f);
+    }
+  }
 
   // Debug: log fareType distribution after dedup
   const ftCounts: Record<string, number> = {};
