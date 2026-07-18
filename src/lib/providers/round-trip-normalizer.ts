@@ -145,6 +145,8 @@ export function normalizeDuffelRoundTripOffer(offer: DuffelOffer): RoundTripOpti
     outboundJourney: outbound,
     returnJourney: ret,
     totalPrice: parseFloat(offer.total_amount),
+    baseFare: offer.base_amount ? parseFloat(offer.base_amount) : undefined,
+    taxAmount: offer.tax_amount ? parseFloat(offer.tax_amount) : undefined,
     currency: offer.total_currency,
     totalDurationMinutes: outbound.durationMinutes + ret.durationMinutes,
     totalStops: outbound.stops + ret.stops,

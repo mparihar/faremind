@@ -54,6 +54,9 @@ export interface RoundTripOption {
   returnJourney: JourneySegment;
 
   totalPrice: number;
+  baseFare?: number;
+  taxAmount?: number;
+  taxBreakdown?: Array<{ code: string; amount: number; label?: string }>;
   currency: string;
   totalDurationMinutes: number;
   totalStops: number;

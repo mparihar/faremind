@@ -376,6 +376,10 @@ export interface PricingConfigParam {
 
 export function buildLocalPricing(store: CheckoutStore, pricingConfig?: PricingConfigParam): PricingBreakdown {
   const { selectedFare, passengers, extraBags, priceProtection, travelInsurance, seatSelections, mealSelections, currency, computedFees, sourceFlight } = store;
+  // Use sourceRoundTrip as fallback for tax data when sourceFlight is null (round-trip flow)
+  const sourceRT = (store as any).sourceRoundTrip;
+  const taxSource = sourceFlight ?? sourceRT; // whichever has baseFare/taxAmount
+
   // Use the exact all-passenger total from the fare-options API to avoid rounding loss.
   // selectedFare.totalPrice is the all-passenger total; basePrice is per-person (display only).
   const allPaxFareTotal = selectedFare?.totalPrice ?? 0;
@@ -394,8 +398,8 @@ export function buildLocalPricing(store: CheckoutStore, pricingConfig?: PricingC
   const perPassenger: PerPassengerPrice[] = passengers.map((p, idx) => {
     const base = perPaxFloor + (idx < remainder ? 1 : 0);
     // Scale provider tax proportionally for this fare tier
-    const ratio = (sourceFlight?.totalPrice && sourceFlight.totalPrice > 0) ? (base / sourceFlight.totalPrice) : 0;
-    const taxes = sourceFlight?.taxAmount != null ? Math.round(sourceFlight.taxAmount * ratio) : 0;
+    const ratio = (taxSource?.totalPrice && taxSource.totalPrice > 0) ? (base / taxSource.totalPrice) : 0;
+    const taxes = taxSource?.taxAmount != null ? Math.round(taxSource.taxAmount * ratio) : 0;
     const baseFare = base - taxes;
     return { passengerId: p.id, type: p.type, baseFare, taxes, subtotal: base };
   });
@@ -472,7 +476,7 @@ export function buildLocalPricing(store: CheckoutStore, pricingConfig?: PricingC
   return {
     perPassenger, fareTotal: allPaxFareTotal,
     totalBaseFare, totalTaxes,
-    taxBreakdown: sourceFlight?.taxBreakdown,
+    taxBreakdown: taxSource?.taxBreakdown,
     seatFees, mealFees, baggageFees,
     protectionFee, insuranceFee, serviceFee,
     subtotal, total: subtotal,

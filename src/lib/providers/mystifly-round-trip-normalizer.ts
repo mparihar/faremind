@@ -175,6 +175,22 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
   const totalPrice = parseFloat(totalFare.Amount || totalFare.amount || '0');
   const currency = totalFare.CurrencyCode || totalFare.currencyCode || 'USD';
 
+  // Base fare / taxes from provider
+  const baseFareObj = itinTotalFare.BaseFare || itinTotalFare.baseFare || {};
+  const totalTaxObj = itinTotalFare.TotalTax || itinTotalFare.totalTax || {};
+  const providerBaseFare = parseFloat(baseFareObj.Amount || baseFareObj.amount || '0') || undefined;
+  const providerTaxAmount = parseFloat(totalTaxObj.Amount || totalTaxObj.amount || '0') || undefined;
+
+  // Tax breakdown line items
+  const rawTaxBreakUp: Array<{ Amount: string; TaxCode: string }> = pricingInfo._taxBreakUp || [];
+  const taxBreakdown = rawTaxBreakUp
+    .filter(t => parseFloat(t.Amount || '0') > 0)
+    .map(t => ({
+      code: t.TaxCode,
+      amount: Math.round(parseFloat(t.Amount || '0') * 100) / 100,
+      label: t.TaxCode,
+    }));
+
   // Baggage — API data flows through as-is from backend
   const baggageStr = firstSeg?.Baggage || firstSeg?.baggage || '';
   let checked = 0;
@@ -220,6 +236,9 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
     outboundJourney: outbound,
     returnJourney: ret,
     totalPrice,
+    baseFare: providerBaseFare,
+    taxAmount: providerTaxAmount,
+    taxBreakdown: taxBreakdown.length > 0 ? taxBreakdown : undefined,
     providerTotalFare: totalPrice, // Raw Mystifly fare — used by confirm route price-change guard
     currency,
     totalDurationMinutes: outbound.durationMinutes + ret.durationMinutes,
