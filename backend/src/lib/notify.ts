@@ -30,6 +30,7 @@ export type NotifyEventType =
   | 'PRICE_DROP_REFUND'
   | 'CHECKIN_REMINDER'
   | 'UPCOMING_TRIP'
+  | 'LIMIT_ORDER_MATCHED'
   | 'SUPPORT_MANUAL';
 
 interface NotifyPayload {
@@ -555,6 +556,46 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
         text: `Hi ${name}, your trip to ${d.destination} is in 3 days!`,
       };
 
+    case 'LIMIT_ORDER_MATCHED': {
+      const matchedFare = String(d.matched_fare || '');
+      const matchedAirline = String(d.matched_airline || 'Multiple Airlines');
+      const matchedCabin = String(d.matched_cabin || 'Economy');
+      const matchedDuration = String(d.matched_duration || 'N/A');
+      const depDate = String(d.departure_date || '');
+      const fareRange = String(d.fare_range || '');
+      return {
+        subject: `Your Limit Order matched – ${matchedFare} ${route}`,
+        html: wrap('Limit Order Match', `
+          <div style="background:linear-gradient(135deg,#0f172a 0%,#1e293b 60%,#0f3460 100%);border-radius:12px;padding:32px 36px;text-align:center;margin-bottom:24px;">
+            <div style="display:inline-flex;align-items:center;gap:6px;background:rgba(16,185,129,0.15);border:1px solid rgba(16,185,129,0.25);border-radius:20px;padding:4px 12px;margin-bottom:12px;">
+              <div style="width:6px;height:6px;border-radius:50%;background:#10b981;"></div>
+              <span style="font-size:11px;font-weight:700;color:#10b981;letter-spacing:0.5px;">Match Found</span>
+            </div>
+            <div style="font-size:10px;text-transform:uppercase;letter-spacing:3px;font-weight:700;margin-bottom:8px;"><span style="color:#fff;">FARE</span><span style="color:#009CA6;">MIND</span> <span style="color:#64748b;">LIMIT ORDER</span></div>
+            <div style="font-family:'Courier New',monospace;font-size:28px;font-weight:900;color:#1abc9c;">${matchedFare}</div>
+            <div style="margin-top:8px;color:#94a3b8;font-size:14px;">${route}</div>
+          </div>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;line-height:1.6;">Hello ${name},</p>
+          <p style="margin:0 0 24px;color:#64748b;font-size:14px;line-height:1.6;">Great news! A flight matching your Limit Order criteria has been found.</p>
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;margin-bottom:24px;">
+            <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
+              <tr><td style="padding:6px 0;color:#64748b;">Matched Fare</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:18px;color:#1abc9c;">${matchedFare}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">Target Range</td><td style="padding:6px 0;text-align:right;color:#0f172a;font-weight:600;">${fareRange}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">Airline</td><td style="padding:6px 0;text-align:right;color:#0f172a;font-weight:600;">${matchedAirline}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">Cabin</td><td style="padding:6px 0;text-align:right;color:#0f172a;font-weight:600;">${matchedCabin}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">Duration</td><td style="padding:6px 0;text-align:right;color:#0f172a;font-weight:600;">${matchedDuration}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">Departure</td><td style="padding:6px 0;text-align:right;color:#0f172a;font-weight:600;">${depDate}</td></tr>
+            </table>
+          </div>
+          <div style="text-align:center;margin-bottom:24px;">
+            <a href="${process.env.APP_URL || 'https://faremind.ai'}/account/limit-orders" style="display:inline-block;padding:12px 28px;background:#1abc9c;color:#fff;font-weight:700;font-size:14px;text-decoration:none;border-radius:10px;">View Limit Order →</a>
+          </div>
+          <p style="margin:0;color:#64748b;font-size:13px;line-height:1.6;">This fare may sell out quickly. Act now to secure your booking.</p>
+        `),
+        text: `Hi ${name}, a flight matching your Limit Order has been found!\n\nMatched Fare: ${matchedFare}\nRoute: ${route}\nAirline: ${matchedAirline}\nCabin: ${matchedCabin}\nDeparture: ${depDate}\n\nLog in to your FAREMIND account to view details.`,
+      };
+    }
+
     default:
       return null;
   }
@@ -867,6 +908,7 @@ const CUSTOMER_EVENTS = new Set<string>([
   'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
   'PRICE_DROP_ALERT', 'PRICE_DROP_REFUND',
   'CHECKIN_REMINDER', 'UPCOMING_TRIP',
+  'LIMIT_ORDER_MATCHED',
 ]);
 
 const SUPPORT_EVENTS = new Set<string>([
@@ -876,6 +918,7 @@ const SUPPORT_EVENTS = new Set<string>([
   'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
   'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
   'PRICE_DROP_REFUND', 'SUPPORT_MANUAL',
+  'LIMIT_ORDER_MATCHED',
 ]);
 
 // ═══════════════════════════════════════════════════════════

@@ -41,6 +41,7 @@ model User {
   savedRoutes     SavedRoute[]
   paymentMethods  PaymentMethod[]
   servicePayments ServicePayment[]
+  limitOrders     LimitOrder[]
 
   @@map("users")
 }
@@ -630,6 +631,7 @@ model MasterBooking {
   bookingAttempts              BookingAttempt[]
   ticketingReconciliations     TicketingReconciliation[]
   postTicketingRequests        PostTicketingRequest[]
+  limitOrderMatches            LimitOrderMatch[]
 
   @@index([masterBookingReference])
   @@index([masterPnr])
@@ -2731,4 +2733,170 @@ enum ServicePaymentType {
   BAGGAGE_CHANGE
   UPGRADE
   OTHER
+}
+
+// ═══════════════════════════════════════════════
+// LIMIT ORDERS
+// ═══════════════════════════════════════════════
+
+model LimitOrder {
+  id                     String               @id @default(cuid())
+  userId                 String               @map("user_id")
+
+  // Route
+  origin                 String               // IATA code (e.g. JFK)
+  destination            String               // IATA code (e.g. LAX)
+  departureDate          DateTime             @map("departure_date")
+  returnDate             DateTime?            @map("return_date")
+  tripType               MbTripType           @default(ONE_WAY) @map("trip_type")
+
+  // Passengers
+  adults                 Int                  @default(1)
+  children               Int                  @default(0)
+  infants                Int                  @default(0)
+
+  // Fare criteria
+  minFare                Decimal              @map("min_fare") @db.Decimal(10, 2)
+  maxFare                Decimal              @map("max_fare") @db.Decimal(10, 2)
+  currency               String               @default("USD")
+
+  // Flight criteria
+  maxDurationMinutes     Int?                 @map("max_duration_minutes")
+  cabinClass             CabinClass           @default(ECONOMY) @map("cabin_class")
+
+  // Airline preferences
+  airlinePreferenceMode  String               @default("ACCEPT") @map("airline_preference_mode") // ACCEPT or EXCLUDE
+  airlinePreferences     String[]             @map("airline_preferences") // IATA airline codes
+
+  // Windows
+  bookingWindowDays      Int                  @default(30) @map("booking_window_days")
+  expirationDays         Int?                 @map("expiration_days")
+  expiresAt              DateTime?            @map("expires_at")
+
+  // Execution
+  executionMode          LimitOrderExecMode   @default(NOTIFY_ONLY) @map("execution_mode")
+  status                 LimitOrderStatus     @default(DRAFT)
+
+  // Payment authorization (auto-purchase only)
+  stripeCustomerId       String?              @map("stripe_customer_id")
+  stripePaymentMethodId  String?              @map("stripe_payment_method_id")
+  cardBrand              String?              @map("card_brand")
+  cardLast4              String?              @map("card_last4")
+  paymentAuthorizedAt    DateTime?            @map("payment_authorized_at")
+
+  // Tracking
+  lastEvaluatedAt        DateTime?            @map("last_evaluated_at")
+  nextEvaluationAt       DateTime?            @map("next_evaluation_at")
+  lastMatchedAt          DateTime?            @map("last_matched_at")
+  lastNotificationAt     DateTime?            @map("last_notification_at")
+  lastPurchaseAttempt    DateTime?            @map("last_purchase_attempt")
+  retryCount             Int                  @default(0) @map("retry_count")
+  failureCount           Int                  @default(0) @map("failure_count")
+  pausedAt               DateTime?            @map("paused_at")
+
+  // Agent support
+  createdByRole          String?              @map("created_by_role")  // CUSTOMER, AGENT
+  agentUserId            String?              @map("agent_user_id")
+  agentName              String?              @map("agent_name")
+
+  createdAt              DateTime             @default(now()) @map("created_at")
+  updatedAt              DateTime             @updatedAt @map("updated_at")
+
+  // Relations
+  user                   User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  matches                LimitOrderMatch[]
+  events                 LimitOrderEvent[]
+
+  @@index([userId])
+  @@index([status])
+  @@index([origin, destination, departureDate])
+  @@index([nextEvaluationAt, status])
+  @@index([expiresAt])
+  @@index([agentUserId])
+  @@map("limit_orders")
+}
+
+model LimitOrderMatch {
+  id                String          @id @default(cuid())
+  limitOrderId      String          @map("limit_order_id")
+
+  // Match source
+  matchSource       String          @map("match_source") // LIVE_SEARCH or SCHEDULER
+
+  // Matched flight details
+  matchedFare       Decimal         @map("matched_fare") @db.Decimal(10, 2)
+  matchedCurrency   String          @default("USD") @map("matched_currency")
+  matchedDuration   Int?            @map("matched_duration") // minutes
+  matchedAirline    String?         @map("matched_airline")
+  matchedCabin      String          @map("matched_cabin")
+  matchedProvider   String          @map("matched_provider") // mystifly, duffel
+  providerOfferId   String?         @map("provider_offer_id")
+
+  // Idempotency
+  searchHash        String          @map("search_hash") // SHA256 for dedup
+
+  // Result
+  action            String          // NOTIFIED, AUTO_PURCHASED, EXPIRED, SKIPPED
+  bookingId         String?         @map("booking_id")
+  supportTicketId   String?         @map("support_ticket_id")
+
+  // Timestamps
+  notifiedAt        DateTime?       @map("notified_at")
+  purchasedAt       DateTime?       @map("purchased_at")
+  failureReason     String?         @map("failure_reason") @db.Text
+
+  createdAt         DateTime        @default(now()) @map("created_at")
+
+  // Relations
+  limitOrder        LimitOrder      @relation(fields: [limitOrderId], references: [id], onDelete: Cascade)
+  booking           MasterBooking?  @relation(fields: [bookingId], references: [id], onDelete: SetNull)
+
+  @@index([limitOrderId])
+  @@index([searchHash])
+  @@index([bookingId])
+  @@index([action])
+  @@index([createdAt])
+  @@map("limit_order_matches")
+}
+
+model LimitOrderEvent {
+  id                String       @id @default(cuid())
+  limitOrderId      String       @map("limit_order_id")
+
+  eventType         String       @map("event_type")   // CREATED, ACTIVATED, MATCHED, PAUSED, RESUMED, CANCELLED, EXPIRED, PURCHASE_ATTEMPTED, PURCHASE_SUCCEEDED, PURCHASE_FAILED, NOTIFIED
+  eventTitle        String       @map("event_title")
+  eventDescription  String?      @map("event_description") @db.Text
+  actorType         String       @map("actor_type")   // customer, agent, system, admin
+  actorId           String?      @map("actor_id")
+  payloadJson       Json?        @map("payload_json")
+
+  createdAt         DateTime     @default(now()) @map("created_at")
+
+  // Relations
+  limitOrder        LimitOrder   @relation(fields: [limitOrderId], references: [id], onDelete: Cascade)
+
+  @@index([limitOrderId])
+  @@index([eventType])
+  @@index([createdAt])
+  @@map("limit_order_events")
+}
+
+enum LimitOrderStatus {
+  DRAFT
+  ACTIVE
+  MONITORING
+  MATCHED
+  AWAITING_CUSTOMER
+  AWAITING_PAYMENT
+  PURCHASING
+  BOOKED
+  EXPIRED
+  CANCELLED
+  FAILED
+  SUPPORT_REQUIRED
+}
+
+enum LimitOrderExecMode {
+  NOTIFY_ONLY
+  AUTO_PURCHASE
 }

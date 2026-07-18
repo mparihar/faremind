@@ -21,6 +21,7 @@ import {
   Headphones,
   HelpCircle,
   CreditCard,
+  Target,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -38,6 +39,7 @@ const AGENT_NAV = [
   { href: '/agent/refunds', label: 'Refunds & Credits', icon: CreditCard },
   { href: '/agent/make-payment', label: 'Make a Payment', icon: CreditCard },
   { href: '/agent/duffel-assistant', label: 'Duffel Assistant', icon: MessageCircle },
+  { href: '/agent/limit-orders', label: 'Limit Orders', icon: Target },
   { href: '/agent/notifications', label: 'Notifications', icon: Bell },
   { href: '/agent/support', label: 'Contact Support', icon: HelpCircle },
   { href: '/agent/profile', label: 'Profile', icon: User },

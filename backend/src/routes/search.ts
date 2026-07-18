@@ -5,6 +5,7 @@ import { scoreFlights, WEIGHTS } from '../lib/flight/score';
 import { cacheGet, cacheSet, searchKey } from '../services/cache';
 import { applyMarkupToOffers } from '../services/markup-service';
 import type { UnifiedFlight } from '../lib/types';
+import { matchSearchResultsAgainstLimitOrders } from '../services/limit-order-matcher';
 
 const CABIN_CLASSES = ['economy', 'premium_economy', 'business', 'first'] as const;
 
@@ -163,6 +164,16 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // (prevents stale 0-result responses from normalizer bugs or transient API failures)
       if (rankedFlights.length > 0) {
         await cacheSet(cacheKey, response, 120);
+
+        // ── Live Search Reuse — match against active limit orders ──
+        // Fire-and-forget: never blocks the customer's search response
+        matchSearchResultsAgainstLimitOrders(rankedFlights as UnifiedFlight[], {
+          origin: effectiveOrigin,
+          destination: effectiveDestination,
+          departureDate: effectiveDate,
+          returnDate,
+          cabin,
+        }).catch(() => {});
       }
       return response;
     } catch (error) {

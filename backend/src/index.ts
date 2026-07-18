@@ -39,6 +39,8 @@ import adminNotificationsPlugin from './routes/admin-notifications';
 import mystiflyBookingPlugin from './routes/mystifly-booking';
 import mystiflyPtrPlugin     from './routes/mystifly-ptr';
 import rankingPlugin         from './ranking/route';
+import limitOrdersPlugin     from './routes/limit-orders';
+import { startLimitOrderScheduler, stopLimitOrderScheduler } from './workers/limit-order-cron';
 
 const PORT = parseInt(process.env.PORT || process.env.BACKEND_PORT || '3001');
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -149,6 +151,7 @@ async function main() {
   fastify.register(mystiflyBookingPlugin,    { prefix: '/api/mystifly' });
   fastify.register(mystiflyPtrPlugin,         { prefix: '/api/mystifly-ptr' });
   fastify.register(rankingPlugin,             { prefix: '/api/ranking' });
+  fastify.register(limitOrdersPlugin,          { prefix: '/api/limit-orders' });
 
   // ─── 404 / error handlers ────────────────────────────────────────────────
 
@@ -165,6 +168,14 @@ async function main() {
 
   try {
     await fastify.listen({ port: PORT, host: '0.0.0.0' });
+
+    // Start background workers
+    startLimitOrderScheduler();
+
+    // Graceful shutdown
+    const shutdown = () => { stopLimitOrderScheduler(); fastify.close(); };
+    process.on('SIGTERM', shutdown);
+    process.on('SIGINT', shutdown);
   } catch (err) {
     fastify.log.error(err);
     process.exit(1);

@@ -7,7 +7,7 @@ import { motion, AnimatePresence } from 'framer-motion';
 import {
   LayoutDashboard, Ticket, ClipboardList, Bell, TrendingDown,
   CreditCard, User, Headphones, LogOut, ChevronRight, Menu, X,
-  Search, HelpCircle, ChevronDown, Gift, Shield, Dna, Wallet,
+  Search, HelpCircle, ChevronDown, Gift, Shield, Dna, Wallet, Target,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useInactivityLogout } from '@/hooks/useInactivityLogout';
@@ -20,6 +20,7 @@ const SIDEBAR_NAV = [
   { href: '/account/manage-booking', label: 'Manage Booking', icon: ClipboardList },
   { href: '/account/travel-dna', label: 'My FareMind DNA\u2122', icon: Dna },
   { href: '/account/alerts', label: 'Price Alerts', icon: TrendingDown },
+  { href: '/account/limit-orders', label: 'Limit Orders', icon: Target },
   { href: '/account/payment-methods', label: 'Payment Methods', icon: Wallet },
   { href: '/account/make-payment', label: 'Make a Payment', icon: CreditCard },
   { href: '/account/refunds', label: 'Refunds & Credits', icon: CreditCard },
