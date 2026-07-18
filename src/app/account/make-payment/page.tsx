@@ -10,6 +10,7 @@ import {
 import { loadStripe } from '@stripe/stripe-js';
 import { Elements, CardNumberElement, CardExpiryElement, CardCvcElement, useStripe, useElements } from '@stripe/react-stripe-js';
 import { useAuthStore } from '@/store/useAuthStore';
+import { useManageBookingStore } from '@/store/useManageBookingStore';
 import { motion, AnimatePresence } from 'framer-motion';
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
@@ -123,7 +124,8 @@ export default function MakePaymentPage() {
   const { user, sessionToken } = useAuthStore();
 
   const [step, setStep] = useState(1);
-  const [bookings, setBookings] = useState<any[]>([]);
+  const { bookings, loadUserBookings, setBookingsFilter } = useManageBookingStore();
+
   const [selectedBookingId, setSelectedBookingId] = useState<string | null>(null);
   const [selectedType, setSelectedType] = useState<string | null>(null);
   const [amount, setAmount] = useState('');
@@ -137,19 +139,12 @@ export default function MakePaymentPage() {
   const [error, setError] = useState('');
   const [supportTicketRef, setSupportTicketRef] = useState('');
 
-  // Load user's bookings
+  // Load user's bookings — always reset filter to 'all' so we show every booking
   useEffect(() => {
-    if (!sessionToken) return;
-    (async () => {
-      try {
-        const res = await fetch('/api/user/bookings', { headers: { Authorization: `Bearer ${sessionToken}` } });
-        if (res.ok) {
-          const data = await res.json();
-          setBookings(data.bookings || []);
-        }
-      } catch {}
-    })();
-  }, [sessionToken]);
+    if (!user?.id) return;
+    setBookingsFilter('all');
+    loadUserBookings(user.id);
+  }, [user?.id]);
 
   const selectedBooking = useMemo(() => bookings.find(b => b.id === selectedBookingId), [bookings, selectedBookingId]);
   const selectedService = SERVICE_TYPES.find(s => s.value === selectedType);
