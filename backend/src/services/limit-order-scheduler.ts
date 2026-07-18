@@ -222,12 +222,12 @@ export async function expireStaleOrders(): Promise<number> {
 
 /**
  * Purge expired orders after the configured delay.
- * Permanently deletes operational data, leaving only audit metadata.
+ * Permanently deletes expired orders and all dependent data from the database.
  *
  * Safety checks:
  * - Only purges orders with status = EXPIRED and purgeAt <= now
- * - Skips orders with active purchase workflows (status PURCHASING)
- * - Transactionally deletes passengers, matches, events, then marks order
+ * - Transactionally deletes passengers, matches, events, then the order itself
+ * - No tombstone is kept — the order is fully removed from the platform
  */
 export async function purgeExpiredOrders(): Promise<number> {
   const now = new Date();
@@ -236,9 +236,8 @@ export async function purgeExpiredOrders(): Promise<number> {
     where: {
       status: 'EXPIRED',
       purgeAt: { lte: now },
-      deletedAt: null,
     },
-    select: { id: true },
+    select: { id: true, userId: true, origin: true, destination: true, createdAt: true, expiredAt: true },
     take: 100, // Process max 100 per cycle
   });
 
@@ -248,7 +247,7 @@ export async function purgeExpiredOrders(): Promise<number> {
 
   for (const order of toPurge) {
     try {
-      // Transactional delete of dependent records + mark order
+      // Transactional hard-delete: all dependent records + the order itself
       await prisma.$transaction(async (tx) => {
         // Delete passengers
         await tx.limitOrderPassenger.deleteMany({ where: { limitOrderId: order.id } });
@@ -256,21 +255,14 @@ export async function purgeExpiredOrders(): Promise<number> {
         await tx.limitOrderMatch.deleteMany({ where: { limitOrderId: order.id } });
         // Delete events
         await tx.limitOrderEvent.deleteMany({ where: { limitOrderId: order.id } });
-        // Mark order as purged (tombstone — keeps minimal audit data)
-        await tx.limitOrder.update({
-          where: { id: order.id },
-          data: {
-            deletedAt: now,
-            deletionReason: 'EXPIRED_PURGE',
-            // Clear sensitive operational data
-            airlinePreferences: [],
-            acceptedOrigins: [],
-            acceptedDestinations: [],
-            stripePaymentMethodId: null,
-            stripeCustomerId: null,
-          },
-        });
+        // Delete the order itself — fully removed from the database
+        await tx.limitOrder.delete({ where: { id: order.id } });
       });
+
+      console.log(
+        `[limit-order-scheduler] 🗑️ Purged order ${order.id} ` +
+        `(${order.origin}→${order.destination}, created ${order.createdAt.toISOString()}, expired ${order.expiredAt?.toISOString() || 'N/A'})`
+      );
       purged++;
     } catch (err) {
       console.error(`[limit-order-scheduler] Purge failed for order ${order.id}:`, err);

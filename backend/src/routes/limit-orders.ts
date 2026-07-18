@@ -197,7 +197,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const where: any = {};
       if (userId) where.userId = userId;
-      if (status) where.status = status;
+      if (status) {
+        where.status = status;
+      } else {
+        // Default: exclude EXPIRED orders from active views
+        where.status = { notIn: ['EXPIRED'] };
+      }
 
       // Agent search by customer email
       if (q.customerEmail) {
