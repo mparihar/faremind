@@ -189,7 +189,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
 
           {/* Desktop Nav */}
           {!hideNav && (
-            <div className="hidden md:flex items-center gap-1">
+            <div className="hidden md:flex items-center gap-0.5">
               {NAV_ITEMS.map((item) => {
                 const Icon = item.icon;
                 // Route logged-in users to their manage booking area based on role
@@ -213,7 +213,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                       key={item.href}
                       onClick={() => { window.location.href = '/'; }}
                       className={cn(
-                        'relative flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200',
+                        'relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-semibold transition-all duration-200 whitespace-nowrap',
                         isActive
                           ? 'text-white bg-white/[0.08] border border-white/[0.08]'
                           : 'text-white/60 hover:text-white hover:bg-white/[0.05] border border-transparent'
@@ -231,7 +231,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                       key={item.href}
                       href={href}
                       className={cn(
-                        'relative flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold transition-all duration-300 group overflow-visible',
+                        'relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-bold transition-all duration-300 group overflow-visible whitespace-nowrap',
                         isActive
                           ? 'text-white bg-[#1ABC9C]/20 border border-[#1ABC9C]/50 shadow-[0_0_15px_rgba(26,188,156,0.15)]'
                           : 'text-[#1ABC9C] hover:text-white border border-[#1ABC9C]/30 hover:border-[#1ABC9C]/80 bg-[#1ABC9C]/10 hover:bg-[#1ABC9C]/20 hover:shadow-[0_0_20px_rgba(26,188,156,0.4)]'
@@ -255,7 +255,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                     key={item.href}
                     href={href}
                     className={cn(
-                      'relative flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200',
+                      'relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-semibold transition-all duration-200 whitespace-nowrap',
                       isActive
                         ? 'text-white bg-white/[0.08] border border-white/[0.08]'
                         : 'text-white/60 hover:text-white hover:bg-white/[0.05] border border-transparent'
@@ -271,7 +271,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
               <button
                 onClick={() => authGuardedNav('/account/limit-orders')}
                 className={cn(
-                  'relative flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-200',
+                  'relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-semibold transition-all duration-200 whitespace-nowrap',
                   pathname.startsWith('/account/limit-orders')
                     ? 'text-white bg-white/[0.08] border border-white/[0.08]'
                     : 'text-[#1ABC9C] hover:text-white hover:bg-white/[0.05] border border-transparent'
@@ -286,7 +286,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                 <button
                   onClick={() => { setHelpDropdown(!helpDropdown); setUserDropdown(false); }}
                   className={cn(
-                    'relative flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-semibold transition-all duration-300',
+                    'relative flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-semibold transition-all duration-300 whitespace-nowrap',
                     (helpDropdown || ['/support', '/account/refunds'].some(p => pathname.startsWith(p)))
                       ? 'text-white'
                       : 'text-white/60 hover:text-white hover:bg-white/[0.05]'
@@ -337,7 +337,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
 
           {/* Right side */}
           {!hideNav && (
-            <div className="hidden md:flex items-center gap-3 ml-auto">
+            <div className="hidden md:flex items-center gap-2 ml-auto">
               {/* FareMind Voice Assistant — only on Hero and Passenger Form pages */}
               {(pathname === '/' || pathname === '/checkout/passengers') && (
                 <FareMindTravelAssistantButton />
@@ -402,7 +402,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
               ) : adminUser ? (
                 <button
                   onClick={adminLogout}
-                  className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white bg-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 transition-all"
+                  className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-bold text-white bg-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 transition-all whitespace-nowrap"
                 >
                   <LogOut className="w-4 h-4" />
                   Sign Out
@@ -418,7 +418,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
                   </Link>
                   <Link
                     href="/auth/login"
-                    className="flex items-center gap-2 px-5 py-2 rounded-xl text-sm font-bold text-white bg-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 transition-all"
+                    className="flex items-center gap-1.5 px-3.5 py-2 rounded-xl text-[13px] font-bold text-white bg-[#1ABC9C] shadow-lg shadow-[#1ABC9C]/25 transition-all whitespace-nowrap"
                   >
                     <LogIn className="w-4 h-4" />
                     Sign In
