@@ -87,6 +87,26 @@ async function getAdminServiceFee(booking: any): Promise<number> {
   }
 }
 
+// ── Idempotency lock for cancellation operations ──────────────────────────────
+// Prevents duplicate void/refund calls from double-clicks or retries.
+// Key: bookingId, Value: timestamp when lock was acquired.
+const cancellationLocks = new Map<string, number>();
+const CANCEL_LOCK_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+function acquireCancelLock(bookingId: string): boolean {
+  const now = Date.now();
+  const existing = cancellationLocks.get(bookingId);
+  if (existing && (now - existing) < CANCEL_LOCK_TTL_MS) {
+    return false; // Lock still held
+  }
+  cancellationLocks.set(bookingId, now);
+  return true;
+}
+
+function releaseCancelLock(bookingId: string): void {
+  cancellationLocks.delete(bookingId);
+}
+
 /**
  * Create a support ticket for the admin support queue when a cancellation
  * cannot be processed automatically (e.g. provider API failure, no order linked).
@@ -473,7 +493,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       try {
         const provider = getProvider(booking.primaryProvider);
         quote = await provider.getCancellationQuote(providerPnr.providerOrderId);
-        await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote', providerReference: quote.quoteId, payloadJson: quote.raw as object });
+        await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote', providerReference: quote.quoteId, payloadJson: { ...quote.raw as object, expiresAt: quote.expiresAt } });
       } catch (providerErr) {
         const providerMsg = providerErr instanceof Error ? providerErr.message : String(providerErr);
         // Strip provider prefixes and internal emails for customer display
@@ -618,6 +638,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
       if (booking.bookingStatus === 'CANCELLED') return reply.code(400).send({ error: 'Booking is already cancelled' });
 
+      // ── Idempotency: prevent duplicate cancel operations ───────────────
+      if (!acquireCancelLock(bookingId)) {
+        return reply.code(409).send({
+          error: 'A cancellation is already in progress for this booking. Please wait a moment and try again.',
+          code: 'CANCEL_IN_PROGRESS',
+        });
+      }
+
       const resolvedRefundMethod = refundMethod === 'AIRLINE_CREDIT' ? 'AIRLINE_CREDIT' : 'ORIGINAL_PAYMENT';
       const originalAmount = Number(booking.totalAmount);
       const route = `${booking.originAirport} → ${booking.destinationAirport}`;
@@ -628,10 +656,31 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       let result: { cancellationId: string; refundAmount: number; refundCurrency: string; raw: unknown };
       const isEstimate = quoteId.startsWith('est_');
 
+      // ── Quote expiry check ─────────────────────────────────────────────
+      // Void quotes expire in ~15 min, refund quotes in ~30 min.
+      // Check the stored quote payload's expiresAt before executing.
+      const storedQuote = await prisma.bookingProviderPayload.findFirst({
+        where: { bookingId, payloadType: 'cancellation_quote', providerReference: quoteId },
+        orderBy: { createdAt: 'desc' },
+        select: { payloadJson: true },
+      }).catch(() => null);
+      if (storedQuote?.payloadJson) {
+        const quotePayload = storedQuote.payloadJson as any;
+        const expiresAt = quotePayload?.expiresAt;
+        if (expiresAt && new Date(expiresAt) < new Date()) {
+          releaseCancelLock(bookingId);
+          return reply.code(410).send({
+            error: 'Your cancellation quote has expired. Please go back and request a new cancellation to get updated pricing.',
+            code: 'QUOTE_EXPIRED',
+          });
+        }
+      }
+
       if (isEstimate) {
         // Estimate-based quotes are no longer allowed — escalate to admin support
         fastify.log.warn({ bookingId, quoteId }, '[manage-booking/cancel/confirm] Estimate-based quoteId rejected');
         await createCancellationSupportTicket(booking, 'Customer attempted to confirm cancellation with an estimate-based quote (no live provider data). Requires manual admin processing.');
+        releaseCancelLock(bookingId);
         return reply.code(422).send({
           error: 'This cancellation cannot be processed automatically. A support ticket has been created and our team will assist you shortly.',
           code: 'ESTIMATE_QUOTE_NOT_ALLOWED',
@@ -653,13 +702,33 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           // Strip internal provider prefixes and emails for customer-facing display
           const cleanMsg = rawMsg
             .replace(/^Mystifly cancellation failed:\s*/i, '')
+            .replace(/^Mystifly (void|refund) failed:\s*/i, '')
+            .replace(/^Mystifly API error \(\d+\):\s*/i, '')
             .replace(/Request Cancellation to\s+\S+@\S+/gi, '')
             .replace(/\s+/g, ' ')
             .trim();
-          const customerMsg = `${cleanMsg || 'The airline could not process the cancellation'}. Please contact FareMind Support at support@faremind.ai`;
 
-          fastify.log.error({ err: rawMsg }, '[manage-booking/cancel/confirm] Provider cancellation failed');
-          await createCancellationSupportTicket(booking, `Cancel confirm failed: ${rawMsg}`);
+          // Detect transient provider server errors (HTTP 500, 502, 503)
+          const isTransientServerError = /\(50[023]\)|internal server error|service unavailable|bad gateway/i.test(rawMsg);
+          const customerMsg = isTransientServerError
+            ? 'The airline\'s system is temporarily unavailable. A support ticket has been created and our team will assist you shortly. Please try again in a few minutes.'
+            : `${cleanMsg || 'The airline could not process the cancellation'}. Please contact FareMind Support at support@faremind.ai`;
+
+          const providerOrder = booking.pnrs.find((p: any) => p.providerOrderId)?.providerOrderId ?? 'N/A';
+          const ticketNumbers = (booking.passengers || []).map((p: any) => p.ticketNumber).filter(Boolean).join(', ') || 'N/A';
+          fastify.log.error({ err: rawMsg, quoteId, bookingId }, '[manage-booking/cancel/confirm] Provider cancellation failed');
+          await createCancellationSupportTicket(
+            booking,
+            [
+              `Cancel confirm failed (stage: provider_execute)`,
+              `Quote ID: ${quoteId}`,
+              `Provider Order ID: ${providerOrder}`,
+              `Ticket Numbers: ${ticketNumbers}`,
+              `Amount: ${fmtCurrency(Number(booking.totalAmount), booking.currency)}`,
+              `Error: ${rawMsg}`,
+            ].join('\n')
+          );
+          releaseCancelLock(bookingId);
           return reply.code(502).send({ error: customerMsg, code: 'PROVIDER_CANCEL_FAILED', supportTicketCreated: true });
         }
       }
@@ -892,6 +961,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         }
       })();
 
+      releaseCancelLock(bookingId);
       return {
         success: true,
         cancellationId: cancel.id,
@@ -902,7 +972,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         refundTimeline: isVoid ? '3–5 business days' : '5–10 business days',
         refundMethod: resolvedRefundMethod,
       };
-    } catch (e) { fastify.log.error(e, '[manage-booking/cancel/confirm]'); reply.code(500).send({ error: 'Cancellation failed. Please try again or contact support.' }); }
+    } catch (e) {
+      const failedBookingId = (request.params as any)?.bookingId;
+      if (failedBookingId) releaseCancelLock(failedBookingId);
+      fastify.log.error(e, '[manage-booking/cancel/confirm]');
+      reply.code(500).send({ error: 'Cancellation failed. Please try again or contact support.' });
+    }
   });
 
   // ── Seat Map ────────────────────────────────────────────────────────────────
