@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { Inter } from 'next/font/google';
 import './globals.css';
 import ClientShell from '@/components/layout/ClientShell';
+import CacheBuster from '@/components/CacheBuster';
 
 const inter = Inter({
   variable: '--font-inter',
@@ -29,6 +30,7 @@ export default function RootLayout({
   return (
     <html lang="en" className={`${inter.variable} h-full antialiased`} suppressHydrationWarning>
       <body className="min-h-full flex flex-col font-[var(--font-inter)]" suppressHydrationWarning>
+        <CacheBuster />
         <ClientShell>{children}</ClientShell>
       </body>
     </html>
