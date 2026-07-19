@@ -626,6 +626,51 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     }
   }
 
+  // 8.9. Refundable Representation Rule
+  //      Guarantees at least one qualifying refundable fare appears in the top 10
+  //      recommendation window. This is a representation rule, NOT a scoring rule.
+  //      Safety constraints: no critical warnings, no suspicious pricing.
+  const TOP_N = 10;
+  if (tieBreakCandidates.length > TOP_N) {
+    const topN = tieBreakCandidates.slice(0, TOP_N);
+    const hasQualifyingRefundable = topN.some(c =>
+      c.features.fareFlexibility.refundable &&
+      c.score.refundabilityUpgradeBonus > 0 &&
+      !c.score.scoreBreakdown.warningDetails.some(w => w.severity === 'CRITICAL')
+    );
+
+    if (!hasQualifyingRefundable) {
+      // Find the best qualifying refundable outside the top 10
+      const bestRefundable = tieBreakCandidates.slice(TOP_N).find(c =>
+        c.features.fareFlexibility.refundable &&
+        c.score.refundabilityUpgradeBonus > 0 &&
+        !c.score.scoreBreakdown.warningDetails.some(w => w.severity === 'CRITICAL')
+      );
+
+      if (bestRefundable) {
+        // Find the lowest-ranked non-refundable, non-changeable offer in top 10
+        // to swap out (prefer removing the weakest non-flexible fare)
+        let swapIdx = -1;
+        let worstScore = Infinity;
+        for (let i = TOP_N - 1; i >= Math.floor(TOP_N / 2); i--) {
+          const c = tieBreakCandidates[i];
+          if (!c.features.fareFlexibility.refundable && c.score.finalScore < worstScore) {
+            worstScore = c.score.finalScore;
+            swapIdx = i;
+          }
+        }
+
+        if (swapIdx >= 0) {
+          const refIdx = tieBreakCandidates.indexOf(bestRefundable);
+          // Swap: move refundable into the top 10 position
+          const temp = tieBreakCandidates[swapIdx];
+          tieBreakCandidates[swapIdx] = bestRefundable;
+          tieBreakCandidates[refIdx] = temp;
+        }
+      }
+    }
+  }
+
   // 9. Assign badges
   const badgeCandidates: BadgeCandidate[] = tieBreakCandidates.map((c, i) => ({
     features: c.features,
