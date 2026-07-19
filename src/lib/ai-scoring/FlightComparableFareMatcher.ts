@@ -1,15 +1,16 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Comparable Fare Matcher — Finds the cheapest changeable fare as baseline
+// Comparable Fare Matcher — Finds the nearest changeable fare for a refundable offer
 // ═══════════════════════════════════════════════════════════════════════════════
 //
 // Used by the Refundability Upgrade Rule to locate the baseline changeable fare
 // against which the refundable premium is measured.
 //
-// Simple criteria:
+// Criteria:
 //   - Same cabin class
 //   - Same currency
+//   - Same stop count
 //   - Candidate must be changeable but NOT refundable
-//   - Select the CHEAPEST changeable fare as baseline
+//   - Select the one with the SMALLEST positive price difference (nearest by price)
 
 import type { ScoringFeatures } from './FlightScoringTypes';
 import type { RefundabilityUpgradeConfig } from './FlightScoringConfig';
@@ -25,19 +26,21 @@ export interface FareMatchCandidate {
 export interface FareMatchResult {
   /** The matched changeable fare, or null if no comparable found */
   match: FareMatchCandidate | null;
-  /** Price difference: refundablePrice - changeablePrice (negative = refundable is cheaper) */
+  /** Price difference: refundablePrice - changeablePrice */
   priceDiff: number;
 }
 
 // ── Main matcher ─────────────────────────────────────────────────────────────
 
 /**
- * Find the cheapest changeable (but not refundable) fare in the same cabin
- * as the baseline for the refundable premium calculation.
+ * Find the nearest comparable changeable (but not refundable) fare
+ * for a given fully refundable offer.
  *
- * Only requires: same cabin class + same currency.
- * Stops, duration, schedule, baggage are scored separately by the 8 dimensions
- * and should NOT block the refundability price comparison.
+ * "Nearest" = smallest positive price difference from the refundable fare.
+ * This avoids penalizing refundable fares against cheap outliers while still
+ * catching genuinely overpriced ones.
+ *
+ * Requires: same cabin + same currency + same stop count.
  */
 export function findNearestChangeableFare(
   refundable: FareMatchCandidate,
@@ -48,7 +51,7 @@ export function findNearestChangeableFare(
   const rCabin = (refundable.cabinClass || 'economy').toLowerCase();
 
   let bestMatch: FareMatchCandidate | null = null;
-  let bestPrice = Infinity;
+  let bestPriceDiff = Infinity;
 
   for (const candidate of allCandidates) {
     const cf = candidate.features;
@@ -66,15 +69,24 @@ export function findNearestChangeableFare(
     // Same currency
     if (candidate.currency !== refundable.currency) continue;
 
-    // Pick the cheapest changeable fare
-    if (cf.effectiveTotalPrice < bestPrice) {
-      bestPrice = cf.effectiveTotalPrice;
+    // Same stop count
+    if (cf.totalStops !== rf.totalStops) continue;
+
+    // Calculate price difference (refundable - changeable)
+    const priceDiff = rf.effectiveTotalPrice - cf.effectiveTotalPrice;
+
+    // Only consider changeable fares that are cheaper or equal
+    if (priceDiff < 0) continue;
+
+    // Select the candidate with the smallest positive price diff (nearest by price)
+    if (priceDiff < bestPriceDiff) {
+      bestPriceDiff = priceDiff;
       bestMatch = candidate;
     }
   }
 
   return {
     match: bestMatch,
-    priceDiff: bestMatch ? rf.effectiveTotalPrice - bestPrice : 0,
+    priceDiff: bestMatch ? bestPriceDiff : 0,
   };
 }
