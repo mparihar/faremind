@@ -40,11 +40,16 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             refundAmount = Number(booking.totalPrice) - Number(booking.cancellationFee || 0);
           }
         } catch (error) {
-          console.error('[Cancel] Provider cancellation failed:', error);
+          const errMsg = error instanceof Error ? error.message : String(error);
+          console.error('[Cancel] Provider cancellation failed:', errMsg);
+          const isTransient = /\(50[023]\)|internal server error|service unavailable|bad gateway|timeout/i.test(errMsg);
           // Do NOT mark as cancelled if the provider didn't actually cancel
           return reply.code(502).send({
-            error: 'The airline could not process the cancellation. Please try again or contact support.',
-            code: 'PROVIDER_CANCEL_FAILED',
+            error: isTransient
+              ? 'The airline system is temporarily unavailable. Please try again in a few minutes.'
+              : 'The airline could not process the cancellation. Please try again or contact support.',
+            code: isTransient ? 'PROVIDER_TEMPORARILY_UNAVAILABLE' : 'PROVIDER_CANCEL_FAILED',
+            isRetryable: isTransient,
           });
         }
       }

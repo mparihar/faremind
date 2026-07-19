@@ -77,8 +77,8 @@ export interface CancelQuote {
   refundTo: string;
   penaltyAmount: number;
   expiresAt: string;
-  /** Which cancellation path: VOID (within void window) or REFUND (standard refund) */
-  method: 'VOID' | 'REFUND' | 'UNKNOWN';
+  /** Which cancellation path: VOID (within void window), REFUND (standard refund), or CANCEL (direct cancel, no refund) */
+  method: 'VOID' | 'REFUND' | 'CANCEL' | 'UNKNOWN';
   /** Airline-imposed cancellation penalty */
   airlinePenalty: number;
   /** Supplier/aggregator fee */
@@ -95,6 +95,11 @@ export interface CancelResult {
   refundCurrency: string;
   confirmedAt: string;
   raw: unknown;
+}
+
+export interface CancelQuoteOptions {
+  /** The booking's ticketing status — used to skip PTR for unticketed bookings */
+  ticketingStatus?: string;
 }
 
 export interface NormalizedProviderRefundStatus {
@@ -173,7 +178,7 @@ export interface IBookingProvider {
   getOrder(orderId: string): Promise<OrderDetails>;
 
   /** Get cancellation refund quote (does NOT execute) */
-  getCancellationQuote(orderId: string): Promise<CancelQuote>;
+  getCancellationQuote(orderId: string, options?: CancelQuoteOptions): Promise<CancelQuote>;
 
   /** Confirm and execute cancellation */
   confirmCancellation(quoteId: string): Promise<CancelResult>;
@@ -311,7 +316,7 @@ export class DuffelAdapter implements IBookingProvider {
     return normalizeDuffelOrder(order);
   }
 
-  async getCancellationQuote(orderId: string): Promise<CancelQuote> {
+  async getCancellationQuote(orderId: string, _options?: CancelQuoteOptions): Promise<CancelQuote> {
     const cancellation = await duffelClient.createCancellationQuote(orderId);
     const refundAmount = parseFloat(cancellation.refund_amount || '0');
     // Duffel returns the net refund already accounting for penalties
@@ -503,6 +508,7 @@ export class DuffelAdapter implements IBookingProvider {
 
 import * as mystiflyClient from './mystifly';
 import type { MystiflyReissueOriginDestination, MystiflyReissuePassenger } from './mystifly';
+import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
 
 export class MystiflyAdapter implements IBookingProvider {
   readonly name = 'mystifly';
@@ -571,11 +577,33 @@ export class MystiflyAdapter implements IBookingProvider {
     };
   }
 
-  async getCancellationQuote(mfRef: string): Promise<CancelQuote> {
+  async getCancellationQuote(mfRef: string, options?: CancelQuoteOptions): Promise<CancelQuote> {
     // ── Step 1: Get order details for original amount ──
     const order = await this.getOrder(mfRef);
     const originalAmount = order.totalAmount;
     const currency = order.currency;
+
+    // ── Step 1b: If booking was never ticketed, skip PTR entirely ──
+    // VoidQuote/RefundQuote are Post-TICKETING Requests — they only work
+    // on ticketed bookings. Unticketed bookings must use direct cancel.
+    const ticketingStatus = options?.ticketingStatus;
+    if (ticketingStatus && ticketingStatus === 'NOT_STARTED') {
+      console.info(`[MystiflyAdapter] Booking ${mfRef} not ticketed (${ticketingStatus}), using direct cancel path`);
+      return {
+        quoteId: `mystifly_cancel_norefund_${mfRef}`,
+        orderId: mfRef,
+        refundAmount: 0,
+        refundCurrency: currency,
+        refundTo: 'original_payment',
+        penaltyAmount: originalAmount,
+        expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+        method: 'CANCEL',
+        airlinePenalty: originalAmount,
+        supplierFee: 0,
+        originalAmount,
+        raw: { directCancel: true, reason: 'unticketed_booking' },
+      };
+    }
 
     // ── Step 2: Try VoidQuote first (within void window) ──
     try {
@@ -620,20 +648,80 @@ export class MystiflyAdapter implements IBookingProvider {
         console.warn(`[MystiflyAdapter] VoidQuote returned non-eligible response, trying RefundQuote`, voidErrors);
       }
     } catch (voidErr) {
-      // VoidQuote API call failed — log and fall through to RefundQuote
-      console.warn(`[MystiflyAdapter] VoidQuote API error for ${mfRef}, falling back to RefundQuote:`, voidErr instanceof Error ? voidErr.message : voidErr);
+      // VoidQuote API call failed — classify and log, then fall through to RefundQuote
+      const classified = MystiflyCancellationError.from(voidErr, 'VoidQuote');
+      console.warn(`[MystiflyAdapter] VoidQuote API error for ${mfRef} (${classified.errorType}), falling back to RefundQuote:`, classified.message);
+
+      // If it's a PNR-level problem (not found, already cancelled), don't bother trying refund
+      if (classified.errorType === 'INVALID_PNR' || classified.errorType === 'ALREADY_CANCELLED') {
+        throw classified;
+      }
     }
 
     // ── Step 3: VoidQuote not eligible or failed → try RefundQuote ──
-    const refundResult = await mystiflyClient.refundQuote(mfRef);
+    let refundResult;
+    try {
+      refundResult = await mystiflyClient.refundQuote(mfRef);
+    } catch (refundErr) {
+      // RefundQuote API crashed (e.g. Mystifly 500 bug on certain bookings)
+      // Fall back to direct cancel path
+      const classified = MystiflyCancellationError.from(refundErr, 'RefundQuote');
+      console.warn(`[MystiflyAdapter] RefundQuote API crashed for ${mfRef} (${classified.errorType}), falling back to direct cancel:`, classified.message);
+
+      if (classified.errorType === 'TRANSIENT' || classified.errorType === 'UNKNOWN') {
+        return {
+          quoteId: `mystifly_cancel_norefund_${mfRef}`,
+          orderId: mfRef,
+          refundAmount: 0,
+          refundCurrency: currency,
+          refundTo: 'original_payment',
+          penaltyAmount: originalAmount,
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+          method: 'CANCEL',
+          airlinePenalty: originalAmount,
+          supplierFee: 0,
+          originalAmount,
+          raw: { directCancel: true, reason: 'refund_quote_failed', error: classified.message },
+        };
+      }
+      throw classified;
+    }
+
     const refundData = refundResult?.Data || refundResult;
     const refundSuccess = refundData?.Success ?? refundResult?.Success;
     const refundPtrId = refundData?.PtrId || refundData?.ptrId || refundResult?.PtrId;
     const refundErrors = refundData?.Errors || refundResult?.Errors || [];
+    const refundMsg = refundResult?.Message || refundData?.Message || '';
 
-    if (!refundSuccess || !refundPtrId) {
-      const errMsg = refundResult?.Message || refundData?.Message || refundErrors?.[0]?.Message || refundErrors?.[0]?.message || 'Cancellation not available';
-      throw new Error(`Mystifly cancellation not available: ${errMsg}`);
+    // Check for Mystifly 500 passed through in the JSON body (HTTP 200 but internal error in Message)
+    const is500InBody = /\(500\)|Internal Server Error/i.test(refundMsg);
+
+    if (is500InBody || (!refundSuccess && !refundPtrId)) {
+      // If it's a Mystifly internal 500 error, fall back to direct cancel
+      if (is500InBody) {
+        console.warn(`[MystiflyAdapter] RefundQuote returned 500-in-body for ${mfRef}, falling back to direct cancel`);
+        return {
+          quoteId: `mystifly_cancel_norefund_${mfRef}`,
+          orderId: mfRef,
+          refundAmount: 0,
+          refundCurrency: currency,
+          refundTo: 'original_payment',
+          penaltyAmount: originalAmount,
+          expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
+          method: 'CANCEL',
+          airlinePenalty: originalAmount,
+          supplierFee: 0,
+          originalAmount,
+          raw: { directCancel: true, reason: 'refund_quote_500', originalMessage: refundMsg },
+        };
+      }
+
+      const errMsg = refundMsg || refundErrors?.[0]?.Message || refundErrors?.[0]?.message || 'Cancellation not available';
+      const errCode = refundErrors?.[0]?.Code || refundErrors?.[0]?.code || undefined;
+      throw new MystiflyCancellationError(`Mystifly cancellation not available: ${errMsg}`, {
+        providerErrorCode: errCode,
+        rawResponse: refundResult,
+      });
     }
 
     // Extract refund breakdown from PTR response
@@ -677,7 +765,10 @@ export class MystiflyAdapter implements IBookingProvider {
       if (!success) {
         const errorMsg = data?.Errors?.[0]?.Message || result?.Message || 'Void execution failed';
         const errorCode = data?.Errors?.[0]?.Code || '';
-        throw new Error(`Mystifly void failed: ${errorCode} ${errorMsg}`);
+        throw new MystiflyCancellationError(`Mystifly void failed: ${errorCode} ${errorMsg}`, {
+          providerErrorCode: errorCode,
+          rawResponse: result,
+        });
       }
 
       return {
@@ -702,7 +793,10 @@ export class MystiflyAdapter implements IBookingProvider {
       if (!success) {
         const errorMsg = data?.Errors?.[0]?.Message || result?.Message || 'Refund execution failed';
         const errorCode = data?.Errors?.[0]?.Code || '';
-        throw new Error(`Mystifly refund failed: ${errorCode} ${errorMsg}`);
+        throw new MystiflyCancellationError(`Mystifly refund failed: ${errorCode} ${errorMsg}`, {
+          providerErrorCode: errorCode,
+          rawResponse: result,
+        });
       }
 
       return {
@@ -752,7 +846,11 @@ export class MystiflyAdapter implements IBookingProvider {
       const success = result?.Data?.Success || result?.Success;
       if (!success) {
         const errorMsg = result?.Data?.Errors?.[0]?.Message || result?.Message || 'Cancellation failed';
-        throw new Error(`Mystifly cancellation failed: ${errorMsg}`);
+        const errorCode = result?.Data?.Errors?.[0]?.Code || '';
+        throw new MystiflyCancellationError(`Mystifly cancellation failed: ${errorMsg}`, {
+          providerErrorCode: errorCode,
+          rawResponse: result,
+        });
       }
 
       return {
@@ -773,7 +871,11 @@ export class MystiflyAdapter implements IBookingProvider {
       const success = result?.Data?.Success || result?.Success;
       if (!success) {
         const errorMsg = result?.Data?.Errors?.[0]?.Message || result?.Message || 'Unknown error';
-        throw new Error(`Mystifly cancellation failed: ${errorMsg}`);
+        const errorCode = result?.Data?.Errors?.[0]?.Code || '';
+        throw new MystiflyCancellationError(`Mystifly cancellation failed: ${errorMsg}`, {
+          providerErrorCode: errorCode,
+          rawResponse: result,
+        });
       }
       return {
         cancellationId: `mystifly_cancel_${legacyMfRef}_${Date.now()}`,

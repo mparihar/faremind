@@ -80,6 +80,7 @@ export interface CancelSuccessData {
   refundCurrency: string;
   refundTimeline: string;
   refundMethod: string;
+  cancellationMethod?: string;
 }
 
 export interface SeatMapData {
@@ -133,6 +134,9 @@ interface ManageBookingStore {
   cancelSuccess: CancelSuccessData | null;
   cancelLoading: boolean;
   cancelError: string | null;
+  cancelErrorCode: string | null;
+  cancelRetryable: boolean;
+  cancelSupportTicketCreated: boolean;
   setCancelSuccess: (s: CancelSuccessData | null) => void;
 
   // Seat map
@@ -218,7 +222,7 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
   bookingsFilter: 'all', bookingsLoading: false,
   booking: null, bookingLoading: false,
   actions: [], actionsLoading: false, fareRules: null,
-  cancelQuote: null, cancelSuccess: null, cancelLoading: false, cancelError: null,
+  cancelQuote: null, cancelSuccess: null, cancelLoading: false, cancelError: null, cancelErrorCode: null, cancelRetryable: false, cancelSupportTicketCreated: false,
   seatMaps: [], seatMapLoading: false,
   timeline: [], timelineLoading: false,
   eticket: null, eticketLoading: false, eticketError: null,
@@ -303,17 +307,47 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
   },
 
   loadCancelQuote: async (bookingId) => {
-    set({ cancelLoading: true, cancelError: null, cancelQuote: null });
+    set({ cancelLoading: true, cancelError: null, cancelErrorCode: null, cancelRetryable: false, cancelSupportTicketCreated: false, cancelQuote: null });
     try {
-      const data = await api<CancelQuoteData>(`/api/manage-booking/${bookingId}/cancel/quote`, { method: 'POST', body: JSON.stringify({}) });
+      const res = await fetch(apiUrl(`/api/manage-booking/${bookingId}/cancel/quote`), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({}) });
+      if (res.status === 401) {
+        if (typeof window !== 'undefined') { const { useAuthStore } = require('@/store/useAuthStore'); useAuthStore.getState().logout(); window.location.href = '/'; }
+        throw new Error('Session expired');
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        set({
+          cancelLoading: false,
+          cancelError: data.error || `HTTP ${res.status}`,
+          cancelErrorCode: data.code || null,
+          cancelRetryable: data.isRetryable ?? false,
+          cancelSupportTicketCreated: data.supportTicketCreated ?? false,
+        });
+        return;
+      }
       set({ cancelQuote: data, cancelLoading: false });
     } catch (e: any) { set({ cancelLoading: false, cancelError: e.message }); }
   },
 
   confirmCancel: async (bookingId, quoteId, refundMethod) => {
-    set({ cancelLoading: true, cancelError: null });
+    set({ cancelLoading: true, cancelError: null, cancelErrorCode: null, cancelRetryable: false, cancelSupportTicketCreated: false });
     try {
-      const data = await api<any>(`/api/manage-booking/${bookingId}/cancel/confirm`, { method: 'POST', body: JSON.stringify({ quoteId, refundMethod }) });
+      const res = await fetch(apiUrl(`/api/manage-booking/${bookingId}/cancel/confirm`), { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quoteId, refundMethod }) });
+      if (res.status === 401) {
+        if (typeof window !== 'undefined') { const { useAuthStore } = require('@/store/useAuthStore'); useAuthStore.getState().logout(); window.location.href = '/'; }
+        throw new Error('Session expired');
+      }
+      const data = await res.json();
+      if (!res.ok) {
+        set({
+          cancelLoading: false,
+          cancelError: data.error || `HTTP ${res.status}`,
+          cancelErrorCode: data.code || null,
+          cancelRetryable: data.isRetryable ?? false,
+          cancelSupportTicketCreated: data.supportTicketCreated ?? false,
+        });
+        return false;
+      }
       set({
         cancelLoading: false,
         cancelSuccess: {
@@ -323,6 +357,7 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
           refundCurrency: data.refundCurrency,
           refundTimeline: data.refundTimeline || '5–10 business days',
           refundMethod: data.refundMethod || 'ORIGINAL_PAYMENT',
+          cancellationMethod: data.cancellationMethod,
         },
       });
       return true;
@@ -431,7 +466,7 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
     guestToken: null, maskedEmail: null, otpSent: false, otpVerifying: false,
     bookings: [], bookingsFilter: 'all', bookingsLoading: false,
     booking: null, bookingLoading: false, actions: [], actionsLoading: false, fareRules: null,
-    cancelQuote: null, cancelSuccess: null, cancelLoading: false, cancelError: null,
+    cancelQuote: null, cancelSuccess: null, cancelLoading: false, cancelError: null, cancelErrorCode: null, cancelRetryable: false, cancelSupportTicketCreated: false,
     seatMaps: [], seatMapLoading: false, timeline: [], timelineLoading: false,
     eticket: null, eticketLoading: false, eticketError: null,
     dateChangeLoading: false, dateChangeError: null,

@@ -73,7 +73,20 @@ export async function POST(request: NextRequest) {
             refundAmount = Number(booking.totalPrice) - cancellationFee;
           } else {
             const errData = await res.json().catch(() => ({}));
-            console.error(`[Cancel] Mystifly cancellation failed:`, errData.error || res.status);
+            const errMsg = errData.error || `Mystifly cancel HTTP ${res.status}`;
+            const isTransient = /\(50[023]\)|internal server error|service unavailable|timeout/i.test(errMsg);
+            console.error(`[Cancel] Mystifly cancellation failed:`, errMsg);
+            // Do NOT proceed with local cancellation if provider failed
+            return NextResponse.json(
+              {
+                error: isTransient
+                  ? 'The airline system is temporarily unavailable. Please try again in a few minutes.'
+                  : errMsg,
+                code: isTransient ? 'PROVIDER_TEMPORARILY_UNAVAILABLE' : 'PROVIDER_CANCEL_FAILED',
+                isRetryable: isTransient,
+              },
+              { status: 502 },
+            );
           }
         }
       } catch (error) {

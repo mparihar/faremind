@@ -6,6 +6,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { getProvider } from '../services/provider-adapter';
 import { initiateCancellation } from '../services/cancellation-orchestrator';
+import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
 import * as mbq from '../lib/manage-booking-queries';
 import * as emails from '../lib/manage-booking-emails';
 import { prisma } from '../lib/db';
@@ -463,6 +464,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // â”€â”€ Cancel: Quote / Eligibility â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ——— Cancel: Quote / Eligibility ——————————————————————————————————————————————————————————
   fastify.post('/:bookingId/cancel/quote', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
@@ -478,9 +480,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const primaryPnr = booking.pnrs.find(p => p.isPrimary) ?? booking.pnrs[0];
       const isRefundable = primaryPnr?.refundable ?? false;
 
-      // â”€â”€ Provider order must exist to proceed â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ——— Provider order must exist to proceed ——————————————————————————————————————————
       if (!providerPnr?.providerOrderId) {
-        fastify.log.warn({ bookingId }, '[manage-booking/cancel/quote] No provider order linked â€” creating support ticket');
+        fastify.log.warn({ bookingId }, '[manage-booking/cancel/quote] No provider order linked — creating support ticket');
         await createCancellationSupportTicket(booking, 'No provider order linked to this booking. Live cancellation quote could not be retrieved.');
         return reply.code(422).send({
           error: 'We could not retrieve live cancellation details from the airline for this booking. A support ticket has been created and our team will contact you shortly to assist with the cancellation.',
@@ -489,24 +491,27 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // â”€â”€ Fetch live cancellation quote from provider â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+      // ——— Fetch live cancellation quote from provider —————————————————
       let quote;
       try {
         const provider = getProvider(booking.primaryProvider);
-        quote = await provider.getCancellationQuote(providerPnr.providerOrderId);
+        quote = await provider.getCancellationQuote(providerPnr.providerOrderId, { ticketingStatus: booking.ticketingStatus });
         await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote', providerReference: quote.quoteId, payloadJson: { ...quote.raw as object, expiresAt: quote.expiresAt } });
       } catch (providerErr) {
-        const providerMsg = providerErr instanceof Error ? providerErr.message : String(providerErr);
-        // Strip provider prefixes and internal emails for customer display
-        const cleanMsg = providerMsg
+        // Classify the error using MystiflyCancellationError
+        const classified = providerErr instanceof MystiflyCancellationError
+          ? providerErr
+          : MystiflyCancellationError.from(providerErr, 'CancellationQuote');
+
+        fastify.log.error({ err: classified.message, errorType: classified.errorType }, '[manage-booking/cancel/quote] Provider quote failed');
+
+        // Detect "not eligible for refund" — offer Cancel Anyway (no refund)
+        const rawMsg = providerErr instanceof Error ? providerErr.message : String(providerErr);
+        const cleanMsg = rawMsg
           .replace(/^.*not available:\s*/, '')
           .replace(/Request Cancellation to\s+\S+@\S+/gi, '')
           .replace(/\s+/g, ' ')
           .trim();
-
-        fastify.log.error({ providerErr: cleanMsg }, '[manage-booking/cancel/quote] Provider quote failed');
-
-        // Detect "not eligible for refund" â€” offer Cancel Anyway (no refund)
         const isNonRefundable = /not eligible for refund|non.?refundable|no refund/i.test(cleanMsg);
 
         if (isNonRefundable) {
@@ -526,7 +531,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             quoteId: `mystifly_cancel_norefund_${providerPnr.providerOrderId}`,
             bookingReference: booking.masterBookingReference,
             airlinePnr: booking.masterPnr || primaryPnr?.pnrCode || null,
-            route: `${booking.originAirport} â†’ ${booking.destinationAirport}`,
+            route: `${booking.originAirport} → ${booking.destinationAirport}`,
             departureDate: booking.departureDate,
             bookingStatus: booking.bookingStatus,
             cancellationMethod: 'CANCEL',
@@ -537,22 +542,26 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           });
         }
 
-        // Other errors â€” show actual message + support ticket
-        await createCancellationSupportTicket(booking, `Provider error: ${cleanMsg}`);
-        return reply.code(502).send({
-          error: `${cleanMsg}. Please contact FareMind Support at support@faremind.ai`,
-          code: 'PROVIDER_QUOTE_FAILED',
-          supportTicketCreated: true,
+        // Other errors -- return structured response with classification
+        if (!classified.isTransient || classified.errorType === 'UNKNOWN') {
+          await createCancellationSupportTicket(booking, `Provider error (${classified.errorType}): ${classified.message}`);
+        }
+
+        return reply.code(classified.suggestedHttpStatus).send({
+          error: classified.customerMessage,
+          code: classified.responseCode,
+          isRetryable: classified.isTransient,
+          supportTicketCreated: !classified.isTransient || classified.errorType === 'UNKNOWN',
         });
       }
 
-      // â”€â”€ Use provider-returned penalty breakdown when available â”€â”€â”€â”€â”€â”€â”€â”€â”€
-      const cancellationMethod = quote.method || 'REFUND'; // VOID or REFUND
+      // ── Use provider-returned penalty breakdown when available ─────────
+      const cancellationMethod = quote.method || 'REFUND'; // VOID, REFUND, or CANCEL
       const providerAirlinePenalty = quote.airlinePenalty ?? 0;
       const providerSupplierFee = quote.supplierFee ?? 0;
 
       // For VOID: use provider penalties directly (typically $0)
-      // For REFUND: use provider penalties; fall back to old logic if not provided
+      // For REFUND/CANCEL: use provider penalties; fall back to old logic if not provided
       let airlinePenalty: number;
       let refundAmount: number;
 
@@ -588,10 +597,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Customer-friendly cancellation type
       const cancellationType = cancellationMethod === 'VOID'
         ? 'IMMEDIATE_VOID'
+        : cancellationMethod === 'CANCEL'
+        ? 'NO_REFUND'
         : 'REFUND';
 
       const warningMessage = cancellationMethod === 'VOID'
         ? 'Your booking is eligible for immediate cancellation. This eligibility may expire shortly. This action cannot be undone.'
+        : cancellationMethod === 'CANCEL'
+        ? 'This booking will be cancelled without a refund. This action cannot be undone.'
         : isRefundable || refundAmount > 0
           ? 'Cancellation penalties may vary until airline confirmation. This action cannot be undone.'
           : 'This ticket is non-refundable. Confirming cancellation will cancel the booking without a refund.';
@@ -688,10 +701,22 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // Check if it's an orchestrator error with structured info
       if (e.code === 'PROVIDER_CANCEL_FAILED') {
+        const isRetryable = /temporarily unavailable|try again/i.test(e.message);
         return reply.code(502).send({
           error: e.message,
           code: e.code,
+          isRetryable,
           supportTicketCreated: e.supportTicketCreated || false,
+        });
+      }
+
+      // Check for MystiflyCancellationError that wasn't caught by orchestrator
+      if (e instanceof MystiflyCancellationError) {
+        return reply.code(e.suggestedHttpStatus).send({
+          error: e.customerMessage,
+          code: e.responseCode,
+          isRetryable: e.isTransient,
+          supportTicketCreated: false,
         });
       }
 

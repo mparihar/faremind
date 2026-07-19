@@ -31,6 +31,7 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
   const router = useRouter();
   const {
     cancelQuote, cancelSuccess, cancelLoading, cancelError,
+    cancelErrorCode, cancelRetryable, cancelSupportTicketCreated,
     loadCancelQuote, confirmCancel, loadBookingDetail, loadActions, loadTimeline,
     setCancelSuccess,
   } = useManageBookingStore();
@@ -39,6 +40,10 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
   const [msgIdx, setMsgIdx] = useState(0);
   const [refundMethodChoice, setRefundMethodChoice] = useState<'ORIGINAL_PAYMENT' | 'AIRLINE_CREDIT'>('ORIGINAL_PAYMENT');
   const [localError, setLocalError] = useState<string | null>(null);
+  const [localErrorCode, setLocalErrorCode] = useState<string | null>(null);
+  const [localRetryable, setLocalRetryable] = useState(false);
+  const [localTicketCreated, setLocalTicketCreated] = useState(false);
+  const [retryCooldown, setRetryCooldown] = useState(0);
   const mountedRef = useRef(true);
 
   // Cycle through loading messages
@@ -53,16 +58,18 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
     mountedRef.current = true;
     loadCancelQuote(bookingId).then(() => {
       if (!mountedRef.current) return;
-      // Check if the quote was actually loaded — the store swallows API errors
       const state = useManageBookingStore.getState();
       if (state.cancelQuote) {
         setStep('review');
       } else {
         setLocalError(state.cancelError || 'The airline could not return cancellation details. A support ticket has been created — our team will follow up within 24 hours.');
+        setLocalErrorCode(state.cancelErrorCode || null);
+        setLocalRetryable(state.cancelRetryable);
+        setLocalTicketCreated(state.cancelSupportTicketCreated);
         setStep('error');
       }
     }).catch(() => {
-      if (mountedRef.current) { setLocalError('Could not retrieve cancellation information. Please try again.'); setStep('error'); }
+      if (mountedRef.current) { setLocalError('Could not retrieve cancellation information. Please try again.'); setLocalRetryable(true); setStep('error'); }
     });
     return () => { mountedRef.current = false; };
   }, [bookingId, loadCancelQuote]);
@@ -87,9 +94,12 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
       loadActions(bookingId).catch(() => {});
       loadTimeline(bookingId).catch(() => {});
     } else {
-      // Read the latest error from the store (it was set inside confirmCancel)
-      const latestError = useManageBookingStore.getState().cancelError;
-      setLocalError(latestError || 'The airline could not process your cancellation. Please contact support.');
+      // Read the latest error from the store
+      const s = useManageBookingStore.getState();
+      setLocalError(s.cancelError || 'The airline could not process your cancellation. Please contact support.');
+      setLocalErrorCode(s.cancelErrorCode || null);
+      setLocalRetryable(s.cancelRetryable);
+      setLocalTicketCreated(s.cancelSupportTicketCreated);
       setStep('error');
     }
   }
@@ -401,17 +411,50 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                 <div className="w-14 h-14 rounded-full bg-red-500/10 border border-red-500/20 flex items-center justify-center mb-4">
                   <ShieldAlert size={26} className="text-red-400" />
                 </div>
-                <p className="text-white font-bold mb-2">Unable to Cancel</p>
+                <p className="text-white font-bold mb-2">
+                  {localErrorCode === 'ALREADY_CANCELLED' ? 'Already Cancelled'
+                    : localErrorCode === 'PROVIDER_TEMPORARILY_UNAVAILABLE' ? 'Temporarily Unavailable'
+                    : localErrorCode === 'QUOTE_EXPIRED' ? 'Quote Expired'
+                    : localErrorCode === 'NOT_ELIGIBLE' ? 'Not Eligible'
+                    : 'Unable to Cancel'}
+                </p>
                 <p className="text-slate-400 text-sm leading-relaxed max-w-xs">
                   {localError || cancelError || 'An unexpected error occurred. Please try again or contact support.'}
                 </p>
+                {localTicketCreated && (
+                  <div className="flex items-center gap-1.5 mt-3 text-xs text-[#1ABC9C]">
+                    <Check size={12} />
+                    <span>Support ticket created — our team will follow up shortly</span>
+                  </div>
+                )}
               </div>
               <div className="grid grid-cols-2 gap-2">
                 <button
-                  onClick={() => { setStep('loading'); setMsgIdx(0); setLocalError(null); loadCancelQuote(bookingId).then(() => { const s = useManageBookingStore.getState(); if (s.cancelQuote) setStep('review'); else { setLocalError(s.cancelError || 'Cancellation details unavailable. A support ticket has been created.'); setStep('error'); } }).catch(() => { setLocalError('Could not connect. Please try again.'); setStep('error'); }); }}
-                  className="flex items-center justify-center gap-1.5 py-3 rounded-xl border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/[0.04] transition-all"
+                  onClick={() => {
+                    if (retryCooldown > 0) return;
+                    setStep('loading'); setMsgIdx(0); setLocalError(null); setLocalErrorCode(null); setLocalRetryable(false); setLocalTicketCreated(false);
+                    loadCancelQuote(bookingId).then(() => {
+                      const s = useManageBookingStore.getState();
+                      if (s.cancelQuote) { setStep('review'); }
+                      else {
+                        setLocalError(s.cancelError || 'Cancellation details unavailable.');
+                        setLocalErrorCode(s.cancelErrorCode || null);
+                        setLocalRetryable(s.cancelRetryable);
+                        setLocalTicketCreated(s.cancelSupportTicketCreated);
+                        setStep('error');
+                        // Start cooldown for retryable errors
+                        if (s.cancelRetryable) {
+                          setRetryCooldown(10);
+                          const t = setInterval(() => setRetryCooldown(v => { if (v <= 1) { clearInterval(t); return 0; } return v - 1; }), 1000);
+                        }
+                      }
+                    }).catch(() => { setLocalError('Could not connect. Please try again.'); setLocalRetryable(true); setStep('error'); });
+                  }}
+                  disabled={retryCooldown > 0}
+                  className="flex items-center justify-center gap-1.5 py-3 rounded-xl border border-white/10 text-slate-400 font-semibold text-sm hover:bg-white/[0.04] transition-all disabled:opacity-40"
                 >
-                  <ArrowLeft size={13} /> Try Again
+                  <ArrowLeft size={13} />
+                  {retryCooldown > 0 ? `Retry in ${retryCooldown}s` : 'Try Again'}
                 </button>
                 <button
                   onClick={() => { onClose(); router.push('/support'); }}
