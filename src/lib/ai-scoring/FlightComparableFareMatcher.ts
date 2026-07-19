@@ -1,20 +1,15 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Comparable Fare Matcher — 2-Level Hierarchy, Nearest by Absolute Price Diff
+// Comparable Fare Matcher — 2-Level Hierarchy
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// For every refundable fare, find the nearest valid comparable changeable fare.
+// For every refundable fare, select EXACTLY ONE comparator:
+//   Level 1 — Exact: same cabin, currency, stop count
+//   Level 2 — Near:  ±1 stop, ≤35% duration difference (only if no L1 match)
 //
-// CRITICAL RULE:
-//   "Nearest" = smallest absolute price difference: abs(refundable - changeable)
-//   NOT cheapest. NOT median. NOT nearest-positive-only.
-//   If $791 is closer to $861 than $599, the comparator is $791.
-//
-// Level 1 — Exact: same cabin, currency, stop count
-// Level 2 — Near:  ±1 stop, ≤35% duration difference (only if no Level-1 match)
-// No Level 3 — if no comparable exists, no bonus/penalty applied.
+// Within the highest level: smallest abs(refundable - changeable) price diff.
+// No Level 3. No market fallback. No cheapest. No median.
 
 import type { ScoringFeatures } from './FlightScoringTypes';
-import type { RefundabilityUpgradeConfig } from './FlightScoringConfig';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -27,16 +22,11 @@ export interface FareMatchCandidate {
 export type MatchLevel = 'exact' | 'near';
 
 export interface FareMatchResult {
-  /** The matched changeable fare, or null if no comparable found */
   match: FareMatchCandidate | null;
-  /** Price difference: refundablePrice - changeablePrice */
   priceDiff: number;
-  /** Which matching level was used */
   matchLevel: MatchLevel | null;
-  /** Stop count difference between refundable and matched changeable */
   stopDiff: number;
-  /** Duration ratio: refundable / changeable */
-  durationRatio: number;
+  durationDiffPct: number;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -55,55 +45,55 @@ function sameCabinAndCurrency(
 }
 
 /**
- * From a filtered group, select the candidate with the smallest
- * ABSOLUTE price difference from the refundable fare.
- *
- * abs(refundableFare - changeableFare) — not just positive diffs,
- * not the cheapest, not a median.
+ * Select the candidate with the smallest absolute price difference.
+ * Tie-breakers: smaller stop diff → shorter duration → lower price → earlier index.
  */
-function selectNearestByAbsolutePriceDiff(
+function selectBySmallestAbsPriceDiff(
   refundablePrice: number,
+  refundableStops: number,
+  refundableDuration: number,
   candidates: FareMatchCandidate[],
 ): FareMatchCandidate | null {
   if (candidates.length === 0) return null;
 
-  let best: FareMatchCandidate | null = null;
-  let bestAbsDiff = Infinity;
+  return candidates.reduce((best, c) => {
+    const bestDiff = Math.abs(refundablePrice - best.features.effectiveTotalPrice);
+    const cDiff = Math.abs(refundablePrice - c.features.effectiveTotalPrice);
 
-  for (const c of candidates) {
-    const absDiff = Math.abs(refundablePrice - c.features.effectiveTotalPrice);
-    if (absDiff < bestAbsDiff) {
-      bestAbsDiff = absDiff;
-      best = c;
-    }
-  }
+    if (cDiff < bestDiff) return c;
+    if (cDiff > bestDiff) return best;
 
-  return best;
+    // Tie-break 1: smaller stop-count difference
+    const bestStopDiff = Math.abs(refundableStops - best.features.totalStops);
+    const cStopDiff = Math.abs(refundableStops - c.features.totalStops);
+    if (cStopDiff < bestStopDiff) return c;
+    if (cStopDiff > bestStopDiff) return best;
+
+    // Tie-break 2: smaller duration difference
+    const bestDurDiff = Math.abs(refundableDuration - best.features.totalDurationMinutes);
+    const cDurDiff = Math.abs(refundableDuration - c.features.totalDurationMinutes);
+    if (cDurDiff < bestDurDiff) return c;
+    if (cDurDiff > bestDurDiff) return best;
+
+    // Tie-break 3: lower effective price
+    if (c.features.effectiveTotalPrice < best.features.effectiveTotalPrice) return c;
+    return best;
+  });
 }
 
 // ── Main matcher ─────────────────────────────────────────────────────────────
 
-/**
- * 2-level hierarchical matcher.
- *
- * Level 1 — Exact: same cabin, currency, stop count
- * Level 2 — Near:  ±1 stop, ≤configurable duration tolerance
- *
- * Within each level: smallest absolute price difference.
- * Falls through to Level 2 ONLY when no Level-1 match exists.
- * No Level 3 — if no comparable exists, returns null.
- */
-export function findNearestChangeableFare(
+export function findComparableChangeableFare(
   refundable: FareMatchCandidate,
   allCandidates: FareMatchCandidate[],
-  config: RefundabilityUpgradeConfig,
+  maxDurationDiffPct: number = 35,
 ): FareMatchResult {
   const rf = refundable.features;
   const empty: FareMatchResult = {
-    match: null, priceDiff: 0, matchLevel: null, stopDiff: 0, durationRatio: 1,
+    match: null, priceDiff: 0, matchLevel: null, stopDiff: 0, durationDiffPct: 0,
   };
 
-  // Pre-filter: same cabin, same currency, changeable, not refundable, not self
+  // Pre-filter: same cabin, currency, changeable, not refundable, not self
   const base = allCandidates.filter(c =>
     c.features.offerId !== rf.offerId &&
     isChangeableNotRefundable(c.features) &&
@@ -112,64 +102,45 @@ export function findNearestChangeableFare(
 
   if (base.length === 0) return empty;
 
-  // ── Level 1: Exact Comparable (same stop count) ──
+  // ── Level 1: Exact (same stop count) ──
   const level1 = base.filter(c => c.features.totalStops === rf.totalStops);
-  const match1 = selectNearestByAbsolutePriceDiff(rf.effectiveTotalPrice, level1);
+  const match1 = selectBySmallestAbsPriceDiff(
+    rf.effectiveTotalPrice, rf.totalStops, rf.totalDurationMinutes, level1,
+  );
   if (match1) {
-    const priceDiff = rf.effectiveTotalPrice - match1.features.effectiveTotalPrice;
+    const durDiffPct = Math.abs(rf.totalDurationMinutes - match1.features.totalDurationMinutes)
+      / Math.max(match1.features.totalDurationMinutes, 1) * 100;
     return {
       match: match1,
-      priceDiff,
+      priceDiff: rf.effectiveTotalPrice - match1.features.effectiveTotalPrice,
       matchLevel: 'exact',
       stopDiff: 0,
-      durationRatio: rf.totalDurationMinutes / Math.max(match1.features.totalDurationMinutes, 1),
+      durationDiffPct: Math.round(durDiffPct * 100) / 100,
     };
   }
 
-  // ── Level 2: Near Comparable (±1 stop, ≤35% duration diff) ──
-  const durTolerancePct = config.comparability?.durationTolerancePct ?? 35;
-  const durLow = 1 - durTolerancePct / 100;  // 0.65
-  const durHigh = 1 + durTolerancePct / 100;  // 1.35
-
+  // ── Level 2: Near (±1 stop, ≤maxDurationDiffPct duration) ──
   const level2 = base.filter(c => {
     const stopDiff = Math.abs(c.features.totalStops - rf.totalStops);
     if (stopDiff > 1) return false;
-    const durRatio = rf.totalDurationMinutes / Math.max(c.features.totalDurationMinutes, 1);
-    return durRatio >= durLow && durRatio <= durHigh;
+    const durDiffPct = Math.abs(rf.totalDurationMinutes - c.features.totalDurationMinutes)
+      / Math.max(c.features.totalDurationMinutes, 1) * 100;
+    return durDiffPct <= maxDurationDiffPct;
   });
-  const match2 = selectNearestByAbsolutePriceDiff(rf.effectiveTotalPrice, level2);
+  const match2 = selectBySmallestAbsPriceDiff(
+    rf.effectiveTotalPrice, rf.totalStops, rf.totalDurationMinutes, level2,
+  );
   if (match2) {
-    const priceDiff = rf.effectiveTotalPrice - match2.features.effectiveTotalPrice;
+    const durDiffPct = Math.abs(rf.totalDurationMinutes - match2.features.totalDurationMinutes)
+      / Math.max(match2.features.totalDurationMinutes, 1) * 100;
     return {
       match: match2,
-      priceDiff,
+      priceDiff: rf.effectiveTotalPrice - match2.features.effectiveTotalPrice,
       matchLevel: 'near',
       stopDiff: Math.abs(match2.features.totalStops - rf.totalStops),
-      durationRatio: rf.totalDurationMinutes / Math.max(match2.features.totalDurationMinutes, 1),
+      durationDiffPct: Math.round(durDiffPct * 100) / 100,
     };
   }
 
-  // No comparable found — no bonus, no penalty
   return empty;
-}
-
-// ── Comparability Factor ─────────────────────────────────────────────────────
-
-/**
- * | Match                                    | Factor |
- * |------------------------------------------|--------|
- * | Exact comparable (Level 1)               | 1.00   |
- * | +1 stop, similar duration (≤15% longer)  | 0.80   |
- * | +1 stop, moderately longer (>15%)        | 0.65   |
- */
-export function getComparabilityFactor(
-  matchLevel: MatchLevel | null,
-  stopDiff: number,
-  durationRatio: number,
-): number {
-  if (!matchLevel) return 0;
-  if (matchLevel === 'exact') return 1.0;
-  // Level 2 — near comparable
-  if (durationRatio <= 1.15) return 0.80;
-  return 0.65;
 }

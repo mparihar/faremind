@@ -51,8 +51,8 @@ import { DEFAULT_AI_RECOMMENDATION_LIMIT } from './FlightScoringConfig';
 import { validateComparableOffers, type ComparableCandidate } from './FlightComparableValidator';
 import { validateComparableNonstops, type NonstopComparableCandidate } from './FlightComparableNonstopValidator';
 import { validateRefundablePriority, type RefundablePriorityCandidate } from './FlightRefundablePriorityValidator';
-import { applyRefundabilityUpgrades, type UpgradeCandidate } from './FlightRefundabilityUpgradeRule';
-import { REFUNDABILITY_UPGRADE_CONFIG } from './FlightScoringConfig';
+import { applyRefundabilityRule, type RefundabilityCandidate } from './FlightRefundabilityRule';
+import { applyPairwisePrecedence } from './FlightPairwisePrecedenceService';
 import type { TravelDnaRecommendationContext } from '@/lib/services/travel-dna-service';
 
 // ── Internal intermediate type ────────────────────────────────────────────────
@@ -449,21 +449,21 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     return { original, normalized, features, scoreOutput };
   });
 
-  // 6.5. Refundability Upgrade — contextual bonus for good-value refundable fares
-  //      Adds a score bonus when a fully refundable fare costs only marginally
-  //      more (0–20%) than the nearest comparable changeable fare.
-  //      Runs before warnings so the bonus is subject to risk penalties.
+  // 6.5. Refundability Premium Rule — adjustment for good-value refundable fares
+  //      Uses nearest comparable changeable fare (by absolute price diff).
+  //      Adjustment = premiumBand × comparabilityFactor.
+  //      Runs before warnings so the adjustment is subject to risk penalties.
   let refundabilityQualifiedPairs = new Map<string, string>();
-  if (REFUNDABILITY_UPGRADE_CONFIG.enabled) {
-    const upgradeCandidates: UpgradeCandidate[] = scored.map(s => ({
+  {
+    const refundCandidates: RefundabilityCandidate[] = scored.map(s => ({
       features: s.features,
       scoreOutput: s.scoreOutput,
       cabinClass: s.normalized.cabinClass || 'economy',
       currency: s.normalized.currency || 'USD',
     }));
 
-    const upgradeResult = applyRefundabilityUpgrades(upgradeCandidates, REFUNDABILITY_UPGRADE_CONFIG);
-    refundabilityQualifiedPairs = upgradeResult.qualifiedPairs;
+    const refundResult = applyRefundabilityRule(refundCandidates);
+    refundabilityQualifiedPairs = refundResult.qualifiedPairs;
   }
 
   // 7. Tie-break sort
@@ -628,54 +628,11 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     }
   }
 
-  // 8.9. Pairwise Precedence Enforcement
-  //      For each qualifying refundable fare that still ranks BELOW its matched
-  //      changeable fare, bump its finalScore to matchedChangeable + epsilon.
-  //      This is pairwise — it does NOT move the refundable above unrelated
-  //      stronger offers. Only above its specific matched changeable pair.
-  //      Safety: no critical warnings required.
-  const PRECEDENCE_EPSILON = 0.01;
-  if (refundabilityQualifiedPairs.size > 0) {
-    let pairwiseAdjustments = 0;
-
-    for (const [refundableId, changeableId] of refundabilityQualifiedPairs) {
-      const refundableCandidate = tieBreakCandidates.find(c => c.features.offerId === refundableId);
-      const changeableCandidate = tieBreakCandidates.find(c => c.features.offerId === changeableId);
-
-      if (!refundableCandidate || !changeableCandidate) continue;
-
-      // Skip if refundable has critical warnings
-      const hasCritical = refundableCandidate.score.scoreBreakdown.warningDetails
-        .some(w => w.severity === 'CRITICAL');
-      if (hasCritical) continue;
-
-      // If refundable already ranks above its matched changeable, nothing to do
-      if (refundableCandidate.score.finalScore > changeableCandidate.score.finalScore) continue;
-
-      // Bump refundable just above its matched changeable
-      const newScore = changeableCandidate.score.finalScore + PRECEDENCE_EPSILON;
-      console.log(
-        `[PairwisePrecedence] $${Math.round(refundableCandidate.features.effectiveTotalPrice)} refundable ` +
-        `(score ${refundableCandidate.score.finalScore.toFixed(2)}) bumped above ` +
-        `$${Math.round(changeableCandidate.features.effectiveTotalPrice)} changeable ` +
-        `(score ${changeableCandidate.score.finalScore.toFixed(2)}) → new score ${newScore.toFixed(2)}`
-      );
-
-      refundableCandidate.score.finalScore = newScore;
-      refundableCandidate.score.aiScoreRaw = newScore;
-      refundableCandidate.score.aiScoreDisplay = Math.round(newScore);
-      pairwiseAdjustments++;
-    }
-
-    if (pairwiseAdjustments > 0) {
-      // Re-sort after pairwise adjustments
-      tieBreakCandidates.sort((a, b) => {
-        const scoreDiff = b.score.finalScore - a.score.finalScore;
-        if (Math.abs(scoreDiff) > 0.005) return scoreDiff;
-        return a.features.effectiveTotalPrice - b.features.effectiveTotalPrice;
-      });
-    }
-  }
+  // 8.9. Local Pairwise Refundability Precedence (spec §7)
+  //      Position-based: MOVE refundable immediately above its matched changeable.
+  //      Do NOT change finalScore. Do NOT force into any window.
+  //      This is the LAST ordering operation before rank assignment.
+  applyPairwisePrecedence(tieBreakCandidates, refundabilityQualifiedPairs);
 
   // 9. Assign badges
   const badgeCandidates: BadgeCandidate[] = tieBreakCandidates.map((c, i) => ({

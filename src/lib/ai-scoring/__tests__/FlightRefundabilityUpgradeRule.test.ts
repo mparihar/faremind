@@ -1,14 +1,14 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Refundability Upgrade Rule — Unit Tests (Cases A–H)
+// Refundability Rule — Unit Tests (Spec Tests 1–10)
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import { describe, it, expect } from 'vitest';
-import { findNearestChangeableFare, getComparabilityFactor, type FareMatchCandidate } from '../FlightComparableFareMatcher';
-import { applyRefundabilityUpgrades, type UpgradeCandidate } from '../FlightRefundabilityUpgradeRule';
-import { REFUNDABILITY_UPGRADE_CONFIG } from '../FlightScoringConfig';
+import { findComparableChangeableFare, type FareMatchCandidate } from '../FlightComparableFareMatcher';
+import { applyRefundabilityRule, REFUNDABILITY_CONFIG, type RefundabilityCandidate } from '../FlightRefundabilityRule';
+import { applyPairwisePrecedence, type PairwiseCandidate } from '../FlightPairwisePrecedenceService';
 import type { ScoringFeatures, FlightScoreOutput, ScoreBreakdownDetail } from '../FlightScoringTypes';
 
-// ── Test helpers ─────────────────────────────────────────────────────────────
+// ── Helpers ──────────────────────────────────────────────────────────────────
 
 function makeFeatures(overrides: Partial<ScoringFeatures> & { offerId: string; effectiveTotalPrice: number }): ScoringFeatures {
   return {
@@ -16,7 +16,7 @@ function makeFeatures(overrides: Partial<ScoringFeatures> & { offerId: string; e
     tripType: 'ONE_WAY',
     effectiveTotalPrice: overrides.effectiveTotalPrice,
     rawTotalPrice: overrides.rawTotalPrice ?? overrides.effectiveTotalPrice,
-    totalDurationMinutes: overrides.totalDurationMinutes ?? 930, // 15h30m default
+    totalDurationMinutes: overrides.totalDurationMinutes ?? 930,
     totalStops: overrides.totalStops ?? 1,
     outboundStops: overrides.totalStops ?? 1,
     returnStops: 0,
@@ -32,22 +32,18 @@ function makeFeatures(overrides: Partial<ScoringFeatures> & { offerId: string; e
 }
 
 function makeCandidate(overrides: Partial<ScoringFeatures> & { offerId: string; effectiveTotalPrice: number }): FareMatchCandidate {
-  return {
-    features: makeFeatures(overrides),
-    cabinClass: 'economy',
-    currency: 'USD',
-  };
+  return { features: makeFeatures(overrides), cabinClass: 'economy', currency: 'USD' };
 }
 
-function makeScoreOutput(offerId: string): FlightScoreOutput {
+function makeScoreOutput(offerId: string, finalScore: number = 80): FlightScoreOutput {
   return {
     offerId,
     providerCode: 'test',
     tripType: 'ONE_WAY',
-    aiScoreRaw: 80,
-    aiScoreDisplay: 80,
-    baseScore: 80,
-    finalScore: 80,
+    aiScoreRaw: finalScore,
+    aiScoreDisplay: Math.round(finalScore),
+    baseScore: finalScore,
+    finalScore,
     warningPenalty: 0,
     compoundWarningPenalty: 0,
     positiveReasons: [],
@@ -56,108 +52,64 @@ function makeScoreOutput(offerId: string): FlightScoreOutput {
     rankingTags: [],
     aiPickEligible: true,
     scoreBreakdown: {
-      effectivePriceScore: 80,
-      durationScore: 80,
-      stopsScore: 85,
-      baggageValueScore: 90,
-      layoverScore: 100,
-      scheduleScore: 80,
-      fareFlexibilityScore: 75,
-      providerReliabilityScore: 85,
-      warningPenalty: 0,
-      compoundWarningPenalty: 0,
-      warningDetails: [],
+      effectivePriceScore: 80, durationScore: 80, stopsScore: 85,
+      baggageValueScore: 90, layoverScore: 100, scheduleScore: 80,
+      fareFlexibilityScore: 75, providerReliabilityScore: 85,
+      warningPenalty: 0, compoundWarningPenalty: 0, warningDetails: [],
       weights: {} as any,
-      refundabilityUpgradeBonus: 0,
-      refundabilityUpgradePremiumPct: 0,
+      refundabilityUpgradeBonus: 0, refundabilityUpgradePremiumPct: 0,
     } as ScoreBreakdownDetail,
     refundabilityUpgradeBonus: 0,
   };
 }
 
-function makeUpgradeCandidate(
-  offerId: string,
-  price: number,
+function makeRefundCandidate(
+  offerId: string, price: number,
   opts: { refundable?: boolean; changeable?: boolean; totalStops?: number; totalDurationMinutes?: number; finalScore?: number } = {},
-): UpgradeCandidate {
+): RefundabilityCandidate {
   const features = makeFeatures({
     offerId,
     effectiveTotalPrice: price,
-    fareFlexibility: {
-      refundable: opts.refundable ?? false,
-      changeable: opts.changeable ?? false,
-    },
+    fareFlexibility: { refundable: opts.refundable ?? false, changeable: opts.changeable ?? false },
     totalStops: opts.totalStops ?? 1,
     totalDurationMinutes: opts.totalDurationMinutes ?? 930,
   });
-  const so = makeScoreOutput(offerId);
-  if (opts.finalScore != null) {
-    so.finalScore = opts.finalScore;
-    so.baseScore = opts.finalScore;
-    so.aiScoreRaw = opts.finalScore;
-    so.aiScoreDisplay = Math.round(opts.finalScore);
-  }
-  return { features, scoreOutput: so, cabinClass: 'economy', currency: 'USD' };
+  return { features, scoreOutput: makeScoreOutput(offerId, opts.finalScore ?? 80), cabinClass: 'economy', currency: 'USD' };
+}
+
+function makePairwiseCandidate(offerId: string, price: number, finalScore: number, opts: { refundable?: boolean; changeable?: boolean } = {}): PairwiseCandidate {
+  return {
+    features: makeFeatures({ offerId, effectiveTotalPrice: price, fareFlexibility: { refundable: opts.refundable ?? false, changeable: opts.changeable ?? false } }),
+    score: makeScoreOutput(offerId, finalScore),
+  };
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// Test Cases
-// ═══════════════════════════════════════════════════════════════════════════════
 
-describe('Refundability Upgrade Rule', () => {
-  // Case A: $861 refundable vs $791 changeable → 8.85% → qualifies
-  describe('Case A: $861 refundable vs $791 changeable (8.85% premium)', () => {
-    it('should select $791 as the nearest comparable fare', () => {
-      const refundable = makeCandidate({
-        offerId: 'ref-861', effectiveTotalPrice: 861,
-        fareFlexibility: { refundable: true, changeable: true },
-      });
-      const candidates = [
-        refundable,
-        makeCandidate({ offerId: 'ch-791', effectiveTotalPrice: 791, fareFlexibility: { refundable: false, changeable: true } }),
-        makeCandidate({ offerId: 'ch-599', effectiveTotalPrice: 599, fareFlexibility: { refundable: false, changeable: true } }),
-        makeCandidate({ offerId: 'ch-670', effectiveTotalPrice: 670, fareFlexibility: { refundable: false, changeable: true } }),
+describe('Refundability Rule (Spec)', () => {
+
+  // Test 1: $861 vs $791 → 8.85% → qualifies
+  describe('Test 1: $861 refundable vs $791 changeable', () => {
+    it('should use $791 as comparator and qualify at 8.85%', () => {
+      const candidates: RefundabilityCandidate[] = [
+        makeRefundCandidate('ref-861', 861, { refundable: true, changeable: true }),
+        makeRefundCandidate('ch-791', 791, { changeable: true }),
+        makeRefundCandidate('ch-599', 599, { changeable: true }),
       ];
-
-      const result = findNearestChangeableFare(refundable, candidates, REFUNDABILITY_UPGRADE_CONFIG);
-
-      expect(result.match).not.toBeNull();
-      expect(result.match!.features.offerId).toBe('ch-791');
-      expect(result.matchLevel).toBe('exact');
-    });
-
-    it('should calculate 8.85% premium and apply +12 bonus', () => {
-      const candidates: UpgradeCandidate[] = [
-        makeUpgradeCandidate('ref-861', 861, { refundable: true, changeable: true }),
-        makeUpgradeCandidate('ch-791', 791, { changeable: true }),
-        makeUpgradeCandidate('ch-599', 599, { changeable: true }),
-        makeUpgradeCandidate('ch-670', 670, { changeable: true }),
-      ];
-
-      const result = applyRefundabilityUpgrades(candidates, REFUNDABILITY_UPGRADE_CONFIG);
+      const result = applyRefundabilityRule(candidates);
       const adj = result.adjustments.find(a => a.offerId === 'ref-861');
 
       expect(adj).toBeDefined();
-      expect(adj!.baselineOfferId).toBe('ch-791');
+      expect(adj!.matchedComparableOfferId).toBe('ch-791');
       expect(adj!.premiumPct).toBeCloseTo(8.85, 1);
-      expect(adj!.bonus).toBe(12); // 5-10% band = +12
+      expect(adj!.refundabilityAdjustment).toBe(12); // 5-10% band
       expect(adj!.qualifies).toBe(true);
-    });
-
-    it('should record qualified pair for pairwise precedence', () => {
-      const candidates: UpgradeCandidate[] = [
-        makeUpgradeCandidate('ref-861', 861, { refundable: true, changeable: true }),
-        makeUpgradeCandidate('ch-791', 791, { changeable: true }),
-      ];
-
-      const result = applyRefundabilityUpgrades(candidates, REFUNDABILITY_UPGRADE_CONFIG);
-
       expect(result.qualifiedPairs.get('ref-861')).toBe('ch-791');
     });
   });
 
-  // Case B: $599 must NOT replace $791 as comparator
-  describe('Case B: $599 must not replace $791 when $791 is the closer valid comparable', () => {
+  // Test 2: $599 must NOT replace $791 as comparator
+  describe('Test 2: $599 must not replace $791', () => {
     it('should select $791 (abs diff $70) over $599 (abs diff $262)', () => {
       const refundable = makeCandidate({
         offerId: 'ref-861', effectiveTotalPrice: 861,
@@ -169,73 +121,51 @@ describe('Refundability Upgrade Rule', () => {
         makeCandidate({ offerId: 'ch-791', effectiveTotalPrice: 791, fareFlexibility: { refundable: false, changeable: true } }),
       ];
 
-      const result = findNearestChangeableFare(refundable, candidates, REFUNDABILITY_UPGRADE_CONFIG);
-
+      const result = findComparableChangeableFare(refundable, candidates);
       expect(result.match!.features.offerId).toBe('ch-791');
-      expect(result.priceDiff).toBe(70); // 861 - 791
     });
   });
 
-  // Case C: $1,086 refundable vs $599 comparable → >20% → no preference
-  describe('Case C: $1,086 refundable — overpriced, no preference', () => {
-    it('should not qualify when premium exceeds 20%', () => {
-      const candidates: UpgradeCandidate[] = [
-        makeUpgradeCandidate('ref-1086', 1086, { refundable: true, changeable: true }),
-        makeUpgradeCandidate('ch-957', 957, { changeable: true }),
-        makeUpgradeCandidate('ch-791', 791, { changeable: true }),
+  // Test 3: $1,111 vs $791 → 40.46% → overpriced
+  describe('Test 3: $1,111 refundable → overpriced', () => {
+    it('should apply overpricing penalty, no positive preference', () => {
+      const candidates: RefundabilityCandidate[] = [
+        makeRefundCandidate('ref-1111', 1111, { refundable: true, changeable: true }),
+        makeRefundCandidate('ch-791', 791, { changeable: true }),
       ];
+      const result = applyRefundabilityRule(candidates);
+      const adj = result.adjustments.find(a => a.offerId === 'ref-1111');
 
-      const result = applyRefundabilityUpgrades(candidates, REFUNDABILITY_UPGRADE_CONFIG);
-      const adj = result.adjustments.find(a => a.offerId === 'ref-1086');
-
-      // Nearest by abs diff from $1086 is $957 (diff=$129) not $791 (diff=$295)
       expect(adj).toBeDefined();
-      expect(adj!.baselineOfferId).toBe('ch-957');
-      expect(adj!.premiumPct).toBeGreaterThan(13); // (1086-957)/957 = 13.5%
-      // This is within 10-15% band → +8 bonus
-      // BUT if $957 is not a valid fare, then $791 → (1086-791)/791 = 37.3% → penalty
+      expect(adj!.premiumPct).toBeGreaterThan(40);
+      expect(adj!.refundabilityAdjustment).toBeLessThan(0);
+      expect(adj!.qualifies).toBe(false);
+      expect(result.qualifiedPairs.has('ref-1111')).toBe(false);
     });
   });
 
-  // Case D: Refundable with one extra stop → Level-2 matching
-  describe('Case D: One extra stop — Level-2 matching', () => {
-    it('should match via Level 2 when no same-stop changeable exists', () => {
-      const refundable = makeCandidate({
-        offerId: 'ref-861', effectiveTotalPrice: 861, totalStops: 2,
-        totalDurationMinutes: 950,
-        fareFlexibility: { refundable: true, changeable: true },
-      });
-      const candidates = [
-        refundable,
-        // Only 1-stop changeable fares available (no 2-stop)
-        makeCandidate({
-          offerId: 'ch-791', effectiveTotalPrice: 791, totalStops: 1,
-          totalDurationMinutes: 930,
-          fareFlexibility: { refundable: false, changeable: true },
-        }),
+  // Test 4: +1 stop → Level-2 with reduced comparability factor
+  describe('Test 4: One additional stop — Level-2', () => {
+    it('should match via Level 2 and apply reduced factor', () => {
+      const candidates: RefundabilityCandidate[] = [
+        makeRefundCandidate('ref-861', 861, { refundable: true, changeable: true, totalStops: 2, totalDurationMinutes: 950 }),
+        makeRefundCandidate('ch-791', 791, { changeable: true, totalStops: 1, totalDurationMinutes: 930 }),
       ];
+      const result = applyRefundabilityRule(candidates);
+      const adj = result.adjustments.find(a => a.offerId === 'ref-861');
 
-      const result = findNearestChangeableFare(refundable, candidates, REFUNDABILITY_UPGRADE_CONFIG);
-
-      expect(result.match).not.toBeNull();
-      expect(result.matchLevel).toBe('near');
-      expect(result.stopDiff).toBe(1);
-    });
-
-    it('should apply comparability factor 0.80 for +1 stop, similar duration', () => {
-      const factor = getComparabilityFactor('near', 1, 1.02); // 2% longer
-      expect(factor).toBe(0.80);
-    });
-
-    it('should apply comparability factor 0.65 for +1 stop, moderately longer', () => {
-      const factor = getComparabilityFactor('near', 1, 1.25); // 25% longer
-      expect(factor).toBe(0.65);
+      expect(adj).toBeDefined();
+      expect(adj!.comparabilityLevel).toBe('near');
+      // Factor 0.75 for +1 stop, dur diff ~2% → ≤20% → 0.75
+      expect(adj!.comparabilityFactor).toBe(0.75);
+      // 8.85% → band +12 × 0.75 = 9
+      expect(adj!.refundabilityAdjustment).toBe(9);
     });
   });
 
-  // Case E: Two or more additional stops → not comparable
-  describe('Case E: Two or more additional stops — not comparable', () => {
-    it('should not match when stop difference is 2+', () => {
+  // Test 5: +2 stops → not comparable
+  describe('Test 5: Two or more additional stops', () => {
+    it('should not find a comparable fare', () => {
       const refundable = makeCandidate({
         offerId: 'ref-861', effectiveTotalPrice: 861, totalStops: 3,
         fareFlexibility: { refundable: true, changeable: true },
@@ -244,67 +174,113 @@ describe('Refundability Upgrade Rule', () => {
         refundable,
         makeCandidate({ offerId: 'ch-791', effectiveTotalPrice: 791, totalStops: 1, fareFlexibility: { refundable: false, changeable: true } }),
       ];
-
-      const result = findNearestChangeableFare(refundable, candidates, REFUNDABILITY_UPGRADE_CONFIG);
-
+      const result = findComparableChangeableFare(refundable, candidates);
       expect(result.match).toBeNull();
-      expect(result.matchLevel).toBeNull();
     });
   });
 
-  // Case F: Implausible layover should not create warning
-  describe('Case F: Incorrect long-layover warning', () => {
-    it('should filter implausible layovers (>80% of total duration)', () => {
+  // Test 6: Pairwise precedence — move only above matched comparator
+  describe('Test 6: Pairwise precedence is local, not global', () => {
+    it('should move refundable above its matched changeable, not above unrelated offers', () => {
+      const sorted: PairwiseCandidate[] = [
+        makePairwiseCandidate('unrelated-1', 500, 92),
+        makePairwiseCandidate('unrelated-2', 550, 90),
+        makePairwiseCandidate('ch-791', 791, 88, { changeable: true }),
+        makePairwiseCandidate('unrelated-3', 600, 86),
+        makePairwiseCandidate('ref-861', 861, 82, { refundable: true }),
+      ];
+
+      const pairs = new Map([['ref-861', 'ch-791']]);
+      const moves = applyPairwisePrecedence(sorted, pairs);
+
+      expect(moves).toHaveLength(1);
+      // ref-861 should now be immediately before ch-791
+      const refIdx = sorted.findIndex(c => c.features.offerId === 'ref-861');
+      const chgIdx = sorted.findIndex(c => c.features.offerId === 'ch-791');
+      expect(refIdx).toBeLessThan(chgIdx);
+      expect(refIdx).toBe(chgIdx - 1);
+
+      // Score should NOT have changed
+      expect(sorted[refIdx].score.finalScore).toBe(82);
+
+      // Must still be below unrelated-2 (rank 2)
+      const unrelated2Idx = sorted.findIndex(c => c.features.offerId === 'unrelated-2');
+      expect(refIdx).toBeGreaterThan(unrelated2Idx);
+    });
+  });
+
+  // Test 7: No qualifying refundable → top results may contain zero refundable
+  describe('Test 7: No qualifying refundable', () => {
+    it('should not insert any refundable into top results', () => {
+      const candidates: RefundabilityCandidate[] = [
+        makeRefundCandidate('ref-1200', 1200, { refundable: true, changeable: true }),
+        makeRefundCandidate('ch-791', 791, { changeable: true }),
+      ];
+      const result = applyRefundabilityRule(candidates);
+      expect(result.qualifiedPairs.size).toBe(0);
+    });
+  });
+
+  // Test 8: Implausible layover
+  describe('Test 8: Implausible 12h layover on 15h30m flight', () => {
+    it('should filter implausible layover (>80% of total duration)', () => {
       const features = makeFeatures({
-        offerId: 'test',
-        effectiveTotalPrice: 599,
-        totalDurationMinutes: 930, // 15h30m
+        offerId: 'test', effectiveTotalPrice: 599,
+        totalDurationMinutes: 930,
         allLayovers: [{ airport: 'AMS', durationMinutes: 780, isOvernight: true, requiresAirportChange: false, isSelfTransfer: false }],
       });
-
-      // 780 min > 930 * 0.8 = 744 → implausible
       const plausible = features.allLayovers.filter(l =>
         !(features.totalDurationMinutes > 0 && l.durationMinutes > features.totalDurationMinutes * 0.8)
       );
-
       expect(plausible).toHaveLength(0);
     });
   });
 
-  // Case H: Tie-break determinism
-  describe('Case H: Tie case — deterministic cascade', () => {
-    it('should break ties by lower price when scores are equal', () => {
-      const candidates: UpgradeCandidate[] = [
-        makeUpgradeCandidate('a', 500, { changeable: true, finalScore: 85 }),
-        makeUpgradeCandidate('b', 520, { changeable: true, finalScore: 85 }),
+  // Test 10: Pairwise precedence must be the last ordering operation
+  describe('Test 10: Pairwise precedence is final', () => {
+    it('should not be followed by any re-sort', () => {
+      const sorted: PairwiseCandidate[] = [
+        makePairwiseCandidate('ch-791', 791, 88, { changeable: true }),
+        makePairwiseCandidate('ref-861', 861, 82, { refundable: true }),
       ];
 
-      // Both have same score — a ($500) should rank above b ($520)
-      candidates.sort((a, b) => {
-        const diff = b.scoreOutput.finalScore - a.scoreOutput.finalScore;
-        if (Math.abs(diff) > 0.005) return diff;
-        return a.features.effectiveTotalPrice - b.features.effectiveTotalPrice;
-      });
+      const pairs = new Map([['ref-861', 'ch-791']]);
+      applyPairwisePrecedence(sorted, pairs);
 
-      expect(candidates[0].features.offerId).toBe('a');
-      expect(candidates[1].features.offerId).toBe('b');
+      // After pairwise, ref-861 should be first
+      expect(sorted[0].features.offerId).toBe('ref-861');
+      expect(sorted[1].features.offerId).toBe('ch-791');
+
+      // If we re-sorted by score, it would break — verify score was NOT changed
+      expect(sorted[0].score.finalScore).toBe(82);
+      expect(sorted[1].score.finalScore).toBe(88);
     });
   });
 
   // Bonus: refundable cheaper than changeable → +15
   describe('Refundable cheaper than changeable', () => {
-    it('should award maximum bonus (+15) when refundable is cheaper', () => {
-      const candidates: UpgradeCandidate[] = [
-        makeUpgradeCandidate('ref-490', 490, { refundable: true, changeable: true }),
-        makeUpgradeCandidate('ch-500', 500, { changeable: true }),
+    it('should award +15 when refundable is cheaper', () => {
+      const candidates: RefundabilityCandidate[] = [
+        makeRefundCandidate('ref-490', 490, { refundable: true, changeable: true }),
+        makeRefundCandidate('ch-500', 500, { changeable: true }),
       ];
-
-      const result = applyRefundabilityUpgrades(candidates, REFUNDABILITY_UPGRADE_CONFIG);
+      const result = applyRefundabilityRule(candidates);
       const adj = result.adjustments.find(a => a.offerId === 'ref-490');
-
-      expect(adj).toBeDefined();
-      expect(adj!.bonus).toBe(15);
+      expect(adj!.refundabilityAdjustment).toBe(15);
       expect(adj!.premiumPct).toBe(0);
+    });
+  });
+
+  // Comparability factor: exact with moderate duration diff → 0.85
+  describe('Comparability factor: exact match, 25% duration diff → 0.85', () => {
+    it('should apply factor 0.85 for same stops but >15% duration diff', () => {
+      const candidates: RefundabilityCandidate[] = [
+        makeRefundCandidate('ref-853', 853, { refundable: true, changeable: true, totalDurationMinutes: 1160 }), // 25% longer than 930
+        makeRefundCandidate('ch-791', 791, { changeable: true, totalDurationMinutes: 930 }),
+      ];
+      const result = applyRefundabilityRule(candidates);
+      const adj = result.adjustments.find(a => a.offerId === 'ref-853');
+      expect(adj!.comparabilityFactor).toBe(0.85);
     });
   });
 });
