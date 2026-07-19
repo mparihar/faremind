@@ -92,6 +92,26 @@ export function generateReasons(
     }
   }
 
+  // ── Refundability Upgrade Value reason ──
+  // When the upgrade rule awarded a bonus, explain why refundability is good value.
+  if (scoreOutput.refundabilityUpgradeBonus > 0) {
+    const premiumPct = scoreOutput.scoreBreakdown.refundabilityUpgradePremiumPct ?? 0;
+    const alreadyHasRefundReason = positiveReasons.some(r =>
+      r.includes('refundable') || r.includes('Refundable')
+    );
+    if (!alreadyHasRefundReason) {
+      if (premiumPct <= 0) {
+        positiveReasons.push('Cheaper than comparable changeable fares — and fully refundable');
+      } else if (premiumPct <= 5) {
+        positiveReasons.push(`Fully refundable for only ${Math.round(premiumPct)}% more than comparable changeable fare`);
+      } else if (premiumPct <= 10) {
+        positiveReasons.push(`Full refundability for just ${Math.round(premiumPct)}% above the nearest changeable option`);
+      } else {
+        positiveReasons.push('Refundable fare at a competitive premium over changeable alternatives');
+      }
+    }
+  }
+
   // ── Baggage reasons (HIGH PRIORITY — show early) ──
   // Baggage is a key decision factor, especially for international flights.
   if (features.baggage.checkedBagsIncluded > 0 && features.baggage.carryOnIncluded) {

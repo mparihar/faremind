@@ -188,6 +188,10 @@ export interface ScoreBreakdownDetail {
   totalStops: number;
 
   warningDetails: WarningDetail[];
+
+  /** Refundability upgrade bonus details */
+  refundabilityUpgradeBonus?: number;
+  refundabilityUpgradePremiumPct?: number;
 }
 
 // ── Score Output ─────────────────────────────────────────────────────────────
@@ -217,6 +221,11 @@ export interface FlightScoreOutput {
   comparableAdjustmentReason?: string;
 
   scoreBreakdown: ScoreBreakdownDetail;
+
+  /** Refundability upgrade bonus (0 if not applicable) */
+  refundabilityUpgradeBonus: number;
+  /** ID of the nearest comparable changeable fare used for the upgrade calculation */
+  refundabilityUpgradeBaselineId?: string;
 }
 
 // ── Ranked Result ────────────────────────────────────────────────────────────

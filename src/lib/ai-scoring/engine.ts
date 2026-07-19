@@ -51,6 +51,8 @@ import { DEFAULT_AI_RECOMMENDATION_LIMIT } from './FlightScoringConfig';
 import { validateComparableOffers, type ComparableCandidate } from './FlightComparableValidator';
 import { validateComparableNonstops, type NonstopComparableCandidate } from './FlightComparableNonstopValidator';
 import { validateRefundablePriority, type RefundablePriorityCandidate } from './FlightRefundablePriorityValidator';
+import { applyRefundabilityUpgrades, type UpgradeCandidate } from './FlightRefundabilityUpgradeRule';
+import { REFUNDABILITY_UPGRADE_CONFIG } from './FlightScoringConfig';
 import type { TravelDnaRecommendationContext } from '@/lib/services/travel-dna-service';
 
 // ── Internal intermediate type ────────────────────────────────────────────────
@@ -446,6 +448,21 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     const scoreOutput = scoreFlightOffer(normalized, tripType, scoringPrefs, stats);
     return { original, normalized, features, scoreOutput };
   });
+
+  // 6.5. Refundability Upgrade — contextual bonus for good-value refundable fares
+  //      Adds a score bonus when a fully refundable fare costs only marginally
+  //      more (0–20%) than the nearest comparable changeable fare.
+  //      Runs before warnings so the bonus is subject to risk penalties.
+  if (REFUNDABILITY_UPGRADE_CONFIG.enabled) {
+    const upgradeCandidates: UpgradeCandidate[] = scored.map(s => ({
+      features: s.features,
+      scoreOutput: s.scoreOutput,
+      cabinClass: s.normalized.cabinClass || 'economy',
+      currency: s.normalized.currency || 'USD',
+    }));
+
+    applyRefundabilityUpgrades(upgradeCandidates, REFUNDABILITY_UPGRADE_CONFIG);
+  }
 
   // 7. Tie-break sort
   const tieBreakCandidates: (TieBreakCandidate & { original: T; normalized: NormalizedFlightOffer })[] =

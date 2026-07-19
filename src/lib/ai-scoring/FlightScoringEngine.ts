@@ -381,6 +381,7 @@ export function scoreFlightOffer(
     compactReason: '',    // filled by ReasonGenerator in pipeline
     rankingTags: [],      // filled by BadgeEngine in pipeline
     aiPickEligible,
+    refundabilityUpgradeBonus: 0, // set by RefundabilityUpgradeRule in pipeline
     scoreBreakdown: {
       effectivePriceScore:      Math.round(effectivePriceScoreVal),
       durationScore:            Math.round(durationScoreVal),

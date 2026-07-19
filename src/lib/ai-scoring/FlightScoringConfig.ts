@@ -324,3 +324,46 @@ export const ESTIMATED_BAG_COSTS = {
     carryOnIfNotIncluded: 0,
   },
 };
+
+// ── Refundability Upgrade Rule ───────────────────────────────────────────────
+//
+// Contextual bonus for fully refundable fares that cost only marginally more
+// than the nearest comparable changeable fare. Evaluated after the 8-dimension
+// base score and before warning penalties.
+
+export interface RefundabilityPremiumBand {
+  /** Upper bound (inclusive) of premium percentage */
+  maxPct: number;
+  /** Score bonus awarded within this band */
+  bonus: number;
+}
+
+export interface RefundabilityUpgradeConfig {
+  enabled: boolean;
+  /** Hard cap on the bonus to prevent double-counting with Dimension 7 */
+  maxBonusCap: number;
+  /** Premium percentage bands — ordered ascending by maxPct */
+  premiumBands: RefundabilityPremiumBand[];
+  /** Comparability tolerances for finding the nearest changeable fare */
+  comparability: {
+    durationToleranceMinutesDomestic: number;
+    durationToleranceMinutesIntl: number;
+    scheduleDepartureToleranceHours: number;
+  };
+}
+
+export const REFUNDABILITY_UPGRADE_CONFIG: RefundabilityUpgradeConfig = {
+  enabled: true,
+  maxBonusCap: 15,
+  premiumBands: [
+    { maxPct: 5,  bonus: 15 },
+    { maxPct: 10, bonus: 12 },
+    { maxPct: 15, bonus: 8  },
+    { maxPct: 20, bonus: 5  },
+  ],
+  comparability: {
+    durationToleranceMinutesDomestic: 25,
+    durationToleranceMinutesIntl: 45,
+    scheduleDepartureToleranceHours: 2,
+  },
+};

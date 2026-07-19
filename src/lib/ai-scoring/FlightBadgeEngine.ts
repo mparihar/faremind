@@ -39,6 +39,8 @@ export function assignBadges(
   const maxScore    = Math.max(...candidates.map(c => c.score.finalScore));
   const fastestDuration = minDuration;
 
+  let bestRefundableValueAssigned = false;
+
   for (const { features, score, rankPosition } of candidates) {
     const badges: string[] = [];
     const tags: string[] = [];
@@ -106,6 +108,19 @@ export function assignBadges(
     if (features.fareFlexibility.refundable || features.fareFlexibility.changeable) {
       badges.push('Flexible Fare');
       tags.push('Flexible Fare');
+    }
+
+    // ── Best Refundable Value ──
+    // Awarded to the highest-scoring refundable offer that received
+    // a significant refundability upgrade bonus (≥ 12). Only one per search set.
+    if (
+      score.refundabilityUpgradeBonus >= 12 &&
+      features.fareFlexibility.refundable &&
+      !bestRefundableValueAssigned
+    ) {
+      badges.push('Best Refundable Value');
+      tags.push('Best Refundable Value');
+      bestRefundableValueAssigned = true;
     }
 
     // ── Better Schedule ──
