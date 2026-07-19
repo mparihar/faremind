@@ -1,18 +1,15 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Comparable Fare Matcher — Finds the nearest changeable fare for a refundable offer
+// Comparable Fare Matcher — Finds the cheapest changeable fare as baseline
 // ═══════════════════════════════════════════════════════════════════════════════
 //
 // Used by the Refundability Upgrade Rule to locate the baseline changeable fare
 // against which the refundable premium is measured.
 //
-// Comparability criteria:
+// Simple criteria:
 //   - Same cabin class
-//   - Same stop count
-//   - Similar duration (configurable tolerance)
-//   - Similar schedule (departure within configurable hours)
-//   - Same broad baggage group
 //   - Same currency
 //   - Candidate must be changeable but NOT refundable
+//   - Select the CHEAPEST changeable fare as baseline
 
 import type { ScoringFeatures } from './FlightScoringTypes';
 import type { RefundabilityUpgradeConfig } from './FlightScoringConfig';
@@ -32,73 +29,26 @@ export interface FareMatchResult {
   priceDiff: number;
 }
 
-// ── Broad baggage key (same as FlightRefundablePriorityValidator) ─────────────
-
-function getBroadBaggageKey(features: ScoringFeatures): string {
-  const hasChecked = features.baggage.checkedBagsIncluded > 0;
-  const hasCarryOn = features.baggage.carryOnIncluded;
-  return `${hasChecked ? 'CB' : 'noCB'}_${hasCarryOn ? 'CO' : 'noCO'}`;
-}
-
-// ── Comparability checks ─────────────────────────────────────────────────────
-
-function isDurationComparable(
-  a: ScoringFeatures,
-  b: ScoringFeatures,
-  config: RefundabilityUpgradeConfig,
-): boolean {
-  const diff = Math.abs(a.totalDurationMinutes - b.totalDurationMinutes);
-  const isIntl = a.isInternational || b.isInternational;
-  const tolerance = isIntl
-    ? config.comparability.durationToleranceMinutesIntl
-    : config.comparability.durationToleranceMinutesDomestic;
-  return diff <= tolerance;
-}
-
-function isScheduleComparable(
-  a: ScoringFeatures,
-  b: ScoringFeatures,
-  config: RefundabilityUpgradeConfig,
-): boolean {
-  const depDiff = Math.abs(
-    a.schedule.outboundDepartureHour - b.schedule.outboundDepartureHour,
-  );
-  if (depDiff > config.comparability.scheduleDepartureToleranceHours) return false;
-
-  // For round-trip: also check return departure
-  if (
-    a.schedule.returnDepartureHour != null &&
-    b.schedule.returnDepartureHour != null
-  ) {
-    const retDiff = Math.abs(
-      a.schedule.returnDepartureHour - b.schedule.returnDepartureHour,
-    );
-    if (retDiff > config.comparability.scheduleDepartureToleranceHours) return false;
-  }
-
-  return true;
-}
-
 // ── Main matcher ─────────────────────────────────────────────────────────────
 
 /**
- * Find the nearest comparable changeable (but not refundable) fare
- * for a given fully refundable offer.
+ * Find the cheapest changeable (but not refundable) fare in the same cabin
+ * as the baseline for the refundable premium calculation.
  *
- * Returns the match with the smallest non-negative price difference,
- * or the match where the refundable fare is cheaper (priceDiff < 0).
+ * Only requires: same cabin class + same currency.
+ * Stops, duration, schedule, baggage are scored separately by the 8 dimensions
+ * and should NOT block the refundability price comparison.
  */
 export function findNearestChangeableFare(
   refundable: FareMatchCandidate,
   allCandidates: FareMatchCandidate[],
-  config: RefundabilityUpgradeConfig,
+  _config: RefundabilityUpgradeConfig,
 ): FareMatchResult {
   const rf = refundable.features;
-  const rBagKey = getBroadBaggageKey(rf);
   const rCabin = (refundable.cabinClass || 'economy').toLowerCase();
 
   let bestMatch: FareMatchCandidate | null = null;
-  let bestPriceDiff = Infinity;
+  let bestPrice = Infinity;
 
   for (const candidate of allCandidates) {
     const cf = candidate.features;
@@ -116,31 +66,15 @@ export function findNearestChangeableFare(
     // Same currency
     if (candidate.currency !== refundable.currency) continue;
 
-    // Same stop count
-    if (cf.totalStops !== rf.totalStops) continue;
-
-    // Same broad baggage group
-    if (getBroadBaggageKey(cf) !== rBagKey) continue;
-
-    // Duration comparable
-    if (!isDurationComparable(rf, cf, config)) continue;
-
-    // Schedule comparable
-    if (!isScheduleComparable(rf, cf, config)) continue;
-
-    // Calculate price difference
-    const priceDiff = rf.effectiveTotalPrice - cf.effectiveTotalPrice;
-
-    // Select the candidate with the smallest non-negative price diff,
-    // or most-negative (refundable is cheapest) if all are negative
-    if (priceDiff < bestPriceDiff) {
-      bestPriceDiff = priceDiff;
+    // Pick the cheapest changeable fare
+    if (cf.effectiveTotalPrice < bestPrice) {
+      bestPrice = cf.effectiveTotalPrice;
       bestMatch = candidate;
     }
   }
 
   return {
     match: bestMatch,
-    priceDiff: bestMatch ? bestPriceDiff : 0,
+    priceDiff: bestMatch ? rf.effectiveTotalPrice - bestPrice : 0,
   };
 }
