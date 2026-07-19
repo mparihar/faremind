@@ -123,10 +123,44 @@ function buildLayoversFromSegments(
   segments: import('@/lib/types').FlightSegment[],
 ): LegLayover[] {
   const layovers: LegLayover[] = [];
+  if (segments.length < 2) return layovers;
+
+  // Compute total elapsed time from first departure to last arrival (UTC)
+  const firstDepMs = new Date(segments[0].departure.time).getTime();
+  const lastArrMs = new Date(segments[segments.length - 1].arrival.time).getTime();
+  const totalElapsedMinutes = Math.max(0, (lastArrMs - firstDepMs) / 60_000);
+
+  // Sum all segment flight durations
+  const totalFlightMinutes = segments.reduce((sum, s) => sum + (s.duration || 0), 0);
+
   for (let i = 0; i < segments.length - 1; i++) {
     const arrMs = new Date(segments[i].arrival.time).getTime();
     const depMs = new Date(segments[i + 1].departure.time).getTime();
-    const durationMinutes = (depMs - arrMs) / 60_000;
+    let durationMinutes = (depMs - arrMs) / 60_000;
+
+    // Sanity check: layover cannot exceed 80% of total elapsed time
+    // This catches timezone parsing bugs (e.g., non-UTC local times)
+    if (totalElapsedMinutes > 0 && durationMinutes > totalElapsedMinutes * 0.8) {
+      console.warn(
+        `[LayoverSanity] Implausible layover: ${Math.round(durationMinutes)} min ` +
+        `(${Math.round(durationMinutes / 60)}h) exceeds 80% of total elapsed ` +
+        `${Math.round(totalElapsedMinutes)} min. ` +
+        `Segments: ${segments[i].arrival.airport} → ${segments[i + 1].departure.airport}. ` +
+        `Capping to estimated: totalElapsed - flightTime = ${Math.round(totalElapsedMinutes - totalFlightMinutes)} min.`
+      );
+      // Estimate the correct layover: total elapsed - total flight time
+      durationMinutes = Math.max(0, totalElapsedMinutes - totalFlightMinutes);
+    }
+
+    // Negative layover = data error (segments overlap)
+    if (durationMinutes < 0) {
+      console.warn(
+        `[LayoverSanity] Negative layover: ${Math.round(durationMinutes)} min. ` +
+        `Setting to 0.`
+      );
+      durationMinutes = 0;
+    }
+
     layovers.push({
       airport: segments[i].arrival.airport,
       durationMinutes,

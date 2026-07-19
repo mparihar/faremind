@@ -453,6 +453,7 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
   //      Adds a score bonus when a fully refundable fare costs only marginally
   //      more (0–20%) than the nearest comparable changeable fare.
   //      Runs before warnings so the bonus is subject to risk penalties.
+  let refundabilityQualifiedPairs = new Map<string, string>();
   if (REFUNDABILITY_UPGRADE_CONFIG.enabled) {
     const upgradeCandidates: UpgradeCandidate[] = scored.map(s => ({
       features: s.features,
@@ -461,7 +462,8 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
       currency: s.normalized.currency || 'USD',
     }));
 
-    applyRefundabilityUpgrades(upgradeCandidates, REFUNDABILITY_UPGRADE_CONFIG);
+    const upgradeResult = applyRefundabilityUpgrades(upgradeCandidates, REFUNDABILITY_UPGRADE_CONFIG);
+    refundabilityQualifiedPairs = upgradeResult.qualifiedPairs;
   }
 
   // 7. Tie-break sort
@@ -626,51 +628,52 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     }
   }
 
-  // 8.9. Refundable Representation Rule
-  //      Ensures AT MOST ONE qualifying refundable fare appears in the top 10.
-  //      This is a representation rule, NOT a scoring rule.
-  //      All remaining refundable fares are ranked purely by their final score.
-  //      Safety constraints: no critical warnings, no suspicious pricing.
-  const TOP_N = 10;
-  if (tieBreakCandidates.length > TOP_N) {
-    const topN = tieBreakCandidates.slice(0, TOP_N);
-    const hasQualifyingRefundable = topN.some(c =>
-      c.features.fareFlexibility.refundable &&
-      c.score.refundabilityUpgradeBonus > 0 &&
-      !c.score.scoreBreakdown.warningDetails.some(w => w.severity === 'CRITICAL')
-    );
+  // 8.9. Pairwise Precedence Enforcement
+  //      For each qualifying refundable fare that still ranks BELOW its matched
+  //      changeable fare, bump its finalScore to matchedChangeable + epsilon.
+  //      This is pairwise — it does NOT move the refundable above unrelated
+  //      stronger offers. Only above its specific matched changeable pair.
+  //      Safety: no critical warnings required.
+  const PRECEDENCE_EPSILON = 0.01;
+  if (refundabilityQualifiedPairs.size > 0) {
+    let pairwiseAdjustments = 0;
 
-    if (!hasQualifyingRefundable) {
-      // Find the SINGLE best qualifying refundable outside the top 10
-      const bestRefundable = tieBreakCandidates.slice(TOP_N).find(c =>
-        c.features.fareFlexibility.refundable &&
-        c.score.refundabilityUpgradeBonus > 0 &&
-        !c.score.scoreBreakdown.warningDetails.some(w => w.severity === 'CRITICAL')
+    for (const [refundableId, changeableId] of refundabilityQualifiedPairs) {
+      const refundableCandidate = tieBreakCandidates.find(c => c.features.offerId === refundableId);
+      const changeableCandidate = tieBreakCandidates.find(c => c.features.offerId === changeableId);
+
+      if (!refundableCandidate || !changeableCandidate) continue;
+
+      // Skip if refundable has critical warnings
+      const hasCritical = refundableCandidate.score.scoreBreakdown.warningDetails
+        .some(w => w.severity === 'CRITICAL');
+      if (hasCritical) continue;
+
+      // If refundable already ranks above its matched changeable, nothing to do
+      if (refundableCandidate.score.finalScore > changeableCandidate.score.finalScore) continue;
+
+      // Bump refundable just above its matched changeable
+      const newScore = changeableCandidate.score.finalScore + PRECEDENCE_EPSILON;
+      console.log(
+        `[PairwisePrecedence] $${Math.round(refundableCandidate.features.effectiveTotalPrice)} refundable ` +
+        `(score ${refundableCandidate.score.finalScore.toFixed(2)}) bumped above ` +
+        `$${Math.round(changeableCandidate.features.effectiveTotalPrice)} changeable ` +
+        `(score ${changeableCandidate.score.finalScore.toFixed(2)}) → new score ${newScore.toFixed(2)}`
       );
 
-      if (bestRefundable) {
-        // Swap with the weakest non-refundable in the bottom half of top 10
-        let swapIdx = -1;
-        let worstScore = Infinity;
-        for (let i = TOP_N - 1; i >= Math.floor(TOP_N / 2); i--) {
-          const c = tieBreakCandidates[i];
-          if (!c.features.fareFlexibility.refundable && c.score.finalScore < worstScore) {
-            worstScore = c.score.finalScore;
-            swapIdx = i;
-          }
-        }
+      refundableCandidate.score.finalScore = newScore;
+      refundableCandidate.score.aiScoreRaw = newScore;
+      refundableCandidate.score.aiScoreDisplay = Math.round(newScore);
+      pairwiseAdjustments++;
+    }
 
-        if (swapIdx >= 0) {
-          const refIdx = tieBreakCandidates.indexOf(bestRefundable);
-          console.log(
-            `[RepresentationRule] Promoting 1 refundable ($${Math.round(bestRefundable.features.effectiveTotalPrice)}) ` +
-            `from position ${refIdx + 1} to position ${swapIdx + 1}`
-          );
-          const temp = tieBreakCandidates[swapIdx];
-          tieBreakCandidates[swapIdx] = bestRefundable;
-          tieBreakCandidates[refIdx] = temp;
-        }
-      }
+    if (pairwiseAdjustments > 0) {
+      // Re-sort after pairwise adjustments
+      tieBreakCandidates.sort((a, b) => {
+        const scoreDiff = b.score.finalScore - a.score.finalScore;
+        if (Math.abs(scoreDiff) > 0.005) return scoreDiff;
+        return a.features.effectiveTotalPrice - b.features.effectiveTotalPrice;
+      });
     }
   }
 

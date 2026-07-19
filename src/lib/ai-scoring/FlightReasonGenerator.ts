@@ -167,8 +167,17 @@ export function generateReasons(
   }
 
   // ── Layover reasons ──
-  const longLayover = features.allLayovers.find(l => l.durationMinutes > 300);
-  const tightLayover = features.allLayovers.find(l => {
+  // Guard: validate layover plausibility before generating warnings
+  const plausibleLayovers = features.allLayovers.filter(l => {
+    // A single layover cannot exceed 80% of total journey duration
+    if (features.totalDurationMinutes > 0 && l.durationMinutes > features.totalDurationMinutes * 0.8) {
+      return false; // implausible — skip this layover for warning purposes
+    }
+    return true;
+  });
+
+  const longLayover = plausibleLayovers.find(l => l.durationMinutes > 300);
+  const tightLayover = plausibleLayovers.find(l => {
     const threshold = features.isInternational ? 75 : 45;
     return l.durationMinutes > 0 && l.durationMinutes < threshold;
   });

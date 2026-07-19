@@ -355,6 +355,8 @@ export interface RefundabilityUpgradeConfig {
     durationToleranceMinutesDomestic: number;
     durationToleranceMinutesIntl: number;
     scheduleDepartureToleranceHours: number;
+    /** Percentage tolerance for duration diff in Level-2 matching (default 35) */
+    durationTolerancePct?: number;
   };
 }
 
@@ -381,5 +383,6 @@ export const REFUNDABILITY_UPGRADE_CONFIG: RefundabilityUpgradeConfig = {
     durationToleranceMinutesDomestic: 25,
     durationToleranceMinutesIntl: 45,
     scheduleDepartureToleranceHours: 12,
+    durationTolerancePct: 35,
   },
 };

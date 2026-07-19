@@ -123,6 +123,7 @@ export function generateWarnings(
     const thresholdTight = features.isInternational ? 75 : 45;
     const thresholdLong = features.isInternational ? 300 : 240;
 
+    // Safety warnings always apply regardless of plausibility
     if (layover.isSelfTransfer) {
       warn(warnings, 'SELF_TRANSFER', 'Self-transfer required — collect and recheck baggage');
       aiPickBlocked = true;
@@ -133,6 +134,12 @@ export function generateWarnings(
       warn(warnings, 'AIRPORT_CHANGE', 'Airport change required during connection');
       aiPickBlocked = true;
       aiPickBlockReason = 'Airport change required';
+    }
+
+    // Plausibility guard: skip duration-based warnings for implausible layovers
+    // A single layover cannot exceed 80% of total journey duration
+    if (features.totalDurationMinutes > 0 && layover.durationMinutes > features.totalDurationMinutes * 0.8) {
+      continue; // implausible data — do not penalize score
     }
 
     if (layover.durationMinutes > 0 && layover.durationMinutes < thresholdTight) {
