@@ -344,6 +344,12 @@ export interface RefundabilityUpgradeConfig {
   maxBonusCap: number;
   /** Premium percentage bands — ordered ascending by maxPct */
   premiumBands: RefundabilityPremiumBand[];
+  /**
+   * Overpricing penalty bands — applied when premium EXCEEDS the eligible range.
+   * Counteracts the inherent advantage from Dimension 7 flex score + NON_REFUNDABLE
+   * warning savings that would otherwise unfairly boost overpriced refundable fares.
+   */
+  overpricingPenaltyBands: RefundabilityPremiumBand[];
   /** Comparability tolerances for finding the nearest changeable fare */
   comparability: {
     durationToleranceMinutesDomestic: number;
@@ -360,6 +366,16 @@ export const REFUNDABILITY_UPGRADE_CONFIG: RefundabilityUpgradeConfig = {
     { maxPct: 10, bonus: 12 },
     { maxPct: 15, bonus: 8  },
     { maxPct: 20, bonus: 5  },
+  ],
+  // When premium exceeds 20%, the refundable fare is overpriced.
+  // Apply a negative penalty to neutralize the unfair advantage from:
+  //   - Dimension 7 flex score gap (~1.25 pts)
+  //   - NON_REFUNDABLE warning saved (~3 pts)
+  // Without this, a $939 refundable fare can rank above a $579 changeable fare.
+  overpricingPenaltyBands: [
+    { maxPct: 35, bonus: -3 },   // 20-35% premium: mild penalty
+    { maxPct: 50, bonus: -5 },   // 35-50% premium: moderate penalty
+    { maxPct: 100, bonus: -8 },  // 50-100% premium: strong penalty
   ],
   comparability: {
     durationToleranceMinutesDomestic: 25,

@@ -94,6 +94,7 @@ export function generateReasons(
 
   // ── Refundability Upgrade Value reason ──
   // When the upgrade rule awarded a bonus, explain why refundability is good value.
+  // When a penalty was applied, warn about the overpriced refundable fare.
   if (scoreOutput.refundabilityUpgradeBonus > 0) {
     const premiumPct = scoreOutput.scoreBreakdown.refundabilityUpgradePremiumPct ?? 0;
     const alreadyHasRefundReason = positiveReasons.some(r =>
@@ -110,6 +111,11 @@ export function generateReasons(
         positiveReasons.push('Refundable fare at a competitive premium over changeable alternatives');
       }
     }
+  } else if (scoreOutput.refundabilityUpgradeBonus < 0) {
+    const premiumPct = scoreOutput.scoreBreakdown.refundabilityUpgradePremiumPct ?? 0;
+    negativeWarnings.push(
+      `Refundability premium is ${Math.round(premiumPct)}% above comparable changeable fares — consider if the extra cost is justified`
+    );
   }
 
   // ── Baggage reasons (HIGH PRIORITY — show early) ──

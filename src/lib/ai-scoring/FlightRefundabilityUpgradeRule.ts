@@ -124,32 +124,71 @@ export function applyRefundabilityUpgrades(
       premiumPct = ((refundablePrice - changeablePrice) / changeablePrice) * 100;
     }
 
-    // Map to bonus
+    // Map to bonus (positive for eligible, 0 for ineligible)
     const bonus = premiumToBonus(premiumPct, config);
-    if (bonus <= 0) continue;
 
-    // Apply bonus — add to baseScore, recompute finalScore
-    const so = candidate.scoreOutput;
-    so.refundabilityUpgradeBonus = bonus;
-    so.refundabilityUpgradeBaselineId = matchResult.match.features.offerId;
-    so.baseScore += bonus;
-    so.finalScore += bonus;
-    so.aiScoreRaw = Math.round(so.finalScore * 100) / 100;
-    so.aiScoreDisplay = Math.round(so.finalScore);
+    if (bonus > 0) {
+      // ── Eligible: apply positive bonus ──
+      const so = candidate.scoreOutput;
+      so.refundabilityUpgradeBonus = bonus;
+      so.refundabilityUpgradeBaselineId = matchResult.match.features.offerId;
+      so.baseScore += bonus;
+      so.finalScore += bonus;
+      so.aiScoreRaw = Math.round(so.finalScore * 100) / 100;
+      so.aiScoreDisplay = Math.round(so.finalScore);
 
-    // Update breakdown
-    so.scoreBreakdown.refundabilityUpgradeBonus = bonus;
-    so.scoreBreakdown.refundabilityUpgradePremiumPct =
-      Math.round(premiumPct * 100) / 100;
+      so.scoreBreakdown.refundabilityUpgradeBonus = bonus;
+      so.scoreBreakdown.refundabilityUpgradePremiumPct =
+        Math.round(premiumPct * 100) / 100;
 
-    adjustments.push({
-      offerId: f.offerId,
-      bonus,
-      premiumPct: Math.round(premiumPct * 100) / 100,
-      baselineOfferId: matchResult.match.features.offerId,
-      baselinePrice: changeablePrice,
-    });
+      adjustments.push({
+        offerId: f.offerId,
+        bonus,
+        premiumPct: Math.round(premiumPct * 100) / 100,
+        baselineOfferId: matchResult.match.features.offerId,
+        baselinePrice: changeablePrice,
+      });
+    } else {
+      // ── Overpriced: apply negative penalty to counteract unfair flex advantage ──
+      // Without this, Dimension 7 (+25 flex score) and NON_REFUNDABLE warning
+      // savings (-3 on competitors) let an overpriced refundable fare outrank
+      // much cheaper changeable alternatives (e.g. $939 vs $579 = 62% premium).
+      let penalty = 0;
+      for (const band of config.overpricingPenaltyBands) {
+        if (premiumPct <= band.maxPct) {
+          penalty = band.bonus; // negative value
+          break;
+        }
+      }
+      // Fallback: if premium exceeds all bands, use the last band's penalty
+      if (penalty === 0 && config.overpricingPenaltyBands.length > 0 && premiumPct > 0) {
+        penalty = config.overpricingPenaltyBands[config.overpricingPenaltyBands.length - 1].bonus;
+      }
+
+      if (penalty < 0) {
+        const so = candidate.scoreOutput;
+        so.refundabilityUpgradeBonus = penalty;
+        so.refundabilityUpgradeBaselineId = matchResult.match.features.offerId;
+        so.baseScore += penalty;
+        so.finalScore += penalty;
+        so.aiScoreRaw = Math.round(so.finalScore * 100) / 100;
+        so.aiScoreDisplay = Math.round(so.finalScore);
+
+        so.scoreBreakdown.refundabilityUpgradeBonus = penalty;
+        so.scoreBreakdown.refundabilityUpgradePremiumPct =
+          Math.round(premiumPct * 100) / 100;
+
+        adjustments.push({
+          offerId: f.offerId,
+          bonus: penalty,
+          premiumPct: Math.round(premiumPct * 100) / 100,
+          baselineOfferId: matchResult.match.features.offerId,
+          baselinePrice: changeablePrice,
+        });
+      }
+    }
   }
 
   return { adjustments };
 }
+
