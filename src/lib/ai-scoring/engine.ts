@@ -627,8 +627,9 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
   }
 
   // 8.9. Refundable Representation Rule
-  //      Guarantees at least one qualifying refundable fare appears in the top 10
-  //      recommendation window. This is a representation rule, NOT a scoring rule.
+  //      Ensures AT MOST ONE qualifying refundable fare appears in the top 10.
+  //      This is a representation rule, NOT a scoring rule.
+  //      All remaining refundable fares are ranked purely by their final score.
   //      Safety constraints: no critical warnings, no suspicious pricing.
   const TOP_N = 10;
   if (tieBreakCandidates.length > TOP_N) {
@@ -640,7 +641,7 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
     );
 
     if (!hasQualifyingRefundable) {
-      // Find the best qualifying refundable outside the top 10
+      // Find the SINGLE best qualifying refundable outside the top 10
       const bestRefundable = tieBreakCandidates.slice(TOP_N).find(c =>
         c.features.fareFlexibility.refundable &&
         c.score.refundabilityUpgradeBonus > 0 &&
@@ -648,8 +649,7 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
       );
 
       if (bestRefundable) {
-        // Find the lowest-ranked non-refundable, non-changeable offer in top 10
-        // to swap out (prefer removing the weakest non-flexible fare)
+        // Swap with the weakest non-refundable in the bottom half of top 10
         let swapIdx = -1;
         let worstScore = Infinity;
         for (let i = TOP_N - 1; i >= Math.floor(TOP_N / 2); i--) {
@@ -662,7 +662,10 @@ export function rankFlightOffers<T extends UnifiedFlight | RoundTripOption>(
 
         if (swapIdx >= 0) {
           const refIdx = tieBreakCandidates.indexOf(bestRefundable);
-          // Swap: move refundable into the top 10 position
+          console.log(
+            `[RepresentationRule] Promoting 1 refundable ($${Math.round(bestRefundable.features.effectiveTotalPrice)}) ` +
+            `from position ${refIdx + 1} to position ${swapIdx + 1}`
+          );
           const temp = tieBreakCandidates[swapIdx];
           tieBreakCandidates[swapIdx] = bestRefundable;
           tieBreakCandidates[refIdx] = temp;

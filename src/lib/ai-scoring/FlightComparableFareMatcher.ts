@@ -1,16 +1,20 @@
 // ═══════════════════════════════════════════════════════════════════════════════
-// Comparable Fare Matcher — 3-Level Hierarchy
+// Comparable Fare Matcher — 3-Level Hierarchy with Cheapest Reference
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// Finds the nearest changeable fare for a refundable offer using a tiered
-// matching strategy that balances precision with coverage:
+// Finds the best-value changeable fare as the reference for premium calculation.
 //
-//   Level 1 — Exact Comparable:   same cabin, currency, stop count
-//   Level 2 — Near Comparable:    ±1 stop, ≤35% duration difference
-//   Level 3 — Market Comparable:  same cabin + currency only (any stops)
+// CRITICAL: The reference fare must be the CHEAPEST comparable changeable fare
+// (or median of 3 cheapest), NOT the nearest by price. Using nearest-by-price
+// lets expensive refundable fares ($1,111) compare against expensive changeable
+// fares ($957) instead of the market reference ($791).
 //
-// Within each level, selects the fare with the smallest positive price diff.
-// Falls through to the next level only when no match is found.
+// 3-Level Hierarchy:
+//   Level 1 — Exact:  same cabin, currency, stop count
+//   Level 2 — Near:   ±1 stop, ≤35% duration difference
+//   Level 3 — Market: same cabin + currency (any stops)
+//
+// Within each level: median of 3 cheapest comparable changeable fares.
 
 import type { ScoringFeatures } from './FlightScoringTypes';
 import type { RefundabilityUpgradeConfig } from './FlightScoringConfig';
@@ -26,16 +30,15 @@ export interface FareMatchCandidate {
 export type MatchLevel = 'exact' | 'near' | 'market';
 
 export interface FareMatchResult {
-  /** The matched changeable fare, or null if no comparable found */
   match: FareMatchCandidate | null;
-  /** Price difference: refundablePrice - changeablePrice */
   priceDiff: number;
-  /** Which matching level was used */
   matchLevel: MatchLevel | null;
-  /** Stop count difference between refundable and matched changeable */
   stopDiff: number;
-  /** Duration ratio: refundable / changeable (for comparability factor) */
   durationRatio: number;
+  /** Debug: how many comparable fares were in the group */
+  groupSize: number;
+  /** Debug: the reference price used (median of 3 cheapest) */
+  referencePrice: number;
 }
 
 // ── Helpers ──────────────────────────────────────────────────────────────────
@@ -53,48 +56,49 @@ function sameCabinAndCurrency(
   return cCabin === rCabin && candidate.currency === refundable.currency;
 }
 
-interface NearestResult {
-  match: FareMatchCandidate | null;
-  priceDiff: number;
-}
-
-/** Among filtered candidates, find the one with smallest positive price diff */
-function findNearest(
-  refundablePrice: number,
+/**
+ * From a group of comparable fares, select the reference fare.
+ *
+ * Strategy: median of the 3 cheapest fares.
+ * - If 3+ fares: use median (index 1) to exclude potential outlier
+ * - If 2 fares: use the cheaper one
+ * - If 1 fare: use it directly
+ *
+ * This avoids using an extreme outlier while still anchoring to
+ * the best-value available in the market.
+ */
+function selectReferenceFare(
   candidates: FareMatchCandidate[],
-): NearestResult {
-  let best: FareMatchCandidate | null = null;
-  let bestDiff = Infinity;
+): { reference: FareMatchCandidate; referencePrice: number } | null {
+  if (candidates.length === 0) return null;
 
-  for (const c of candidates) {
-    const diff = refundablePrice - c.features.effectiveTotalPrice;
-    if (diff < 0) continue; // only consider cheaper-or-equal changeable fares
-    if (diff < bestDiff) {
-      bestDiff = diff;
-      best = c;
-    }
-  }
+  // Sort by effective price ascending
+  const sorted = [...candidates].sort(
+    (a, b) => a.features.effectiveTotalPrice - b.features.effectiveTotalPrice,
+  );
 
-  return { match: best, priceDiff: best ? bestDiff : 0 };
+  // Take cheapest 3
+  const top3 = sorted.slice(0, 3);
+
+  // Median: middle element (index 1 for 3 items, index 0 for 1-2 items)
+  const medianIdx = top3.length >= 3 ? 1 : 0;
+  const ref = top3[medianIdx];
+
+  return { reference: ref, referencePrice: ref.features.effectiveTotalPrice };
 }
 
 // ── Main matcher ─────────────────────────────────────────────────────────────
 
-/**
- * 3-level hierarchical matcher.
- *
- * Level 1 — Exact: same cabin, currency, stop count
- * Level 2 — Near:  ±1 stop, ≤35% duration difference
- * Level 3 — Market: same cabin + currency, any stops (closest by price)
- *
- * Falls through only when no match found at the current level.
- */
 export function findNearestChangeableFare(
   refundable: FareMatchCandidate,
   allCandidates: FareMatchCandidate[],
   _config: RefundabilityUpgradeConfig,
 ): FareMatchResult {
   const rf = refundable.features;
+  const empty: FareMatchResult = {
+    match: null, priceDiff: 0, matchLevel: null,
+    stopDiff: 0, durationRatio: 1, groupSize: 0, referencePrice: 0,
+  };
 
   // Pre-filter: same cabin, same currency, changeable, not refundable, not self
   const base = allCandidates.filter(c =>
@@ -103,19 +107,21 @@ export function findNearestChangeableFare(
     sameCabinAndCurrency(c, refundable)
   );
 
-  if (base.length === 0) {
-    return { match: null, priceDiff: 0, matchLevel: null, stopDiff: 0, durationRatio: 1 };
-  }
+  if (base.length === 0) return empty;
 
   // ── Level 1: Exact Comparable (same stop count) ──
   const level1 = base.filter(c => c.features.totalStops === rf.totalStops);
-  const r1 = findNearest(rf.effectiveTotalPrice, level1);
-  if (r1.match) {
+  const ref1 = selectReferenceFare(level1);
+  if (ref1) {
+    const priceDiff = rf.effectiveTotalPrice - ref1.referencePrice;
     return {
-      ...r1,
+      match: ref1.reference,
+      priceDiff,
       matchLevel: 'exact',
       stopDiff: 0,
-      durationRatio: rf.totalDurationMinutes / Math.max(r1.match.features.totalDurationMinutes, 1),
+      durationRatio: rf.totalDurationMinutes / Math.max(ref1.reference.features.totalDurationMinutes, 1),
+      groupSize: level1.length,
+      referencePrice: ref1.referencePrice,
     };
   }
 
@@ -124,37 +130,43 @@ export function findNearestChangeableFare(
     const stopDiff = Math.abs(c.features.totalStops - rf.totalStops);
     if (stopDiff > 1) return false;
     const durRatio = rf.totalDurationMinutes / Math.max(c.features.totalDurationMinutes, 1);
-    return durRatio >= 0.65 && durRatio <= 1.35; // within 35%
+    return durRatio >= 0.65 && durRatio <= 1.35;
   });
-  const r2 = findNearest(rf.effectiveTotalPrice, level2);
-  if (r2.match) {
+  const ref2 = selectReferenceFare(level2);
+  if (ref2) {
+    const priceDiff = rf.effectiveTotalPrice - ref2.referencePrice;
     return {
-      ...r2,
+      match: ref2.reference,
+      priceDiff,
       matchLevel: 'near',
-      stopDiff: Math.abs(r2.match.features.totalStops - rf.totalStops),
-      durationRatio: rf.totalDurationMinutes / Math.max(r2.match.features.totalDurationMinutes, 1),
+      stopDiff: Math.abs(ref2.reference.features.totalStops - rf.totalStops),
+      durationRatio: rf.totalDurationMinutes / Math.max(ref2.reference.features.totalDurationMinutes, 1),
+      groupSize: level2.length,
+      referencePrice: ref2.referencePrice,
     };
   }
 
-  // ── Level 3: Market Comparable (any stop count, closest by price) ──
-  const r3 = findNearest(rf.effectiveTotalPrice, base);
-  if (r3.match) {
+  // ── Level 3: Market Comparable (any stops, cheapest reference) ──
+  const ref3 = selectReferenceFare(base);
+  if (ref3) {
+    const priceDiff = rf.effectiveTotalPrice - ref3.referencePrice;
     return {
-      ...r3,
+      match: ref3.reference,
+      priceDiff,
       matchLevel: 'market',
-      stopDiff: Math.abs(r3.match.features.totalStops - rf.totalStops),
-      durationRatio: rf.totalDurationMinutes / Math.max(r3.match.features.totalDurationMinutes, 1),
+      stopDiff: Math.abs(ref3.reference.features.totalStops - rf.totalStops),
+      durationRatio: rf.totalDurationMinutes / Math.max(ref3.reference.features.totalDurationMinutes, 1),
+      groupSize: base.length,
+      referencePrice: ref3.referencePrice,
     };
   }
 
-  return { match: null, priceDiff: 0, matchLevel: null, stopDiff: 0, durationRatio: 1 };
+  return empty;
 }
 
 // ── Comparability Factor ─────────────────────────────────────────────────────
 
 /**
- * Reduce the refundability bonus based on itinerary similarity.
- *
  * | Match                                    | Factor |
  * |------------------------------------------|--------|
  * | Exact comparable                         | 1.00   |
@@ -168,18 +180,8 @@ export function getComparabilityFactor(
   durationRatio: number,
 ): number {
   if (!matchLevel) return 0;
-
-  // Exact comparable — full factor
   if (matchLevel === 'exact') return 1.0;
-
-  // 2+ stop difference — not comparable
   if (stopDiff >= 2) return 0;
-
-  // ±1 stop: check duration ratio
-  if (durationRatio <= 1.15) {
-    // Similar duration (within 15% longer)
-    return 0.80;
-  }
-  // Moderately longer itinerary
+  if (durationRatio <= 1.15) return 0.80;
   return 0.65;
 }

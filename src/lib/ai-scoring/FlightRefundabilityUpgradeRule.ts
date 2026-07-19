@@ -2,14 +2,11 @@
 // Refundability Upgrade Rule — Contextual Scoring Adjustment
 // ═══════════════════════════════════════════════════════════════════════════════
 //
-// Evaluated AFTER the 8-dimension base score and BEFORE warning penalties.
+// Reference fare = median of 3 cheapest comparable changeable fares.
+// NOT the nearest-by-price changeable fare.
 //
-// A fully refundable fare receives a score bonus when it costs between 0% and
-// 20% more than its nearest comparable changeable fare (weighted by
-// comparability factor for non-exact matches).
-//
-// Fares with premium >20% receive an overpricing penalty to counteract the
-// inherent advantage from Dimension 7 flex score + NON_REFUNDABLE warning savings.
+// Bonus × comparability factor for non-exact matches.
+// Penalty for >20% premium to counteract Dim 7 + warning advantage.
 
 import type { ScoringFeatures, FlightScoreOutput } from './FlightScoringTypes';
 import type { RefundabilityUpgradeConfig } from './FlightScoringConfig';
@@ -17,6 +14,7 @@ import {
   findNearestChangeableFare,
   getComparabilityFactor,
   type FareMatchCandidate,
+  type MatchLevel,
 } from './FlightComparableFareMatcher';
 
 // ── Types ────────────────────────────────────────────────────────────────────
@@ -34,6 +32,9 @@ export interface UpgradeAdjustment {
   premiumPct: number;
   baselineOfferId: string;
   baselinePrice: number;
+  matchLevel: MatchLevel | null;
+  comparabilityFactor: number;
+  rawBonus: number;
 }
 
 export interface UpgradeResult {
@@ -95,11 +96,9 @@ export function applyRefundabilityUpgrades(
 
   for (const candidate of candidates) {
     const f = candidate.features;
-
-    // Only evaluate fully refundable offers
     if (!f.fareFlexibility.refundable) continue;
 
-    // Find nearest comparable changeable fare (3-level hierarchy)
+    // Find reference changeable fare (median of 3 cheapest in comparable group)
     const matchResult = findNearestChangeableFare(
       { features: f, cabinClass: candidate.cabinClass, currency: candidate.currency },
       matchCandidates,
@@ -108,53 +107,59 @@ export function applyRefundabilityUpgrades(
 
     if (!matchResult.match) continue;
 
-    const changeablePrice = matchResult.match.features.effectiveTotalPrice;
+    const referencePrice = matchResult.referencePrice;
     const refundablePrice = f.effectiveTotalPrice;
+    if (referencePrice <= 0) continue;
 
-    if (changeablePrice <= 0) continue;
-
-    // Calculate premium percentage
+    // Premium % = (refundable - reference) / reference × 100
     let premiumPct: number;
-    if (refundablePrice <= changeablePrice) {
+    if (refundablePrice <= referencePrice) {
       premiumPct = 0;
     } else {
-      premiumPct = ((refundablePrice - changeablePrice) / changeablePrice) * 100;
+      premiumPct = ((refundablePrice - referencePrice) / referencePrice) * 100;
     }
 
-    // Get raw bonus from premium bands
+    // Debug log — helps verify comparator selection
+    console.log(
+      `[RefundUpgrade] $${Math.round(refundablePrice)} refundable ` +
+      `vs $${Math.round(referencePrice)} reference (${matchResult.matchLevel}, ` +
+      `group=${matchResult.groupSize}) → ${premiumPct.toFixed(1)}% premium`
+    );
+
     const rawBonus = premiumToBonus(premiumPct, config);
+    const factor = getComparabilityFactor(
+      matchResult.matchLevel,
+      matchResult.stopDiff,
+      matchResult.durationRatio,
+    );
 
     if (rawBonus > 0) {
-      // ── Eligible: apply bonus × comparability factor ──
-      const factor = getComparabilityFactor(
-        matchResult.matchLevel,
-        matchResult.stopDiff,
-        matchResult.durationRatio,
-      );
+      // ── Eligible: bonus × comparability factor ──
       const finalBonus = Math.round(rawBonus * factor);
 
-      if (finalBonus > 0) {
-        applyAdjustment(
-          candidate.scoreOutput,
-          finalBonus,
-          premiumPct,
-          matchResult.match.features.offerId,
-        );
+      console.log(
+        `  → Raw bonus: +${rawBonus}, factor: ${factor}, final: +${finalBonus}`
+      );
 
+      if (finalBonus > 0) {
+        applyAdjustment(candidate.scoreOutput, finalBonus, premiumPct, matchResult.match.features.offerId);
         adjustments.push({
           offerId: f.offerId,
           bonus: finalBonus,
           premiumPct: Math.round(premiumPct * 100) / 100,
           baselineOfferId: matchResult.match.features.offerId,
-          baselinePrice: changeablePrice,
+          baselinePrice: referencePrice,
+          matchLevel: matchResult.matchLevel,
+          comparabilityFactor: factor,
+          rawBonus,
         });
       }
     } else {
-      // ── Overpriced (>20%): apply penalty ──
+      // ── Overpriced (>20%): penalty ──
       let penalty = 0;
       for (const band of config.overpricingPenaltyBands) {
         if (premiumPct <= band.maxPct) {
-          penalty = band.bonus; // negative value
+          penalty = band.bonus;
           break;
         }
       }
@@ -162,20 +167,19 @@ export function applyRefundabilityUpgrades(
         penalty = config.overpricingPenaltyBands[config.overpricingPenaltyBands.length - 1].bonus;
       }
 
-      if (penalty < 0) {
-        applyAdjustment(
-          candidate.scoreOutput,
-          penalty,
-          premiumPct,
-          matchResult.match.features.offerId,
-        );
+      console.log(`  → OVERPRICED: penalty ${penalty}`);
 
+      if (penalty < 0) {
+        applyAdjustment(candidate.scoreOutput, penalty, premiumPct, matchResult.match.features.offerId);
         adjustments.push({
           offerId: f.offerId,
           bonus: penalty,
           premiumPct: Math.round(premiumPct * 100) / 100,
           baselineOfferId: matchResult.match.features.offerId,
-          baselinePrice: changeablePrice,
+          baselinePrice: referencePrice,
+          matchLevel: matchResult.matchLevel,
+          comparabilityFactor: factor,
+          rawBonus: 0,
         });
       }
     }
