@@ -380,6 +380,6 @@ export const REFUNDABILITY_UPGRADE_CONFIG: RefundabilityUpgradeConfig = {
   comparability: {
     durationToleranceMinutesDomestic: 25,
     durationToleranceMinutesIntl: 45,
-    scheduleDepartureToleranceHours: 2,
+    scheduleDepartureToleranceHours: 12,
   },
 };
