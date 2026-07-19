@@ -71,10 +71,25 @@ function getArcPoint(arc: GeoJSON.LineString, t: number): [number, number] | nul
 
 function getArcBearing(arc: GeoJSON.LineString, t: number): number {
   const coords = arc.coordinates;
+  if (coords.length < 2) return 0;
+
+  // Use a wider look-ahead (5% of total arc length) so the bearing reflects the
+  // overall flight direction rather than a tiny tangent on the offset curve.
+  // This prevents the arrow from pointing sideways at the start/end of offset arcs.
+  const lookAhead = Math.max(Math.floor(coords.length * 0.05), 3);
   const i = Math.min(Math.floor(Math.max(0, t) * (coords.length - 1)), coords.length - 2);
+  const j = Math.min(i + lookAhead, coords.length - 1);
   const a = coords[i] as [number, number];
-  const b = coords[i + 1] as [number, number];
+  const b = coords[j] as [number, number];
   if (!validCoord(a) || !validCoord(b)) return 0;
+  // If the two points are essentially the same (start/end overlap), fall back to
+  // overall start→end bearing
+  const dist = Math.abs(b[0] - a[0]) + Math.abs(b[1] - a[1]);
+  if (dist < 0.001) {
+    const start = coords[0] as [number, number];
+    const end = coords[coords.length - 1] as [number, number];
+    try { return turf.bearing(turf.point(start), turf.point(end)); } catch { return 0; }
+  }
   try { return turf.bearing(turf.point(a), turf.point(b)); } catch { return 0; }
 }
 
