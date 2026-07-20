@@ -432,10 +432,10 @@ async function processCustomerRefund(
           },
         });
 
-        // Update support ticket → REFUND_PENDING (customer refunded, awaiting provider reimbursement)
+        // Update support ticket → REFUND_ISSUED (customer refunded, awaiting provider reimbursement)
         await prisma.supportTicket.update({
           where: { id: supportTicketId },
-          data: { status: 'REFUND_PENDING' },
+          data: { status: 'REFUND_ISSUED' },
         });
 
         // Booking event
