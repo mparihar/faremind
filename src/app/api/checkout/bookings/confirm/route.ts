@@ -1034,22 +1034,20 @@ export async function POST(req: NextRequest) {
               const childCount = passengers.filter((p: any) => p.type === 'child' || p.type === 'CHD').length;
               const infantCount = passengers.filter((p: any) => p.type === 'infant' || p.type === 'INF').length;
 
-              const searchParams: any = {
+              const searchQs = new URLSearchParams({
                 origin: originCode,
                 destination: destCode,
                 date: depDate,
-                adults: adultCount,
-                children: childCount,
-                infants: infantCount,
+                adults: String(adultCount),
+                children: String(childCount),
+                infants: String(infantCount),
                 cabin: selectedFare?.cabinClass || 'economy',
-                provider: 'mystifly',
-              };
-              if (retDate) searchParams.returnDate = retDate;
+              });
+              if (retDate) searchQs.set('returnDate', retDate);
 
-              const searchRes = await fetch(`${BACKEND_URL}/api/search`, {
-                method: 'POST',
+              const searchRes = await fetch(`${BACKEND_URL}/api/search?${searchQs.toString()}`, {
+                method: 'GET',
                 headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify(searchParams),
               });
 
               if (searchRes.ok) {
