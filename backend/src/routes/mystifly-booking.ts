@@ -26,20 +26,15 @@ import type {
 } from '../services/mystifly';
 
 // ═══════════════════════════════════════════════
-// FSC Lifecycle Tracing Helpers (Points 4, 9)
+// FSC Helpers
 // ═══════════════════════════════════════════════
 
-/**
- * SHA-256 hash of a FareSourceCode for traceability logging.
- */
+/** SHA-256 hash of a FareSourceCode for traceability. */
 function hashFsc(fsc: string): string {
   return crypto.createHash('sha256').update(fsc).digest('hex').slice(0, 16);
 }
 
-/**
- * Deep recursive search for ALL occurrences of 'FareSourceCode' in an object.
- * Returns array of { path, value } for every match found at any nesting depth.
- */
+/** Deep recursive search for all 'FareSourceCode' values in an object. */
 function findAllFareSourceCodes(obj: any, path = 'root'): { path: string; value: string }[] {
   const results: { path: string; value: string }[] = [];
   if (obj == null || typeof obj !== 'object') return results;
@@ -210,10 +205,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'fareSourceCode is required' });
       }
 
-      // ── Point 1 & 9: Log the exact Search v2 FSC with hash ──
       const searchFscHash = hashFsc(fareSourceCode);
 
-      // ── Point 2: Send the exact Search FSC to Revalidate v1 ──
       const result = await mystifly.revalidateFlight(fareSourceCode);
 
       // Check for Mystifly-level errors
@@ -227,29 +220,18 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // ── Point 3: Log the COMPLETE raw Revalidate response ──
-
-      // ── Point 4: Deep recursive search for FareSourceCode in response ──
       const allFscs = findAllFareSourceCodes(result);
-      for (const found of allFscs) {
-        const h = hashFsc(found.value);
-      }
 
       // Extract revalidated fare info
       const itinerary = result?.Data?.PricedItineraries?.[0] ?? result?.PricedItineraries?.[0];
       const totalFare = itinerary?.AirItineraryPricingInfo?.ItinTotalFare?.TotalFare?.Amount;
       const currency = itinerary?.AirItineraryPricingInfo?.ItinTotalFare?.TotalFare?.CurrencyCode ?? 'USD';
 
-      // ── Extract IsValid and HoldAllowed from revalidation response ──
-      // These fields determine the correct booking flow:
-      //   HoldAllowed=true  → Hold booking: BookFlight → OrderTicket (payment at OrderTicket)
-      //   HoldAllowed=false → Webfare:      BookFlight (payment at BookFlight, no OrderTicket)
       const isValidRaw = result?.Data?.IsValid ?? result?.IsValid ?? itinerary?.IsValid;
       const isValid = isValidRaw === true || isValidRaw === 'true' || isValidRaw === 'True';
       const holdAllowedRaw = result?.Data?.HoldAllowed ?? result?.HoldAllowed ?? itinerary?.HoldAllowed;
       const holdAllowed = holdAllowedRaw === true || holdAllowedRaw === 'true' || holdAllowedRaw === 'True';
 
-      // ── Block booking if IsValid is explicitly false ──
       if (isValidRaw !== undefined && !isValid) {
         console.error(`[Mystifly] ❌ Revalidation returned IsValid=false — fare is no longer available`);
         return reply.code(422).send({
@@ -274,9 +256,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         revalidatedFareSourceCode = allFscs[0].value;
       }
 
-      // ── Point 5 & 10: Do NOT fallback to original search FSC ──
       if (!revalidatedFareSourceCode) {
-        console.error(`[FSC-Trace] ❌ BLOCKING: Revalidation returned NO FareSourceCode. Cannot proceed to Book.`);
+        console.error(`[Mystifly] Revalidation returned NO FareSourceCode — blocking booking`);
         return reply.code(422).send({
           error: 'Revalidation succeeded but returned no FareSourceCode. Booking blocked.',
           errorCode: 'REVALIDATION_NO_FSC',
@@ -285,7 +266,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      // ── Point 9: Log revalidated FSC hash ──
       const revalFscHash = hashFsc(revalidatedFareSourceCode);
 
       return {
@@ -342,11 +322,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'email is required' });
       }
 
-      // ── Point 9: Log BOOK FSC with hash ──
       const bookFscHash = hashFsc(fareSourceCode);
 
-      // ── Point 7: Build a DEDICATED Book v1 request payload ──
-      // Do NOT spread or reuse the Search v2 response model.
+      // Build Book v1 request payload
       const travelers = toMystiflyTravelers(passengers);
 
       const result = await mystifly.bookFlight({
@@ -359,7 +337,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         holdBooking: holdBooking ?? false,
       });
 
-      // Log full Book response for debugging
+
 
       // Check for Mystifly-level errors
       const errors = result?.Data?.Errors || result?.Errors || [];
@@ -370,8 +348,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (hasError) {
         const errMsg = error?.ErrorMessage || errors?.[0]?.Message || 'Booking creation failed';
         const errCode = error?.ErrorCode || errors?.[0]?.Code || 'UNKNOWN';
-        console.error(`[Mystifly] ❌ Booking failed: [${errCode}] ${errMsg}`);
-        console.error(`[FSC-Trace] BOOK FAILED with FSC hash=${bookFscHash}`);
+        console.error(`[Mystifly] Booking failed: [${errCode}] ${errMsg}`);
         return reply.code(422).send({
           error: errMsg,
           errorCode: 'MYSTIFLY_BOOKING_FAILED',
