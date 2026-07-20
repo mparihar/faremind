@@ -891,37 +891,97 @@ export class MystiflyAdapter implements IBookingProvider {
       };
     }
 
-    // ── Unticketed VOID: no PTR exists, use direct cancelBooking ──
+    // ── Unticketed VOID: try direct cancel, fallback to PTR if ticketed ──
     const untickMatch = quoteId.match(/^mystifly_void_unticketed_(.+)$/);
     if (untickMatch) {
       const [, mfRef] = untickMatch;
-      console.info(`[MystiflyAdapter] Confirming unticketed VOID for ${mfRef} — direct cancelBooking`);
+      console.info(`[MystiflyAdapter] Confirming unticketed VOID for ${mfRef} — trying direct cancelBooking`);
 
+      // Step 1: Try direct cancelBooking (works for truly unticketed bookings)
       const result = await mystiflyClient.cancelBooking(mfRef);
       console.log(`[MystiflyAdapter] cancelBooking response for ${mfRef}:`, JSON.stringify(result));
       const data = result?.Data || result;
       const success = data?.Success ?? result?.Success;
 
-      if (!success) {
-        const errorMsg = data?.Errors?.[0]?.Message || result?.Message || 'Cancellation failed';
-        const errorCode = data?.Errors?.[0]?.Code || '';
-        console.error(`[MystiflyAdapter] cancelBooking FAILED: code=${errorCode} msg=${errorMsg}`);
-        throw new MystiflyCancellationError(`Mystifly unticketed cancel failed: ${errorCode} ${errorMsg}`, {
-          providerErrorCode: errorCode,
-          rawResponse: result,
-        });
+      if (success) {
+        return {
+          cancellationId: `mystifly_void_unticketed_confirmed_${mfRef}`,
+          orderId: mfRef,
+          refundAmount: 0,
+          refundCurrency: data?.Currency || 'USD',
+          confirmedAt: new Date().toISOString(),
+          raw: result,
+        };
       }
 
-      // For unticketed bookings, Mystifly won't return a refund amount —
-      // the orchestrator uses the DB booking amount instead
-      return {
-        cancellationId: `mystifly_void_unticketed_confirmed_${mfRef}`,
-        orderId: mfRef,
-        refundAmount: 0, // orchestrator will use originalAmount from DB
-        refundCurrency: data?.Currency || 'USD',
-        confirmedAt: new Date().toISOString(),
-        raw: result,
-      };
+      // Step 2: If ERCBK007 (ticketed/in-process), fall back to PTR void/refund
+      const errorCode = data?.Errors?.[0]?.Code || '';
+      console.warn(`[MystiflyAdapter] cancelBooking failed (${errorCode}), falling back to PTR flow for ${mfRef}`);
+
+      // Try VoidQuote → executeVoid
+      try {
+        const voidQuoteResult = await mystiflyClient.voidQuote(mfRef);
+        console.log(`[MystiflyAdapter] VoidQuote fallback response for ${mfRef}:`, JSON.stringify(voidQuoteResult));
+        const voidData = voidQuoteResult?.Data || voidQuoteResult;
+        const voidSuccess = voidData?.Success ?? voidQuoteResult?.Success;
+        const voidPtrId = voidData?.PtrId || voidData?.ptrId || voidQuoteResult?.PtrId;
+
+        if (voidSuccess && voidPtrId) {
+          const execResult = await mystiflyClient.executeVoid(mfRef, voidPtrId);
+          console.log(`[MystiflyAdapter] executeVoid fallback response for ${mfRef}:`, JSON.stringify(execResult));
+          const execData = execResult?.Data || execResult;
+          const execSuccess = execData?.Success ?? execResult?.Success;
+
+          if (execSuccess) {
+            return {
+              cancellationId: `mystifly_void_fallback_confirmed_${mfRef}_${voidPtrId}`,
+              orderId: mfRef,
+              refundAmount: parseFloat(execData?.RefundAmount || '0'),
+              refundCurrency: execData?.Currency || 'USD',
+              confirmedAt: new Date().toISOString(),
+              raw: execResult,
+            };
+          }
+        }
+      } catch (voidErr) {
+        console.warn(`[MystiflyAdapter] VoidQuote fallback failed for ${mfRef}:`, voidErr instanceof Error ? voidErr.message : voidErr);
+      }
+
+      // Try RefundQuote → executeRefund
+      try {
+        const refundQuoteResult = await mystiflyClient.refundQuote(mfRef);
+        console.log(`[MystiflyAdapter] RefundQuote fallback response for ${mfRef}:`, JSON.stringify(refundQuoteResult));
+        const refundData = refundQuoteResult?.Data || refundQuoteResult;
+        const refundSuccess = refundData?.Success ?? refundQuoteResult?.Success;
+        const refundPtrId = refundData?.PtrId || refundData?.ptrId || refundQuoteResult?.PtrId;
+
+        if (refundSuccess && refundPtrId) {
+          const execResult = await mystiflyClient.executeRefund(mfRef, refundPtrId);
+          console.log(`[MystiflyAdapter] executeRefund fallback response for ${mfRef}:`, JSON.stringify(execResult));
+          const execData = execResult?.Data || execResult;
+          const execSuccess = execData?.Success ?? execResult?.Success;
+
+          if (execSuccess) {
+            return {
+              cancellationId: `mystifly_refund_fallback_confirmed_${mfRef}_${refundPtrId}`,
+              orderId: mfRef,
+              refundAmount: parseFloat(execData?.RefundAmount || execData?.refundAmount || '0'),
+              refundCurrency: execData?.Currency || 'USD',
+              confirmedAt: new Date().toISOString(),
+              raw: execResult,
+            };
+          }
+        }
+      } catch (refundErr) {
+        console.warn(`[MystiflyAdapter] RefundQuote fallback failed for ${mfRef}:`, refundErr instanceof Error ? refundErr.message : refundErr);
+      }
+
+      // All attempts failed
+      const errorMsg = data?.Errors?.[0]?.Message || result?.Message || 'Cancellation failed';
+      throw new MystiflyCancellationError(`Mystifly cancellation failed after all attempts: ${errorCode} ${errorMsg}`, {
+        providerErrorCode: errorCode,
+        rawResponse: result,
+      });
     }
 
     throw new Error(`[MystiflyAdapter] Invalid quoteId format: ${quoteId}`);
