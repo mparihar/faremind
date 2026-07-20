@@ -898,12 +898,14 @@ export class MystiflyAdapter implements IBookingProvider {
       console.info(`[MystiflyAdapter] Confirming unticketed VOID for ${mfRef} — direct cancelBooking`);
 
       const result = await mystiflyClient.cancelBooking(mfRef);
+      console.log(`[MystiflyAdapter] cancelBooking response for ${mfRef}:`, JSON.stringify(result));
       const data = result?.Data || result;
       const success = data?.Success ?? result?.Success;
 
       if (!success) {
         const errorMsg = data?.Errors?.[0]?.Message || result?.Message || 'Cancellation failed';
         const errorCode = data?.Errors?.[0]?.Code || '';
+        console.error(`[MystiflyAdapter] cancelBooking FAILED: code=${errorCode} msg=${errorMsg}`);
         throw new MystiflyCancellationError(`Mystifly unticketed cancel failed: ${errorCode} ${errorMsg}`, {
           providerErrorCode: errorCode,
           rawResponse: result,
