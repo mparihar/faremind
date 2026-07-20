@@ -515,6 +515,47 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         const isNonRefundable = /not eligible for refund|non.?refundable|no refund/i.test(cleanMsg);
 
         if (isNonRefundable) {
+          // If the stored fare rules say refundable, honour the stored cancellation
+          // penalty instead of forfeiting the full amount. The provider error may be
+          // a temporary/incorrect response for fares that were sold as refundable.
+          if (isRefundable) {
+            const storedPenalty = primaryPnr?.cancellationFee != null ? Number(primaryPnr.cancellationFee) : 0;
+            const airlinePenalty = storedPenalty > 0 ? storedPenalty : Math.round(originalAmount * 0.25); // 25% fallback
+            const estimatedRefund = Math.max(0, originalAmount - airlinePenalty);
+            const refundability = estimatedRefund <= 0
+              ? 'NON_REFUNDABLE' as const
+              : airlinePenalty > 0 ? 'PARTIAL_REFUND' as const : 'FULL_REFUND' as const;
+
+            return reply.code(200).send({
+              cancellationAllowed: true,
+              cancelAnywayAllowed: false,
+              refundability,
+              cancellationType: 'REFUND',
+              originalAmount,
+              currency: booking.currency,
+              estimatedRefund,
+              refundAmount: estimatedRefund,
+              airlinePenalty,
+              supplierFee: 0,
+              fareMindFee: 0,
+              penaltyAmount: airlinePenalty,
+              quoteId: `mystifly_cancel_stored_${providerPnr.providerOrderId}`,
+              bookingReference: booking.masterBookingReference,
+              airlinePnr: booking.masterPnr || primaryPnr?.pnrCode || null,
+              route: `${booking.originAirport} → ${booking.destinationAirport}`,
+              departureDate: booking.departureDate,
+              bookingStatus: booking.bookingStatus,
+              cancellationMethod: 'REFUND',
+              refundCurrency: booking.currency,
+              refundTo: 'ORIGINAL_PAYMENT',
+              refundMethod: 'ORIGINAL_PAYMENT',
+              refundTimeline: '5–10 business days',
+              warningMessage: 'Provider returned a non-refundable error, but this fare was sold as refundable. Using stored fare rules. Cancellation penalties may vary until airline confirmation. This action cannot be undone.',
+              pnrs: pnrs,
+              expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+            });
+          }
+
           return reply.code(200).send({
             cancellationAllowed: true,
             cancelAnywayAllowed: true,
