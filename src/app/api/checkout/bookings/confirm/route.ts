@@ -983,25 +983,142 @@ export async function POST(req: NextRequest) {
         let mystiflyPaymentCaptured = false;
 
         // ── Step 1/6: Revalidate fare ────────────────────────────────────
+        // Private/WebFare FSCs expire quickly (~5 min). When revalidation fails,
+        // we do a fresh re-search to get a new FSC for the same flight, then
+        // re-revalidate with the fresh FSC. This prevents "fare no longer available"
+        // for users who take longer on the checkout form.
+        let revalData: any = null;
+        let revalSuccess = false;
+        let fscToRevalidate = searchFareSourceCode;
+
+        // Attempt 1: Revalidate with the original search FSC
         const revalRes = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fareSourceCode: searchFareSourceCode }),
+          body: JSON.stringify({ fareSourceCode: fscToRevalidate }),
         });
-        const revalData = await revalRes.json();
+        revalData = await revalRes.json();
+        const isValidRaw = revalData?.isValid;
+        revalSuccess = revalRes.ok && revalData.success && isValidRaw !== false;
 
-        if (!revalRes.ok || !revalData.success) {
-          await cancelStripeAuth('Mystifly revalidation failed');
+        // Attempt 2: If revalidation failed, try fresh re-search → re-revalidate
+        if (!revalSuccess) {
+          console.warn(`[Checkout] Revalidation failed for FSC, attempting fresh re-search fallback`);
+
+          // Extract route info for re-search
+          const isRoundTripFlight = !!sourceRoundTrip;
+          const flightData = isRoundTripFlight ? sourceRoundTrip : sourceFlight;
+          const originCode = isRoundTripFlight
+            ? flightData?.outboundJourney?.departureAirportCode || flightData?.outboundJourney?.departureAirport
+            : flightData?.segments?.[0]?.departure?.airportCode || flightData?.segments?.[0]?.departure?.airport;
+          const destCode = isRoundTripFlight
+            ? flightData?.outboundJourney?.arrivalAirportCode || flightData?.outboundJourney?.arrivalAirport
+            : flightData?.segments?.[flightData.segments.length - 1]?.arrival?.airportCode || flightData?.segments?.[flightData.segments.length - 1]?.arrival?.airport;
+          const depDate = isRoundTripFlight
+            ? flightData?.outboundJourney?.departureDate || flightData?.outboundJourney?.departureTime?.split('T')[0]
+            : flightData?.segments?.[0]?.departure?.date || flightData?.segments?.[0]?.departure?.time?.split('T')[0];
+          const retDate = isRoundTripFlight
+            ? flightData?.inboundJourney?.departureDate || flightData?.inboundJourney?.departureTime?.split('T')[0]
+            : null;
+          const airlineCode = isRoundTripFlight
+            ? flightData?.outboundJourney?.airline?.code || flightData?.outboundJourney?.segments?.[0]?.airline?.code
+            : flightData?.segments?.[0]?.airline?.code || flightData?.airline?.code;
+          const originalPrice = selectedFare?.totalPrice || selectedFare?.price || pricing?.total;
+
+          if (originCode && destCode && depDate) {
+            try {
+              console.info(`[Checkout] Re-searching ${originCode}→${destCode} on ${depDate} to get fresh FSC`);
+
+              // Count passengers
+              const adultCount = passengers.filter((p: any) => p.type === 'adult' || p.type === 'ADT' || !p.type).length || 1;
+              const childCount = passengers.filter((p: any) => p.type === 'child' || p.type === 'CHD').length;
+              const infantCount = passengers.filter((p: any) => p.type === 'infant' || p.type === 'INF').length;
+
+              const searchParams: any = {
+                origin: originCode,
+                destination: destCode,
+                date: depDate,
+                adults: adultCount,
+                children: childCount,
+                infants: infantCount,
+                cabin: selectedFare?.cabinClass || 'economy',
+                provider: 'mystifly',
+              };
+              if (retDate) searchParams.returnDate = retDate;
+
+              const searchRes = await fetch(`${BACKEND_URL}/api/search`, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(searchParams),
+              });
+
+              if (searchRes.ok) {
+                const searchData = await searchRes.json();
+                const flights = searchData?.mystifly?.flights || searchData?.flights || [];
+
+                // Find a matching flight by airline and similar price (within 10%)
+                let freshFsc: string | null = null;
+                for (const flight of flights) {
+                  const flightAirline = flight?.segments?.[0]?.airline?.code || flight?.airline?.code;
+                  const flightPrice = flight?.price || flight?.totalPrice;
+                  const priceMatch = originalPrice && flightPrice
+                    ? Math.abs(flightPrice - originalPrice) / originalPrice < 0.10
+                    : true;
+
+                  if (flightAirline === airlineCode && priceMatch) {
+                    freshFsc = flight?.fareSourceCode || flight?.providerOfferId || flight?.offerId;
+                    if (freshFsc) {
+                      console.info(`[Checkout] Found matching flight with fresh FSC (airline=${airlineCode}, price=${flightPrice})`);
+                      break;
+                    }
+                  }
+                }
+
+                if (freshFsc) {
+                  // Re-revalidate with fresh FSC
+                  const revalRes2 = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ fareSourceCode: freshFsc }),
+                  });
+                  const revalData2 = await revalRes2.json();
+                  const isValid2 = revalData2?.isValid;
+
+                  if (revalRes2.ok && revalData2.success && isValid2 !== false) {
+                    console.info(`[Checkout] ✅ Re-search fallback succeeded — fresh FSC revalidated`);
+                    revalData = revalData2;
+                    fscToRevalidate = freshFsc;
+                    revalSuccess = true;
+                  } else {
+                    console.warn(`[Checkout] Re-search fallback: fresh FSC also failed revalidation`);
+                  }
+                } else {
+                  console.warn(`[Checkout] Re-search fallback: no matching flight found for airline=${airlineCode}`);
+                }
+              } else {
+                console.warn(`[Checkout] Re-search fallback: search API returned ${searchRes.status}`);
+              }
+            } catch (researchErr) {
+              console.warn(`[Checkout] Re-search fallback error:`, researchErr instanceof Error ? researchErr.message : researchErr);
+            }
+          } else {
+            console.warn(`[Checkout] Re-search fallback: insufficient route data (origin=${originCode}, dest=${destCode}, date=${depDate})`);
+          }
+        }
+
+        // If both attempts failed, abort
+        if (!revalSuccess) {
+          await cancelStripeAuth('Mystifly revalidation failed after re-search');
           const customerMessage = 'This fare is no longer available. Please search again for updated pricing. Your card was not charged.';
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
             currency, errorCode: 'MYSTIFLY_REVALIDATION_FAILED',
-            errorMessage: revalData.error || 'Revalidation failed',
+            errorMessage: revalData?.error || 'Revalidation failed after re-search',
             customerMessage, failureStage: 'MYSTIFLY_REVALIDATION',
           });
           return NextResponse.json(
-            { error: revalData.error || 'Fare revalidation failed', errorCode: 'REVALIDATION_FAILED', customerMessage },
+            { error: revalData?.error || 'Fare revalidation failed', errorCode: 'REVALIDATION_FAILED', customerMessage },
             { status: 422 }
           );
         }
@@ -1009,23 +1126,6 @@ export async function POST(req: NextRequest) {
         // ── Extract IsValid and HoldAllowed ──────────────────────────────
         const isValid = revalData.isValid;
         const holdAllowed = revalData.holdAllowed === true;
-
-        // Block if IsValid is explicitly false
-        if (isValid === false) {
-          await cancelStripeAuth('Mystifly revalidation IsValid=false');
-          const customerMessage = 'This fare is no longer valid. Please select an alternate flight. Your card was not charged.';
-          await logBookingFailure({
-            passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
-            paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-            currency, errorCode: 'REVALIDATION_INVALID',
-            errorMessage: 'Revalidation returned IsValid=false',
-            customerMessage, failureStage: 'MYSTIFLY_REVALIDATION',
-          });
-          return NextResponse.json(
-            { error: 'Fare is no longer valid. Please select an alternate flight.', errorCode: 'REVALIDATION_INVALID', customerMessage },
-            { status: 422 }
-          );
-        }
 
         // ── Point 5: Require revalidated FSC — NO fallback to search FSC ──
         revalidatedFareSourceCode = revalData.fareSourceCode || revalData.revalidatedFareSourceCode || null;
