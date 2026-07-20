@@ -39,11 +39,14 @@ export async function GET(req: NextRequest) {
             messages: { where: { isInternal: false } }, // Only count non-internal messages
           },
         },
+        failureAudit: {
+          select: { refundStatus: true },
+        },
       },
       orderBy: { createdAt: 'desc' },
     });
 
-    const formatted = tickets.map(t => ({
+    const formatted = (tickets as any[]).map((t: any) => ({
       id: t.id,
       ticketNumber: t.ticketNumber,
       sequenceNumber: t.sequenceNumber,
@@ -55,7 +58,8 @@ export async function GET(req: NextRequest) {
       bookingRef: t.bookingRef,
       createdAt: t.createdAt,
       updatedAt: t.updatedAt,
-      messageCount: t._count.messages,
+      messageCount: t._count?.messages ?? 0,
+      refundStatus: t.failureAudit?.refundStatus || null,
     }));
 
     return NextResponse.json({ tickets: formatted });

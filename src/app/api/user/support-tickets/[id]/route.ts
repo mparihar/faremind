@@ -38,6 +38,18 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
             sender: { select: { fullName: true } },
           },
         },
+        failureAudit: {
+          select: {
+            refundStatus: true,
+            refundAmount: true,
+            refundedAt: true,
+            totalAmount: true,
+            currency: true,
+            errorMessage: true,
+            customerMessage: true,
+            failureStage: true,
+          },
+        },
       },
     });
 
@@ -51,6 +63,16 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
     }
 
     // Note: all tickets are visible to the user, including auto-generated ones
+
+    // Build refund info for customer (only non-sensitive fields)
+    const audit = (ticket as any).failureAudit;
+    const refundInfo = audit ? {
+      refundStatus: audit.refundStatus || null,
+      refundAmount: audit.refundAmount ? Number(audit.refundAmount) : null,
+      refundedAt: audit.refundedAt || null,
+      totalAmount: audit.totalAmount ? Number(audit.totalAmount) : null,
+      currency: audit.currency || 'USD',
+    } : null;
 
     return NextResponse.json({
       ticket: {
@@ -66,6 +88,7 @@ export async function GET(req: NextRequest, { params }: { params: Promise<{ id: 
         bookingRef: ticket.bookingRef,
         createdAt: ticket.createdAt,
         updatedAt: ticket.updatedAt,
+        refundInfo,
         messages: (ticket as any).messages.map((m: any) => ({
           id: m.id,
           content: m.content,

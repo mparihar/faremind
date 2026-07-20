@@ -27,6 +27,13 @@ const STATUS_STYLES: Record<string, { cls: string; icon: React.ElementType }> = 
   CLOSED:            { cls: 'bg-slate-400/15 text-slate-400',  icon: X },
 };
 
+const REFUND_STATUS_STYLES: Record<string, { label: string; cls: string }> = {
+  REFUND_ISSUED:     { label: 'Refunded',       cls: 'bg-emerald-500/15 text-emerald-400' },
+  REFUND_PENDING:    { label: 'Refund Pending',  cls: 'bg-amber-500/15 text-amber-400' },
+  REFUND_FAILED:     { label: 'Refund Failed',   cls: 'bg-red-500/15 text-red-400' },
+  NOT_APPLICABLE:    { label: 'Not Charged',     cls: 'bg-slate-500/15 text-slate-400' },
+};
+
 function getErrorBadge(code: string) {
   const entry = ERROR_CODE_LABELS[code] ?? { label: code, color: 'bg-slate-500/15 text-slate-400' };
   return entry;
@@ -247,18 +254,18 @@ export default function FailedBookingsPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/50">
-                {['', 'Date', 'Customer', 'Route', 'Amount', 'Error', 'Assignee', 'Status', 'Actions'].map(h => (
+                {['', 'Date', 'Customer', 'Route', 'Amount', 'Error', 'Refund', 'Assignee', 'Status', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-700/30">
               {loading ? (
-                <tr><td colSpan={9} className="px-5 py-16 text-center">
+                <tr><td colSpan={10} className="px-5 py-16 text-center">
                   <RefreshCw size={24} className="text-[#1ABC9C] animate-spin mx-auto" />
                 </td></tr>
               ) : records.length === 0 ? (
-                <tr><td colSpan={9} className="px-5 py-16 text-center">
+                <tr><td colSpan={10} className="px-5 py-16 text-center">
                   <AlertTriangle size={24} className="text-slate-600 mx-auto mb-2" />
                   <p className="text-slate-500 text-sm">No failed bookings found</p>
                 </td></tr>
@@ -321,6 +328,17 @@ export default function FailedBookingsPage() {
                         </span>
                       </td>
 
+                      <td className="px-4 py-3">
+                        {(() => {
+                          const rs = REFUND_STATUS_STYLES[rec.refundStatus] ?? { label: '—', cls: 'bg-slate-500/10 text-slate-500' };
+                          return (
+                            <span className={`inline-block px-2 py-0.5 rounded-full text-[10px] font-bold ${rs.cls}`}>
+                              {rs.label}
+                            </span>
+                          );
+                        })()}
+                      </td>
+
                       <td className="px-4 py-3" onClick={e => e.stopPropagation()}>
                         <select 
                           value={rec.assignedToId || ''} 
@@ -368,7 +386,7 @@ export default function FailedBookingsPage() {
 
                     {isExpanded && (
                       <tr key={`${rec.id}-detail`} className="bg-slate-900/50">
-                        <td colSpan={9} className="px-6 py-5">
+                        <td colSpan={10} className="px-6 py-5">
                           <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                             <div>
                               <h4 className="text-[10px] font-black text-red-400 uppercase tracking-wider mb-2 flex items-center gap-1.5">
@@ -392,6 +410,23 @@ export default function FailedBookingsPage() {
                                 {rec.sessionId && <div><span className="text-slate-500">Session:</span> <span className="text-slate-300 font-mono text-[11px]">{rec.sessionId.slice(0, 16)}…</span></div>}
                                 <div><span className="text-slate-500">Provider:</span> <span className="text-slate-300 font-semibold capitalize">{rec.provider || '—'}</span></div>
                               </div>
+
+                              {/* ── Refund Details ── */}
+                              {rec.refundStatus && rec.refundStatus !== 'NOT_APPLICABLE' && (
+                                <div className="mt-4 p-3 bg-slate-800/60 rounded-xl border border-slate-700/30">
+                                  <h4 className="text-[10px] font-black uppercase tracking-wider mb-2 flex items-center gap-1.5"
+                                    style={{ color: rec.refundStatus === 'REFUND_ISSUED' ? '#10b981' : rec.refundStatus === 'REFUND_PENDING' ? '#f59e0b' : '#ef4444' }}>
+                                    <DollarSign size={12} />
+                                    Refund Details — {REFUND_STATUS_STYLES[rec.refundStatus]?.label || rec.refundStatus}
+                                  </h4>
+                                  <div className="grid grid-cols-2 gap-3 text-xs">
+                                    {rec.refundId && <div><span className="text-slate-500">Refund ID:</span> <span className="text-slate-300 font-mono text-[11px]">{rec.refundId}</span></div>}
+                                    {rec.refundAmount != null && <div><span className="text-slate-500">Amount:</span> <span className="text-emerald-400 font-bold">${Number(rec.refundAmount).toLocaleString('en-US', { minimumFractionDigits: 2 })}</span></div>}
+                                    {rec.refundedAt && <div><span className="text-slate-500">Refunded At:</span> <span className="text-slate-300 font-semibold">{format(new Date(rec.refundedAt), 'dd MMM yyyy hh:mm:ss a')}</span></div>}
+                                    {rec.refundFailureReason && <div className="col-span-2"><span className="text-slate-500">Failure Reason:</span> <span className="text-red-400 font-mono text-[11px]">{rec.refundFailureReason}</span></div>}
+                                  </div>
+                                </div>
+                              )}
 
                               {(rec.offerProvidedAt || rec.offerExpiresAt) && (
                                 <div className="mt-4 p-3 bg-slate-800/60 rounded-xl border border-slate-700/30">

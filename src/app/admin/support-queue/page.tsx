@@ -45,20 +45,44 @@ interface AdminUser {
   role: string;
 }
 
-const CATEGORIES = [
-  'All Categories',
-  'Failed Booking',
-  'Booking Issue',
-  'Payment Problem',
-  'Cancellation',
-  'Cancellation Request',
-  'Change Request',
-  'Flight Change Request',
-  'Baggage Claim',
-  'Refund Query',
-  'Technical Issue',
-  'Account Access',
-  'General Inquiry',
+// ── Category Groups for tabbed navigation ──
+interface CategoryGroup {
+  id: string;
+  label: string;
+  icon: React.ElementType;
+  color: string;
+  bg: string;
+  border: string;
+  match: string[] | 'ALL' | 'OTHERS';
+}
+
+const CATEGORY_GROUPS: CategoryGroup[] = [
+  { id: 'all',           label: 'All',              icon: Inbox,        color: 'text-[#1ABC9C]',   bg: 'bg-[#1ABC9C]/10', border: 'border-[#1ABC9C]/30', match: 'ALL' },
+  { id: 'failed',        label: 'Failed Bookings',  icon: ShieldAlert,  color: 'text-red-400',     bg: 'bg-red-400/10',   border: 'border-red-400/30',   match: ['Failed Booking'] },
+  { id: 'cancellations', label: 'Cancellations',    icon: XCircle,      color: 'text-rose-400',    bg: 'bg-rose-400/10',  border: 'border-rose-400/30',  match: ['Cancellation', 'Cancellation Request'] },
+  { id: 'payments',      label: 'Payments',         icon: DollarSign,   color: 'text-orange-400',  bg: 'bg-orange-400/10', border: 'border-orange-400/30', match: ['Payment Problem', 'Refund Query'] },
+  { id: 'limit-orders',  label: 'Limit Orders',     icon: Clock,        color: 'text-amber-400',   bg: 'bg-amber-400/10', border: 'border-amber-400/30', match: ['LIMIT_ORDER'] },
+  { id: 'changes',       label: 'Changes',          icon: Plane,        color: 'text-purple-400',  bg: 'bg-purple-400/10', border: 'border-purple-400/30', match: ['Flight Change Request', 'Change Request'] },
+  { id: 'others',        label: 'Others',           icon: MessageSquare, color: 'text-slate-400',  bg: 'bg-slate-400/10', border: 'border-slate-400/30', match: 'OTHERS' },
+];
+
+// All known categories that belong to specific tabs (used for "Others" exclusion)
+const KNOWN_CATEGORIES = CATEGORY_GROUPS
+  .filter(g => Array.isArray(g.match))
+  .flatMap(g => g.match as string[]);
+
+// Check if a ticket's category matches a group
+function matchesGroup(category: string, group: CategoryGroup): boolean {
+  if (group.match === 'ALL') return true;
+  if (group.match === 'OTHERS') return !KNOWN_CATEGORIES.includes(category);
+  return (group.match as string[]).includes(category);
+}
+
+// Categories available in the Create Ticket modal
+const CREATE_CATEGORIES = [
+  'Booking Issue', 'Payment Problem', 'Cancellation', 'Cancellation Request',
+  'Change Request', 'Flight Change Request', 'Refund Query',
+  'Baggage Claim', 'Technical Issue', 'Account Access', 'General Inquiry',
 ];
 
 const ERROR_CODE_LABELS: Record<string, { label: string; color: string }> = {
@@ -103,7 +127,7 @@ export default function SupportQueuePage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<TicketStatus | ''>('');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | ''>('');
-  const [categoryFilter, setCategoryFilter] = useState('');
+  const [activeTab, setActiveTab] = useState('all');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
 
@@ -172,22 +196,18 @@ export default function SupportQueuePage() {
     const payload: Record<string, unknown> = {};
     let label = '';
 
-    if (categoryFilter && statusFilter) {
-      // Both filters active — delete by ticket IDs (intersection)
+    const activeGroup = CATEGORY_GROUPS.find(g => g.id === activeTab);
+    if (activeTab !== 'all' || statusFilter) {
+      // Filter active — delete by ticket IDs
       payload.ticketIds = filtered.map(t => t.id);
-      label = `${statusFilter.replace(/_/g, ' ')} "${categoryFilter}"`;
-    } else if (categoryFilter) {
-      payload.category = categoryFilter;
-      label = `"${categoryFilter}"`;
-    } else if (statusFilter) {
-      payload.status = statusFilter;
-      label = `${statusFilter.replace(/_/g, ' ')}`;
+      label = activeTab !== 'all' ? `"${activeGroup?.label || activeTab}"` : '';
+      if (statusFilter) label = `${statusFilter.replace(/_/g, ' ')} ${label}`.trim();
     } else {
       payload.deleteAll = true;
       label = 'ALL';
     }
 
-    const count = categoryFilter || statusFilter ? filtered.length : tickets.length;
+    const count = activeTab !== 'all' || statusFilter ? filtered.length : tickets.length;
     if (!confirm(`Are you sure you want to delete ${count} ${label} ticket${count !== 1 ? 's' : ''}? This action cannot be undone.`)) return;
     setBulkDeleting(true);
     try {
@@ -245,10 +265,13 @@ export default function SupportQueuePage() {
     setCreating(false);
   };
 
+  const activeGroup = CATEGORY_GROUPS.find(g => g.id === activeTab) || CATEGORY_GROUPS[0];
+
   const filtered = tickets.filter(t => {
+    // Tab filter
+    if (!matchesGroup(t.category, activeGroup)) return false;
     if (statusFilter && t.status !== statusFilter) return false;
     if (priorityFilter && t.priority !== priorityFilter) return false;
-    if (categoryFilter && t.category !== categoryFilter) return false;
     if (assigneeFilter === 'ME' && t.assignedToId !== adminUser?.id) return false;
     if (search) {
       // Special pseudo-filter for channel
@@ -272,12 +295,19 @@ export default function SupportQueuePage() {
     return true;
   });
 
+  // Tab counts (computed from all tickets, independent of other filters)
+  const tabCounts: Record<string, number> = {};
+  for (const group of CATEGORY_GROUPS) {
+    tabCounts[group.id] = group.match === 'ALL'
+      ? tickets.length
+      : tickets.filter(t => matchesGroup(t.category, group)).length;
+  }
+
   const stats = {
     open: tickets.filter(t => t.status === 'OPEN').length,
     inProgress: tickets.filter(t => t.status === 'IN_PROGRESS').length,
     escalated: tickets.filter(t => t.status === 'ESCALATED').length,
     resolved: tickets.filter(t => ['RESOLVED', 'CLOSED'].includes(t.status)).length,
-    failedBookings: tickets.filter(t => t.category === 'Failed Booking').length,
     urgentWhatsApp: tickets.filter(t => t.channel === 'WHATSAPP').length,
     aiBotCases: tickets.filter(t => t.channel === 'CHATBOT').length,
   };
@@ -292,7 +322,6 @@ export default function SupportQueuePage() {
           <h1 className="text-2xl font-black text-white">Support Queue</h1>
           <p className="text-slate-400 text-sm mt-0.5">
             {tickets.length} ticket{tickets.length !== 1 ? 's' : ''} · {stats.open} open
-            {stats.failedBookings > 0 && <span className="text-red-400"> · {stats.failedBookings} failed booking{stats.failedBookings !== 1 ? 's' : ''}</span>}
           </p>
         </div>
         <div className="flex items-center gap-3">
@@ -306,41 +335,52 @@ export default function SupportQueuePage() {
         </div>
       </div>
 
-      {/* Stats cards */}
-      <div className="grid grid-cols-2 md:grid-cols-4 lg:grid-cols-7 gap-3 mb-6">
+      {/* Status overview cards */}
+      <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3 mb-6">
         {[
-          { label: 'Open', value: stats.open, icon: Inbox, color: 'text-blue-400', bg: 'bg-blue-400/10 border-blue-400/20' },
-          { label: 'In Progress', value: stats.inProgress, icon: Clock, color: 'text-amber-400', bg: 'bg-amber-400/10 border-amber-400/20' },
-          { label: 'Escalated', value: stats.escalated, icon: ArrowUpCircle, color: 'text-red-400', bg: 'bg-red-400/10 border-red-400/20' },
-          { label: 'Resolved', value: stats.resolved, icon: CheckCircle2, color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/20' },
-          { label: 'Failed Bookings', value: stats.failedBookings, icon: ShieldAlert, color: 'text-orange-400', bg: 'bg-orange-400/10 border-orange-400/20' },
-          { label: 'Urgent WhatsApp', value: stats.urgentWhatsApp, icon: AlertTriangle, color: 'text-green-400', bg: 'bg-green-400/10 border-green-400/20' },
-          { label: 'AI Bot Cases', value: stats.aiBotCases, icon: MessageSquare, color: 'text-violet-400', bg: 'bg-violet-400/10 border-violet-400/20' },
+          { label: 'Open', value: stats.open, icon: Inbox, color: 'text-blue-400', bg: 'bg-blue-400/10 border-blue-400/20', action: () => setStatusFilter(statusFilter === 'OPEN' ? '' : 'OPEN') },
+          { label: 'In Progress', value: stats.inProgress, icon: Clock, color: 'text-amber-400', bg: 'bg-amber-400/10 border-amber-400/20', action: () => setStatusFilter(statusFilter === 'IN_PROGRESS' ? '' : 'IN_PROGRESS') },
+          { label: 'Escalated', value: stats.escalated, icon: ArrowUpCircle, color: 'text-red-400', bg: 'bg-red-400/10 border-red-400/20', action: () => setStatusFilter(statusFilter === 'ESCALATED' ? '' : 'ESCALATED') },
+          { label: 'Resolved', value: stats.resolved, icon: CheckCircle2, color: 'text-emerald-400', bg: 'bg-emerald-400/10 border-emerald-400/20', action: () => setStatusFilter(statusFilter === 'RESOLVED' ? '' : 'RESOLVED') },
+          { label: 'WhatsApp', value: stats.urgentWhatsApp, icon: AlertTriangle, color: 'text-green-400', bg: 'bg-green-400/10 border-green-400/20', action: () => setSearch(search === 'channel:whatsapp' ? '' : 'channel:whatsapp') },
+          { label: 'AI Bot', value: stats.aiBotCases, icon: MessageSquare, color: 'text-violet-400', bg: 'bg-violet-400/10 border-violet-400/20', action: () => setSearch(search === 'channel:chatbot' ? '' : 'channel:chatbot') },
         ].map(s => (
-          <div key={s.label} className={`p-5 rounded-2xl border ${s.bg} cursor-pointer hover:brightness-110 transition-all`}
-               onClick={() => {
-                 if (s.label === 'Failed Bookings') setCategoryFilter(categoryFilter === 'Failed Booking' ? '' : 'Failed Booking');
-                 else if (s.label === 'Open') setStatusFilter(statusFilter === 'OPEN' ? '' : 'OPEN');
-                 else if (s.label === 'In Progress') setStatusFilter(statusFilter === 'IN_PROGRESS' ? '' : 'IN_PROGRESS');
-                 else if (s.label === 'Escalated') setStatusFilter(statusFilter === 'ESCALATED' ? '' : 'ESCALATED');
-                 else if (s.label === 'Resolved') setStatusFilter(statusFilter === 'RESOLVED' ? '' : 'RESOLVED');
-                 else if (s.label === 'Urgent WhatsApp') {
-                   if (search === 'channel:whatsapp') setSearch('');
-                   else setSearch('channel:whatsapp');
-                 }
-                 else if (s.label === 'AI Bot Cases') {
-                   if (search === 'channel:chatbot') setSearch('');
-                   else setSearch('channel:chatbot');
-                 }
-               }}
-          >
-            <div className="flex items-center gap-2 mb-2">
-              <s.icon size={16} className={s.color} />
-              <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">{s.label}</span>
+          <div key={s.label} className={`p-4 rounded-2xl border ${s.bg} cursor-pointer hover:brightness-110 transition-all`} onClick={s.action}>
+            <div className="flex items-center gap-2 mb-1.5">
+              <s.icon size={14} className={s.color} />
+              <span className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">{s.label}</span>
             </div>
-            <p className={`text-3xl font-black ${s.color}`}>{s.value}</p>
+            <p className={`text-2xl font-black ${s.color}`}>{s.value}</p>
           </div>
         ))}
+      </div>
+
+      {/* ── Category Tabs ── */}
+      <div className="flex items-center gap-1.5 mb-5 overflow-x-auto pb-1 scrollbar-thin">
+        {CATEGORY_GROUPS.map(group => {
+          const count = tabCounts[group.id] || 0;
+          const isActive = activeTab === group.id;
+          const GroupIcon = group.icon;
+          return (
+            <button
+              key={group.id}
+              onClick={() => setActiveTab(group.id)}
+              className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold whitespace-nowrap transition-all border ${
+                isActive
+                  ? `${group.bg} ${group.color} ${group.border} shadow-lg`
+                  : 'bg-transparent border-transparent text-slate-500 hover:text-slate-300 hover:bg-white/[0.03]'
+              }`}
+            >
+              <GroupIcon size={14} />
+              {group.label}
+              <span className={`inline-flex items-center justify-center min-w-[22px] h-[22px] px-1.5 rounded-full text-[10px] font-black ${
+                isActive ? `${group.bg} ${group.color}` : 'bg-slate-800 text-slate-500'
+              }`}>
+                {count}
+              </span>
+            </button>
+          );
+        })}
       </div>
 
       {/* Search + Filters */}
@@ -354,15 +394,7 @@ export default function SupportQueuePage() {
             className="w-full pl-9 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:border-[#1ABC9C] transition-all"
           />
         </div>
-        <select
-          value={categoryFilter}
-          onChange={e => setCategoryFilter(e.target.value)}
-          className="px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-slate-300 text-sm focus:outline-none focus:border-[#1ABC9C] appearance-none cursor-pointer"
-        >
-          {CATEGORIES.map(c => (
-            <option key={c} value={c === 'All Categories' ? '' : c} className="bg-slate-800">{c}</option>
-          ))}
-        </select>
+
         <select
           value={statusFilter}
           onChange={e => setStatusFilter(e.target.value as TicketStatus | '')}
@@ -399,8 +431,8 @@ export default function SupportQueuePage() {
             className="flex items-center gap-2 px-4 py-2.5 bg-red-500/10 border border-red-500/20 rounded-xl text-red-400 text-sm font-semibold hover:bg-red-500/20 transition-all disabled:opacity-50"
           >
             <Trash2 size={14} />
-            {bulkDeleting ? 'Deleting…' : categoryFilter
-              ? `Delete All ${categoryFilter} (${filtered.length})`
+            {bulkDeleting ? 'Deleting…' : activeTab !== 'all'
+              ? `Delete ${activeGroup.label} (${filtered.length})`
               : statusFilter
                 ? `Delete All ${statusFilter.replace(/_/g, ' ')} (${filtered.length})`
                 : `Delete All Tickets (${tickets.length})`}
@@ -745,7 +777,7 @@ export default function SupportQueuePage() {
                 <div>
                   <label className="block text-xs font-bold text-slate-400 mb-1.5 uppercase">Category</label>
                   <select value={createData.category} onChange={e => setCreateData({ ...createData, category: e.target.value })} className="w-full bg-slate-800 border border-slate-700 rounded-xl px-4 py-2.5 text-white text-sm focus:outline-none focus:border-[#1ABC9C] appearance-none cursor-pointer">
-                    {['Booking Issue', 'Payment Problem', 'Cancellation', 'Change Request', 'Baggage Claim', 'Refund Query', 'Technical Issue', 'Account Access', 'General Inquiry'].map(c => <option key={c} value={c}>{c}</option>)}
+                    {CREATE_CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                   </select>
                 </div>
                 <div>

@@ -2491,6 +2491,13 @@ model BookingFailureAudit {
   stripePaymentIntentId String?   @map("stripe_payment_intent_id")
   sessionId             String?   @map("session_id")
 
+  // Refund tracking
+  refundStatus          String?   @map("refund_status")           // REFUND_PENDING | REFUND_ISSUED | REFUND_FAILED | NOT_APPLICABLE
+  refundId              String?   @map("refund_id")               // Stripe refund ID (re_xxx)
+  refundAmount          Decimal?  @map("refund_amount") @db.Decimal(10, 2)
+  refundedAt            DateTime? @map("refunded_at")
+  refundFailureReason   String?   @map("refund_failure_reason") @db.Text
+
   // Admin resolution tracking
   status                String    @default("OPEN") // OPEN, IN_PROGRESS, RESOLVED, CLOSED
   assignedToId          String?   @map("assigned_to_id")

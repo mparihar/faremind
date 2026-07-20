@@ -209,6 +209,16 @@ export default function SupportPage() {
                     <span className="text-white font-semibold text-sm truncate flex-1 group-hover:text-[#1ABC9C] transition-colors">
                       {t.subject}
                     </span>
+                    {(t as any).refundStatus && (t as any).refundStatus !== 'NOT_APPLICABLE' && (
+                      <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${
+                        (t as any).refundStatus === 'REFUND_ISSUED' ? 'bg-emerald-400/15 text-emerald-400' :
+                        (t as any).refundStatus === 'REFUND_PENDING' ? 'bg-amber-400/15 text-amber-400' :
+                        'bg-red-400/15 text-red-400'
+                      }`}>
+                        {(t as any).refundStatus === 'REFUND_ISSUED' ? '✅ Refunded' :
+                         (t as any).refundStatus === 'REFUND_PENDING' ? '⏳ Refund Pending' : '⚠️ Refund Issue'}
+                      </span>
+                    )}
                     <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold shrink-0 ${cfg.cls}`}>
                       <StIcon size={10} />
                       {cfg.label}

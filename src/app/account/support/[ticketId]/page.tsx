@@ -158,6 +158,40 @@ export default function UserTicketDetailPage({ params }: { params: Promise<{ tic
         </div>
       )}
 
+      {/* Refund status banner — visible to customer */}
+      {(ticket as any).refundInfo?.refundStatus && (ticket as any).refundInfo.refundStatus !== 'NOT_APPLICABLE' && (() => {
+        const ri = (ticket as any).refundInfo;
+        const isIssued = ri.refundStatus === 'REFUND_ISSUED';
+        const isPending = ri.refundStatus === 'REFUND_PENDING';
+        return (
+          <div className={`flex items-center gap-3 px-5 py-4 rounded-2xl mb-5 ${
+            isIssued ? 'bg-emerald-500/5 border border-emerald-500/20' :
+            isPending ? 'bg-amber-500/5 border border-amber-500/20' :
+            'bg-red-500/5 border border-red-500/20'
+          }`}>
+            <div className={`w-9 h-9 rounded-full flex items-center justify-center shrink-0 ${
+              isIssued ? 'bg-emerald-400/15' : isPending ? 'bg-amber-400/15' : 'bg-red-400/15'
+            }`}>
+              <span className="text-lg">{isIssued ? '✅' : isPending ? '⏳' : '⚠️'}</span>
+            </div>
+            <div>
+              <p className={`font-bold text-sm ${
+                isIssued ? 'text-emerald-400' : isPending ? 'text-amber-400' : 'text-red-400'
+              }`}>
+                {isIssued ? 'Refund Issued' : isPending ? 'Refund Processing' : 'Refund Failed'}
+              </p>
+              <p className="text-slate-400 text-xs mt-0.5">
+                {isIssued
+                  ? `$${ri.refundAmount?.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${ri.currency} has been refunded to your original payment method. Please allow 5–10 business days.`
+                  : isPending
+                    ? `Your refund of $${(ri.refundAmount ?? ri.totalAmount)?.toLocaleString('en-US', { minimumFractionDigits: 2 })} ${ri.currency} is being processed. We'll update you once it's completed.`
+                    : 'There was an issue processing your refund. Our team is working on it — you will be contacted shortly.'}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
       {/* Original request */}
       <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5 mb-4">
         <div className="flex items-center gap-2.5 mb-3">

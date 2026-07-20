@@ -99,6 +99,11 @@ interface BookingFailureContext {
   failureStage: string;
   offerProvidedAt?: string | null;
   offerExpiresAt?: string | null;
+  // Refund tracking
+  refundStatus?: 'REFUND_PENDING' | 'REFUND_ISSUED' | 'REFUND_FAILED' | 'NOT_APPLICABLE';
+  refundId?: string | null;
+  refundAmount?: number | null;
+  refundFailureReason?: string | null;
 }
 
 async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
@@ -167,6 +172,12 @@ async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
         sessionId: ctx.sessionId || null,
         offerProvidedAt: ctx.offerProvidedAt ? new Date(ctx.offerProvidedAt) : null,
         offerExpiresAt: ctx.offerExpiresAt ? new Date(ctx.offerExpiresAt) : null,
+        // Refund tracking
+        refundStatus: ctx.refundStatus || null,
+        refundId: ctx.refundId || null,
+        refundAmount: ctx.refundAmount ?? null,
+        refundedAt: ctx.refundStatus === 'REFUND_ISSUED' ? new Date() : null,
+        refundFailureReason: ctx.refundFailureReason || null,
       },
     });
 
@@ -1083,6 +1094,7 @@ export async function POST(req: NextRequest) {
               currency, errorCode: 'STRIPE_CAPTURE_FAILED',
               errorMessage: captureErr.message, customerMessage,
               failureStage: 'STRIPE_CAPTURE_BEFORE_BOOKING',
+              refundStatus: 'NOT_APPLICABLE',
             });
             return NextResponse.json(
               { error: 'Payment processing failed.', errorCode: 'PAYMENT_CAPTURE_FAILED', customerMessage },
@@ -1173,22 +1185,38 @@ export async function POST(req: NextRequest) {
           const errMsg = bookData.error || 'Booking creation failed';
           console.error(`[Mystifly] ❌ BookFlight failed after payment capture: ${errMsg}`);
 
+          let refundStatus: 'REFUND_ISSUED' | 'REFUND_PENDING' | 'NOT_APPLICABLE' = 'NOT_APPLICABLE';
+          let refundId: string | null = null;
+          let refundAmount: number | null = null;
+          let refundFailureReason: string | null = null;
+
           if (mystiflyPaymentCaptured && paymentIntentId) {
             try {
               const refund = await stripe.refunds.create({ payment_intent: paymentIntentId });
+              refundStatus = 'REFUND_ISSUED';
+              refundId = refund.id;
+              refundAmount = refund.amount / 100; // Stripe amounts are in cents
+              console.log(`[Stripe] ✅ Refund issued: ${refund.id} — $${refundAmount}`);
             } catch (refundErr: any) {
+              refundStatus = 'REFUND_PENDING';
+              refundFailureReason = refundErr.message;
               console.error(`[Stripe] ❌ CRITICAL: Refund failed after BookFlight failure: ${refundErr.message}`);
-              // This requires manual intervention — log prominently
             }
           }
 
-          const customerMessage = `${errMsg}. Your card has been refunded. Please try again.`;
+          const customerMessage = refundStatus === 'REFUND_ISSUED'
+            ? `${errMsg}. Your card has been refunded. Please try again.`
+            : refundStatus === 'REFUND_PENDING'
+              ? `${errMsg}. Your refund is being processed — you will receive it within 5-10 business days.`
+              : `${errMsg}. Your card was not charged. Please try again.`;
+
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
             currency, errorCode: 'MYSTIFLY_BOOKING_FAILED',
             errorMessage: errMsg, customerMessage,
             failureStage: 'MYSTIFLY_BOOKING_AFTER_CAPTURE',
+            refundStatus, refundId, refundAmount, refundFailureReason,
           });
           return NextResponse.json(
             { error: errMsg, errorCode: 'PROVIDER_ORDER_FAILED', customerMessage },
@@ -1293,22 +1321,39 @@ export async function POST(req: NextRequest) {
       } catch (mystiflyErr: any) {
         console.error('[Mystifly] ❌ Order creation failed:', mystiflyErr.message);
 
+        let refundStatus: 'REFUND_ISSUED' | 'REFUND_PENDING' | 'NOT_APPLICABLE' = 'NOT_APPLICABLE';
+        let refundId: string | null = null;
+        let refundAmount: number | null = null;
+        let refundFailureReason: string | null = null;
+
         // If payment was captured, try to refund
         if (stripeVerified && paymentIntentId) {
           try {
-            await stripe.refunds.create({ payment_intent: paymentIntentId });
+            const refund = await stripe.refunds.create({ payment_intent: paymentIntentId });
+            refundStatus = 'REFUND_ISSUED';
+            refundId = refund.id;
+            refundAmount = refund.amount / 100;
+            console.log(`[Stripe] ✅ Refund issued: ${refund.id} — $${refundAmount}`);
           } catch (refundErr: any) {
+            refundStatus = 'REFUND_PENDING';
+            refundFailureReason = refundErr.message;
             console.error(`[Stripe] ❌ CRITICAL: Refund failed: ${refundErr.message}`);
           }
         }
 
-        const customerMessage = `The airline was unable to process this booking. Your payment has been refunded. Please try again.`;
+        const customerMessage = refundStatus === 'REFUND_ISSUED'
+          ? `The airline was unable to process this booking. Your payment has been refunded. Please try again.`
+          : refundStatus === 'REFUND_PENDING'
+            ? `The airline was unable to process this booking. Your refund is being processed — you will receive it within 5-10 business days.`
+            : `The airline was unable to process this booking. Your card was not charged. Please try again.`;
+
         await logBookingFailure({
           passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
           paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
           currency, errorCode: 'PROVIDER_ORDER_FAILED',
           errorMessage: mystiflyErr.message || 'Unknown Mystifly error',
           customerMessage, failureStage: 'MYSTIFLY_ORDER_CREATION',
+          refundStatus, refundId, refundAmount, refundFailureReason,
         });
 
         return NextResponse.json(
