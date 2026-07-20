@@ -585,23 +585,25 @@ export class MystiflyAdapter implements IBookingProvider {
 
     // ── Step 1b: If booking was never ticketed, skip PTR entirely ──
     // VoidQuote/RefundQuote are Post-TICKETING Requests — they only work
-    // on ticketed bookings. Unticketed bookings must use direct cancel.
+    // on ticketed bookings. Unticketed bookings use direct cancel.
+    // Since no ticket was ever issued, customer gets a FULL refund — no
+    // airline penalty applies (the airline was never paid).
     const ticketingStatus = options?.ticketingStatus;
     if (ticketingStatus && ticketingStatus === 'NOT_STARTED') {
-      console.info(`[MystiflyAdapter] Booking ${mfRef} not ticketed (${ticketingStatus}), using direct cancel path`);
+      console.info(`[MystiflyAdapter] Booking ${mfRef} not ticketed (${ticketingStatus}), full refund — no ticket issued`);
       return {
-        quoteId: `mystifly_cancel_norefund_${mfRef}`,
+        quoteId: `mystifly_void_unticketed_${mfRef}`,
         orderId: mfRef,
-        refundAmount: 0,
+        refundAmount: originalAmount,
         refundCurrency: currency,
         refundTo: 'original_payment',
-        penaltyAmount: originalAmount,
+        penaltyAmount: 0,
         expiresAt: new Date(Date.now() + 30 * 60 * 1000).toISOString(),
-        method: 'CANCEL',
-        airlinePenalty: originalAmount,
+        method: 'VOID',
+        airlinePenalty: 0,
         supplierFee: 0,
         originalAmount,
-        raw: { directCancel: true, reason: 'unticketed_booking' },
+        raw: { directCancel: true, reason: 'unticketed_booking', fullRefund: true },
       };
     }
 
