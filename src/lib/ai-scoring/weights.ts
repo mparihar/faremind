@@ -43,10 +43,10 @@ export const WEIGHT_PRESETS: Record<WeightPresetName, WeightPreset> = {
    * Speed-heavy — for users who want the shortest total travel time.
    */
   fastest: {
-    price:               0.20,
-    duration:            0.40,
+    price:               0.28,
+    duration:            0.34,
     stops:               0.18,
-    layover:             0.10,
+    layover:             0.08,
     schedule:            0.05,
     baggage:             0.03,
     fareFlexibility:     0.02,
@@ -57,9 +57,9 @@ export const WEIGHT_PRESETS: Record<WeightPresetName, WeightPreset> = {
    * Stops-heavy — for users who want minimal connections.
    */
   fewest_stops: {
-    price:               0.25,
+    price:               0.30,
     duration:            0.18,
-    stops:               0.35,
+    stops:               0.30,
     layover:             0.08,
     schedule:            0.06,
     baggage:             0.03,
@@ -71,13 +71,13 @@ export const WEIGHT_PRESETS: Record<WeightPresetName, WeightPreset> = {
    * Flexibility-heavy — for users who want refundable/changeable fares.
    */
   flexible_fare: {
-    price:               0.25,
+    price:               0.30,
     duration:            0.18,
     stops:               0.12,
     layover:             0.08,
     schedule:            0.07,
     baggage:             0.05,
-    fareFlexibility:     0.22,
+    fareFlexibility:     0.17,
     providerReliability: 0.03,
   },
 
@@ -126,10 +126,10 @@ export const INTERNATIONAL_WEIGHT_PRESETS: Record<WeightPresetName, WeightPreset
   },
 
   fastest: {
-    price:               0.18,
-    duration:            0.42,
+    price:               0.26,
+    duration:            0.36,
     stops:               0.12,
-    layover:             0.12,
+    layover:             0.10,
     schedule:            0.06,
     baggage:             0.04,
     fareFlexibility:     0.03,
@@ -137,24 +137,24 @@ export const INTERNATIONAL_WEIGHT_PRESETS: Record<WeightPresetName, WeightPreset
   },
 
   fewest_stops: {
-    price:               0.22,
+    price:               0.28,
     duration:            0.20,
-    stops:               0.30,
+    stops:               0.25,
     layover:             0.10,
     schedule:            0.06,
     baggage:             0.04,
-    fareFlexibility:     0.05,
+    fareFlexibility:     0.04,
     providerReliability: 0.03,
   },
 
   flexible_fare: {
-    price:               0.22,
+    price:               0.28,
     duration:            0.20,
     stops:               0.08,
     layover:             0.10,
     schedule:            0.07,
-    baggage:             0.06,
-    fareFlexibility:     0.24,
+    baggage:             0.05,
+    fareFlexibility:     0.19,
     providerReliability: 0.03,
   },
 
@@ -199,8 +199,8 @@ export const ONE_WAY_WEIGHT_PRESETS: Record<WeightPresetName, WeightPreset> = {
   },
 
   fastest: {
-    price:               0.22,
-    duration:            0.42,
+    price:               0.30,
+    duration:            0.34,
     stops:               0.16,
     layover:             0.08,
     schedule:            0.05,
@@ -210,9 +210,9 @@ export const ONE_WAY_WEIGHT_PRESETS: Record<WeightPresetName, WeightPreset> = {
   },
 
   fewest_stops: {
-    price:               0.25,
+    price:               0.30,
     duration:            0.18,
-    stops:               0.38,
+    stops:               0.33,
     layover:             0.08,
     schedule:            0.05,
     baggage:             0.02,
@@ -221,13 +221,13 @@ export const ONE_WAY_WEIGHT_PRESETS: Record<WeightPresetName, WeightPreset> = {
   },
 
   flexible_fare: {
-    price:               0.28,
+    price:               0.32,
     duration:            0.18,
     stops:               0.12,
     layover:             0.07,
     schedule:            0.05,
     baggage:             0.05,
-    fareFlexibility:     0.23,
+    fareFlexibility:     0.19,
     providerReliability: 0.02,
   },
 

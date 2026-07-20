@@ -113,7 +113,7 @@ const MODE_ADJUSTMENTS: Record<ScoringMode, WeightAdjustment> = {
     baggageValueScore: 0.6,
   },
   FASTEST: {
-    effectivePriceScore: 0.6,
+    effectivePriceScore: 0.85,
     durationScore: 1.8,
     stopsScore: 1.2,
     layoverScore: 1.1,
@@ -121,33 +121,33 @@ const MODE_ADJUSTMENTS: Record<ScoringMode, WeightAdjustment> = {
   FEWEST_STOPS: {
     stopsScore: 2.3,
     layoverScore: 0.6,
-    effectivePriceScore: 0.7,
+    effectivePriceScore: 0.85,
   },
   COMFORT: {
     stopsScore: 1.4,
     layoverScore: 1.5,
     scheduleScore: 1.5,
     baggageValueScore: 1.4,
-    effectivePriceScore: 0.6,
+    effectivePriceScore: 0.85,
   },
   FAMILY: {
     baggageValueScore: 1.8,
     layoverScore: 1.6,
     scheduleScore: 1.5,
     stopsScore: 1.3,
-    effectivePriceScore: 0.7,
+    effectivePriceScore: 0.90,
   },
   ELDERLY: {
     stopsScore: 1.8,
     layoverScore: 1.7,
     scheduleScore: 1.6,
     baggageValueScore: 1.3,
-    effectivePriceScore: 0.7,
+    effectivePriceScore: 0.90,
     durationScore: 1.2,
   },
   FLEXIBLE_FARE: {
     fareFlexibilityScore: 3.0,
-    effectivePriceScore: 0.7,
+    effectivePriceScore: 0.90,
     durationScore: 0.8,
   },
 };
