@@ -76,7 +76,7 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
   const [mobileOpen, setMobileOpen] = useState(false);
   const [userDropdown, setUserDropdown] = useState(false);
   const [helpDropdown, setHelpDropdown] = useState(false);
-  const { user, loadSession, logout } = useAuthStore();
+  const { user, loadSession, logout, logoutWithServerRevoke } = useAuthStore();
   const { user: adminUser, clearAuth: clearAdminAuth } = useAdminStore();
   const userRef = useRef<HTMLDivElement>(null);
   const helpRef = useRef<HTMLDivElement>(null);
@@ -96,8 +96,8 @@ export default function Navbar({ hideNav = false }: { hideNav?: boolean }) {
     if (isUserLogin && user) logout();
   }, [isUserLogin]);
 
-  function handleLogout() {
-    logout();
+  async function handleLogout() {
+    await logoutWithServerRevoke();
     router.push('/');
   }
 
