@@ -623,7 +623,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // â”€â”€ FareMind service fee â€” only for refundable bookings, per passenger â”€â”€
       const isBookingRefundable = isRefundable || (cancellationMethod === 'VOID') || refundAmount > 0;
-      const FAREMIND_FEE = isBookingRefundable ? await getAdminServiceFee(booking) : 0;
+      const FAREMIND_FEE = (isBookingRefundable && cancellationMethod !== 'VOID')
+        ? await getAdminServiceFee(booking)
+        : 0;
 
       let estimatedRefund = Math.max(0, refundAmount - FAREMIND_FEE);
       let fareMindFee = isBookingRefundable && estimatedRefund > 0 ? FAREMIND_FEE : 0;
