@@ -90,9 +90,12 @@ export default function AiFlightOptionTimeline({ flights, roundTripOptions, onSe
             badges.push({ label: '🛫 Nonstop', color: 'text-indigo-700', bg: 'bg-indigo-50', border: 'border-indigo-200/60' });
           }
 
-          // Flexible = refundable or changeable
-          if (flight.fareRules.refundable || flight.fareRules.changeable) {
-            badges.push({ label: '🔄 Flexible', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200/60' });
+          // Refundable / Changeable — shown individually (both if applicable)
+          if (flight.fareRules.refundable) {
+            badges.push({ label: '💰 Refundable', color: 'text-green-700', bg: 'bg-green-50', border: 'border-green-200/60' });
+          }
+          if (flight.fareRules.changeable) {
+            badges.push({ label: '🔄 Changeable', color: 'text-purple-700', bg: 'bg-purple-50', border: 'border-purple-200/60' });
           }
 
           return (
