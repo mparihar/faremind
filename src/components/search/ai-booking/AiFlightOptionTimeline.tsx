@@ -1,6 +1,6 @@
 // ═══════════════════════════════════════════════
 // AiFlightOptionTimeline
-// Displays top 5 AI-scored flights as a vertical
+// Displays top 10 AI-scored flights as a vertical
 // numbered timeline inside the AI chatbot.
 // Shows both outbound and return legs for round trips.
 // ═══════════════════════════════════════════════
@@ -19,7 +19,7 @@ interface Props {
 }
 
 export default function AiFlightOptionTimeline({ flights, roundTripOptions, onSelect }: Props) {
-  const top5 = flights.slice(0, 5);
+  const top10 = flights.slice(0, 10);
 
   // Resolve round-trip option for a given flight
   const resolveRT = (flight: UnifiedFlight): RoundTripOption | null => {
@@ -27,7 +27,7 @@ export default function AiFlightOptionTimeline({ flights, roundTripOptions, onSe
     return roundTripOptions.find(rt => rt.id === flight.id) ?? null;
   };
 
-  if (top5.length === 0) {
+  if (top10.length === 0) {
     return (
       <div className="px-3 py-4 text-center">
         <p className="text-xs text-slate-400 italic">No flights available. Try searching first.</p>
@@ -41,7 +41,7 @@ export default function AiFlightOptionTimeline({ flights, roundTripOptions, onSe
       <div className="absolute left-[15px] top-4 bottom-4 w-px bg-gradient-to-b from-[#1ABC9C]/60 via-[#1ABC9C]/30 to-transparent" />
 
       <div className="space-y-2.5">
-        {top5.map((flight, idx) => {
+        {top10.map((flight, idx) => {
           const firstSeg = flight.segments[0];
           const lastSeg = flight.segments[flight.segments.length - 1];
           const origin = firstSeg?.departure.airport ?? '???';
@@ -194,7 +194,7 @@ export default function AiFlightOptionTimeline({ flights, roundTripOptions, onSe
       <div className="mt-3 px-1">
         <p className="text-[12px] text-slate-400 text-center">
           <span className="font-bold text-[#1ABC9C]">Tap a flight</span> or type{' '}
-          <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[11px]">1–{Math.min(5, top5.length)}</span>{' '}
+          <span className="font-mono bg-slate-100 px-1 py-0.5 rounded text-[11px]">1–{Math.min(10, top10.length)}</span>{' '}
           to select
         </p>
       </div>

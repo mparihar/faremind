@@ -156,7 +156,7 @@ export default function FloatingAIAssistant({
   }, [aiBookingReset, offerSessionClear]);
 
   // ── Auto-reset when search results change (new search performed) ──────────
-  const searchFingerprint = flights.slice(0, 5).map(f => f.id).join('|');
+  const searchFingerprint = flights.slice(0, 10).map(f => f.id).join('|');
   const prevFingerprint = useRef(searchFingerprint);
   useEffect(() => {
     if (prevFingerprint.current !== searchFingerprint && prevFingerprint.current !== '') {
@@ -287,8 +287,8 @@ export default function FloatingAIAssistant({
 
       onResult(data);
 
-      // Build top 5 flight summaries
-      const top5Ids = (data.rankedIds ?? []).slice(0, 5);
+      // Build top 10 flight summaries
+      const top5Ids = (data.rankedIds ?? []).slice(0, 10);
       const topFlights: TopFlightSummary[] = top5Ids
         .map(fId => {
           const flightIndex = flights.findIndex(f => f.id === fId);
@@ -374,7 +374,7 @@ export default function FloatingAIAssistant({
     }
   }
 
-  /** User selects a flight from the top 5 AI recommendations → enter booking mode */
+  /** User selects a flight from the top 10 AI recommendations → enter booking mode */
   function handleBookFromRecommendation(flightIndex: number) {
     resetBookingFlow(); // Ensure fresh start
     setBookingMode(true);
@@ -760,7 +760,7 @@ export default function FloatingAIAssistant({
                         )}
                       </div>
 
-                      {/* Top 5 Recommendations — selectable cards */}
+                      {/* Top 10 Recommendations — selectable cards */}
                       {msg.topFlights && msg.topFlights.length > 0 && (
                         <div className="space-y-1.5 mt-1.5">
                           <p className="text-[9px] font-black uppercase tracking-widest text-[#1ABC9C] px-1">
@@ -830,13 +830,13 @@ export default function FloatingAIAssistant({
                         </div>
                       )}
 
-                      {/* 🧬 DNA Search Results — show top 5 DNA matches */}
+                      {/* 🧬 DNA Search Results — show top 10 DNA matches */}
                       {msg.isDnaSearch && dnaSearchResults?.results && dnaSearchResults.results.length > 0 && (
                         <div className="space-y-1.5 mt-1.5">
                           <p className="text-[9px] font-black uppercase tracking-widest text-emerald-600 px-1">
-                            🧬 Top {Math.min(5, dnaSearchResults.results.length)} DNA Matches
+                            🧬 Top {Math.min(10, dnaSearchResults.results.length)} DNA Matches
                           </p>
-                          {dnaSearchResults.results.slice(0, 5).map((dr, idx) => {
+                          {dnaSearchResults.results.slice(0, 10).map((dr, idx) => {
                             const flight = flights.find(f => f.id === dr.cardId);
                             if (!flight) return null;
                             return (

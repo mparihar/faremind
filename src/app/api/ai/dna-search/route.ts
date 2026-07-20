@@ -156,7 +156,7 @@ export async function POST(req: NextRequest) {
   });
 
   // Log match summary
-  const matchSummary = cardMatchData.slice(0, 5).map(c =>
+  const matchSummary = cardMatchData.slice(0, 10).map(c =>
     `${c.cardId.slice(0, 8)}...(${c.matchedFacts.length} matches: ${c.matchedFacts.map(f => f.preferenceKey).join(',')})`
   );
 

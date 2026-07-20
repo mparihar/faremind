@@ -902,10 +902,10 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
         {store.status === 'flight_selection' && (
           <>
             <AiBubble>
-              <p>I found {Math.min(5, flights.length)} great options. Tap to select:</p>
+              <p>I found {Math.min(10, flights.length)} great options. Tap to select:</p>
             </AiBubble>
             <AiFlightOptionTimeline
-              flights={flights.slice(0, 5)}
+              flights={flights.slice(0, 10)}
               roundTripOptions={roundTripOptions}
               onSelect={handleFlightSelect}
             />
