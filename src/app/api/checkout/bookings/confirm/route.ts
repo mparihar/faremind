@@ -1654,14 +1654,15 @@ export async function POST(req: NextRequest) {
             airlineName: entry.airlineName ?? null,
             displayLabel: entry.displayLabel,
             // Fare rules from selected fare — stored per-PNR for manage-booking
-            refundable:       selectedFare?.policy?.refundable ?? false,
-            changeable:       selectedFare?.policy?.changeable ?? false,
-            cancellationFee:  selectedFare?.policy?.refundFeeUsd ?? null,
-            changeFee:        selectedFare?.policy?.changeFeeUsd ?? null,
+            // UnifiedFlight uses `fareRules`, branded fares may use `policy` — check both
+            refundable:       selectedFare?.fareRules?.refundable ?? selectedFare?.policy?.refundable ?? false,
+            changeable:       selectedFare?.fareRules?.changeable ?? selectedFare?.policy?.changeable ?? false,
+            cancellationFee:  selectedFare?.fareRules?.cancellationFee ?? selectedFare?.policy?.refundFeeUsd ?? null,
+            changeFee:        selectedFare?.fareRules?.changeFee ?? selectedFare?.policy?.changeFeeUsd ?? null,
             seatSelection:    selectedFare?.policy?.seatSelection ?? null,
             seatSelectionFee: selectedFare?.policy?.seatSelectionFeeUsd ?? null,
             milesEarning:     selectedFare?.policy?.milesEarning ?? null,
-            fareRulesJson:    selectedFare?.policy ?? null,
+            fareRulesJson:    selectedFare?.fareRules ?? selectedFare?.policy ?? null,
           },
         });
       }
