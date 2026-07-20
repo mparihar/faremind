@@ -5,7 +5,7 @@ import { useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import {
   X, Loader2, AlertTriangle, Check, XCircle, Mail, ArrowLeft,
-  ShieldAlert, CreditCard, Clock, ChevronRight,
+  Shield, ShieldAlert, CreditCard, Clock, ChevronRight,
 } from 'lucide-react';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 
