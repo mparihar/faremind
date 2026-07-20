@@ -1055,47 +1055,65 @@ export async function POST(req: NextRequest) {
               if (searchRes.ok) {
                 const searchData = await searchRes.json();
                 const flights = searchData?.flights || [];
-                console.info(`[Checkout] Re-search returned ${flights.length} flights, matching airline=${airlineCode} price~${originalPrice}`);
+                console.info(`[Checkout] Re-search returned ${flights.length} flights for airline=${airlineCode}`);
 
-                // Find a matching flight by airline and similar price (within 10%)
-                // UnifiedFlight fields: airline.code, totalPrice, providerOfferId
-                let freshFsc: string | null = null;
+                // Log first 3 flights for debugging
+                for (let fi = 0; fi < Math.min(3, flights.length); fi++) {
+                  const f = flights[fi];
+                  console.info(`[Checkout] Flight[${fi}]: airline=${f?.airline?.code}, price=${f?.totalPrice}, providerOfferId=${f?.providerOfferId ? 'present' : 'missing'}`);
+                }
+
+                // Collect ALL candidate flights matching the airline, sorted by price (cheapest first)
+                // Don't filter by price — Private/Public fares have vastly different pricing
+                const candidates: { fsc: string; price: number; airline: string }[] = [];
                 for (const flight of flights) {
                   const flightAirline = flight?.airline?.code || flight?.segments?.[0]?.airline?.code;
-                  const flightPrice = flight?.totalPrice || flight?.price;
-                  const priceMatch = originalPrice && flightPrice
-                    ? Math.abs(flightPrice - originalPrice) / originalPrice < 0.10
-                    : true;
+                  const fsc = flight?.providerOfferId || flight?.fareSourceCode || flight?.offerId;
 
-                  if (flightAirline === airlineCode && priceMatch) {
-                    freshFsc = flight?.providerOfferId || flight?.fareSourceCode || flight?.offerId;
-                    if (freshFsc) {
-                      console.info(`[Checkout] ✅ Found matching flight with fresh FSC (airline=${airlineCode}, price=${flightPrice})`);
-                      break;
-                    }
+                  if (flightAirline === airlineCode && fsc) {
+                    candidates.push({
+                      fsc,
+                      price: flight?.totalPrice || 0,
+                      airline: flightAirline,
+                    });
                   }
                 }
 
-                if (freshFsc) {
-                  // Re-revalidate with fresh FSC
-                  const revalRes2 = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ fareSourceCode: freshFsc }),
-                  });
-                  const revalData2 = await revalRes2.json();
-                  const isValid2 = revalData2?.isValid;
+                console.info(`[Checkout] Found ${candidates.length} candidate flights for airline=${airlineCode}`);
 
-                  if (revalRes2.ok && revalData2.success && isValid2 !== false) {
-                    console.info(`[Checkout] ✅ Re-search fallback succeeded — fresh FSC revalidated`);
-                    revalData = revalData2;
-                    fscToRevalidate = freshFsc;
-                    revalSuccess = true;
-                  } else {
-                    console.warn(`[Checkout] Re-search fallback: fresh FSC also failed revalidation`);
+                // Sort by price (cheapest first) and try revalidating up to 3 candidates
+                candidates.sort((a, b) => a.price - b.price);
+                const maxAttempts = Math.min(3, candidates.length);
+
+                for (let ci = 0; ci < maxAttempts; ci++) {
+                  const candidate = candidates[ci];
+                  console.info(`[Checkout] Trying candidate ${ci + 1}/${maxAttempts}: airline=${candidate.airline}, price=${candidate.price}`);
+
+                  try {
+                    const revalRes2 = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
+                      method: 'POST',
+                      headers: { 'Content-Type': 'application/json' },
+                      body: JSON.stringify({ fareSourceCode: candidate.fsc }),
+                    });
+                    const revalData2 = await revalRes2.json();
+                    const isValid2 = revalData2?.isValid;
+
+                    if (revalRes2.ok && revalData2.success && isValid2 !== false) {
+                      console.info(`[Checkout] ✅ Re-search fallback succeeded on candidate ${ci + 1} — fresh FSC revalidated (price=${candidate.price})`);
+                      revalData = revalData2;
+                      fscToRevalidate = candidate.fsc;
+                      revalSuccess = true;
+                      break;
+                    } else {
+                      console.warn(`[Checkout] Candidate ${ci + 1} failed revalidation: isValid=${isValid2}`);
+                    }
+                  } catch (revalErr) {
+                    console.warn(`[Checkout] Candidate ${ci + 1} revalidation error:`, revalErr instanceof Error ? revalErr.message : revalErr);
                   }
-                } else {
-                  console.warn(`[Checkout] Re-search fallback: no matching flight found for airline=${airlineCode}`);
+                }
+
+                if (!revalSuccess) {
+                  console.warn(`[Checkout] Re-search fallback: all ${maxAttempts} candidates failed revalidation for airline=${airlineCode}`);
                 }
               } else {
                 console.warn(`[Checkout] Re-search fallback: search API returned ${searchRes.status}`);
