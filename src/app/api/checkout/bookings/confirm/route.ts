@@ -1022,8 +1022,10 @@ export async function POST(req: NextRequest) {
             : null;
           const airlineCode = isRoundTripFlight
             ? flightData?.outboundJourney?.airline?.code || flightData?.outboundJourney?.segments?.[0]?.airline?.code
-            : flightData?.segments?.[0]?.airline?.code || flightData?.airline?.code;
+            : flightData?.airline?.code || flightData?.segments?.[0]?.airline?.code;
           const originalPrice = selectedFare?.totalPrice || selectedFare?.price || pricing?.total;
+
+          console.info(`[Checkout] Re-search params: origin=${originCode}, dest=${destCode}, date=${depDate}, airline=${airlineCode}, price=${originalPrice}`);
 
           if (originCode && destCode && depDate) {
             try {
@@ -1052,21 +1054,23 @@ export async function POST(req: NextRequest) {
 
               if (searchRes.ok) {
                 const searchData = await searchRes.json();
-                const flights = searchData?.mystifly?.flights || searchData?.flights || [];
+                const flights = searchData?.flights || [];
+                console.info(`[Checkout] Re-search returned ${flights.length} flights, matching airline=${airlineCode} price~${originalPrice}`);
 
                 // Find a matching flight by airline and similar price (within 10%)
+                // UnifiedFlight fields: airline.code, totalPrice, providerOfferId
                 let freshFsc: string | null = null;
                 for (const flight of flights) {
-                  const flightAirline = flight?.segments?.[0]?.airline?.code || flight?.airline?.code;
-                  const flightPrice = flight?.price || flight?.totalPrice;
+                  const flightAirline = flight?.airline?.code || flight?.segments?.[0]?.airline?.code;
+                  const flightPrice = flight?.totalPrice || flight?.price;
                   const priceMatch = originalPrice && flightPrice
                     ? Math.abs(flightPrice - originalPrice) / originalPrice < 0.10
                     : true;
 
                   if (flightAirline === airlineCode && priceMatch) {
-                    freshFsc = flight?.fareSourceCode || flight?.providerOfferId || flight?.offerId;
+                    freshFsc = flight?.providerOfferId || flight?.fareSourceCode || flight?.offerId;
                     if (freshFsc) {
-                      console.info(`[Checkout] Found matching flight with fresh FSC (airline=${airlineCode}, price=${flightPrice})`);
+                      console.info(`[Checkout] ✅ Found matching flight with fresh FSC (airline=${airlineCode}, price=${flightPrice})`);
                       break;
                     }
                   }
