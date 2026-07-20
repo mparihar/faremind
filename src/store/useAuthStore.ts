@@ -130,9 +130,19 @@ export const useAuthStore = create<AuthStore>((set, get) => ({
             .then(res => res.json())
             .then(data => {
               if (!data.valid) {
-                // Session expired on server — clear everything
+                // Session expired on server — clear everything and redirect
                 localStorage.removeItem('faremind_session');
                 set({ user: null, sessionToken: null });
+                // Only redirect if the user is on a protected page (not already on home/search)
+                if (typeof window !== 'undefined') {
+                  const path = window.location.pathname;
+                  const isProtectedPage = path.startsWith('/account') ||
+                    path.startsWith('/checkout') ||
+                    path.startsWith('/admin');
+                  if (isProtectedPage) {
+                    window.location.href = '/';
+                  }
+                }
               } else if (data.user) {
                 // Sync latest user data (including role) from server
                 const current = get().user;
