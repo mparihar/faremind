@@ -232,6 +232,60 @@ function PaymentFormInner() {
   // Load DB-driven fees — populates computedFees in checkout store
   useFeeLoader();
 
+  // ── Pre-revalidate Mystifly FSC on page load ──────────────────────────────
+  // Private fares have ~5 min TTL. By the time user reaches payment,
+  // the original FSC may have expired. Pre-revalidate to get a fresh FSC
+  // so the user isn't surprised with "fare no longer available" after entering card details.
+  const [fareExpired, setFareExpired] = useState(false);
+  const [revalidating, setRevalidating] = useState(false);
+
+  useEffect(() => {
+    const isMystifly = sourceFlight?.provider === 'mystifly' || sourceRoundTrip?.provider === 'mystifly';
+    const fsc = sourceFlight?.providerOfferId || sourceRoundTrip?.providerOfferId;
+
+    if (!isMystifly || !fsc) return;
+
+    let cancelled = false;
+    setRevalidating(true);
+
+    fetch('/api/checkout/bookings/pre-revalidate', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fareSourceCode: fsc }),
+    })
+      .then((r) => r.json())
+      .then((data) => {
+        if (cancelled) return;
+        setRevalidating(false);
+
+        if (!data.valid) {
+          setFareExpired(true);
+          return;
+        }
+
+        // Update sourceFlight/sourceRoundTrip with fresh FSC
+        if (data.freshFareSourceCode && data.freshFareSourceCode !== fsc) {
+          const currentState = useCheckoutStore.getState();
+          if (currentState.sourceFlight) {
+            useCheckoutStore.setState({
+              sourceFlight: { ...currentState.sourceFlight, providerOfferId: data.freshFareSourceCode },
+            });
+          }
+          if (currentState.sourceRoundTrip) {
+            useCheckoutStore.setState({
+              sourceRoundTrip: { ...currentState.sourceRoundTrip, providerOfferId: data.freshFareSourceCode },
+            });
+          }
+        }
+      })
+      .catch(() => {
+        if (!cancelled) setRevalidating(false);
+      });
+
+    return () => { cancelled = true; };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+
   useEffect(() => {
     if (!selectedFare || !sessionId) router.replace('/');
   }, [selectedFare, sessionId, router]);
@@ -545,10 +599,37 @@ function PaymentFormInner() {
       {OfferGuardUI()}
 
       <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+        {/* Fare expired banner */}
+        {fareExpired && (
+          <div className="mb-6 bg-red-50 border border-red-200 rounded-2xl p-6 text-center">
+            <div className="text-red-600 font-bold text-lg mb-2">⚠️ Fare Expired</div>
+            <p className="text-red-600 mb-4">
+              This fare is no longer available. Prices change frequently — please search again to find current pricing.
+            </p>
+            <button
+              onClick={() => router.push('/')}
+              className="px-6 py-2.5 bg-emerald-600 text-white font-semibold rounded-xl hover:bg-emerald-700 transition-colors"
+            >
+              Search Again
+            </button>
+          </div>
+        )}
+
+        {/* Revalidating spinner */}
+        {revalidating && !fareExpired && (
+          <div className="mb-4 flex items-center gap-2 text-sm text-slate-500">
+            <svg className="animate-spin h-4 w-4 text-emerald-500" viewBox="0 0 24 24" fill="none">
+              <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4" />
+              <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4z" />
+            </svg>
+            Verifying fare availability…
+          </div>
+        )}
+
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
 
           {/* ── LEFT: Payment form (2/3) ── */}
-          <div className="lg:col-span-2 space-y-5">
+          <div className={`lg:col-span-2 space-y-5 ${fareExpired ? 'opacity-40 pointer-events-none' : ''}`}>
 
             {/* Saved Cards Selector */}
             {user?.id && savedMethods.length > 0 && (
