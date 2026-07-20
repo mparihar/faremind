@@ -891,6 +891,37 @@ export class MystiflyAdapter implements IBookingProvider {
       };
     }
 
+    // ── Unticketed VOID: no PTR exists, use direct cancelBooking ──
+    const untickMatch = quoteId.match(/^mystifly_void_unticketed_(.+)$/);
+    if (untickMatch) {
+      const [, mfRef] = untickMatch;
+      console.info(`[MystiflyAdapter] Confirming unticketed VOID for ${mfRef} — direct cancelBooking`);
+
+      const result = await mystiflyClient.cancelBooking(mfRef);
+      const data = result?.Data || result;
+      const success = data?.Success ?? result?.Success;
+
+      if (!success) {
+        const errorMsg = data?.Errors?.[0]?.Message || result?.Message || 'Cancellation failed';
+        const errorCode = data?.Errors?.[0]?.Code || '';
+        throw new MystiflyCancellationError(`Mystifly unticketed cancel failed: ${errorCode} ${errorMsg}`, {
+          providerErrorCode: errorCode,
+          rawResponse: result,
+        });
+      }
+
+      // For unticketed bookings, Mystifly won't return a refund amount —
+      // the orchestrator uses the DB booking amount instead
+      return {
+        cancellationId: `mystifly_void_unticketed_confirmed_${mfRef}`,
+        orderId: mfRef,
+        refundAmount: 0, // orchestrator will use originalAmount from DB
+        refundCurrency: data?.Currency || 'USD',
+        confirmedAt: new Date().toISOString(),
+        raw: result,
+      };
+    }
+
     throw new Error(`[MystiflyAdapter] Invalid quoteId format: ${quoteId}`);
   }
 

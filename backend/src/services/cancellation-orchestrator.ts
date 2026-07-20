@@ -260,8 +260,13 @@ export async function initiateCancellation(
   // ── Step 4: Calculate financials ───────────────────────────────────
   const isBookingRefundable = !isCancelAnyway && (isRefundable || isVoid || providerResult.refundAmount > 0);
   const adminFee = isBookingRefundable ? await getAdminServiceFee(booking) : 0;
-  const netRefundAmount = providerResult.refundAmount > 0
-    ? Math.max(0, providerResult.refundAmount - adminFee)
+  // For VOID (unticketed), provider may return refundAmount=0 since no ticket was issued
+  // In that case, the customer gets originalAmount back (minus admin fee)
+  const effectiveRefundAmount = providerResult.refundAmount > 0
+    ? providerResult.refundAmount
+    : (isVoid ? originalAmount : 0);
+  const netRefundAmount = effectiveRefundAmount > 0
+    ? Math.max(0, effectiveRefundAmount - adminFee)
     : 0;
   const fareMindFee = isBookingRefundable && netRefundAmount > 0 ? adminFee : 0;
   const airlinePenalty = Math.max(0, originalAmount - providerResult.refundAmount);
