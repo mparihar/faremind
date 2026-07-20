@@ -495,7 +495,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       let quote;
       try {
         const provider = getProvider(booking.primaryProvider);
-        quote = await provider.getCancellationQuote(providerPnr.providerOrderId, { ticketingStatus: booking.ticketingStatus });
+        quote = await provider.getCancellationQuote(providerPnr.providerOrderId, { ticketingStatus: booking.ticketingStatus, bookingAmount: Number(booking.totalAmount) || 0 });
         await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote', providerReference: quote.quoteId, payloadJson: { ...quote.raw as object, expiresAt: quote.expiresAt } });
       } catch (providerErr) {
         // Classify the error using MystiflyCancellationError

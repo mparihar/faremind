@@ -100,6 +100,8 @@ export interface CancelResult {
 export interface CancelQuoteOptions {
   /** The booking's ticketing status — used to skip PTR for unticketed bookings */
   ticketingStatus?: string;
+  /** The booking's total amount from DB — fallback when provider API doesn't return fare data */
+  bookingAmount?: number;
 }
 
 export interface NormalizedProviderRefundStatus {
@@ -580,7 +582,7 @@ export class MystiflyAdapter implements IBookingProvider {
   async getCancellationQuote(mfRef: string, options?: CancelQuoteOptions): Promise<CancelQuote> {
     // ── Step 1: Get order details for original amount ──
     const order = await this.getOrder(mfRef);
-    const originalAmount = order.totalAmount;
+    const originalAmount = order.totalAmount || options?.bookingAmount || 0;
     const currency = order.currency;
 
     // ── Step 1b: If booking was never ticketed, skip PTR entirely ──
