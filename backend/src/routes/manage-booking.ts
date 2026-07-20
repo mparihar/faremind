@@ -635,25 +635,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           ? 'PARTIAL_REFUND'
           : 'FULL_REFUND';
 
-      // ── DEBUG: cancellation quote computation (commit 25cc650+) ──
-      console.log('[CANCEL_QUOTE_DEBUG]', JSON.stringify({
-        bookingId,
-        commitMarker: '25cc650_WITH_LOGS',
-        quoteMethod: quote.method,
-        cancellationMethod,
-        isRefundable,
-        isBookingRefundable,
-        originalAmount,
-        quoteRefundAmount: quote.refundAmount,
-        refundAmount,
-        airlinePenalty,
-        providerAirlinePenalty,
-        providerSupplierFee,
-        FAREMIND_FEE,
-        estimatedRefund,
-        fareMindFee,
-        refundability,
-      }));
 
       // Customer-friendly cancellation type
       const cancellationType = cancellationMethod === 'VOID'

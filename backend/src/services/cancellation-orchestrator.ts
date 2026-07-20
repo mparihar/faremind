@@ -186,7 +186,9 @@ export async function initiateCancellation(
   let providerResult: CancelResult;
   try {
     const provider = getProvider(booking.primaryProvider);
+    console.log(`[CANCEL_CONFIRM] Step 3: calling confirmCancellation`, JSON.stringify({ bookingId, quoteId, provider: booking.primaryProvider, isVoid, isCancelAnyway }));
     providerResult = await provider.confirmCancellation(quoteId);
+    console.log(`[CANCEL_CONFIRM] Step 3 OK: provider confirmed`, JSON.stringify({ cancellationId: providerResult.cancellationId, refundAmount: providerResult.refundAmount, refundCurrency: providerResult.refundCurrency }));
 
     // Store provider response
     await mbq.storeProviderPayload({
@@ -275,6 +277,8 @@ export async function initiateCancellation(
   const isFullRefund = netRefundAmount >= originalAmount - 1;
   const newPaymentStatus = netRefundAmount <= 0 ? 'NO_REFUND' : isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
   const newTicketingStatus = isVoid ? 'VOIDED' : isCancelAnyway ? 'CANCELLED' : 'REFUND_PENDING';
+
+  console.log(`[CANCEL_CONFIRM] Step 4: financials`, JSON.stringify({ bookingId, originalAmount, providerRefundAmount: providerResult.refundAmount, effectiveRefundAmount, adminFee, netRefundAmount, fareMindFee, cancellationMethod, newPaymentStatus, newTicketingStatus }));
 
   // ── Step 5: Update booking status ──────────────────────────────────
   await prisma.masterBooking.update({
