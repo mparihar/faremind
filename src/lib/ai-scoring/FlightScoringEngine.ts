@@ -27,7 +27,7 @@ import type {
   ScoringFeatures,
   ScoreWeights,
 } from './FlightScoringTypes';
-import { getAdjustedWeights, AI_PICK_MIN_SCORE, FLIGHT_SCORING_CONFIG } from './FlightScoringConfig';
+import { getAdjustedWeights, AI_PICK_MIN_SCORE, FLIGHT_SCORING_CONFIG, PRICE_PRECEDENCE_PENALTY } from './FlightScoringConfig';
 import { extractScoringFeatures } from './FlightFeatureExtractor';
 import { calculateEffectivePrice } from './FlightEffectivePriceService';
 import { generateWarnings, type WarningSearchStats } from './FlightWarningEngine';
@@ -341,6 +341,20 @@ export function scoreFlightOffer(
     baseScore *= 0.75;
   } else if (prefs?.stops === '2stop' && features.totalStops > 2) {
     baseScore *= 0.80;
+  }
+
+  // Price Precedence Penalty — algorithmic enforcement
+  // When an offer is significantly more expensive than the cheapest,
+  // apply an additional penalty that scales with the price difference.
+  // This ensures lower fares always take precedence regardless of how
+  // well an expensive offer scores on other dimensions.
+  if (stats.minPrice > 0) {
+    const pctAboveCheapest = (features.effectiveTotalPrice - stats.minPrice) / stats.minPrice;
+    if (pctAboveCheapest > PRICE_PRECEDENCE_PENALTY.thresholdPct) {
+      const excess = pctAboveCheapest - PRICE_PRECEDENCE_PENALTY.thresholdPct;
+      const penalty = Math.min(excess * PRICE_PRECEDENCE_PENALTY.rate, PRICE_PRECEDENCE_PENALTY.cap);
+      baseScore = Math.max(0, baseScore - penalty);
+    }
   }
 
   baseScore = clamp(baseScore, 0, 100);

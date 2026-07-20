@@ -113,7 +113,7 @@ const MODE_ADJUSTMENTS: Record<ScoringMode, WeightAdjustment> = {
     baggageValueScore: 0.6,
   },
   FASTEST: {
-    effectivePriceScore: 0.85,
+    effectivePriceScore: 0.6,
     durationScore: 1.8,
     stopsScore: 1.2,
     layoverScore: 1.1,
@@ -121,33 +121,33 @@ const MODE_ADJUSTMENTS: Record<ScoringMode, WeightAdjustment> = {
   FEWEST_STOPS: {
     stopsScore: 2.3,
     layoverScore: 0.6,
-    effectivePriceScore: 0.85,
+    effectivePriceScore: 0.7,
   },
   COMFORT: {
     stopsScore: 1.4,
     layoverScore: 1.5,
     scheduleScore: 1.5,
     baggageValueScore: 1.4,
-    effectivePriceScore: 0.85,
+    effectivePriceScore: 0.6,
   },
   FAMILY: {
     baggageValueScore: 1.8,
     layoverScore: 1.6,
     scheduleScore: 1.5,
     stopsScore: 1.3,
-    effectivePriceScore: 0.90,
+    effectivePriceScore: 0.7,
   },
   ELDERLY: {
     stopsScore: 1.8,
     layoverScore: 1.7,
     scheduleScore: 1.6,
     baggageValueScore: 1.3,
-    effectivePriceScore: 0.90,
+    effectivePriceScore: 0.7,
     durationScore: 1.2,
   },
   FLEXIBLE_FARE: {
     fareFlexibilityScore: 3.0,
-    effectivePriceScore: 0.90,
+    effectivePriceScore: 0.7,
     durationScore: 0.8,
   },
 };
@@ -197,6 +197,13 @@ const INTERNATIONAL_BASE_WEIGHTS: Record<'ONE_WAY' | 'ROUND_TRIP', ScoreWeights>
  *
  * For international routes, uses INTERNATIONAL_BASE_WEIGHTS which
  * boost duration/layover/baggage and reduce stops penalty.
+ *
+ * PRICE FLOOR ENFORCEMENT:
+ * After normalization, if the effective price weight falls below
+ * MIN_PRICE_WEIGHT_FRACTION, it is raised to the minimum and
+ * excess is redistributed proportionally from other dimensions.
+ * This guarantees lower fares always have significant influence
+ * regardless of which scoring mode is active.
  */
 export function getAdjustedWeights(
   tripType: ScoringTripType,
@@ -234,7 +241,7 @@ export function getAdjustedWeights(
 
   if (sum <= 0) return base; // safety
 
-  return {
+  let normalized: ScoreWeights = {
     effectivePriceScore:      raw.effectivePriceScore / sum,
     durationScore:            raw.durationScore / sum,
     stopsScore:               raw.stopsScore / sum,
@@ -244,6 +251,34 @@ export function getAdjustedWeights(
     fareFlexibilityScore:     raw.fareFlexibilityScore / sum,
     providerReliabilityScore: raw.providerReliabilityScore / sum,
   };
+
+  // ── Price Weight Floor Enforcement ────────────────────────────────────────
+  // If the normalized price weight fell below the minimum, raise it and
+  // proportionally redistribute the excess from non-price dimensions.
+  if (normalized.effectivePriceScore < MIN_PRICE_WEIGHT_FRACTION) {
+    const deficit = MIN_PRICE_WEIGHT_FRACTION - normalized.effectivePriceScore;
+    const nonPriceSum =
+      normalized.durationScore + normalized.stopsScore +
+      normalized.baggageValueScore + normalized.layoverScore +
+      normalized.scheduleScore + normalized.fareFlexibilityScore +
+      normalized.providerReliabilityScore;
+
+    if (nonPriceSum > 0) {
+      const scale = (nonPriceSum - deficit) / nonPriceSum;
+      normalized = {
+        effectivePriceScore:      MIN_PRICE_WEIGHT_FRACTION,
+        durationScore:            normalized.durationScore * scale,
+        stopsScore:               normalized.stopsScore * scale,
+        baggageValueScore:        normalized.baggageValueScore * scale,
+        layoverScore:             normalized.layoverScore * scale,
+        scheduleScore:            normalized.scheduleScore * scale,
+        fareFlexibilityScore:     normalized.fareFlexibilityScore * scale,
+        providerReliabilityScore: normalized.providerReliabilityScore * scale,
+      };
+    }
+  }
+
+  return normalized;
 }
 
 // ── Negative Penalty Map ─────────────────────────────────────────────────────
@@ -311,6 +346,33 @@ export const MAX_AI_RECOMMENDATION_LIMIT     = 100;
 // ── AI Pick Thresholds ───────────────────────────────────────────────────────
 
 export const AI_PICK_MIN_SCORE = 85;
+
+// ── Price Precedence Configuration ───────────────────────────────────────────
+//
+// Algorithmic price enforcement: ensures lower fares always take precedence.
+//
+// MIN_PRICE_WEIGHT_FRACTION: After mode-specific weight adjustments and
+// normalization, the effective price weight is guaranteed to never fall
+// below this fraction. If it does, the algorithm redistributes weight
+// proportionally from non-price dimensions. This is NOT a hardcoded
+// per-mode override — it applies universally across all scoring modes.
+//
+// PRICE_PRECEDENCE_PENALTY: When an offer's effective price exceeds the
+// cheapest offer by more than `thresholdPct`, an additional penalty is
+// applied: min((pctAbove - thresholdPct) × rate, cap). This penalty is
+// applied AFTER the weighted composite, so it cannot be overcome by high
+// scores in other dimensions like baggage or fare flexibility.
+//
+export const MIN_PRICE_WEIGHT_FRACTION = 0.30;
+
+export const PRICE_PRECEDENCE_PENALTY = {
+  /** % above cheapest where the extra penalty begins (0.15 = 15%) */
+  thresholdPct: 0.15,
+  /** Penalty points per 100% over threshold */
+  rate: 50,
+  /** Maximum penalty points */
+  cap: 25,
+};
 
 // ── Estimated Bag Costs (fallback when provider doesn't supply) ──────────────
 

@@ -15,6 +15,7 @@
 import type { NormalizedOption, AiScoreBreakdown, AiUserPreferences, ScoringStats, WeightPreset } from './types';
 import { clippedNorm } from './stats';
 import { getWeights } from './weights';
+import { PRICE_PRECEDENCE_PENALTY } from './FlightScoringConfig';
 
 // ─── 1. Price Score (§3) ─────────────────────────────────────────────────────
 
@@ -273,6 +274,16 @@ export function computeScore(
     base *= 0.75;
   } else if (prefs.stops === '2stop' && norm.stops > 2) {
     base *= 0.80;
+  }
+
+  // Price Precedence Penalty — algorithmic enforcement (matches unified engine)
+  if (stats.minPrice > 0) {
+    const pctAboveCheapest = (norm.price - stats.minPrice) / stats.minPrice;
+    if (pctAboveCheapest > PRICE_PRECEDENCE_PENALTY.thresholdPct) {
+      const excess = pctAboveCheapest - PRICE_PRECEDENCE_PENALTY.thresholdPct;
+      const penalty = Math.min(excess * PRICE_PRECEDENCE_PENALTY.rate, PRICE_PRECEDENCE_PENALTY.cap);
+      base = Math.max(0, base - penalty);
+    }
   }
 
   const finalScore = Math.max(0, Math.min(100, base));
