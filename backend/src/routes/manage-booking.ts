@@ -1117,9 +1117,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           duration: targetSlice.duration,
         };
       } else {
-        // For Mystifly, use booking-level data; the adapter handles trip details internally
-        const primaryPnr = booking.pnrs.find((p: any) => p.isPrimary) ?? booking.pnrs[0];
-        cabinClass = primaryPnr?.fareClass || 'economy';
+        // For Mystifly, use booking-level data; the adapter handles trip details internally.
+        // Cabin lives on BookingSegment (not BookingPnr); mirror the Duffel branch above.
+        cabinClass = booking.segments?.[0]?.cabin || 'economy';
         currentItinerary = {
           origin: booking.originAirport,
           destination: booking.destinationAirport,

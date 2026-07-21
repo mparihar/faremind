@@ -72,6 +72,8 @@ export interface UnifiedFlight {
   taxAmount?: number;        // Provider total tax amount
   taxBreakdown?: TaxBreakdownItem[]; // Detailed tax line items from provider
   providerTotalFare?: number; // Raw provider fare (same as totalPrice — no markup)
+  fareMindMarkupAmount?: number; // FareMind margin added on top of provider fare (set by markup-service)
+  markupRuleId?: string;         // ID of the markup rule that was applied
   currency: string;
   cabinClass: CabinClass;
   fareRules: FareRules;

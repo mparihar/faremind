@@ -5,6 +5,9 @@
 // ═══════════════════════════════════════════════
 
 import { prisma } from '@/lib/db';
+// Shared helpers — single source of truth for international detection (country-based,
+// from src/data/airports.ts) and timezone-safe local-hour extraction.
+import { isInternationalRoute, hourFromIso } from '@/lib/ai-scoring/FlightScoringUtils';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -174,36 +177,23 @@ async function getConfirmedBookings(userId: string) {
 
 // ── Trip Classification ──────────────────────────────────────────────────────
 
-// US major airport codes — if both origin & destination are in this set, it's domestic
-const US_AIRPORTS = new Set([
-  'ATL','LAX','ORD','DFW','DEN','JFK','SFO','SEA','LAS','MCO',
-  'EWR','CLT','PHX','IAH','MIA','BOS','MSP','DTW','FLL','PHL',
-  'LGA','BWI','SLC','SAN','DCA','IAD','TPA','HNL','PDX','STL',
-  'MCI','RDU','SMF','SNA','AUS','CLE','OAK','SJC','IND','CVG',
-  'CMH','BNA','PIT','SAT','MKE','RSW','ABQ','OMA','BUF','RIC',
-  'OGG','ANC','BOI','TUS','ELP','BDL','JAX','BHM','CHS','GRR',
-  'DSM','SDF','MSY','PBI','MEM','OKC','ONT','BUR','GEG','FAT',
-  'TUL','ICT','LIT','SYR','ROC','ALB','ORF','RNO','GSP','DAY',
-  'SAV','COS','LEX','MHT','SBN','AVL','TYS','XNA','PSP','GNV',
-]);
-
 function classifyTripCategory(booking: any): ProfileType {
   const originCountry = booking.originCountry;
   const destCountry = booking.destinationCountry;
 
-  // If countries available at booking level
+  // Most reliable: explicit country fields at booking level.
   if (originCountry && destCountry) {
     return originCountry === destCountry ? 'DOMESTIC' : 'INTERNATIONAL';
   }
 
-  // Check journey-level countries
+  // Next: journey-level countries.
   if (booking.journeys?.length) {
     for (const journey of booking.journeys) {
       const jOrigin = journey.originCountry;
       const jDest = journey.destinationCountry;
       if (jOrigin && jDest && jOrigin !== jDest) return 'INTERNATIONAL';
     }
-    // Check segment-level countries
+    // Then: segment-level countries.
     for (const journey of booking.journeys) {
       for (const segment of journey.segments || []) {
         const sOrigin = segment.originCountry;
@@ -213,33 +203,27 @@ function classifyTripCategory(booking: any): ProfileType {
     }
   }
 
-  // ── Fallback: detect international from airport codes ──────────────────
-  // Country fields are often not populated by the booking flow, so infer
-  // from airport codes. If either origin or destination is NOT a known US
-  // airport, treat as international.
-  const originAirport = (booking.originAirport || '').toUpperCase();
-  const destAirport = (booking.destinationAirport || '').toUpperCase();
-
+  // ── Fallback: infer from airport codes via the shared country lookup ──────
+  // Uses src/data/airports.ts (via isInternationalRoute), so non-US domestic
+  // markets (e.g. DEL↔BOM in India, LHR↔EDI in the UK) are correctly classified
+  // as DOMESTIC — unlike the previous US-only heuristic, which forced every
+  // non-US-domestic trip into the INTERNATIONAL profile.
+  const originAirport = booking.originAirport || '';
+  const destAirport = booking.destinationAirport || '';
   if (originAirport && destAirport) {
-    const originIsUS = US_AIRPORTS.has(originAirport);
-    const destIsUS = US_AIRPORTS.has(destAirport);
-    if (!(originIsUS && destIsUS)) return 'INTERNATIONAL';
+    return isInternationalRoute(originAirport, destAirport) ? 'INTERNATIONAL' : 'DOMESTIC';
   }
 
-  // Also check journey-level airports
+  // Also check journey-level airports.
   if (booking.journeys?.length) {
     for (const journey of booking.journeys) {
-      const jOrigin = (journey.originAirport || '').toUpperCase();
-      const jDest = (journey.destinationAirport || '').toUpperCase();
-      if (jOrigin && jDest) {
-        const oUS = US_AIRPORTS.has(jOrigin);
-        const dUS = US_AIRPORTS.has(jDest);
-        if (!(oUS && dUS)) return 'INTERNATIONAL';
-      }
+      const jOrigin = journey.originAirport || '';
+      const jDest = journey.destinationAirport || '';
+      if (jOrigin && jDest && isInternationalRoute(jOrigin, jDest)) return 'INTERNATIONAL';
     }
   }
 
-  // Default to domestic if all airports are US or unavailable
+  // Default to domestic when no airport/country data is available.
   return 'DOMESTIC';
 }
 
@@ -380,7 +364,7 @@ function extractBookingPreferences(booking: any): ExtractedPreference[] {
   // Departure Time Preference
   for (const journey of booking.journeys || []) {
     if (journey.departureDateTime) {
-      const hour = new Date(journey.departureDateTime).getHours();
+      const hour = hourFromIso(journey.departureDateTime);
       const bucket = getDepartureTimeBucket(hour);
       prefs.push({ category: 'departure_time', key: bucket.key, label: bucket.label });
     }

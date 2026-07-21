@@ -43,6 +43,7 @@ import limitOrdersPlugin     from './routes/limit-orders';
 import adminCancellationQueuePlugin from './routes/admin-cancellation-queue';
 import { startLimitOrderScheduler, stopLimitOrderScheduler } from './workers/limit-order-cron';
 import { startRefundReconciliationScheduler, stopRefundReconciliationScheduler } from './workers/refund-reconciliation-cron';
+import { startTicketingReconciliationScheduler, stopTicketingReconciliationScheduler } from './workers/ticketing-reconciliation-cron';
 
 const PORT = parseInt(process.env.PORT || process.env.BACKEND_PORT || '3001');
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -172,12 +173,17 @@ async function main() {
   try {
     await fastify.listen({ port: PORT, host: '0.0.0.0' });
 
-    // Start background workers
-    startLimitOrderScheduler();
-    startRefundReconciliationScheduler();
+    // Start background workers (opt-out via DISABLE_SCHEDULERS=true — e.g. local runs against prod DB)
+    if (process.env.DISABLE_SCHEDULERS === 'true') {
+      fastify.log.warn('[startup] Background schedulers DISABLED via DISABLE_SCHEDULERS=true');
+    } else {
+      startLimitOrderScheduler();
+      startRefundReconciliationScheduler();
+      startTicketingReconciliationScheduler();
+    }
 
     // Graceful shutdown
-    const shutdown = () => { stopLimitOrderScheduler(); stopRefundReconciliationScheduler(); fastify.close(); };
+    const shutdown = () => { stopLimitOrderScheduler(); stopRefundReconciliationScheduler(); stopTicketingReconciliationScheduler(); fastify.close(); };
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
   } catch (err) {

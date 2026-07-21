@@ -117,6 +117,10 @@ interface CheckoutStore {
   fareOption: FareOption | null;
   sourceFlight: UnifiedFlight | null;
   sourceRoundTrip: RoundTripOption | null;
+  // Mystifly: FareSourceCodes of the other fare options for the same itinerary.
+  // Sent to the confirm endpoint so it can recover from ERBUK082 by re-revalidating
+  // an alternate FSC (price-guarded server-side).
+  alternateFareSourceCodes: string[];
   travelerCount: number;
   currency: string;
 
@@ -164,6 +168,7 @@ interface CheckoutStore {
   // ── Actions ──────────────────────────────────────────────────────────────
 
   setSessionId: (id: string) => void;
+  setAlternateFareSourceCodes: (fscs: string[]) => void;
 
   initFromStores: (
     selectedFare: SelectedFare | null,
@@ -225,7 +230,7 @@ export function makePassenger(index: number, type: 'adult' | 'child' | 'infant' 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 const INITIAL: Omit<CheckoutStore,
-  'initFromStores' | 'setSessionId' | 'setPassengers' | 'updatePassenger' |
+  'initFromStores' | 'setSessionId' | 'setAlternateFareSourceCodes' | 'setPassengers' | 'updatePassenger' |
   'setSeatSelections' | 'updateSeatSelection' | 'updateWheelchairSelection' |
   'setMealSelections' | 'updateMealSelection' |
   'setExtraBags' | 'toggleProtection' | 'toggleInsurance' | 'setComputedFees' |
@@ -239,6 +244,7 @@ const INITIAL: Omit<CheckoutStore,
   fareOption: null,
   sourceFlight: null,
   sourceRoundTrip: null,
+  alternateFareSourceCodes: [],
   travelerCount: 1,
   currency: 'USD',
   passengers: [makePassenger(0)],
@@ -263,6 +269,8 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
   ...INITIAL,
 
   setSessionId: (sessionId) => set({ sessionId }),
+
+  setAlternateFareSourceCodes: (alternateFareSourceCodes) => set({ alternateFareSourceCodes }),
 
   initFromStores: (selectedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown) => {
     // ── Resolve passenger breakdown ───────────────────────────────────────

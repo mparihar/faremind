@@ -1,25 +1,8 @@
 import type { UnifiedFlight } from '@/lib/types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
 import type { NormalizedOption } from './types';
-
-// ── Helpers ──────────────────────────────────────────────────────────────────
-
-function hourFromIso(iso: string): number {
-  try { return new Date(iso).getHours(); }
-  catch { return 12; }
-}
-
-function isInternationalRoute(depAirport: string, arrAirport: string): boolean {
-  // Simple heuristic: different first letter of IATA code usually means different country.
-  // A more robust check would use a country lookup table, but this is sufficient for now.
-  // All US airports start with many letters, so we use a known domestic set.
-  const domesticUS = new Set([
-    'ATL','BOS','CLT','DEN','DFW','DTW','EWR','FLL','HNL','IAD','IAH','JFK',
-    'LAS','LAX','LGA','MCO','MIA','MSP','ORD','PHL','PHX','SAN','SEA','SFO','SLC','TPA',
-  ]);
-  const bothUS = domesticUS.has(depAirport) && domesticUS.has(arrAirport);
-  return !bothUS;
-}
+// Single source of truth for local-hour extraction and international detection.
+import { hourFromIso, isInternationalRoute } from './FlightScoringUtils';
 
 // ── One-Way normalizer ───────────────────────────────────────────────────────
 

@@ -454,6 +454,9 @@ function PaymentFormInner() {
           selectedAncillaries: (store.selectedAncillaries ?? []).filter(a => !a.included),
           sourceFlight,
           sourceRoundTrip,
+          // Mystifly ERBUK082 recovery — other fare-option FSCs for this itinerary
+          // (server re-revalidates a price-matched alternate if the selected FSC fails).
+          alternateFareSourceCodes: store.alternateFareSourceCodes ?? [],
           currency: currency ?? 'USD',
           userId: user?.id ?? null,
           // Agent booking attribution

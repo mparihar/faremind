@@ -355,6 +355,17 @@ export default function CheckoutItineraryPage() {
     // 6. Init checkout store
     try {
       checkoutStore.initFromStores(resolvedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown);
+
+      // Mystifly ERBUK082 recovery: capture every fare-option FSC for this
+      // itinerary so the confirm endpoint can re-revalidate an alternate if the
+      // selected fare fails at book time. Selection is price-guarded server-side,
+      // so passing all options (incl. other cabins) is safe — mismatched-price
+      // alternates are rejected, not silently substituted.
+      const altFscs = (resolvedPayload?.fareGroups ?? [])
+        .flatMap(g => g.fares)
+        .map(f => f.offerId)
+        .filter((id): id is string => typeof id === 'string' && id.length > 0);
+      checkoutStore.setAlternateFareSourceCodes(Array.from(new Set(altFscs)));
     } catch (e) {
       console.error('[Itinerary] initFromStores failed:', e);
       setReady(true);

@@ -18,6 +18,7 @@ import {
   type MatchedPreferenceFact,
 } from '@/lib/services/dna-search-service';
 import { deriveTravelerTraits, serializeTraitsForGpt } from '@/lib/services/dna-traits-service';
+import { hourFromIso } from '@/lib/ai-scoring/FlightScoringUtils';
 import type { UnifiedFlight } from '@/lib/types';
 
 const openaiClient = process.env.OPENAI_API_KEY
@@ -30,17 +31,23 @@ const anthropicClient = process.env.ANTHROPIC_API_KEY
 
 // ── Compact card serializer for DNA evaluation ──────────────────────────────
 
+// Format the LOCAL airport wall-clock time (e.g. "09:05 AM") directly from the
+// provider's ISO string, independent of the server timezone.
+function localTimeLabel(iso?: string): string {
+  const m = /T(\d{2}):(\d{2})/.exec(iso || '');
+  if (!m) return 'N/A';
+  const h = parseInt(m[1], 10);
+  if (!(h >= 0 && h <= 23)) return 'N/A';
+  const h12 = h % 12 || 12;
+  const ampm = h < 12 ? 'AM' : 'PM';
+  return `${String(h12).padStart(2, '0')}:${m[2]} ${ampm}`;
+}
+
 function serializeCardForDna(flight: UnifiedFlight, index: number): string {
   const first = flight.segments[0];
   const last = flight.segments[flight.segments.length - 1];
-  const dep = first ? new Date(first.departure.time) : null;
-  const arr = last ? new Date(last.arrival.time) : null;
-  const depStr = dep && !isNaN(dep.getTime())
-    ? dep.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-    : 'N/A';
-  const arrStr = arr && !isNaN(arr.getTime())
-    ? arr.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true })
-    : 'N/A';
+  const depStr = localTimeLabel(first?.departure.time);
+  const arrStr = localTimeLabel(last?.arrival.time);
   const dur = `${Math.floor(flight.totalDuration / 60)}h${flight.totalDuration % 60}m`;
   const stops = flight.stops === 0 ? 'nonstop' : `${flight.stops} stop(s)`;
   const bags = flight.baggage.checked > 0
@@ -133,8 +140,8 @@ export async function POST(req: NextRequest) {
     matchedFacts: MatchedPreferenceFact[];
   }> = topCards.map(f => {
     const first = f.segments[0];
-    const dep = first ? new Date(first.departure.time) : null;
-    const depHour = dep && !isNaN(dep.getTime()) ? dep.getHours() : 8;
+    // Timezone-safe local-hour extraction (provider gives local airport time).
+    const depHour = first ? hourFromIso(first.departure.time) : 8;
 
     const matched = matchCardAgainstPreferences({
       id: f.id,
