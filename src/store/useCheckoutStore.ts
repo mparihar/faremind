@@ -111,16 +111,26 @@ export interface BookingConfirmation {
 
 // ─── Store interface ──────────────────────────────────────────────────────────
 
+export interface AlternateFare {
+  fareSourceCode: string;
+  cabin: string;
+  refundable: boolean;
+  changeable: boolean;
+  totalPrice: number;
+  checkedBags: number;
+}
+
 interface CheckoutStore {
   // Source data (copied from fare/booking stores on init)
   selectedFare: SelectedFare | null;
   fareOption: FareOption | null;
   sourceFlight: UnifiedFlight | null;
   sourceRoundTrip: RoundTripOption | null;
-  // Mystifly: FareSourceCodes of the other fare options for the same itinerary.
-  // Sent to the confirm endpoint so it can recover from ERBUK082 by re-revalidating
-  // an alternate FSC (price-guarded server-side).
-  alternateFareSourceCodes: string[];
+  // Mystifly ERBUK082 recovery: the other fare options for this itinerary WITH
+  // their characteristics, so the confirm endpoint can pick a same-PRODUCT
+  // alternate (matching cabin / refundable / changeable / baggage / price) —
+  // never a merely same-price but different-product fare.
+  alternateFares: AlternateFare[];
   travelerCount: number;
   currency: string;
 
@@ -168,7 +178,7 @@ interface CheckoutStore {
   // ── Actions ──────────────────────────────────────────────────────────────
 
   setSessionId: (id: string) => void;
-  setAlternateFareSourceCodes: (fscs: string[]) => void;
+  setAlternateFares: (fares: AlternateFare[]) => void;
 
   initFromStores: (
     selectedFare: SelectedFare | null,
@@ -230,7 +240,7 @@ export function makePassenger(index: number, type: 'adult' | 'child' | 'infant' 
 // ─── Store ────────────────────────────────────────────────────────────────────
 
 const INITIAL: Omit<CheckoutStore,
-  'initFromStores' | 'setSessionId' | 'setAlternateFareSourceCodes' | 'setPassengers' | 'updatePassenger' |
+  'initFromStores' | 'setSessionId' | 'setAlternateFares' | 'setPassengers' | 'updatePassenger' |
   'setSeatSelections' | 'updateSeatSelection' | 'updateWheelchairSelection' |
   'setMealSelections' | 'updateMealSelection' |
   'setExtraBags' | 'toggleProtection' | 'toggleInsurance' | 'setComputedFees' |
@@ -244,7 +254,7 @@ const INITIAL: Omit<CheckoutStore,
   fareOption: null,
   sourceFlight: null,
   sourceRoundTrip: null,
-  alternateFareSourceCodes: [],
+  alternateFares: [],
   travelerCount: 1,
   currency: 'USD',
   passengers: [makePassenger(0)],
@@ -270,7 +280,7 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
 
   setSessionId: (sessionId) => set({ sessionId }),
 
-  setAlternateFareSourceCodes: (alternateFareSourceCodes) => set({ alternateFareSourceCodes }),
+  setAlternateFares: (alternateFares) => set({ alternateFares }),
 
   initFromStores: (selectedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown) => {
     // ── Resolve passenger breakdown ───────────────────────────────────────

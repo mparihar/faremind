@@ -356,16 +356,22 @@ export default function CheckoutItineraryPage() {
     try {
       checkoutStore.initFromStores(resolvedFare, fareOption, sourceFlight, sourceRoundTrip, travelerCount, passengerBreakdown);
 
-      // Mystifly ERBUK082 recovery: capture every fare-option FSC for this
-      // itinerary so the confirm endpoint can re-revalidate an alternate if the
-      // selected fare fails at book time. Selection is price-guarded server-side,
-      // so passing all options (incl. other cabins) is safe — mismatched-price
-      // alternates are rejected, not silently substituted.
-      const altFscs = (resolvedPayload?.fareGroups ?? [])
+      // Mystifly ERBUK082 recovery: capture every fare option for this itinerary
+      // WITH its characteristics, so the confirm endpoint can pick a same-PRODUCT
+      // alternate (matching cabin / refundable / changeable / baggage / price) if
+      // the selected fare fails revalidation — never a different-product fare.
+      const altFares = (resolvedPayload?.fareGroups ?? [])
         .flatMap(g => g.fares)
-        .map(f => f.offerId)
-        .filter((id): id is string => typeof id === 'string' && id.length > 0);
-      checkoutStore.setAlternateFareSourceCodes(Array.from(new Set(altFscs)));
+        .filter(f => typeof f.offerId === 'string' && f.offerId.length > 0)
+        .map(f => ({
+          fareSourceCode: f.offerId,
+          cabin: f.cabin,
+          refundable: f.policy?.refundable ?? false,
+          changeable: f.policy?.changeable ?? false,
+          totalPrice: f.totalPrice,
+          checkedBags: f.baggage?.checked ?? 0,
+        }));
+      checkoutStore.setAlternateFares(altFares);
     } catch (e) {
       console.error('[Itinerary] initFromStores failed:', e);
       setReady(true);

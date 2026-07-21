@@ -238,10 +238,10 @@ export async function POST(req: NextRequest) {
       routeLabel,
       userId,
       currency = 'USD',
-      // Mystifly ERBUK082 recovery: alternate FareSourceCodes for the same
-      // itinerary (other fare options), tried when the selected fare fails
-      // revalidation. Optional — absent for Duffel and legacy clients.
-      alternateFareSourceCodes = [],
+      // Mystifly ERBUK082 recovery: other fare options (with characteristics) for
+      // the same itinerary, tried when the selected fare fails revalidation.
+      // Optional — absent for Duffel and legacy clients.
+      alternateFares = [],
       // Agent booking fields (optional)
       agentUserId,
       agentName,
@@ -1001,11 +1001,30 @@ export async function POST(req: NextRequest) {
         const PRICE_GUARD_TOLERANCE = 0.02; // 2%
         const storedProviderFare = sourceFlight?.providerTotalFare ?? sourceRoundTrip?.providerTotalFare ?? null;
 
-        // Candidate FSCs: selected fare first, then client-supplied alternates for
-        // the same itinerary (deduped, primary excluded from the retry set).
-        const suppliedAlternates: string[] = Array.isArray(alternateFareSourceCodes)
-          ? alternateFareSourceCodes.filter((c: any) => typeof c === 'string' && c && c !== searchFareSourceCode)
-          : [];
+        // Same-PRODUCT alternates only. A same-price fare is NOT an acceptable
+        // substitute unless it also matches the selected fare's characteristics:
+        // cabin, refundability, changeability and checked-bag count. (Routing,
+        // stops, duration and airline are inherently identical — these alternates
+        // are other fare options for the *same* flights.) A revalidated price
+        // guard is still applied below as the final check.
+        const selCabin = String((selectedFare as any)?.cabin || (sourceFlight as any)?.cabinClass || '').toLowerCase();
+        const selRefundable = (selectedFare as any)?.policy?.refundable ?? (sourceFlight as any)?.fareRules?.refundable ?? null;
+        const selChangeable = (selectedFare as any)?.policy?.changeable ?? (sourceFlight as any)?.fareRules?.changeable ?? null;
+        const selCheckedBags = Number((selectedFare as any)?.baggage?.checked ?? (sourceFlight as any)?.baggage?.checked ?? 0);
+
+        const suppliedAlternates: string[] = (Array.isArray(alternateFares) ? alternateFares : [])
+          .filter((a: any) =>
+            a && typeof a.fareSourceCode === 'string' && a.fareSourceCode && a.fareSourceCode !== searchFareSourceCode
+            && String(a.cabin || '').toLowerCase() === selCabin
+            && (selRefundable === null || a.refundable === selRefundable)
+            && (selChangeable === null || a.changeable === selChangeable)
+            && Number(a.checkedBags ?? 0) >= selCheckedBags
+          )
+          .map((a: any) => a.fareSourceCode as string);
+
+        if (suppliedAlternates.length > 0) {
+          console.log(`[Mystifly] ${suppliedAlternates.length} same-product alternate FSC(s) available for ERBUK082 recovery (cabin=${selCabin}, refundable=${selRefundable}, changeable=${selChangeable}, bags≥${selCheckedBags}).`);
+        }
         const candidateFscs = [searchFareSourceCode, ...Array.from(new Set(suppliedAlternates))];
 
         let revalData: any = null;
