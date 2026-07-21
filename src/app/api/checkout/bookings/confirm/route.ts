@@ -242,6 +242,9 @@ export async function POST(req: NextRequest) {
       // the same itinerary, tried when the selected fare fails revalidation.
       // Optional — absent for Duffel and legacy clients.
       alternateFares = [],
+      // Route-consistency guard input: { origin, destination } from the customer's
+      // current search context. Optional — enforced only when present.
+      expectedRoute,
       // Agent booking fields (optional)
       agentUserId,
       agentName,
@@ -286,6 +289,35 @@ export async function POST(req: NextRequest) {
         { error: 'No offer ID found. Please select a fare and try again.', errorCode: 'MISSING_OFFER_ID' },
         { status: 400 }
       );
+    }
+
+    // ── Route-consistency guard ───────────────────────────────────────────────
+    // Never book/charge a route different from what the customer searched. This
+    // protects against stale checkout state carrying a previous search's flight
+    // into a new booking. Runs BEFORE any Stripe capture or provider booking.
+    // Enforced only when the client supplies expectedRoute (new clients always do).
+    if (expectedRoute?.origin && expectedRoute?.destination) {
+      const normRoute = (s: unknown) => String(s ?? '').trim().toUpperCase();
+      const bookedOrigin = normRoute(
+        sourceRoundTrip?.outboundJourney?.departureAirport
+        ?? sourceFlight?.segments?.[0]?.departure?.airport
+      );
+      const bookedDest = normRoute(
+        sourceRoundTrip?.outboundJourney?.arrivalAirport
+        ?? sourceFlight?.segments?.[sourceFlight.segments.length - 1]?.arrival?.airport
+      );
+      const expOrigin = normRoute(expectedRoute.origin);
+      const expDest = normRoute(expectedRoute.destination);
+      if (bookedOrigin && bookedDest && (bookedOrigin !== expOrigin || bookedDest !== expDest)) {
+        console.error(`[Checkout] ❌ ROUTE MISMATCH — searched ${expOrigin}→${expDest} but itinerary is ${bookedOrigin}→${bookedDest}. Blocking before payment.`);
+        return NextResponse.json(
+          {
+            error: 'Selected flight does not match your search. Please search again and reselect your flight.',
+            errorCode: 'ROUTE_MISMATCH',
+          },
+          { status: 409 }
+        );
+      }
     }
 
     if (!DUFFEL_API_TOKEN) {

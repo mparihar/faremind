@@ -333,6 +333,26 @@ function PaymentFormInner() {
       return;
     }
 
+    // Route-consistency guard (defense-in-depth): never charge/book a route that
+    // differs from the one the customer searched. Protects against stale checkout
+    // state — a previous search's flight surviving into a new booking.
+    const norm = (s?: string) => String(s ?? '').trim().toUpperCase();
+    const bookedRoute = sourceRoundTrip
+      ? { origin: norm(sourceRoundTrip.outboundJourney?.departureAirport), destination: norm(sourceRoundTrip.outboundJourney?.arrivalAirport) }
+      : sourceFlight?.segments?.length
+        ? { origin: norm(sourceFlight.segments[0]?.departure?.airport), destination: norm(sourceFlight.segments[sourceFlight.segments.length - 1]?.arrival?.airport) }
+        : null;
+    let expectedRoute: { origin: string; destination: string } | null = null;
+    try {
+      const ctx = JSON.parse(sessionStorage.getItem('fm_fare_context') || '{}');
+      if (ctx?.origin && ctx?.destination) expectedRoute = { origin: norm(ctx.origin), destination: norm(ctx.destination) };
+    } catch { /* sessionStorage unavailable */ }
+    if (expectedRoute && bookedRoute?.origin && bookedRoute?.destination &&
+        (bookedRoute.origin !== expectedRoute.origin || bookedRoute.destination !== expectedRoute.destination)) {
+      setBookingError(`This flight (${bookedRoute.origin}→${bookedRoute.destination}) doesn't match your search (${expectedRoute.origin}→${expectedRoute.destination}). Please search again and reselect your flight.`);
+      return;
+    }
+
     setProcessing(true);
     setBookingError(null);
     store.setPaymentStatus('processing');
@@ -458,6 +478,8 @@ function PaymentFormInner() {
           // for this itinerary; the server re-revalidates a same-PRODUCT alternate
           // (matching cabin/refundable/changeable/baggage/price) if the selected FSC fails.
           alternateFares: store.alternateFares ?? [],
+          // Route-consistency guard — server re-checks the booked itinerary matches this
+          expectedRoute,
           currency: currency ?? 'USD',
           userId: user?.id ?? null,
           // Agent booking attribution

@@ -9,6 +9,7 @@ import { useSearchStore } from '@/store/useSearchStore';
 import { usePreferencesStore, type SortPreference } from '@/store/usePreferencesStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useFareStore } from '@/store/useFareStore';
+import { useCheckoutStore } from '@/store/useCheckoutStore';
 import FareSelectionModal from '@/components/fare-selection/FareSelectionModal';
 import { AIRPORTS } from '@/lib/mock-data';
 import FlightCard from '@/components/search/FlightCard';
@@ -247,6 +248,25 @@ function SearchContent() {
 
   const originAirport = useMemo(() => AIRPORTS.find((a) => a.code === origin), [origin]);
   const destAirport = useMemo(() => AIRPORTS.find((a) => a.code === destination), [destination]);
+
+  // When a search begins for a DIFFERENT route than the current selection, clear any
+  // prior fare/checkout selection so a previous search's flight can never carry into
+  // a new booking. (Same-route re-searches keep the selection.)
+  useEffect(() => {
+    if (!origin || !destination) return;
+    const norm = (s?: string) => String(s ?? '').trim().toUpperCase();
+    const co = useCheckoutStore.getState();
+    const sel = co.sourceRoundTrip
+      ? { o: norm(co.sourceRoundTrip.outboundJourney?.departureAirport), d: norm(co.sourceRoundTrip.outboundJourney?.arrivalAirport) }
+      : co.sourceFlight?.segments?.length
+        ? { o: norm(co.sourceFlight.segments[0]?.departure?.airport), d: norm(co.sourceFlight.segments[co.sourceFlight.segments.length - 1]?.arrival?.airport) }
+        : null;
+    if (sel && (sel.o !== norm(origin) || sel.d !== norm(destination))) {
+      co.reset();
+      useFareStore.getState().reset();
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [origin, destination]);
 
   useEffect(() => {
     // Defer preference hydration to avoid "state update on unmounted component" warning.
