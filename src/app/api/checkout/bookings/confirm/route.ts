@@ -1235,7 +1235,13 @@ export async function POST(req: NextRequest) {
         });
         const bookData = await bookRes.json();
 
-        if (!bookRes.ok || !bookData.success || !bookData.uniqueId) {
+        // ERBUK082 / "Booking Unconfirmed – Awaiting carrier response" is a PENDING
+        // state, not a failure. The backend resolved a poll-able reference
+        // (bookData.uniqueId); we persist the booking as pending and reconcile via
+        // TripDetails instead of refunding + failing the UI.
+        const bookPending = bookData?.pending === true && !!bookData?.uniqueId;
+
+        if ((!bookRes.ok || !bookData.success || !bookData.uniqueId) && !bookPending) {
           // BookFlight failed AFTER payment capture — must refund
           const errMsg = bookData.error || 'Booking creation failed';
           console.error(`[Mystifly] ❌ BookFlight failed after payment capture: ${errMsg}`);
@@ -1289,7 +1295,17 @@ export async function POST(req: NextRequest) {
         // HoldAllowed=false → Webfare: payment was debited at BookFlight, skip OrderTicket
         let ticketingStatus: 'ISSUED' | 'TICKETING_PENDING' | 'SKIPPED_WEBFARE' | 'FAILED' = 'FAILED';
 
-        if (holdAllowed) {
+        if (bookPending) {
+          // ERBUK082 — booking accepted but unconfirmed by the carrier. Do NOT
+          // issue a ticket now and do NOT refund; persist as pending and let the
+          // reconciliation worker poll TripDetails/AirTicketOrderStatus until the
+          // carrier confirms (→ ISSUED) or rejects (→ FAILED, manual-review refund).
+          ticketingStatus = 'TICKETING_PENDING';
+          (mystiflyBookingResult as any).erbuk082 = true;
+          (mystiflyBookingResult as any).pendingReason =
+            bookData.error || bookData.mystiflyErrorCode || 'ERBUK082 — Pending Need, awaiting carrier response';
+          console.warn(`[Mystifly] Booking pending (ERBUK082) ref=${mystiflyBookingResult.uniqueId} — queued for reconciliation, OrderTicket skipped.`);
+        } else if (holdAllowed) {
           // Hold booking — must call OrderTicket to issue ticket and debit payment
           try {
             const ticketRes = await fetch(`${BACKEND_URL}/api/mystifly/order-ticket`, {
@@ -2109,6 +2125,48 @@ export async function POST(req: NextRequest) {
       }
     }
 
+    // ── ERBUK082 support-queue tracking ──────────────────────────────────────
+    // Open a support ticket (category ERBUK082) against the pending Mystifly ref
+    // so Admin, Agent and the customer can track it. The reconciliation worker
+    // updates this ticket's status/notes as the booking resolves to ISSUED or
+    // NOT_BOOKED (with the manual-review-refund note).
+    if ((mystiflyBookingResult as any)?.erbuk082) {
+      try {
+        const mfRef = mystiflyBookingResult!.uniqueId;
+        const routeDisplay = `${originAirport || 'N/A'} → ${destinationAirport || 'N/A'}`;
+        const reason = (mystiflyBookingResult as any).pendingReason || 'ERBUK082 — Pending Need, awaiting carrier response';
+        await prisma.supportTicket.create({
+          data: {
+            subject: `Pending Ticketing [ERBUK082]: ${routeDisplay} — ${customerName}`,
+            description:
+              `Mystifly returned ERBUK082 "Pending Need — Awaiting carrier response — Booking Unconfirmed".\n\n` +
+              `The booking was accepted and payment captured; ticket issuance is PENDING with the carrier.\n` +
+              `The system is automatically polling Mystifly (TripDetails / AirTicketOrderStatus) until the ` +
+              `status resolves to ISSUED or NOT_BOOKED.\n\n` +
+              `Mystifly Ref (MFRef/PNR): ${mfRef}\n` +
+              `Booking Ref: ${masterBookingReference}\n` +
+              `Route: ${routeDisplay}\n` +
+              `Provider message: ${reason}`,
+            priority: 'HIGH',
+            status: 'IN_PROGRESS',
+            category: 'ERBUK082',
+            queue: 'TICKETING_PENDING_QUEUE',
+            ticketType: 'TICKETING_PENDING',
+            customerName,
+            customerEmail,
+            customerPhone: primaryPaxForMystifly?.phone || null,
+            bookingRef: masterBookingReference,
+            providerPnr: mfRef,
+            providerBookingRef: mfRef,
+            correlationId: masterBooking.id,
+          },
+        });
+        console.log(`[Mystifly] ERBUK082 support ticket opened for booking ${masterBooking.id} (ref ${mfRef}).`);
+      } catch (ticketErr) {
+        console.error('[Mystifly] Failed to open ERBUK082 support ticket:', ticketErr instanceof Error ? ticketErr.message : ticketErr);
+      }
+    }
+
     // Fetch full booking with all relations for rich email itinerary
     const fullBooking = await prisma.masterBooking.findUnique({
       where: { id: masterBooking.id },
@@ -2207,6 +2265,11 @@ export async function POST(req: NextRequest) {
       bookingId: masterBooking.id,
       masterBookingReference: masterBooking.masterBookingReference,
       status: 'confirmed',
+      // Ticketing may still be resolving (Mystifly ERBUK082 "awaiting carrier",
+      // hold OrderTicket in process, or webfare TripDetails pending). The booking
+      // is valid and paid; the reconciliation worker finalizes ticket issuance.
+      ticketingStatus: masterBooking.ticketingStatus,
+      ticketingPending: masterBooking.ticketingStatus === 'TICKETING_PENDING',
       confirmedAt,
       passengerNames: passengers.map((p: any) => `${p.firstName} ${p.lastName}`.trim()),
       totalCharged: totalAmount,
