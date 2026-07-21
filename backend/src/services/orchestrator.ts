@@ -359,6 +359,31 @@ async function searchMystifly(params: {
     const v2Public = flights.filter(f => f.fareSource === 'public').length;
     const v2Private = flights.filter(f => f.fareSource === 'private').length;
     console.log(`[Mystifly v2.2] Raw itineraries: ${itineraries.length} → Denormalized: ${denormalized.length} → Normalized: ${flights.length} (${v2Refundable} refundable, ${v2Public} public, ${v2Private} private)`);
+
+    // ── Fare-type discovery diagnostic ───────────────────────────────────────
+    // Surfaces (a) the distinct raw Mystifly FareType values seen for this route
+    // (to reveal whether values like "WebFare" appear), and (b) which webfare /
+    // supplier indicator fields actually exist on a raw offer. Read-only, no PII.
+    try {
+      const fareTypeCounts: Record<string, number> = {};
+      for (const d of denormalized as any[]) {
+        const ft = String(d?.FareType ?? '(none)').trim() || '(empty)';
+        fareTypeCounts[ft] = (fareTypeCounts[ft] ?? 0) + 1;
+      }
+      console.log(`[Mystifly][FareTypeDiag] raw FareType values: ${JSON.stringify(fareTypeCounts)}`);
+
+      const probeKeys = ['IsWebFare', 'WebFare', 'WebFareType', 'FareType', 'ContentType', 'SupplierType', 'Supplier', 'IsLcc', 'FareSource'];
+      const rawSample = Array.isArray(itineraries) ? itineraries[0] : null;
+      if (rawSample && typeof rawSample === 'object') {
+        const pricing = rawSample.AirItineraryPricingInfo ?? rawSample.airItineraryPricingInfo ?? {};
+        const present = probeKeys.filter(k => k in rawSample || k in pricing);
+        console.log(`[Mystifly][FareTypeDiag] webfare/supplier keys present on offer: ${present.length ? present.join(', ') : 'NONE'}`);
+        console.log(`[Mystifly][FareTypeDiag] offer top-level keys: ${Object.keys(rawSample).join(', ')}`);
+        console.log(`[Mystifly][FareTypeDiag] pricing-info keys: ${Object.keys(pricing).join(', ')}`);
+      }
+    } catch (diagErr) {
+      console.warn('[Mystifly][FareTypeDiag] failed:', (diagErr as Error).message);
+    }
     if (v2Refundable > 0) {
       const refundableFlights = flights.filter(f => f.fareRules.refundable);
       for (const rf of refundableFlights) {
