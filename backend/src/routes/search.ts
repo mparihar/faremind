@@ -68,7 +68,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       : searchKey(origin, destination, date, returnDate, adults, children, infants);
     // Allow callers to force fresh provider data (e.g. re-searching after a fare
     // expired) so a stale cached result is never served. Still repopulates the cache.
-    const q = request.query as Record<string, unknown>;
     const forceFresh = q.refresh === '1' || q.refresh === 'true' || q.nocache === '1' || q.nocache === 'true';
     const cached = forceFresh ? null : await cacheGet<object>(cacheKey);
     if (cached) return cached;
