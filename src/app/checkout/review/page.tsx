@@ -19,7 +19,6 @@ import { cn, formatTime, formatDuration } from '@/lib/utils';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
 import { isPremiumService } from '@/lib/providers/providerAncillaryNormalizer';
 import type { NormalizedAncillary } from '@/lib/providers/providerAncillaryNormalizer';
-import { apiFetch } from '@/lib/api-client';
 import { useFeeLoader } from '@/hooks/useFeeLoader';
 import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
 import { isBundleEnabled } from '@/lib/bundle-flags';
@@ -245,28 +244,12 @@ export default function ReviewPage() {
 
   if (!selectedFare || !sessionId) return null;
 
-  useEffect(() => {
-    // Recalculate pricing server-side (non-blocking)
-    apiFetch('/api/checkout/pricing/recalculate', {
-      method: 'POST',
-      body: JSON.stringify({
-        passengers: passengers.length,
-        extraBags,
-        priceProtection,
-        travelInsurance,
-        fareId: selectedFare?.fareId,
-      }),
-    })
-      .then((data: unknown) => {
-        if (data && typeof data === 'object' && 'pricing' in data) {
-          store.setPricing((data as { pricing: Parameters<typeof store.setPricing>[0] }).pricing);
-        }
-      })
-      .catch(() => {
-        // Use local pricing if API unavailable
-      });
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  // NOTE: server-side pricing recalculation was removed here. The previous call to
+  // /api/checkout/pricing/recalculate sent a mismatched payload (a passenger COUNT
+  // + fareId instead of the selectedFare object + passengers array) and read a
+  // non-existent `data.pricing` field, so it always 400'd and its result was never
+  // applied. Pricing shown here comes from the store (local), and the authoritative
+  // total is validated server-side in the confirm route (validateCheckoutPricing).
 
   // ── Build display segments (journey-level, for flight display) ───────────────
   const displaySegs = (() => {
