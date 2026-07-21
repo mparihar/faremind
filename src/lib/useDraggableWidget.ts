@@ -67,34 +67,44 @@ export function useDraggableWidget(storageKey: string) {
   }, [storageKey, x, y]);
 
   // Attach to the drag handle's onPointerDown. Starts a drag only after a small
-  // movement threshold so ordinary clicks still open the widget.
+  // movement threshold so ordinary clicks still open the widget. The moment a
+  // real drag begins we mark `justDragged` — set BEFORE any click can fire — so
+  // the click that ends a drag never opens the panel; a drag only repositions.
   const startDrag = (e: React.PointerEvent) => {
     if (!isDesktop) return;
     const startX = e.clientX;
     const startY = e.clientY;
+    let dragging = false;
 
     const onMove = (ev: PointerEvent) => {
-      if (Math.abs(ev.clientX - startX) > 4 || Math.abs(ev.clientY - startY) > 4) {
+      if (!dragging && (Math.abs(ev.clientX - startX) > 4 || Math.abs(ev.clientY - startY) > 4)) {
+        dragging = true;
+        justDraggedRef.current = true; // suppress the click that will follow pointer-up
         dragControls.start(ev);
-        cleanup();
+      }
+    };
+    const onUp = () => {
+      cleanup();
+      if (dragging) {
+        // Keep the guard up briefly so the trailing click is ignored, then
+        // release it so the next genuine click opens the panel (BAU).
+        setTimeout(() => { justDraggedRef.current = false; }, 120);
       }
     };
     const cleanup = () => {
       window.removeEventListener('pointermove', onMove);
-      window.removeEventListener('pointerup', cleanup);
-      window.removeEventListener('pointercancel', cleanup);
+      window.removeEventListener('pointerup', onUp);
+      window.removeEventListener('pointercancel', onUp);
     };
 
     window.addEventListener('pointermove', onMove);
-    window.addEventListener('pointerup', cleanup);
-    window.addEventListener('pointercancel', cleanup);
+    window.addEventListener('pointerup', onUp);
+    window.addEventListener('pointercancel', onUp);
   };
 
+  // Persist the final position after a drag. (Click suppression is handled in
+  // startDrag, not here, because onDragEnd can fire after the browser's click.)
   const onDragEnd = () => {
-    justDraggedRef.current = true;
-    // Clear shortly after so the click fired at the end of a drag is ignored,
-    // but subsequent genuine clicks still work.
-    setTimeout(() => { justDraggedRef.current = false; }, 260);
     try {
       localStorage.setItem(storageKey, JSON.stringify({ x: x.get(), y: y.get() }));
     } catch { /* ignore blocked storage */ }
