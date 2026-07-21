@@ -30,12 +30,19 @@ export async function apiFetch<T>(
   options?: RequestInit
 ): Promise<T> {
   const url = apiUrl(path);
+  // Only advertise a JSON body when we actually send one. Setting
+  // Content-Type: application/json on a body-less request makes Fastify
+  // reject it with FST_ERR_CTP_EMPTY_JSON_BODY (400) — e.g. the offer-session
+  // /expire and /booked pings.
+  const headers: Record<string, string> = { ...(options?.headers as Record<string, string> | undefined) };
+  const hasBody = options?.body != null;
+  const hasContentType = Object.keys(headers).some((h) => h.toLowerCase() === 'content-type');
+  if (hasBody && !hasContentType) {
+    headers['Content-Type'] = 'application/json';
+  }
   const response = await fetch(url, {
     ...options,
-    headers: {
-      'Content-Type': 'application/json',
-      ...options?.headers,
-    },
+    headers,
   });
 
   if (response.status === 401) {
