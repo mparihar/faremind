@@ -377,6 +377,19 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
       label: TAX_CODE_LABELS[t.TaxCode] || t.TaxCode,
     }));
 
+  // ── Fare source (Public/Private) — from Mystifly FareType field ──
+  const rawFareType = (
+    itinerary.FareType
+    || itinerary.fareType
+    || pricingInfo.FareType
+    || pricingInfo.fareType
+    || ''
+  ).toString().toLowerCase();
+  const fareSource: 'public' | 'private' | undefined =
+    rawFareType === 'private' ? 'private'
+    : rawFareType === 'public' ? 'public'
+    : undefined;
+
   return {
     id: generateId(),
     provider: 'mystifly' as Provider,
@@ -405,6 +418,7 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
     stops,
     valueScore: calculateValueScore(totalPrice, totalDuration, stops, isRefundable),
     fareClass: firstSegRaw?.BookingClass || firstSegRaw?.bookingClass || undefined,
+    fareSource,
   };
 }
 

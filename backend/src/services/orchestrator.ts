@@ -321,6 +321,8 @@ async function searchMystifly(params: {
               penaltyCurrency,
             },
             Provider: itin.Provider || 'MYSTIFLY',
+            // Pass through fare source type (Public/Private) for downstream tagging
+            FareType: itin.FareType || fare?.FareType || '',
           };
         } catch (e) {
           console.warn(`[Mystifly] Denorm failed for itin:`, (e as Error).message);
@@ -354,7 +356,9 @@ async function searchMystifly(params: {
 
     // ── Pipeline diagnostic ──
     const v2Refundable = flights.filter(f => f.fareRules.refundable).length;
-    console.log(`[Mystifly v2.2] Raw itineraries: ${itineraries.length} → Denormalized: ${denormalized.length} → Normalized: ${flights.length} (${v2Refundable} refundable)`);
+    const v2Public = flights.filter(f => f.fareSource === 'public').length;
+    const v2Private = flights.filter(f => f.fareSource === 'private').length;
+    console.log(`[Mystifly v2.2] Raw itineraries: ${itineraries.length} → Denormalized: ${denormalized.length} → Normalized: ${flights.length} (${v2Refundable} refundable, ${v2Public} public, ${v2Private} private)`);
     if (v2Refundable > 0) {
       const refundableFlights = flights.filter(f => f.fareRules.refundable);
       for (const rf of refundableFlights) {
@@ -514,6 +518,8 @@ async function searchMystiflyLowestFare(params: {
             IsRefundable: refundAllowed,
             _penalties: { refundAllowed, changeAllowed, changePenaltyAmount, refundPenaltyAmount, penaltyCurrency },
             Provider: itin.Provider || 'MYSTIFLY',
+            // Pass through fare source type (Public/Private) for downstream tagging
+            FareType: itin.FareType || fare?.FareType || '',
           };
         } catch (e) {
           console.warn(`[Mystifly v1] Denorm failed:`, (e as Error).message);

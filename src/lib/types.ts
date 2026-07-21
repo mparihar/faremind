@@ -118,6 +118,7 @@ export interface UnifiedFlight {
   valueScore: number; // 0-100, best-value score from scoring engine
   fareClass?: string;
   fareType?: 'lowest' | 'branded';
+  fareSource?: 'public' | 'private'; // Mystifly pricing source (Public/Private fare)
   seatsRemaining?: number;
   tags?: FlightTag[];
   breakdown?: ScoreBreakdown;
