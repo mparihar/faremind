@@ -678,6 +678,36 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // Discovery diagnostic: reveal the real SeatMap response shape — where the
+      // seat array lives and its field names (SeatSelectionKey, price, availability)
+      // — so per-seat pricing/selection can be built against the real payload.
+      try {
+        const d = result?.Data ?? result;
+        console.log(`[Mystifly][SeatMapDiag] top-level keys: ${Object.keys(result || {}).join(', ')}`);
+        console.log(`[Mystifly][SeatMapDiag] Data keys: ${Object.keys(d || {}).join(', ')}`);
+        const findSeatArray = (obj: any, depth = 0): { path: string; keys: string[] } | null => {
+          if (!obj || typeof obj !== 'object' || depth > 6) return null;
+          for (const k of Object.keys(obj)) {
+            const v = obj[k];
+            if (Array.isArray(v) && v.length && v[0] && typeof v[0] === 'object') {
+              const keys = Object.keys(v[0]);
+              if (keys.some(kk => /seat|price|amount|selectionkey|available|number|column|row/i.test(kk))) {
+                return { path: k, keys };
+              }
+            }
+            if (v && typeof v === 'object') {
+              const r = findSeatArray(v, depth + 1);
+              if (r) return { path: `${k}.${r.path}`, keys: r.keys };
+            }
+          }
+          return null;
+        };
+        const seatShape = findSeatArray(d);
+        console.log(seatShape
+          ? `[Mystifly][SeatMapDiag] seat array at "${seatShape.path}" item keys: ${seatShape.keys.join(', ')}`
+          : '[Mystifly][SeatMapDiag] no seat-like array found');
+      } catch { /* diagnostic only */ }
+
       return { success: true, ...result };
     } catch (error: any) {
       console.error('[Mystifly] Seat map error:', error.message);
