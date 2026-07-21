@@ -238,6 +238,10 @@ export async function POST(req: NextRequest) {
       routeLabel,
       userId,
       currency = 'USD',
+      // Mystifly ERBUK082 recovery: alternate FareSourceCodes for the same
+      // itinerary (other fare options), tried when the selected fare fails
+      // revalidation. Optional — absent for Duffel and legacy clients.
+      alternateFareSourceCodes = [],
       // Agent booking fields (optional)
       agentUserId,
       agentName,
@@ -982,26 +986,94 @@ export async function POST(req: NextRequest) {
         let revalidatedFareSourceCode: string | null = null;
         let mystiflyPaymentCaptured = false;
 
-        // ── Step 1/6: Revalidate fare ────────────────────────────────────
-        const revalRes = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ fareSourceCode: searchFareSourceCode }),
-        });
-        const revalData = await revalRes.json();
+        // ── Step 1/6: Revalidate fare (with ERBUK082 alternate-FSC fallback) ──
+        // Mystifly guidance for ERBUK082 ("Pending Need / Booking Unconfirmed —
+        // itinerary changed / seats unavailable", common in the Demo): select an
+        // alternate FareSourceCode and re-invoke Revalidate until IsValid=true,
+        // then use that FSC downstream.
+        //
+        // PRICE INTEGRITY: an alternate is only auto-accepted when its revalidated
+        // provider fare stays within tolerance of the originally selected fare.
+        // We never silently swap to a differently-priced fare (a mismatched
+        // alternate surfaces a reprice-required error instead). The customer's
+        // Stripe authorization amount is fixed regardless, so this only guards
+        // FareMind margin / product parity.
+        const PRICE_GUARD_TOLERANCE = 0.02; // 2%
+        const storedProviderFare = sourceFlight?.providerTotalFare ?? sourceRoundTrip?.providerTotalFare ?? null;
 
-        if (!revalRes.ok || !revalData.success) {
-          await cancelStripeAuth('Mystifly revalidation failed');
-          const customerMessage = 'This fare is no longer available. Please search again for updated pricing. Your card was not charged.';
+        // Candidate FSCs: selected fare first, then client-supplied alternates for
+        // the same itinerary (deduped, primary excluded from the retry set).
+        const suppliedAlternates: string[] = Array.isArray(alternateFareSourceCodes)
+          ? alternateFareSourceCodes.filter((c: any) => typeof c === 'string' && c && c !== searchFareSourceCode)
+          : [];
+        const candidateFscs = [searchFareSourceCode, ...Array.from(new Set(suppliedAlternates))];
+
+        let revalData: any = null;
+        let usedFsc: string | null = null;
+        let erbuk082Seen = false;
+        let lastRevalError: string | null = null;
+
+        for (let i = 0; i < candidateFscs.length; i++) {
+          const candidate = candidateFscs[i];
+          const isPrimary = i === 0;
+
+          const res = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ fareSourceCode: candidate }),
+          });
+          const data = await res.json().catch(() => ({}));
+
+          const httpOk = res.ok && data?.success;
+          const valid = data?.isValid !== false; // undefined = provider didn't send the flag → treat as valid
+          const rawErr = `${data?.error ?? ''} ${data?.mystiflyErrorCode ?? ''} ${data?.errorCode ?? ''}`;
+          if (/ERBUK082/i.test(rawErr) || /booking unconfirmed|awaiting carrier|pending need/i.test(rawErr)) {
+            erbuk082Seen = true;
+          }
+
+          if (!httpOk || !valid) {
+            lastRevalError = data?.error || 'Revalidation failed';
+            if (!isPrimary) console.warn(`[Mystifly] Alternate FSC revalidation failed (${i}/${candidateFscs.length - 1}): ${lastRevalError}`);
+            continue;
+          }
+
+          // Price guard applies to ALTERNATES only (the primary is the fare the
+          // customer explicitly selected and paid for).
+          if (!isPrimary && storedProviderFare != null && Number(storedProviderFare) > 0 && data?.totalFare != null) {
+            const drift = Math.abs(Number(data.totalFare) - Number(storedProviderFare)) / Number(storedProviderFare);
+            if (drift > PRICE_GUARD_TOLERANCE) {
+              lastRevalError = `Alternate fare price differs (${(drift * 100).toFixed(1)}%) from the selected fare`;
+              console.warn(`[Mystifly] Skipping alternate FSC — ${lastRevalError}`);
+              continue;
+            }
+          }
+
+          revalData = data;
+          usedFsc = candidate;
+          if (!isPrimary) console.log(`[Mystifly] Recovered from failed primary FSC via alternate #${i} (ERBUK082 fallback).`);
+          break;
+        }
+
+        // No candidate produced a valid revalidation → block (card not charged yet).
+        if (!revalData) {
+          await cancelStripeAuth('Mystifly revalidation failed (no valid FSC)');
+          const customerMessage = suppliedAlternates.length > 0
+            ? 'This fare is no longer available at the selected price. Please search again for updated pricing. Your card was not charged.'
+            : 'This fare is no longer available. Please search again for updated pricing. Your card was not charged.';
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-            currency, errorCode: 'MYSTIFLY_REVALIDATION_FAILED',
-            errorMessage: revalData.error || 'Revalidation failed',
+            currency,
+            errorCode: erbuk082Seen ? 'MYSTIFLY_ERBUK082_UNRESOLVED' : 'MYSTIFLY_REVALIDATION_FAILED',
+            errorMessage: lastRevalError || 'Revalidation failed',
             customerMessage, failureStage: 'MYSTIFLY_REVALIDATION',
           });
           return NextResponse.json(
-            { error: revalData.error || 'Fare revalidation failed', errorCode: 'REVALIDATION_FAILED', customerMessage },
+            {
+              error: lastRevalError || 'Fare revalidation failed',
+              errorCode: erbuk082Seen ? 'FARE_UNAVAILABLE_REPRICE_REQUIRED' : 'REVALIDATION_FAILED',
+              customerMessage,
+            },
             { status: 422 }
           );
         }
@@ -1010,25 +1082,8 @@ export async function POST(req: NextRequest) {
         const isValid = revalData.isValid;
         const holdAllowed = revalData.holdAllowed === true;
 
-        // Block if IsValid is explicitly false
-        if (isValid === false) {
-          await cancelStripeAuth('Mystifly revalidation IsValid=false');
-          const customerMessage = 'This fare is no longer valid. Please select an alternate flight. Your card was not charged.';
-          await logBookingFailure({
-            passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
-            paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-            currency, errorCode: 'REVALIDATION_INVALID',
-            errorMessage: 'Revalidation returned IsValid=false',
-            customerMessage, failureStage: 'MYSTIFLY_REVALIDATION',
-          });
-          return NextResponse.json(
-            { error: 'Fare is no longer valid. Please select an alternate flight.', errorCode: 'REVALIDATION_INVALID', customerMessage },
-            { status: 422 }
-          );
-        }
-
         // ── Point 5: Require revalidated FSC — NO fallback to search FSC ──
-        revalidatedFareSourceCode = revalData.fareSourceCode || revalData.revalidatedFareSourceCode || null;
+        revalidatedFareSourceCode = revalData.fareSourceCode || revalData.revalidatedFareSourceCode || usedFsc || null;
 
         // ── Point 10: Block booking when revalidation does not return a valid FSC ──
         if (!revalidatedFareSourceCode) {
@@ -1180,7 +1235,13 @@ export async function POST(req: NextRequest) {
         });
         const bookData = await bookRes.json();
 
-        if (!bookRes.ok || !bookData.success || !bookData.uniqueId) {
+        // ERBUK082 / "Booking Unconfirmed – Awaiting carrier response" is a PENDING
+        // state, not a failure. The backend resolved a poll-able reference
+        // (bookData.uniqueId); we persist the booking as pending and reconcile via
+        // TripDetails instead of refunding + failing the UI.
+        const bookPending = bookData?.pending === true && !!bookData?.uniqueId;
+
+        if ((!bookRes.ok || !bookData.success || !bookData.uniqueId) && !bookPending) {
           // BookFlight failed AFTER payment capture — must refund
           const errMsg = bookData.error || 'Booking creation failed';
           console.error(`[Mystifly] ❌ BookFlight failed after payment capture: ${errMsg}`);
@@ -1234,7 +1295,17 @@ export async function POST(req: NextRequest) {
         // HoldAllowed=false → Webfare: payment was debited at BookFlight, skip OrderTicket
         let ticketingStatus: 'ISSUED' | 'TICKETING_PENDING' | 'SKIPPED_WEBFARE' | 'FAILED' = 'FAILED';
 
-        if (holdAllowed) {
+        if (bookPending) {
+          // ERBUK082 — booking accepted but unconfirmed by the carrier. Do NOT
+          // issue a ticket now and do NOT refund; persist as pending and let the
+          // reconciliation worker poll TripDetails/AirTicketOrderStatus until the
+          // carrier confirms (→ ISSUED) or rejects (→ FAILED, manual-review refund).
+          ticketingStatus = 'TICKETING_PENDING';
+          (mystiflyBookingResult as any).erbuk082 = true;
+          (mystiflyBookingResult as any).pendingReason =
+            bookData.error || bookData.mystiflyErrorCode || 'ERBUK082 — Pending Need, awaiting carrier response';
+          console.warn(`[Mystifly] Booking pending (ERBUK082) ref=${mystiflyBookingResult.uniqueId} — queued for reconciliation, OrderTicket skipped.`);
+        } else if (holdAllowed) {
           // Hold booking — must call OrderTicket to issue ticket and debit payment
           try {
             const ticketRes = await fetch(`${BACKEND_URL}/api/mystifly/order-ticket`, {
@@ -1269,23 +1340,10 @@ export async function POST(req: NextRequest) {
           ticketingStatus = 'SKIPPED_WEBFARE';
         }
 
-        // Queue for reconciliation if ticketing didn't complete immediately
-        if (ticketingStatus === 'TICKETING_PENDING') {
-          try {
-            const { queueForReconciliation } = await import('@/../../backend/src/workers/ticketing-reconciliation');
-            // Dynamic import to avoid circular dependencies at module load
-            // This is fire-and-forget — doesn't block checkout
-            queueForReconciliation({
-              bookingId: '', // Will be set after MasterBooking is created below
-              providerUniqueId: mystiflyBookingResult.uniqueId,
-              fareSourceCode: bookingFareSourceCode,
-            }).catch((err: any) => {
-              console.error(`[Mystifly] Failed to queue reconciliation: ${err.message}`);
-            });
-          } catch (importErr: any) {
-            console.error(`[Mystifly] Failed to import reconciliation worker: ${importErr.message}`);
-          }
-        }
+        // Reconciliation for TICKETING_PENDING is queued AFTER the MasterBooking
+        // row exists (see post-transaction block) so it carries the real bookingId.
+        // (Previously queued here with an empty bookingId, which could never link
+        //  back to the booking.)
 
         // ── Step 6/6: TripDetails (confirm booking + extract ticket numbers) ──
         // Called at the end of the flow per Mystifly guidelines to confirm the
@@ -1317,6 +1375,14 @@ export async function POST(req: NextRequest) {
         } catch (tripErr: any) {
           console.warn(`[Mystifly] ⚠️ TripDetails fetch failed (non-blocking): ${tripErr.message}`);
         }
+
+        // Carry the final ticketing outcome out of this block so it can be
+        // persisted on the MasterBooking and drive post-booking reconciliation.
+        // (Previously computed but never saved — Mystifly bookings persisted as
+        //  NOT_STARTED regardless of the real outcome.)
+        (mystiflyBookingResult as any).ticketingStatus = ticketingStatus;
+        (mystiflyBookingResult as any).ticketNumbers = (mystiflyBookingResult as any).ticketNumbers ?? [];
+        (mystiflyBookingResult as any).reconcileFsc = bookingFareSourceCode;
 
       } catch (mystiflyErr: any) {
         console.error('[Mystifly] ❌ Order creation failed:', mystiflyErr.message);
@@ -1448,6 +1514,17 @@ export async function POST(req: NextRequest) {
     }
 
     // ── Full transaction ─────────────────────────────────────────────────────
+    // Map the Mystifly ticketing outcome to the MasterBooking enum so admin,
+    // agent, and customer surfaces show the true status. Webfare (SKIPPED_WEBFARE)
+    // is purchased at BookFlight → ISSUED. Duffel stays NOT_STARTED here and is
+    // set to ISSUED after its order is created (see below).
+    const mystiflyTicketingOutcome = (mystiflyBookingResult as any)?.ticketingStatus as string | undefined;
+    const initialTicketingStatus: 'NOT_STARTED' | 'TICKETING_PENDING' | 'ISSUED' | 'FAILED' =
+      mystiflyTicketingOutcome === 'ISSUED' || mystiflyTicketingOutcome === 'SKIPPED_WEBFARE' ? 'ISSUED'
+      : mystiflyTicketingOutcome === 'TICKETING_PENDING' ? 'TICKETING_PENDING'
+      : mystiflyTicketingOutcome === 'FAILED' ? 'FAILED'
+      : 'NOT_STARTED';
+
     const txResult = await prisma.$transaction(async (tx) => {
       // 1. MasterBooking
       const mb = await tx.masterBooking.create({
@@ -1468,7 +1545,7 @@ export async function POST(req: NextRequest) {
             : null,
           bookingStatus: 'CONFIRMED',
           paymentStatus: 'SUCCEEDED',
-          ticketingStatus: 'NOT_STARTED',
+          ticketingStatus: initialTicketingStatus,
           totalAmount,
           currency,
 
@@ -1711,17 +1788,30 @@ export async function POST(req: NextRequest) {
 
       // 8. Tickets (one per passenger per journey)
       const journeys = [outJourney, ...(retJourney ? [retJourney] : [])];
+      // When Mystifly returned an ISSUED outcome, reflect it on the ticket rows.
+      // Ticket numbers are only assigned when their count matches the number of
+      // ticket rows exactly (unambiguous 1:1 mapping); otherwise status only.
+      const mfTicketNumbers: string[] = ((mystiflyBookingResult as any)?.ticketNumbers ?? []) as string[];
+      const ticketRowCount = dbPaxIds.length * journeys.length;
+      const assignTicketNumbers = mfTicketNumbers.length === ticketRowCount;
+      const ticketRowStatus = initialTicketingStatus === 'ISSUED' ? 'ISSUED' : 'PENDING';
+      let tktIdx = 0;
       for (const paxId of dbPaxIds) {
         for (const j of journeys) {
+          const tktNo = assignTicketNumbers ? mfTicketNumbers[tktIdx] : null;
           await tx.bookingTicket.create({
             data: {
               bookingId: mb.id,
               passengerId: paxId,
               journeyId: j.id,
-              ticketStatus: 'PENDING',
+              ticketStatus: ticketRowStatus,
+              ticketNumber: tktNo,
+              eTicketNumber: tktNo,
+              issuedAt: ticketRowStatus === 'ISSUED' ? new Date() : null,
               airlineCode,
             },
           });
+          tktIdx++;
         }
       }
 
@@ -2017,6 +2107,66 @@ export async function POST(req: NextRequest) {
     const { mb: masterBooking, pnrResult } = txResult;
     const confirmedAt = new Date().toISOString();
 
+    // Queue Mystifly ticketing reconciliation now that the booking row exists,
+    // so the background worker can update this exact booking once the airline
+    // finishes issuing the ticket. (Only when the ticket wasn't confirmed inline.)
+    if ((mystiflyBookingResult as any)?.ticketingStatus === 'TICKETING_PENDING') {
+      try {
+        const { queueForReconciliation } = await import('@/../../backend/src/workers/ticketing-reconciliation');
+        queueForReconciliation({
+          bookingId: masterBooking.id,
+          providerUniqueId: mystiflyBookingResult!.uniqueId,
+          fareSourceCode: (mystiflyBookingResult as any)?.reconcileFsc,
+        }).catch((err: any) => {
+          console.error(`[Mystifly] Failed to queue reconciliation: ${err.message}`);
+        });
+      } catch (importErr: any) {
+        console.error(`[Mystifly] Failed to import reconciliation worker: ${importErr.message}`);
+      }
+    }
+
+    // ── ERBUK082 support-queue tracking ──────────────────────────────────────
+    // Open a support ticket (category ERBUK082) against the pending Mystifly ref
+    // so Admin, Agent and the customer can track it. The reconciliation worker
+    // updates this ticket's status/notes as the booking resolves to ISSUED or
+    // NOT_BOOKED (with the manual-review-refund note).
+    if ((mystiflyBookingResult as any)?.erbuk082) {
+      try {
+        const mfRef = mystiflyBookingResult!.uniqueId;
+        const routeDisplay = `${originAirport || 'N/A'} → ${destinationAirport || 'N/A'}`;
+        const reason = (mystiflyBookingResult as any).pendingReason || 'ERBUK082 — Pending Need, awaiting carrier response';
+        await prisma.supportTicket.create({
+          data: {
+            subject: `Pending Ticketing [ERBUK082]: ${routeDisplay} — ${customerName}`,
+            description:
+              `Mystifly returned ERBUK082 "Pending Need — Awaiting carrier response — Booking Unconfirmed".\n\n` +
+              `The booking was accepted and payment captured; ticket issuance is PENDING with the carrier.\n` +
+              `The system is automatically polling Mystifly (TripDetails / AirTicketOrderStatus) until the ` +
+              `status resolves to ISSUED or NOT_BOOKED.\n\n` +
+              `Mystifly Ref (MFRef/PNR): ${mfRef}\n` +
+              `Booking Ref: ${masterBookingReference}\n` +
+              `Route: ${routeDisplay}\n` +
+              `Provider message: ${reason}`,
+            priority: 'HIGH',
+            status: 'IN_PROGRESS',
+            category: 'ERBUK082',
+            queue: 'TICKETING_PENDING_QUEUE',
+            ticketType: 'TICKETING_PENDING',
+            customerName,
+            customerEmail,
+            customerPhone: primaryPaxForMystifly?.phone || null,
+            bookingRef: masterBookingReference,
+            providerPnr: mfRef,
+            providerBookingRef: mfRef,
+            correlationId: masterBooking.id,
+          },
+        });
+        console.log(`[Mystifly] ERBUK082 support ticket opened for booking ${masterBooking.id} (ref ${mfRef}).`);
+      } catch (ticketErr) {
+        console.error('[Mystifly] Failed to open ERBUK082 support ticket:', ticketErr instanceof Error ? ticketErr.message : ticketErr);
+      }
+    }
+
     // Fetch full booking with all relations for rich email itinerary
     const fullBooking = await prisma.masterBooking.findUnique({
       where: { id: masterBooking.id },
@@ -2115,6 +2265,11 @@ export async function POST(req: NextRequest) {
       bookingId: masterBooking.id,
       masterBookingReference: masterBooking.masterBookingReference,
       status: 'confirmed',
+      // Ticketing may still be resolving (Mystifly ERBUK082 "awaiting carrier",
+      // hold OrderTicket in process, or webfare TripDetails pending). The booking
+      // is valid and paid; the reconciliation worker finalizes ticket issuance.
+      ticketingStatus: masterBooking.ticketingStatus,
+      ticketingPending: masterBooking.ticketingStatus === 'TICKETING_PENDING',
       confirmedAt,
       passengerNames: passengers.map((p: any) => `${p.firstName} ${p.lastName}`.trim()),
       totalCharged: totalAmount,

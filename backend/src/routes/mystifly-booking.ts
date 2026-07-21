@@ -348,6 +348,38 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (hasError) {
         const errMsg = error?.ErrorMessage || errors?.[0]?.Message || 'Booking creation failed';
         const errCode = error?.ErrorCode || errors?.[0]?.Code || 'UNKNOWN';
+
+        // ── ERBUK082 / "Booking Unconfirmed – Awaiting carrier response" ──
+        // A PENDING provider state, NOT a hard failure: the request was accepted
+        // and the carrier response is pending. Resolve a poll-able reference
+        // (inline UniqueID, else RetrieveMFRefThroughFSC) so the caller can
+        // persist the booking as pending and reconcile via TripDetails instead
+        // of refunding + throwing "Booking Failed".
+        const pendingUnconfirmed =
+          /ERBUK082/i.test(String(errCode)) ||
+          /booking unconfirmed|awaiting carrier|pending need/i.test(errMsg);
+
+        if (pendingUnconfirmed) {
+          let mfRef: string | null = result?.Data?.UniqueID || result?.UniqueID || null;
+          if (!mfRef) mfRef = await mystifly.getMfRefFromFsc(fareSourceCode);
+          console.warn(`[Mystifly] Booking pending/unconfirmed [${errCode}] ${errMsg} — ref=${mfRef ?? 'NONE'}`);
+
+          if (mfRef) {
+            return reply.code(200).send({
+              success: false,
+              pending: true,
+              uniqueId: mfRef,
+              status: 'Pending',
+              errorCode: 'MYSTIFLY_BOOKING_PENDING',
+              mystiflyErrorCode: errCode,
+              error: errMsg,
+              bookFscHash,
+              raw: result,
+            });
+          }
+          // No reference resolvable → fall through to hard failure (caller refunds).
+        }
+
         console.error(`[Mystifly] Booking failed: [${errCode}] ${errMsg}`);
         return reply.code(422).send({
           error: errMsg,

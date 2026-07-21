@@ -202,6 +202,11 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
       },
     });
 
+    await updateErbukTicket(record.bookingId, {
+      status: 'RESOLVED',
+      note: `Ticket issuance CONFIRMED by the carrier. Ticket number(s): ${ticketNumbers.join(', ')}. Resolved automatically after ${newPollCount} poll(s).`,
+    });
+
     return {
       id: record.id,
       bookingId: record.bookingId,
@@ -251,6 +256,11 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
       },
     });
 
+    await updateErbukTicket(record.bookingId, {
+      status: 'ESCALATED',
+      note: `Carrier returned "${ticketStatus}" — the booking was NOT completed. Manual review may be required for refund. Resolved after ${newPollCount} poll(s).`,
+    });
+
     return {
       id: record.id,
       bookingId: record.bookingId,
@@ -288,6 +298,11 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
       },
     });
 
+    await updateErbukTicket(record.bookingId, {
+      status: 'ESCALATED',
+      note: `Ticketing still pending after ${newPollCount} automated polls (last provider status: ${ticketStatus}). Escalated for manual review.`,
+    });
+
     return {
       id: record.id,
       bookingId: record.bookingId,
@@ -322,6 +337,49 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     newStatus: 'STILL_PENDING',
     action: 'STILL_PENDING',
   };
+}
+
+// ─── ERBUK082 Support-Ticket Tracking ─────────────────────────────────────────
+
+/**
+ * Update the open ERBUK082 support ticket for a booking as its ticketing status
+ * resolves, and append a customer/agent-visible action note. No-op if the
+ * booking has no ERBUK082 ticket (e.g. hold/webfare pendings).
+ *
+ * @param bookingId  MasterBooking id (stored as the ticket's correlationId)
+ * @param outcome    New ticket status + action note to append
+ */
+async function updateErbukTicket(
+  bookingId: string,
+  outcome: { status: 'IN_PROGRESS' | 'ESCALATED' | 'RESOLVED'; note: string },
+): Promise<void> {
+  try {
+    const ticket = await prisma.supportTicket.findFirst({
+      where: {
+        correlationId: bookingId,
+        category: 'ERBUK082',
+        status: { notIn: ['RESOLVED', 'CLOSED'] },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+    if (!ticket) return;
+
+    await prisma.supportTicket.update({
+      where: { id: ticket.id },
+      data: {
+        status: outcome.status,
+        ...(outcome.status === 'RESOLVED' ? { closedAt: new Date() } : {}),
+        ...(outcome.status === 'ESCALATED' ? { escalatedAt: new Date() } : {}),
+      },
+    });
+
+    // Customer/agent-visible action note (isInternal=false).
+    await prisma.supportTicketMessage.create({
+      data: { ticketId: ticket.id, senderId: null, isInternal: false, content: outcome.note },
+    });
+  } catch (err) {
+    console.warn(`[TicketRecon] Failed to update ERBUK082 ticket for booking ${bookingId}:`, (err as Error).message);
+  }
 }
 
 // ─── Queue a New Record ───────────────────────────────────────────────────────
@@ -425,6 +483,12 @@ export async function manuallyResolve(params: {
         ticketingStatus: 'ISSUED',
       },
     });
+    await updateErbukTicket(record.bookingId, {
+      status: 'RESOLVED',
+      note: `Manually resolved as TICKETED by ${params.adminEmail}.` +
+        (params.ticketNumbers?.length ? ` Ticket(s): ${params.ticketNumbers.join(', ')}.` : '') +
+        (params.notes ? ` Notes: ${params.notes}` : ''),
+    });
   } else if (params.resolution === 'NOT_BOOKED') {
     await prisma.masterBooking.update({
       where: { id: record.bookingId },
@@ -432,6 +496,11 @@ export async function manuallyResolve(params: {
         bookingStatus: 'NOT_BOOKED',
         ticketingStatus: 'FAILED',
       },
+    });
+    await updateErbukTicket(record.bookingId, {
+      status: 'ESCALATED',
+      note: `Manually resolved as NOT_BOOKED by ${params.adminEmail}. Manual review may be required for refund.` +
+        (params.notes ? ` Notes: ${params.notes}` : ''),
     });
   }
 

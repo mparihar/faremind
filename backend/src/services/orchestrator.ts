@@ -613,7 +613,7 @@ export async function searchFlights(params: {
   // ── Final summary ──
   const totalLowest = rankedFlights.filter(f => f.fareType === 'lowest').length;
   const totalBranded = rankedFlights.filter(f => f.fareType === 'branded').length;
-  const totalRefundable = rankedFlights.filter(f => f.isRefundable).length;
+  const totalRefundable = rankedFlights.filter(f => f.fareRules.refundable).length;
   console.log(`[Search] Final: ${allFlights.length} raw → ${aggregatedFlights.length} aggregated → ${rankedFlights.length} ranked (lowest=${totalLowest}, branded=${totalBranded}, refundable=${totalRefundable})`);
 
   return { flights: rankedFlights, providers: providerResults, searchId, totalTimeMs: Date.now() - overallStart, usedMockData: false, aggregationStats };

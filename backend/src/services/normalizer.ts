@@ -463,15 +463,15 @@ export function mergeAndRankFlights(flights: UnifiedFlight[]): UnifiedFlight[] {
     // Filter out invalid offers (no price, no duration, no segments)
     if (f.totalPrice <= 0 || f.totalDuration <= 0 || f.segments.length === 0) continue;
 
-    const key = `${f.airline.code}-${f.segments[0]?.departure.time}-${f.segments[0]?.departure.airport}-${f.totalPrice}-${f.isRefundable ? 'R' : 'NR'}`;
+    const key = `${f.airline.code}-${f.segments[0]?.departure.time}-${f.segments[0]?.departure.airport}-${f.totalPrice}-${f.fareRules.refundable ? 'R' : 'NR'}`;
 
     if (seen.has(key)) {
       // Duplicate found — check if this flight has richer data and should replace
       const existingIdx = seen.get(key)!;
       const existing = unique[existingIdx];
       // Prefer: refundable > non-refundable, branded > lowest
-      const incomingScore = (f.isRefundable ? 2 : 0) + (f.fareType === 'branded' ? 1 : 0);
-      const existingScore = (existing.isRefundable ? 2 : 0) + (existing.fareType === 'branded' ? 1 : 0);
+      const incomingScore = (f.fareRules.refundable ? 2 : 0) + (f.fareType === 'branded' ? 1 : 0);
+      const existingScore = (existing.fareRules.refundable ? 2 : 0) + (existing.fareType === 'branded' ? 1 : 0);
       if (incomingScore > existingScore) {
         unique[existingIdx] = f; // Replace with richer data
       }

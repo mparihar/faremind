@@ -816,6 +816,32 @@ export async function getTripDetails(mfRef: string): Promise<any> {
   });
 }
 
+/**
+ * Resolve the Mystifly reference (MFRef) for a FareSourceCode.
+ *
+ * Used to recover a poll-able reference when BookFlight returns a pending /
+ * unconfirmed state (e.g. ERBUK082 "Awaiting carrier response") without an
+ * inline UniqueID. Returns null if no MFRef can be resolved.
+ */
+export async function getMfRefFromFsc(fareSourceCode: string): Promise<string | null> {
+  try {
+    const result = await mystiflyRequest<any>({
+      method: 'GET',
+      path: `/api/RetrieveMFRefThroughFSC/${encodeURIComponent(fareSourceCode)}`,
+      retries: 1,
+    });
+    const mfRef =
+      result?.Data?.MFRef || result?.Data?.MfRef || result?.Data?.UniqueID ||
+      result?.MFRef || result?.MfRef ||
+      (typeof result?.Data === 'string' ? result.Data : null) ||
+      (typeof result === 'string' ? result : null);
+    return mfRef && typeof mfRef === 'string' && mfRef.trim().length > 0 ? mfRef.trim() : null;
+  } catch (err) {
+    console.warn('[Mystifly] getMfRefFromFsc failed:', (err as Error).message);
+    return null;
+  }
+}
+
 // ═══════════════════════════════════════════════
 // Seat Map
 // ═══════════════════════════════════════════════
