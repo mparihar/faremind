@@ -345,6 +345,7 @@ export async function GET(request: NextRequest) {
     if (children) backendParams.set('children', String(children));
     if (infants) backendParams.set('infants', String(infants));
     if (isMultiCity && legs) backendParams.set('legs', legs);
+    if (searchParams.get('refresh') === '1') backendParams.set('refresh', '1'); // force fresh, bypass backend search cache
 
     const controller = new AbortController();
     const timeout = setTimeout(() => controller.abort(), 90_000); // 90s timeout

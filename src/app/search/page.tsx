@@ -305,6 +305,7 @@ function SearchContent() {
       trip: tripParam,
       ...(returnDateParam ? { returnDate: returnDateParam } : {}),
       ...(searchParams.get('fromFlex') === '1' ? { fromFlex: '1' } : {}),
+      ...(searchParams.get('refresh') === '1' ? { refresh: '1' } : {}),
       ...(legsParam ? { legs: legsParam } : {}),
     });
     fetch(`/api/search?${params}`)
