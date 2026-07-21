@@ -424,18 +424,9 @@ export default function FloatingAIAssistant({
 
   return (
     // Fixed bottom-left container (draggable on desktop, fixed on mobile)
-    <>
-      <div ref={drag.constraintsRef} className="fixed inset-2 z-40 pointer-events-none" aria-hidden />
-
-    <motion.div
-      drag={drag.isDesktop}
-      dragListener={false}
-      dragControls={drag.dragControls}
-      dragConstraints={drag.constraintsRef}
-      dragMomentum={false}
-      dragElastic={0}
-      onDragEnd={drag.onDragEnd}
-      style={{ x: drag.x, y: drag.y }}
+    <div
+      ref={drag.ref}
+      style={drag.style}
       className="fixed z-50 flex flex-col items-start gap-3 bottom-4 sm:bottom-6 left-4 sm:left-6">
 
       {/* ── Expanded Chat Panel ──────────────────────────────────────────── */}
@@ -1155,7 +1146,6 @@ export default function FloatingAIAssistant({
         </AnimatePresence>
       </div>
 
-    </motion.div>
-    </>
+    </div>
   );
 }

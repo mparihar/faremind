@@ -5,39 +5,45 @@
  * AI bot launcher) repositionable by mouse on desktop/laptop screens, with the
  * chosen position persisted per browser.
  *
- * Behaviour:
- *  - Desktop/laptop (viewport ≥ 768px): the widget can be dragged anywhere and its
- *    position is saved to localStorage under `storageKey`.
- *  - Mobile (< 768px): dragging is disabled and the widget stays at its BAU fixed
- *    position (x/y forced to 0).
+ * Positioning is done with explicit `left`/`bottom` pixel coordinates (NOT CSS
+ * transforms). This is deterministic — the widget stays exactly where it is
+ * dropped and never drifts when the panel opens/closes or on re-render. The
+ * bottom-left anchor is preserved so the launcher sits at the bottom and the
+ * chat panel still opens upward from it.
  *
- * Drag only begins after the pointer moves > 4px, so a plain click still opens the
- * bot (use `wasDragged()` in the click handler to ignore the click that ends a drag).
+ * Behaviour:
+ *  - Desktop/laptop (viewport >= 768px): drag anywhere; position saved to
+ *    localStorage under `storageKey` and clamped to stay on screen.
+ *  - Mobile (< 768px): dragging disabled; widget keeps its BAU fixed position.
+ *
+ * A drag only begins after the pointer moves > 4px, and `justDragged` is set the
+ * instant a real drag starts (before any click) so the click that ends a drag
+ * never opens the widget — a drag only repositions. Use `wasDragged()` in the
+ * click handler; a later, separate click opens it as BAU.
  *
  * Wiring (see GlobalAIBot / FloatingAIAssistant):
  *   const drag = useDraggableWidget('faremind-aibot-pos');
- *   <div ref={drag.constraintsRef} className="fixed inset-2 z-40 pointer-events-none" aria-hidden />
- *   <motion.div drag={drag.isDesktop} dragListener={false} dragControls={drag.dragControls}
- *               dragConstraints={drag.constraintsRef} dragMomentum={false} dragElastic={0}
- *               onDragEnd={drag.onDragEnd} style={{ x: drag.x, y: drag.y }} className="fixed …">
+ *   <div ref={drag.ref} style={drag.style} className="fixed … bottom-6 left-6">
  *     …
- *     <motion.button onPointerDown={drag.startDrag}
- *                    onClick={() => { if (drag.wasDragged()) return; setIsOpen(true); }} … />
+ *     <button onPointerDown={drag.startDrag}
+ *             onClick={() => { if (drag.wasDragged()) return; setIsOpen(true); }} … />
+ *   </div>
  */
 
-import { useEffect, useRef, useState } from 'react';
-import { useDragControls, useMotionValue } from 'framer-motion';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 const DESKTOP_QUERY = '(min-width: 768px)';
+const EDGE_MARGIN = 8; // keep at least this many px from each viewport edge
+
+type Pos = { left: number; bottom: number };
 
 export function useDraggableWidget(storageKey: string) {
-  const dragControls = useDragControls();
-  const x = useMotionValue(0);
-  const y = useMotionValue(0);
-  const constraintsRef = useRef<HTMLDivElement>(null);
+  const ref = useRef<HTMLDivElement>(null);
   const justDraggedRef = useRef(false);
   const [isDesktop, setIsDesktop] = useState(false);
+  const [pos, setPos] = useState<Pos | null>(null);
 
+  // Desktop detection + load any saved position.
   useEffect(() => {
     if (typeof window === 'undefined' || !window.matchMedia) return;
     const mq = window.matchMedia(DESKTOP_QUERY);
@@ -46,17 +52,16 @@ export function useDraggableWidget(storageKey: string) {
       const desktop = mq.matches;
       setIsDesktop(desktop);
       if (!desktop) {
-        // Mobile: keep the BAU fixed anchor.
-        x.set(0);
-        y.set(0);
+        setPos(null); // mobile: BAU fixed anchor via CSS classes
         return;
       }
       try {
         const saved = localStorage.getItem(storageKey);
         if (saved) {
           const p = JSON.parse(saved);
-          if (typeof p?.x === 'number') x.set(p.x);
-          if (typeof p?.y === 'number') y.set(p.y);
+          if (typeof p?.left === 'number' && typeof p?.bottom === 'number') {
+            setPos({ left: p.left, bottom: p.bottom });
+          }
         }
       } catch { /* ignore malformed/blocked storage */ }
     };
@@ -64,30 +69,62 @@ export function useDraggableWidget(storageKey: string) {
     apply();
     mq.addEventListener('change', apply);
     return () => mq.removeEventListener('change', apply);
-  }, [storageKey, x, y]);
+  }, [storageKey]);
 
-  // Attach to the drag handle's onPointerDown. Starts a drag only after a small
-  // movement threshold so ordinary clicks still open the widget. The moment a
-  // real drag begins we mark `justDragged` — set BEFORE any click can fire — so
-  // the click that ends a drag never opens the panel; a drag only repositions.
+  // Clamp a candidate position so the widget stays fully on screen.
+  const clamp = useCallback((left: number, bottom: number): Pos => {
+    const el = ref.current;
+    const w = el?.offsetWidth ?? 0;
+    const h = el?.offsetHeight ?? 0;
+    const maxLeft = Math.max(EDGE_MARGIN, window.innerWidth - w - EDGE_MARGIN);
+    const maxBottom = Math.max(EDGE_MARGIN, window.innerHeight - h - EDGE_MARGIN);
+    return {
+      left: Math.min(Math.max(EDGE_MARGIN, left), maxLeft),
+      bottom: Math.min(Math.max(EDGE_MARGIN, bottom), maxBottom),
+    };
+  }, []);
+
+  // Keep the widget on screen if the viewport is resized.
+  useEffect(() => {
+    if (!isDesktop || !pos) return;
+    const onResize = () => setPos((p) => (p ? clamp(p.left, p.bottom) : p));
+    window.addEventListener('resize', onResize);
+    return () => window.removeEventListener('resize', onResize);
+  }, [isDesktop, pos, clamp]);
+
+  // Attach to the drag handle's onPointerDown.
   const startDrag = (e: React.PointerEvent) => {
     if (!isDesktop) return;
+    const el = ref.current;
+    if (!el) return;
+
+    const rect = el.getBoundingClientRect();
+    const startLeft = rect.left;                          // current px from left
+    const startBottom = window.innerHeight - rect.bottom; // current px from bottom
     const startX = e.clientX;
     const startY = e.clientY;
     let dragging = false;
 
     const onMove = (ev: PointerEvent) => {
-      if (!dragging && (Math.abs(ev.clientX - startX) > 4 || Math.abs(ev.clientY - startY) > 4)) {
+      const dx = ev.clientX - startX;
+      const dy = ev.clientY - startY;
+      if (!dragging && (Math.abs(dx) > 4 || Math.abs(dy) > 4)) {
         dragging = true;
-        justDraggedRef.current = true; // suppress the click that will follow pointer-up
-        dragControls.start(ev);
+        justDraggedRef.current = true; // block the click that follows pointer-up
+      }
+      if (dragging) {
+        ev.preventDefault();
+        setPos(clamp(startLeft + dx, startBottom - dy)); // pointer down => smaller bottom
       }
     };
     const onUp = () => {
       cleanup();
       if (dragging) {
-        // Keep the guard up briefly so the trailing click is ignored, then
-        // release it so the next genuine click opens the panel (BAU).
+        setPos((p) => {
+          if (p) { try { localStorage.setItem(storageKey, JSON.stringify(p)); } catch { /* ignore */ } }
+          return p;
+        });
+        // Release the click guard shortly after so the next genuine click opens it (BAU).
         setTimeout(() => { justDraggedRef.current = false; }, 120);
       }
     };
@@ -102,15 +139,13 @@ export function useDraggableWidget(storageKey: string) {
     window.addEventListener('pointercancel', onUp);
   };
 
-  // Persist the final position after a drag. (Click suppression is handled in
-  // startDrag, not here, because onDragEnd can fire after the browser's click.)
-  const onDragEnd = () => {
-    try {
-      localStorage.setItem(storageKey, JSON.stringify({ x: x.get(), y: y.get() }));
-    } catch { /* ignore blocked storage */ }
-  };
-
   const wasDragged = () => justDraggedRef.current;
 
-  return { dragControls, x, y, constraintsRef, isDesktop, startDrag, onDragEnd, wasDragged };
+  // Inline position overrides the CSS bottom/left classes only once dragged on
+  // desktop; otherwise {} leaves the BAU anchor intact.
+  const style: React.CSSProperties = (isDesktop && pos)
+    ? { left: pos.left, bottom: pos.bottom, right: 'auto', top: 'auto' }
+    : {};
+
+  return { ref, isDesktop, style, startDrag, wasDragged };
 }

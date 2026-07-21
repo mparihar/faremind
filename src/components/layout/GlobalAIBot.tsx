@@ -45,19 +45,9 @@ export default function GlobalAIBot() {
   };
 
   return (
-    <>
-      {/* Drag boundary (desktop only): keeps the widget within the viewport */}
-      <div ref={drag.constraintsRef} className="fixed inset-2 z-40 pointer-events-none" aria-hidden />
-
-    <motion.div
-      drag={drag.isDesktop}
-      dragListener={false}
-      dragControls={drag.dragControls}
-      dragConstraints={drag.constraintsRef}
-      dragMomentum={false}
-      dragElastic={0}
-      onDragEnd={drag.onDragEnd}
-      style={{ x: drag.x, y: drag.y }}
+    <div
+      ref={drag.ref}
+      style={drag.style}
       className={`fixed z-50 flex flex-col items-start gap-3 left-4 sm:left-6 ${isAgentMode ? 'bottom-20 sm:bottom-24' : 'bottom-4 sm:bottom-6'}`}>
 
       {/* Chat panel */}
@@ -251,7 +241,6 @@ export default function GlobalAIBot() {
         </AnimatePresence>
       </div>
 
-    </motion.div>
-    </>
+    </div>
   );
 }
