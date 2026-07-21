@@ -14,6 +14,7 @@ import AiContactSupportFlow from './ai-booking/AiContactSupportFlow';
 import AiGeneralQueryFlow from './ai-booking/AiGeneralQueryFlow';
 import { useAiBookingStore } from '@/store/useAiBookingStore';
 import { useOfferSessionStore } from '@/store/useOfferSessionStore';
+import { useDraggableWidget } from '@/lib/useDraggableWidget';
 import { detectManageBookingIntent } from '@/lib/ai-manage-booking-utils';
 import {
   isSpeechRecognitionSupported,
@@ -142,6 +143,8 @@ export default function FloatingAIAssistant({
   const inputRef    = useRef<HTMLInputElement>(null);
   const aiBookingReset = useAiBookingStore((s) => s.reset);
   const offerSessionClear = useOfferSessionStore((s) => s.clearSession);
+  // Shares the same saved position as GlobalAIBot so the launcher stays put across pages
+  const drag = useDraggableWidget('faremind-aibot-pos');
 
   // Detect agent mode for positioning
   const [isAgentMode, setIsAgentMode] = useState(false);
@@ -420,8 +423,20 @@ export default function FloatingAIAssistant({
   const isEmpty = messages.length === 0;
 
   return (
-    // Fixed bottom-left container
-    <div className="fixed z-50 flex flex-col items-start gap-3 bottom-4 sm:bottom-6 left-4 sm:left-6">
+    // Fixed bottom-left container (draggable on desktop, fixed on mobile)
+    <>
+      <div ref={drag.constraintsRef} className="fixed inset-2 z-40 pointer-events-none" aria-hidden />
+
+    <motion.div
+      drag={drag.isDesktop}
+      dragListener={false}
+      dragControls={drag.dragControls}
+      dragConstraints={drag.constraintsRef}
+      dragMomentum={false}
+      dragElastic={0}
+      onDragEnd={drag.onDragEnd}
+      style={{ x: drag.x, y: drag.y }}
+      className="fixed z-50 flex flex-col items-start gap-3 bottom-4 sm:bottom-6 left-4 sm:left-6">
 
       {/* ── Expanded Chat Panel ──────────────────────────────────────────── */}
       <AnimatePresence>
@@ -1055,14 +1070,16 @@ export default function FloatingAIAssistant({
               exit={{ scale: 0.8, opacity: 0 }}
               whileHover={{ scale: 1.05, y: -2 }}
               whileTap={{ scale: 0.96 }}
-              onClick={() => setIsOpen(true)}
-              className="relative flex items-center gap-2.5 h-11 pl-3 pr-4 rounded-2xl text-white overflow-visible cursor-pointer select-none backdrop-blur-xl"
+              onPointerDown={drag.startDrag}
+              onClick={() => { if (drag.wasDragged()) return; setIsOpen(true); }}
+              className={`relative flex items-center gap-2.5 h-11 pl-3 pr-4 rounded-2xl text-white overflow-visible select-none backdrop-blur-xl ${drag.isDesktop ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
               style={{
                 background: 'linear-gradient(135deg, rgba(10,20,35,0.85) 0%, rgba(15,25,45,0.90) 100%)',
                 border: '1px solid rgba(0,180,190,0.35)',
                 boxShadow: '0 0 24px rgba(0,180,190,0.20), 0 4px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08)',
+                touchAction: drag.isDesktop ? 'none' : undefined,
               }}
-              title="FareMind AI Assistant"
+              title={drag.isDesktop ? 'FareMind AI Assistant — drag to reposition' : 'FareMind AI Assistant'}
             >
               {/* Outer glow pulse */}
               <span className="absolute -inset-[2px] rounded-2xl pointer-events-none"
@@ -1138,6 +1155,7 @@ export default function FloatingAIAssistant({
         </AnimatePresence>
       </div>
 
-    </div>
+    </motion.div>
+    </>
   );
 }

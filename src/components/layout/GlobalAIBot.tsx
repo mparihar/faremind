@@ -14,6 +14,7 @@ import { usePathname } from 'next/navigation';
 import AiContactSupportFlow from '@/components/search/ai-booking/AiContactSupportFlow';
 import AiGeneralQueryFlow from '@/components/search/ai-booking/AiGeneralQueryFlow';
 import AiManageBookingFlow from '@/components/search/ai-booking/AiManageBookingFlow';
+import { useDraggableWidget } from '@/lib/useDraggableWidget';
 
 type BotMode = 'home' | 'support' | 'general' | 'manage';
 
@@ -22,6 +23,7 @@ export default function GlobalAIBot() {
   const [isOpen, setIsOpen] = useState(false);
   const [mode, setMode] = useState<BotMode>('home');
   const [isAgentMode, setIsAgentMode] = useState(false);
+  const drag = useDraggableWidget('faremind-aibot-pos');
 
   // Detect agent mode (agent pages or agent booking flow on public pages)
   useEffect(() => {
@@ -43,7 +45,20 @@ export default function GlobalAIBot() {
   };
 
   return (
-    <div className={`fixed z-50 flex flex-col items-start gap-3 left-4 sm:left-6 ${isAgentMode ? 'bottom-20 sm:bottom-24' : 'bottom-4 sm:bottom-6'}`}>
+    <>
+      {/* Drag boundary (desktop only): keeps the widget within the viewport */}
+      <div ref={drag.constraintsRef} className="fixed inset-2 z-40 pointer-events-none" aria-hidden />
+
+    <motion.div
+      drag={drag.isDesktop}
+      dragListener={false}
+      dragControls={drag.dragControls}
+      dragConstraints={drag.constraintsRef}
+      dragMomentum={false}
+      dragElastic={0}
+      onDragEnd={drag.onDragEnd}
+      style={{ x: drag.x, y: drag.y }}
+      className={`fixed z-50 flex flex-col items-start gap-3 left-4 sm:left-6 ${isAgentMode ? 'bottom-20 sm:bottom-24' : 'bottom-4 sm:bottom-6'}`}>
 
       {/* Chat panel */}
       <AnimatePresence>
@@ -62,8 +77,11 @@ export default function GlobalAIBot() {
             {/* Mode: Home — show action tiles */}
             {mode === 'home' && (
               <>
-                {/* Header */}
-                <div className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 shrink-0 bg-white">
+                {/* Header (doubles as a drag handle on desktop) */}
+                <div
+                  onPointerDown={drag.startDrag}
+                  style={{ cursor: drag.isDesktop ? 'grab' : undefined, touchAction: drag.isDesktop ? 'none' : undefined }}
+                  className="flex items-center gap-3 px-4 py-3 border-b border-slate-100 shrink-0 bg-white">
                   <div className="w-9 h-9 rounded-xl flex items-center justify-center shadow-sm shrink-0 relative overflow-hidden"
                     style={{ background: 'linear-gradient(135deg, #007a7c 0%, #009A9C 55%, #00b5b7 100%)' }}>
                     <span className="absolute inset-0 opacity-30 blur-sm"
@@ -189,14 +207,16 @@ export default function GlobalAIBot() {
               exit={{ scale: 0.8, opacity: 0 }}
               whileHover={{ scale: 1.05, y: -2 }}
               whileTap={{ scale: 0.96 }}
-              onClick={() => setIsOpen(true)}
-              className="relative flex items-center gap-2.5 h-11 pl-3 pr-4 rounded-2xl text-white overflow-visible cursor-pointer select-none backdrop-blur-xl"
+              onPointerDown={drag.startDrag}
+              onClick={() => { if (drag.wasDragged()) return; setIsOpen(true); }}
+              className={`relative flex items-center gap-2.5 h-11 pl-3 pr-4 rounded-2xl text-white overflow-visible select-none backdrop-blur-xl ${drag.isDesktop ? 'cursor-grab active:cursor-grabbing' : 'cursor-pointer'}`}
               style={{
                 background: 'linear-gradient(135deg, rgba(10,20,35,0.85) 0%, rgba(15,25,45,0.90) 100%)',
                 border: '1px solid rgba(0,180,190,0.35)',
                 boxShadow: '0 0 24px rgba(0,180,190,0.20), 0 4px 20px rgba(0,0,0,0.35), inset 0 1px 0 rgba(255,255,255,0.08)',
+                touchAction: drag.isDesktop ? 'none' : undefined,
               }}
-              title="FareMind AI Assistant"
+              title={drag.isDesktop ? 'FareMind AI Assistant — drag to reposition' : 'FareMind AI Assistant'}
             >
               {/* Outer glow pulse */}
               <span className="absolute -inset-[2px] rounded-2xl pointer-events-none"
@@ -231,6 +251,7 @@ export default function GlobalAIBot() {
         </AnimatePresence>
       </div>
 
-    </div>
+    </motion.div>
+    </>
   );
 }
