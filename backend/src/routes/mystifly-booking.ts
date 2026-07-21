@@ -760,6 +760,15 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const mealServices = data?.MealServices || data?.MealList || [];
       const seatMapData = data?.SeatMapData || data?.SeatMap || null;
 
+      // Discovery diagnostic: reveal the real response field names (esp. the
+      // ServiceKey needed to confirm a selection). Mystifly responses are loosely
+      // typed in the swagger, so we log actual shapes to validate against.
+      try {
+        console.log(`[Mystifly][AncillaryDiag] data keys: ${Object.keys(data || {}).join(', ')}`);
+        if (baggageServices[0]) console.log(`[Mystifly][AncillaryDiag] baggage[0] keys: ${Object.keys(baggageServices[0]).join(', ')}`);
+        if (mealServices[0]) console.log(`[Mystifly][AncillaryDiag] meal[0] keys: ${Object.keys(mealServices[0]).join(', ')}`);
+      } catch { /* diagnostic only */ }
+
       return {
         success: true,
         uniqueId,
@@ -773,6 +782,53 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       return reply.code(502).send({
         error: `Mystifly ancillary services failed: ${error.message}`,
         errorCode: 'MYSTIFLY_ANCILLARY_ERROR',
+      });
+    }
+  });
+
+  // ═══════════════════════════════════════════════
+  // Ancillary Confirm / Cancel — Post-Booking (billable mutation)
+  // ═══════════════════════════════════════════════
+  // Confirms (or cancels) a selected ancillary against an existing booking, per
+  // Mystifly's ServiceListsRQ confirm flow: list → select → confirm(ServiceKey/
+  // SeatMapKey). This is the piece required to actually add paid baggage/meals/
+  // seats AFTER BookFlight. Not auto-wired into checkout yet — exposed for the
+  // post-booking add-ons flow (agent/customer manage-booking).
+  fastify.post('/ancillary-confirm', async (request, reply) => {
+    try {
+      const { uniqueId, action, serviceKey, seatMapKey, baggage, meal, seatMap } = request.body as {
+        uniqueId?: string;
+        action?: 'confirm' | 'cancel';
+        serviceKey?: string;
+        seatMapKey?: string;
+        baggage?: boolean; meal?: boolean; seatMap?: boolean;
+      };
+
+      if (!uniqueId) return reply.code(400).send({ error: 'uniqueId (MFRef) is required' });
+      if (!serviceKey && !seatMapKey) {
+        return reply.code(400).send({ error: 'serviceKey or seatMapKey is required' });
+      }
+
+      const keys = { serviceKey, seatMapKey, baggage: baggage ?? !!serviceKey, meal: meal ?? false, seatMap: seatMap ?? !!seatMapKey };
+      const result = action === 'cancel'
+        ? await mystifly.cancelAncillaryService(uniqueId, keys)
+        : await mystifly.confirmAncillaryService(uniqueId, keys);
+
+      const error = result?.Data?.Error || result?.Error;
+      if (error?.ErrorCode && error.ErrorCode !== '0') {
+        return reply.code(422).send({
+          error: error.ErrorMessage || 'Ancillary confirm/cancel failed',
+          errorCode: 'MYSTIFLY_ANCILLARY_CONFIRM_FAILED',
+          raw: error,
+        });
+      }
+
+      return { success: true, uniqueId, action: action || 'confirm', raw: result };
+    } catch (error: any) {
+      console.error('[Mystifly] Ancillary confirm/cancel error:', error.message);
+      return reply.code(502).send({
+        error: `Mystifly ancillary confirm/cancel failed: ${error.message}`,
+        errorCode: 'MYSTIFLY_ANCILLARY_CONFIRM_ERROR',
       });
     }
   });

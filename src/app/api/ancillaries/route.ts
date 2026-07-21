@@ -267,7 +267,38 @@ async function handleMystifly(offerId: string, cacheKey: string, mfref?: string 
             currency,
             quantity: 1,
             maxQuantity: bag.MaxQuantity ?? 3,
-            rawProviderData: bag,
+            rawProviderData: bag, // contains ServiceKey needed for confirm
+          });
+        }
+
+        // Normalize REAL meal services (paid meal products) from the provider.
+        // These carry a ServiceKey used by the post-booking confirm flow, unlike
+        // the hardcoded free IATA meal-preference SSRs added pre-booking above.
+        const mealList = ancData.meals || [];
+        for (const m of mealList) {
+          const svcKey = m.ServiceKey ?? m.Key ?? null;
+          const svcId = m.ExtraServiceId ?? m.ServiceId ?? m.Id;
+          const price = parseFloat(m.Price ?? m.Amount ?? '0');
+          const cur = m.Currency ?? m.CurrencyCode ?? 'USD';
+          const label = m.Description ?? m.Name ?? m.MealName ?? 'Meal';
+          meals.push({
+            provider: 'MYSTIFLY',
+            providerOfferId: offerId,
+            providerServiceId: `meal-svc-${svcKey ?? svcId ?? label}`,
+            ancillaryType: 'MEAL',
+            passengerId: null,
+            segmentId: null,
+            journeyId: null,
+            airportCode: null,
+            label: String(label).trim(),
+            description: price > 0 ? `Meal — ${cur} ${price}` : 'Meal',
+            included: false,
+            chargeable: price > 0,
+            amount: price,
+            currency: cur,
+            quantity: 1,
+            maxQuantity: m.MaxQuantity ?? 1,
+            rawProviderData: m, // contains ServiceKey needed for confirm
           });
         }
 

@@ -871,23 +871,41 @@ export async function getSeatMap(fareSourceCode: string): Promise<any> {
 // Ancillary Services (Baggage, Meal, Seat)
 // ═══════════════════════════════════════════════
 
+export interface AncillaryServiceOptions {
+  baggage?: boolean;
+  meal?: boolean;
+  seatMap?: boolean;
+  /** Confirm a selected service (post-booking). Requires serviceKey/seatMapKey. */
+  isConfirmed?: boolean;
+  /** Cancel a previously-added service (post-booking). */
+  isCancel?: boolean;
+  /** ServiceKey of a baggage/meal item to confirm or cancel. */
+  serviceKey?: string;
+  /** SeatMapKey of a seat to confirm or cancel. */
+  seatMapKey?: string;
+}
+
 /**
- * Fetch available ancillary services (baggage, meals, seats) for a booking.
- * Requires MFRef (booking reference) — only available after BookFlight.
- *
- * Use isBaggage/isMeal/isSeatMap flags to control which services to fetch.
+ * Ancillary services (baggage, meals, seats) for a booking — post-booking only
+ * (requires MFRef). Per Mystifly's ServiceListsRQ this endpoint LISTS available
+ * services (isConfirmed/isCancel=false), CONFIRMS a selection (isConfirmed=true
+ * + ServiceKey/SeatMapKey), or CANCELS one (isCancel=true). Prefer the
+ * confirmAncillaryService/cancelAncillaryService wrappers for the mutations.
  */
 export async function getAncillaryServices(
   mfRef: string,
-  options: { baggage?: boolean; meal?: boolean; seatMap?: boolean } = {}
+  options: AncillaryServiceOptions = {}
 ): Promise<any> {
+  const isMutation = options.isConfirmed === true || options.isCancel === true;
   const rq: MystiflyAncillaryServiceRQ = {
     MFRef: mfRef,
     isBaggage: options.baggage ?? true,
     isMeal: options.meal ?? true,
     isSeatMap: options.seatMap ?? false,
-    isConfirmed: false,
-    isCancel: false,
+    isConfirmed: options.isConfirmed ?? false,
+    isCancel: options.isCancel ?? false,
+    ...(options.serviceKey ? { ServiceKey: options.serviceKey } : {}),
+    ...(options.seatMapKey ? { SeatMapKey: options.seatMapKey } : {}),
   };
 
   try {
@@ -895,11 +913,34 @@ export async function getAncillaryServices(
       method: 'POST',
       path: '/api/AncillaryServiceRequest',
       body: rq as unknown as Record<string, unknown>,
+      // Never retry a confirm/cancel — it mutates the booking (billable).
+      retries: isMutation ? 0 : 1,
     });
   } catch (error) {
-    console.warn('[Mystifly] Ancillary services fetch failed:', (error as Error).message);
+    console.warn('[Mystifly] Ancillary services request failed:', (error as Error).message);
     return { error: (error as Error).message };
   }
+}
+
+/**
+ * Confirm a selected ancillary (baggage/meal via ServiceKey, or seat via
+ * SeatMapKey) on an existing booking. Post-booking, billable — no retry.
+ */
+export async function confirmAncillaryService(
+  mfRef: string,
+  keys: { serviceKey?: string; seatMapKey?: string; baggage?: boolean; meal?: boolean; seatMap?: boolean },
+): Promise<any> {
+  return getAncillaryServices(mfRef, { ...keys, isConfirmed: true });
+}
+
+/**
+ * Cancel a previously-added ancillary on an existing booking. Post-booking — no retry.
+ */
+export async function cancelAncillaryService(
+  mfRef: string,
+  keys: { serviceKey?: string; seatMapKey?: string; baggage?: boolean; meal?: boolean; seatMap?: boolean },
+): Promise<any> {
+  return getAncillaryServices(mfRef, { ...keys, isCancel: true });
 }
 
 // ═══════════════════════════════════════════════
