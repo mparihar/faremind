@@ -281,9 +281,20 @@ export default function CheckoutItineraryPage() {
       try { const v = sessionStorage.getItem(key); return v ? JSON.parse(v) : null; } catch { return null; }
     }
 
-    // 1. Already initialized in checkout store — still validate passengers
-    //    match the expected breakdown (count AND types) from session context.
-    if (checkoutStore.selectedFare) {
+    // 1. Already initialized in checkout store — reuse it ONLY if the user's current
+    //    fare selection (useFareStore) matches. If they searched again and picked a
+    //    DIFFERENT fare, the checkout store still holds the PREVIOUS booking (flights,
+    //    route, seats) — blindly reusing it made the payment page show the old search's
+    //    flights with the new fare's price. When the selection changed, fall through to
+    //    a full re-init from the fresh selection.
+    const freshSelection = useFareStore.getState().selectedFare;
+    const selectionUnchanged =
+      !freshSelection ||
+      (!!checkoutStore.selectedFare &&
+        freshSelection.fareId === checkoutStore.selectedFare.fareId &&
+        freshSelection.offerId === checkoutStore.selectedFare.offerId);
+
+    if (checkoutStore.selectedFare && selectionUnchanged) {
       // Re-read breakdown from sessionStorage to ensure correct pax types
       const ctx = ssGet('fm_fare_context') as { travelers?: number; adults?: number; children?: number; infants?: number } | null;
       const expectedCount = typeof ctx?.travelers === 'number' ? ctx.travelers : checkoutStore.travelerCount;
@@ -315,6 +326,13 @@ export default function CheckoutItineraryPage() {
       setPricing(buildLocalPricing(useCheckoutStore.getState(), pricingCfg));
       setReady(true);
       return;
+    }
+
+    // A different fare was selected than the one in the checkout store — clear the
+    // previous booking's flights/seats/meals/ancillaries/source before re-initializing
+    // so nothing stale from the earlier search leaks through to payment.
+    if (checkoutStore.selectedFare) {
+      checkoutStore.reset();
     }
 
     // 2. Resolve selected fare — Zustand or sessionStorage fallback
