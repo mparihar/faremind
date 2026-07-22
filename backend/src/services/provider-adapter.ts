@@ -617,6 +617,8 @@ export class MystiflyAdapter implements IBookingProvider {
       const ptrId = voidData?.PtrId || voidData?.ptrId || voidResult?.PtrId;
       const voidErrors = voidData?.Errors || voidResult?.Errors || [];
 
+      console.log(`[Mystifly][PtrDiag] VoidQuote mfRef=${mfRef} ptrId=${ptrId ?? 'NONE'} success=${voidSuccess} errors=${JSON.stringify(voidErrors)}`);
+
       // Check for business-level "not eligible" vs technical failure
       const isNotEligible = !voidSuccess && voidErrors.some((e: any) =>
         (e.Code || e.code || '').toString().match(/void.*not.*eligible|void.*window|not.*voidable/i) ||
@@ -697,6 +699,8 @@ export class MystiflyAdapter implements IBookingProvider {
     const refundErrors = refundData?.Errors || refundResult?.Errors || [];
     const refundMsg = refundResult?.Message || refundData?.Message || '';
 
+    console.log(`[Mystifly][PtrDiag] RefundQuote mfRef=${mfRef} ptrId=${refundPtrId ?? 'NONE'} success=${refundSuccess} msg=${refundMsg}`);
+
     // Check for Mystifly 500 passed through in the JSON body (HTTP 200 but internal error in Message)
     const is500InBody = /\(500\)|Internal Server Error/i.test(refundMsg);
 
@@ -765,6 +769,7 @@ export class MystiflyAdapter implements IBookingProvider {
       const result = await mystiflyClient.executeVoid(mfRef, ptrId);
       const data = result?.Data || result;
       const success = data?.Success ?? result?.Success;
+      console.log(`[Mystifly][PtrDiag] executeVoid mfRef=${mfRef} ptrId=${ptrId} success=${success} refundAmount=${data?.RefundAmount ?? 'n/a'}`);
 
       if (!success) {
         const errorMsg = data?.Errors?.[0]?.Message || result?.Message || 'Void execution failed';
@@ -793,6 +798,7 @@ export class MystiflyAdapter implements IBookingProvider {
       const result = await mystiflyClient.executeRefund(mfRef, ptrId);
       const data = result?.Data || result;
       const success = data?.Success ?? result?.Success;
+      console.log(`[Mystifly][PtrDiag] executeRefund mfRef=${mfRef} ptrId=${ptrId} success=${success} refundAmount=${data?.RefundAmount ?? data?.refundAmount ?? 'n/a'}`);
 
       if (!success) {
         const errorMsg = data?.Errors?.[0]?.Message || result?.Message || 'Refund execution failed';
