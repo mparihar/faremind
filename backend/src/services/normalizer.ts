@@ -358,8 +358,17 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
     // v2.2 path: live data from PenaltiesInfoList
     isRefundable = penalties.refundAllowed === true;
     isChangeable = penalties.changeAllowed === true;
-    changeFee = penalties.changePenaltyAmount > 0 ? penalties.changePenaltyAmount : undefined;
-    cancellationFee = penalties.refundPenaltyAmount > 0 ? penalties.refundPenaltyAmount : undefined;
+    // Only surface penalty AMOUNTS when they're in the same currency as the fare.
+    // Mystifly returns penalties in the airline's filing currency (often INR) while
+    // the fare is in USD, and there is no FX rate in the response — so exposing the
+    // raw number as USD produced bogus fees like "$65,100". When currencies differ,
+    // keep the refundable/changeable FLAGS but omit the amount (the real fee is
+    // confirmed at cancellation). Empty/unknown penalty currency is treated as a match.
+    const penaltyCcy = (penalties.penaltyCurrency || '').toString().toUpperCase();
+    const fareCcy = (currency || 'USD').toString().toUpperCase();
+    const sameCurrency = !penaltyCcy || penaltyCcy === fareCcy;
+    changeFee = (sameCurrency && penalties.changePenaltyAmount > 0) ? penalties.changePenaltyAmount : undefined;
+    cancellationFee = (sameCurrency && penalties.refundPenaltyAmount > 0) ? penalties.refundPenaltyAmount : undefined;
   } else {
     // v1 fallback
     isRefundable = itinerary.IsRefundable === true ||
