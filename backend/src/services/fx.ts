@@ -33,7 +33,11 @@ const STATIC_DEFAULTS: Record<string, number> = {
 
 async function fetchLiveRate(ccy: string): Promise<number | null> {
   try {
-    const url = `https://api.exchangerate.host/latest?base=${encodeURIComponent(ccy)}&symbols=USD`;
+    // open.er-api.com is a free, KEYLESS endpoint (no API key required).
+    // Optional override: set FX_RATES_URL to a template containing {BASE}; it must
+    // return JSON shaped like { rates: { USD: <number> } }.
+    const template = process.env.FX_RATES_URL || 'https://open.er-api.com/v6/latest/{BASE}';
+    const url = template.replace('{BASE}', encodeURIComponent(ccy));
     const res = await fetch(url, { signal: AbortSignal.timeout(FETCH_TIMEOUT_MS) });
     if (!res.ok) return null;
     const data: any = await res.json();
@@ -42,6 +46,31 @@ async function fetchLiveRate(ccy: string): Promise<number | null> {
   } catch {
     return null;
   }
+}
+
+// Ensure the admin-editable SystemConfig fallback key exists so it shows up in
+// Admin → System → Feature Flags for viewing/editing. Seeds the default value only
+// when the key is absent — never overwrites an admin-set value. Runs once per
+// currency per process.
+const ensuredKeys = new Set<string>();
+async function ensureConfigKey(ccy: string): Promise<void> {
+  if (ensuredKeys.has(ccy)) return;
+  ensuredKeys.add(ccy);
+  const def = STATIC_DEFAULTS[ccy];
+  if (def == null) return;
+  try {
+    const key = `fx_rate_${ccy.toLowerCase()}_usd`;
+    const existing = await prisma.systemConfig.findUnique({ where: { key } });
+    if (!existing) {
+      await prisma.systemConfig.create({
+        data: {
+          key,
+          value: String(def),
+          description: `Static fallback FX rate: 1 ${ccy} in USD, used when the live FX API is unavailable. Editable here in Admin → System → Feature Flags.`,
+        },
+      });
+    }
+  } catch { /* race / unique constraint — safe to ignore */ }
 }
 
 async function fetchConfigRate(ccy: string): Promise<number | null> {
@@ -62,6 +91,9 @@ async function fetchConfigRate(ccy: string): Promise<number | null> {
 export async function getUsdRate(from: string | undefined | null): Promise<number> {
   const ccy = (from || '').toUpperCase();
   if (!ccy || ccy === 'USD') return 1;
+
+  // Make the admin-editable fallback key discoverable (fire-and-forget).
+  void ensureConfigKey(ccy);
 
   const cached = cache.get(ccy);
   if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) return cached.rate;
