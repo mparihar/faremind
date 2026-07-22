@@ -264,6 +264,13 @@ function SearchContent() {
     if (sel && (sel.o !== norm(origin) || sel.d !== norm(destination))) {
       co.reset();
       useFareStore.getState().reset();
+      // Also clear the sessionStorage snapshots so a stale source/fare from the
+      // previous route can't be resurrected by the checkout fallback path.
+      try {
+        ['fm_source_flight', 'fm_source_round_trip', 'fm_selected_fare', 'fm_fare_payload'].forEach(
+          (k) => sessionStorage.removeItem(k)
+        );
+      } catch { /* sessionStorage unavailable */ }
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [origin, destination]);

@@ -357,14 +357,53 @@ export default function CheckoutItineraryPage() {
         .flatMap(g => g.fares)
         .find(f => f.id === resolvedFare.fareId) ?? null;
 
-    // 4. Resolve source flight / round-trip
-    // Only use sessionStorage fallback for sourceRoundTrip when sourceFlight is NOT available
-    // to prevent stale round-trip data from a previous search leaking into one-way bookings.
-    const sourceFlight    = useFareStore.getState().sourceFlight    ?? (ssGet('fm_source_flight')     as import('@/lib/types').UnifiedFlight | null);
-    const sourceRoundTrip = useFareStore.getState().sourceRoundTrip ?? (sourceFlight ? null : (ssGet('fm_source_round_trip') as import('@/lib/round-trip-types').RoundTripOption | null));
+    // 4/5. Resolve current search context + source flight / round-trip.
+    // Read context first so we can reject any source that doesn't match the search.
+    const ctx = ssGet('fm_fare_context') as {
+      travelers?: number; adults?: number; children?: number; infants?: number;
+      origin?: string; destination?: string;
+    } | null;
 
-    // 5. Traveler count and breakdown from context
-    const ctx          = ssGet('fm_fare_context') as { travelers?: number; adults?: number; children?: number; infants?: number } | null;
+    // Prefer the fresh in-memory selection. Only fall back to sessionStorage on a
+    // true reload (no live selection). Mixing a fresh fare with a stale ss source is
+    // what let a previous search's flight (e.g. ORD→BOM) appear after selecting a new
+    // route (SFO→DEL).
+    const fs = useFareStore.getState();
+    const hasFreshSelection = !!fs.selectedFare;
+    let sourceFlight = hasFreshSelection
+      ? fs.sourceFlight
+      : (fs.sourceFlight ?? (ssGet('fm_source_flight') as import('@/lib/types').UnifiedFlight | null));
+    let sourceRoundTrip = hasFreshSelection
+      ? fs.sourceRoundTrip
+      : (fs.sourceRoundTrip ?? (sourceFlight ? null : (ssGet('fm_source_round_trip') as import('@/lib/round-trip-types').RoundTripOption | null)));
+
+    // Route-consistency guard (defense-in-depth): discard any resolved source whose
+    // route doesn't match the current search context, so stale store/ss data from a
+    // previous search can never display or be booked.
+    {
+      const normR = (s?: string) => String(s ?? '').trim().toUpperCase();
+      const expO = normR(ctx?.origin);
+      const expD = normR(ctx?.destination);
+      if (expO && expD) {
+        if (sourceRoundTrip) {
+          const o = normR(sourceRoundTrip.outboundJourney?.departureAirport);
+          const d = normR(sourceRoundTrip.outboundJourney?.arrivalAirport);
+          if (o !== expO || d !== expD) {
+            console.warn(`[Itinerary] Discarding stale round-trip source ${o}→${d} (search is ${expO}→${expD})`);
+            sourceRoundTrip = null;
+          }
+        }
+        if (sourceFlight?.segments?.length) {
+          const o = normR(sourceFlight.segments[0]?.departure?.airport);
+          const d = normR(sourceFlight.segments[sourceFlight.segments.length - 1]?.arrival?.airport);
+          if (o !== expO || d !== expD) {
+            console.warn(`[Itinerary] Discarding stale one-way source ${o}→${d} (search is ${expO}→${expD})`);
+            sourceFlight = null;
+          }
+        }
+      }
+    }
+
     const travelerCount = typeof ctx?.travelers === 'number' ? ctx.travelers : 1;
     const passengerBreakdown = (typeof ctx?.adults === 'number')
       ? { adults: ctx.adults, children: ctx.children ?? 0, infants: ctx.infants ?? 0 }
