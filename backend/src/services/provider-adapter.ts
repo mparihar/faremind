@@ -11,6 +11,7 @@
 
 import * as duffelClient from './duffel';
 import type { DuffelOrder, DuffelCancellation } from './duffel';
+import { toUsd } from './fx';
 
 // ═══════════════════════════════════════════════
 // Unified Types (Provider-Agnostic)
@@ -583,15 +584,26 @@ export class MystiflyAdapter implements IBookingProvider {
     // ── Step 1: Get order details for original amount ──
     const order = await this.getOrder(mfRef);
     // Mystifly returns the order total AND all PTR penalties in the fare's NATIVE
-    // currency (often INR), while the customer was charged in USD. Derive an FX so
-    // penalties are converted to the customer currency instead of being subtracted
-    // cross-currency — which was zeroing refunds on refundable fares. When we can't
-    // derive a rate (native total unknown), fx=1 and the caller's guard handles it.
+    // currency (often INR), while the customer was charged in USD, with no FX rate in
+    // the response. Convert penalties to USD via toUsdAmount(): prefer the EXACT
+    // per-booking rate when the order itself is in a foreign currency; otherwise use
+    // the hybrid FX service (daily-cached live rate → SystemConfig → default).
     const providerNativeTotal = order.totalAmount || 0;   // provider-native (e.g. INR)
     const customerTotal = options?.bookingAmount || 0;    // customer currency (USD)
-    const fx = (providerNativeTotal > 0 && customerTotal > 0) ? customerTotal / providerNativeTotal : 1;
+    const orderCcy = (order.currency || 'USD').toUpperCase();
+    const bookingFx = (providerNativeTotal > 0 && customerTotal > 0 && orderCcy !== 'USD')
+      ? customerTotal / providerNativeTotal   // exact rate for THIS booking
+      : null;
     const originalAmount = customerTotal > 0 ? customerTotal : providerNativeTotal;
     const currency = customerTotal > 0 ? 'USD' : order.currency;
+    // Convert a provider amount (in `ccy`, defaulting to the order currency) to USD.
+    const toUsdAmount = async (amount: number, ccy?: string): Promise<number> => {
+      if (!amount) return 0;
+      const c = (ccy || orderCcy || 'USD').toUpperCase();
+      if (c === 'USD') return amount;
+      if (bookingFx != null) return amount * bookingFx; // exact per-booking rate
+      return toUsd(amount, c);                          // hybrid FX service
+    };
 
     // ── Step 1b: If booking was never ticketed, skip PTR entirely ──
     // VoidQuote/RefundQuote are Post-TICKETING Requests — they only work
@@ -635,8 +647,9 @@ export class MystiflyAdapter implements IBookingProvider {
 
       if (voidSuccess && ptrId) {
         // Void IS eligible — extract fee info
-        const voidPenalty = parseFloat(voidData?.Penalty || voidData?.penalty || '0') * fx;
-        const supplierFee = parseFloat(voidData?.SupplierFee || voidData?.supplierFee || '0') * fx;
+        const voidCcy = voidData?.Currency || voidData?.currency;
+        const voidPenalty = await toUsdAmount(parseFloat(voidData?.Penalty || voidData?.penalty || '0'), voidCcy);
+        const supplierFee = await toUsdAmount(parseFloat(voidData?.SupplierFee || voidData?.supplierFee || '0'), voidCcy);
         const totalDeductions = voidPenalty + supplierFee;
         const refundAmount = Math.max(0, originalAmount - totalDeductions);
 
@@ -741,9 +754,10 @@ export class MystiflyAdapter implements IBookingProvider {
     }
 
     // Extract refund breakdown from PTR response
-    const airlinePenalty = parseFloat(refundData?.Penalty || refundData?.penalty || refundData?.CancellationCharge || '0') * fx;
-    const supplierFee = parseFloat(refundData?.SupplierFee || refundData?.supplierFee || '0') * fx;
-    const providerRefundAmount = parseFloat(refundData?.RefundAmount || refundData?.refundAmount || '0') * fx;
+    const refundCcy = refundData?.Currency || refundData?.currency;
+    const airlinePenalty = await toUsdAmount(parseFloat(refundData?.Penalty || refundData?.penalty || refundData?.CancellationCharge || '0'), refundCcy);
+    const supplierFee = await toUsdAmount(parseFloat(refundData?.SupplierFee || refundData?.supplierFee || '0'), refundCcy);
+    const providerRefundAmount = await toUsdAmount(parseFloat(refundData?.RefundAmount || refundData?.refundAmount || '0'), refundCcy);
     const totalDeductions = airlinePenalty + supplierFee;
     // Use provider-returned refund amount if available, otherwise calculate
     const refundAmount = providerRefundAmount > 0 ? providerRefundAmount : Math.max(0, originalAmount - totalDeductions);
