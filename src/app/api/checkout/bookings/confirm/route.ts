@@ -2205,7 +2205,7 @@ export async function POST(req: NextRequest) {
             ticketType: 'TICKETING_PENDING',
             customerName,
             customerEmail,
-            customerPhone: primaryPaxForMystifly?.phone || null,
+            customerPhone: primaryPax?.phone || null,
             bookingRef: masterBookingReference,
             providerPnr: mfRef,
             providerBookingRef: mfRef,
