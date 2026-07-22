@@ -232,6 +232,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const holdAllowedRaw = result?.Data?.HoldAllowed ?? result?.HoldAllowed ?? itinerary?.HoldAllowed;
       const holdAllowed = holdAllowedRaw === true || holdAllowedRaw === 'true' || holdAllowedRaw === 'True';
 
+      // TEMP DIAGNOSTIC: measure how often Mystifly actually sends the IsValid flag vs
+      // omits it, so we can safely decide whether to require an explicit IsValid=true
+      // in the booking path. Remove once we've gathered enough samples.
+      console.log(`[Mystifly][RevalDiag] IsValidPresent=${isValidRaw !== undefined} rawIsValid=${JSON.stringify(isValidRaw)} coercedValid=${isValid} holdAllowed=${holdAllowed} fscHash=${searchFscHash}`);
+
       if (isValidRaw !== undefined && !isValid) {
         console.error(`[Mystifly] ❌ Revalidation returned IsValid=false — fare is no longer available`);
         return reply.code(422).send({

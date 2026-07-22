@@ -1077,6 +1077,8 @@ export async function POST(req: NextRequest) {
 
           const httpOk = res.ok && data?.success;
           const valid = data?.isValid !== false; // undefined = provider didn't send the flag → treat as valid
+          // TEMP DIAGNOSTIC: what the booking loop actually receives/decides per candidate.
+          console.log(`[Mystifly][RevalDiag] confirmLoop candidate#${i} isPrimary=${isPrimary} httpOk=${httpOk} dataIsValid=${JSON.stringify(data?.isValid)} decidedValid=${valid}`);
           const rawErr = `${data?.error ?? ''} ${data?.mystiflyErrorCode ?? ''} ${data?.errorCode ?? ''}`;
           if (/ERBUK082/i.test(rawErr) || /booking unconfirmed|awaiting carrier|pending need/i.test(rawErr)) {
             erbuk082Seen = true;
