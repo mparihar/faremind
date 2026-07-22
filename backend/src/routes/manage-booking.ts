@@ -651,6 +651,28 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           ? 'Cancellation penalties may vary until airline confirmation. This action cannot be undone.'
           : 'This ticket is non-refundable. Confirming cancellation will cancel the booking without a refund.';
 
+      // ── Safety guard: refundable fare must never auto-resolve to "no refund" ──
+      // A $0 refund on a fare SOLD as refundable is almost always a provider
+      // penalty returned in a different currency than the fare (e.g. INR penalty
+      // vs USD fare), which zeroes the refund. Rather than silently forfeit a
+      // refundable ticket, route to team confirmation so the real refund is
+      // processed manually. (Void always gives a full refund, so it's exempt.)
+      if (isRefundable && cancellationMethod !== 'VOID' && estimatedRefund <= 0) {
+        fastify.log.warn(
+          { bookingId, airlinePenalty, originalAmount, refundAmount, refundCurrency: quote.refundCurrency, bookingCurrency: booking.currency },
+          '[manage-booking/cancel/quote] Refundable fare computed to $0 refund — likely penalty currency mismatch; routing to manual review'
+        );
+        await createCancellationSupportTicket(
+          booking,
+          `Refundable fare returned a $0/non-refundable auto-quote. Airline penalty (${airlinePenalty}) may be in a different currency than the ${booking.currency} fare (${originalAmount}). Manual refund review required.`
+        );
+        return reply.code(422).send({
+          error: 'This is a refundable fare, but we could not confirm the exact refund amount automatically. A support ticket has been created and our team will process your cancellation and refund shortly.',
+          code: 'REFUND_QUOTE_NEEDS_REVIEW',
+          supportTicketCreated: true,
+        });
+      }
+
       return {
         quoteId: quote.quoteId,
         bookingReference: booking.masterBookingReference,

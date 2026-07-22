@@ -582,8 +582,16 @@ export class MystiflyAdapter implements IBookingProvider {
   async getCancellationQuote(mfRef: string, options?: CancelQuoteOptions): Promise<CancelQuote> {
     // ── Step 1: Get order details for original amount ──
     const order = await this.getOrder(mfRef);
-    const originalAmount = order.totalAmount || options?.bookingAmount || 0;
-    const currency = order.currency;
+    // Mystifly returns the order total AND all PTR penalties in the fare's NATIVE
+    // currency (often INR), while the customer was charged in USD. Derive an FX so
+    // penalties are converted to the customer currency instead of being subtracted
+    // cross-currency — which was zeroing refunds on refundable fares. When we can't
+    // derive a rate (native total unknown), fx=1 and the caller's guard handles it.
+    const providerNativeTotal = order.totalAmount || 0;   // provider-native (e.g. INR)
+    const customerTotal = options?.bookingAmount || 0;    // customer currency (USD)
+    const fx = (providerNativeTotal > 0 && customerTotal > 0) ? customerTotal / providerNativeTotal : 1;
+    const originalAmount = customerTotal > 0 ? customerTotal : providerNativeTotal;
+    const currency = customerTotal > 0 ? 'USD' : order.currency;
 
     // ── Step 1b: If booking was never ticketed, skip PTR entirely ──
     // VoidQuote/RefundQuote are Post-TICKETING Requests — they only work
@@ -627,8 +635,8 @@ export class MystiflyAdapter implements IBookingProvider {
 
       if (voidSuccess && ptrId) {
         // Void IS eligible — extract fee info
-        const voidPenalty = parseFloat(voidData?.Penalty || voidData?.penalty || '0');
-        const supplierFee = parseFloat(voidData?.SupplierFee || voidData?.supplierFee || '0');
+        const voidPenalty = parseFloat(voidData?.Penalty || voidData?.penalty || '0') * fx;
+        const supplierFee = parseFloat(voidData?.SupplierFee || voidData?.supplierFee || '0') * fx;
         const totalDeductions = voidPenalty + supplierFee;
         const refundAmount = Math.max(0, originalAmount - totalDeductions);
 
@@ -733,9 +741,9 @@ export class MystiflyAdapter implements IBookingProvider {
     }
 
     // Extract refund breakdown from PTR response
-    const airlinePenalty = parseFloat(refundData?.Penalty || refundData?.penalty || refundData?.CancellationCharge || '0');
-    const supplierFee = parseFloat(refundData?.SupplierFee || refundData?.supplierFee || '0');
-    const providerRefundAmount = parseFloat(refundData?.RefundAmount || refundData?.refundAmount || '0');
+    const airlinePenalty = parseFloat(refundData?.Penalty || refundData?.penalty || refundData?.CancellationCharge || '0') * fx;
+    const supplierFee = parseFloat(refundData?.SupplierFee || refundData?.supplierFee || '0') * fx;
+    const providerRefundAmount = parseFloat(refundData?.RefundAmount || refundData?.refundAmount || '0') * fx;
     const totalDeductions = airlinePenalty + supplierFee;
     // Use provider-returned refund amount if available, otherwise calculate
     const refundAmount = providerRefundAmount > 0 ? providerRefundAmount : Math.max(0, originalAmount - totalDeductions);
