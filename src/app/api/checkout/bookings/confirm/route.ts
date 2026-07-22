@@ -194,13 +194,27 @@ async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
       };
       const errorLabel = ERROR_LABELS[ctx.errorCode] || ctx.errorCode;
 
+      // Surface the refund outcome ON the ticket so support sees it in the queue
+      // without cross-referencing the failure audit. A failed auto-refund
+      // (REFUND_PENDING) is flagged URGENT + queued for manual action.
+      const manualRefundNeeded = ctx.refundStatus === 'REFUND_PENDING';
+      const refundLine =
+        ctx.refundStatus === 'REFUND_ISSUED'
+          ? `Refund: ISSUED $${ctx.refundAmount ?? ''} (${ctx.refundId ?? 'n/a'})`
+          : ctx.refundStatus === 'REFUND_PENDING'
+            ? `Refund: PENDING — MANUAL REFUND REQUIRED (auto-refund failed: ${ctx.refundFailureReason ?? 'unknown'})`
+            : ctx.refundStatus
+              ? `Refund: ${ctx.refundStatus}`
+              : 'Refund: not applicable (card not charged)';
+
       await prisma.supportTicket.create({
         data: {
           subject: `Failed Booking: ${routeDisplay} — ${customerName}`,
-          description: `[${errorLabel}] ${ctx.errorMessage}\n\nRoute: ${routeDisplay}\nAmount: $${(ctx.pricing?.total ?? ctx.selectedFare?.totalPrice ?? 0).toLocaleString()}\nPassengers: ${ctx.passengers.length}\nFailure Stage: ${ctx.failureStage}`,
-          priority: ctx.errorCode === 'PROVIDER_ORDER_FAILED' ? 'URGENT' : 'HIGH',
+          description: `[${errorLabel}] ${ctx.errorMessage}\n\nRoute: ${routeDisplay}\nAmount: $${(ctx.pricing?.total ?? ctx.selectedFare?.totalPrice ?? 0).toLocaleString()}\nPassengers: ${ctx.passengers.length}\nFailure Stage: ${ctx.failureStage}\n${refundLine}`,
+          priority: (manualRefundNeeded || ctx.errorCode === 'PROVIDER_ORDER_FAILED') ? 'URGENT' : 'HIGH',
           status: 'OPEN',
           category: 'Failed Booking',
+          queue: manualRefundNeeded ? 'MANUAL_REFUND_REQUIRED' : null,
           customerName,
           customerEmail,
           failureAuditId: auditRecord.id,
