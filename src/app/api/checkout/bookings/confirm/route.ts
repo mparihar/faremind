@@ -207,12 +207,20 @@ async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
               ? `Refund: ${ctx.refundStatus}`
               : 'Refund: not applicable (card not charged)';
 
+      // Auto-close the ticket when there's nothing for support to action — i.e. the
+      // refund was already issued, or the card was never charged. Only a FAILED
+      // auto-refund (REFUND_PENDING) stays OPEN (URGENT + manual-refund queue).
+      const autoResolveNote = manualRefundNeeded
+        ? ''
+        : `\n\n[Auto-closed] No action required — ${ctx.refundStatus === 'REFUND_ISSUED' ? 'card was automatically refunded.' : 'card was not charged.'}`;
+
       await prisma.supportTicket.create({
         data: {
           subject: `Failed Booking: ${routeDisplay} — ${customerName}`,
-          description: `[${errorLabel}] ${ctx.errorMessage}\n\nRoute: ${routeDisplay}\nAmount: $${(ctx.pricing?.total ?? ctx.selectedFare?.totalPrice ?? 0).toLocaleString()}\nPassengers: ${ctx.passengers.length}\nFailure Stage: ${ctx.failureStage}\n${refundLine}`,
-          priority: (manualRefundNeeded || ctx.errorCode === 'PROVIDER_ORDER_FAILED') ? 'URGENT' : 'HIGH',
-          status: 'OPEN',
+          description: `[${errorLabel}] ${ctx.errorMessage}\n\nRoute: ${routeDisplay}\nAmount: $${(ctx.pricing?.total ?? ctx.selectedFare?.totalPrice ?? 0).toLocaleString()}\nPassengers: ${ctx.passengers.length}\nFailure Stage: ${ctx.failureStage}\n${refundLine}${autoResolveNote}`,
+          priority: manualRefundNeeded ? 'URGENT' : 'HIGH',
+          status: manualRefundNeeded ? 'OPEN' : 'CLOSED',
+          closedAt: manualRefundNeeded ? null : new Date(),
           category: 'Failed Booking',
           queue: manualRefundNeeded ? 'MANUAL_REFUND_REQUIRED' : null,
           customerName,
