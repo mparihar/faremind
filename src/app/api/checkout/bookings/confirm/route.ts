@@ -698,7 +698,7 @@ export async function POST(req: NextRequest) {
           // Fallback: try to find any unused passenger ID
           if (!paxId) {
             const unused = offerPassengers.find(op => !usedPaxIds.has(op.id));
-            paxId = unused?.id;
+            paxId = unused?.id ?? '';
             console.warn(`[Duffel] No offer passenger ID for ${paxType} #${idx}, using fallback: ${paxId}`);
           }
 
@@ -2145,7 +2145,8 @@ export async function POST(req: NextRequest) {
           });
         }
         if (chargeInserts.length > 0) {
-          await tx.bookingCommercialCharge.createMany({ data: chargeInserts });
+          // eslint-disable-next-line @typescript-eslint/no-explicit-any
+          await tx.bookingCommercialCharge.createMany({ data: chargeInserts as any });
         }
       } catch (feeErr) {
         // Don't block booking creation if fee snapshot fails
