@@ -130,6 +130,31 @@ export default function AgentPostBookingPage() {
     setExecLoading(false);
   }
 
+  async function handleForceCancel() {
+    const target = (bookingId.trim() || uniqueId.trim());
+    if (!target) { setExecResult({ error: 'Enter a Booking ID (or MFRef) first.' }); return; }
+    if (!window.confirm('Force Cancel + Refund this booking?\n\nThis executes the provider cancellation (void/refund PTR) AND refunds the customer via Stripe. This cannot be undone.')) return;
+    const amtStr = window.prompt('Confirmed refund amount in USD (leave blank to use the provider/auto amount):', '');
+    if (amtStr === null) return; // user cancelled
+    const reason = window.prompt('Reason (optional):', '') || '';
+    const overrideRefundAmount = amtStr.trim() && !isNaN(parseFloat(amtStr)) ? parseFloat(amtStr) : undefined;
+    setExecLoading(true);
+    setExecResult(null);
+    try {
+      const res = await fetch(`/api/agent/bookings/${encodeURIComponent(target)}/force-cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrideRefundAmount, reason }),
+      });
+      const data = await res.json();
+      setExecResult(data);
+      if (bookingId) loadPtrRecords();
+    } catch (e: any) {
+      setExecResult({ error: e.message });
+    }
+    setExecLoading(false);
+  }
+
   async function handleStatusSearch() {
     if (!uniqueId.trim()) return;
     setLoading(true);
@@ -213,6 +238,23 @@ export default function AgentPostBookingPage() {
               <input value={bookingId} onChange={e => setBookingId(e.target.value)}
                 placeholder="FareMind booking ID (for tracking)..."
                 className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-[#1ABC9C]" />
+            </div>
+          </div>
+
+          {/* ── Force Cancel + Refund (one-click: provider PTR → Stripe refund → cancel) ── */}
+          <div className="mb-5 rounded-xl border border-red-500/30 bg-red-500/5 p-4">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-bold text-red-300">Force Cancel + Refund</p>
+                <p className="text-[11px] text-slate-400 mt-0.5">Executes the provider void/refund PTR, refunds the customer via Stripe, and cancels the booking. Use for refundable tickets the auto-quote couldn&apos;t process.</p>
+              </div>
+              <button
+                onClick={handleForceCancel}
+                disabled={execLoading || (!bookingId.trim() && !uniqueId.trim())}
+                className="shrink-0 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-bold"
+              >
+                {execLoading ? 'Processing…' : 'Force Cancel + Refund'}
+              </button>
             </div>
           </div>
 

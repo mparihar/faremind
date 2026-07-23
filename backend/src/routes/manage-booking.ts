@@ -789,6 +789,72 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     }
   });
 
+  // ── Force Cancel + Refund (staff-only: admin / agent) ──────────────────────
+  // For "Unable to Cancel" refundable tickets where the auto-quote couldn't confirm
+  // a trustworthy USD refund. Fetches the LIVE provider quote (logs the real
+  // penalty/refund + PTR number), then runs the full orchestration (provider
+  // execute → Stripe customer refund → booking status), optionally overriding the
+  // refund with a staff-confirmed amount. Guarded upstream by admin/agent auth.
+  fastify.post('/:bookingId/force-cancel', async (request, reply) => {
+    const { bookingId } = request.params as { bookingId: string };
+    try {
+      const { overrideRefundAmount, refundMethod, requestedBy, role } = request.body as {
+        overrideRefundAmount?: number; refundMethod?: string; requestedBy?: string; role?: string;
+      };
+      const forcedBy = `${role || 'STAFF'}${requestedBy ? `:${requestedBy}` : ''}`;
+
+      const booking = await mbq.getMasterBookingFull(bookingId);
+      if (!booking) return reply.code(404).send({ error: 'Booking not found' });
+      if (booking.bookingStatus === 'CANCELLED') return reply.code(400).send({ error: 'Booking is already cancelled', code: 'ALREADY_CANCELLED' });
+      const providerPnr = booking.pnrs.find((p: any) => p.providerOrderId);
+      if (!providerPnr?.providerOrderId) {
+        return reply.code(422).send({ error: 'No provider order linked to this booking — cannot force cancel automatically.', code: 'NO_PROVIDER_ORDER' });
+      }
+
+      if (!acquireCancelLock(bookingId)) {
+        return reply.code(409).send({ error: 'A cancellation is already in progress for this booking.', code: 'CANCEL_IN_PROGRESS' });
+      }
+
+      try {
+        // 1. Live provider quote → quoteId (embeds the PTR id) + real penalty/refund.
+        const provider = getProvider(booking.primaryProvider);
+        const quote = await provider.getCancellationQuote(providerPnr.providerOrderId, {
+          ticketingStatus: booking.ticketingStatus,
+          bookingAmount: Number(booking.totalAmount) || 0,
+        });
+        console.log(`[ForceCancel][Quote] forcedBy=${forcedBy} bookingRef=${booking.masterBookingReference} method=${quote.method} quoteId=${quote.quoteId} providerRefund=${quote.refundAmount} ${quote.refundCurrency || ''} airlinePenalty=${quote.airlinePenalty ?? 'n/a'} supplierFee=${quote.supplierFee ?? 'n/a'} overrideRefundAmount=${overrideRefundAmount ?? 'none'}`);
+        await mbq.storeProviderPayload({
+          bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote',
+          providerReference: quote.quoteId, payloadJson: { ...(quote.raw as object), expiresAt: quote.expiresAt },
+        }).catch(() => {});
+
+        // 2. Full orchestration: provider execute (PTR) → Stripe refund → status → records.
+        const result = await initiateCancellation({
+          bookingId,
+          quoteId: quote.quoteId,
+          refundMethod: refundMethod || 'ORIGINAL_PAYMENT',
+          overrideRefundAmount: typeof overrideRefundAmount === 'number' && overrideRefundAmount >= 0 ? overrideRefundAmount : undefined,
+          forcedBy,
+        }, booking);
+
+        releaseCancelLock(bookingId);
+        return { success: true, forced: true, ...result };
+      } catch (inner) {
+        releaseCancelLock(bookingId);
+        throw inner;
+      }
+    } catch (e: any) {
+      if (e?.code === 'PROVIDER_CANCEL_FAILED') {
+        return reply.code(502).send({ error: e.message, code: e.code, supportTicketCreated: e.supportTicketCreated || false });
+      }
+      if (e instanceof MystiflyCancellationError) {
+        return reply.code(e.suggestedHttpStatus).send({ error: e.customerMessage, code: e.responseCode });
+      }
+      fastify.log.error(e, '[manage-booking/force-cancel]');
+      return reply.code(502).send({ error: e?.message || 'Force cancellation failed', code: 'FORCE_CANCEL_FAILED' });
+    }
+  });
+
 
   // â”€â”€ Seat Map â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.get('/:bookingId/seats/:sliceId', async (request, reply) => {

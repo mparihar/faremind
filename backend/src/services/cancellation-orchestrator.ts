@@ -26,6 +26,15 @@ export interface CancellationInitiateRequest {
   bookingId: string;
   quoteId: string;
   refundMethod?: string;
+  /**
+   * Manual USD refund amount to pay the customer, overriding the provider-derived
+   * amount. Used by admin/agent "Force Cancel + Refund" when the auto-quote can't
+   * produce a trustworthy amount (e.g. INR-penalty currency mismatch). When set,
+   * this is used as the effective refund (before the FareMind service fee).
+   */
+  overrideRefundAmount?: number;
+  /** Who triggered this (for logs/audit): e.g. 'ADMIN', 'AGENT'. */
+  forcedBy?: string;
 }
 
 export interface CancellationInitiateResult {
@@ -114,7 +123,7 @@ export async function initiateCancellation(
   req: CancellationInitiateRequest,
   booking: any,
 ): Promise<CancellationInitiateResult> {
-  const { bookingId, quoteId, refundMethod = 'ORIGINAL_PAYMENT' } = req;
+  const { bookingId, quoteId, refundMethod = 'ORIGINAL_PAYMENT', overrideRefundAmount, forcedBy } = req;
   const correlationId = generateCorrelationId();
   const resolvedRefundMethod = refundMethod === 'AIRLINE_CREDIT' ? 'AIRLINE_CREDIT' : 'ORIGINAL_PAYMENT';
   const originalAmount = Number(booking.totalAmount);
@@ -190,6 +199,13 @@ export async function initiateCancellation(
     providerResult = await provider.confirmCancellation(quoteId);
     console.log(`[CANCEL_CONFIRM] Step 3 OK: provider confirmed`, JSON.stringify({ cancellationId: providerResult.cancellationId, refundAmount: providerResult.refundAmount, refundCurrency: providerResult.refundCurrency }));
 
+    // Real provider penalty/refund + PTR number (PTR id is embedded in the quote/cancellation id).
+    const ptrNumber = quoteId.match(/_(\d+)$/)?.[1]
+      || String(providerResult.cancellationId || '').match(/_(\d+)$/)?.[1]
+      || 'N/A';
+    const providerPenaltyApprox = Math.max(0, originalAmount - (providerResult.refundAmount || 0));
+    console.log(`[Cancel][PTR]${forcedBy ? ` (forced by ${forcedBy})` : ''} method=${isVoid ? 'VOID' : isCancelAnyway ? 'CANCEL_NO_REFUND' : 'REFUND'} bookingRef=${booking.masterBookingReference} mfRef=${providerPnr?.providerOrderId ?? 'N/A'} ptrNumber=${ptrNumber} providerRefund=${providerResult.refundAmount} ${providerResult.refundCurrency || ''} penaltyApprox=${providerPenaltyApprox} cancellationId=${providerResult.cancellationId}`);
+
     // Store provider response
     await mbq.storeProviderPayload({
       bookingId,
@@ -264,9 +280,16 @@ export async function initiateCancellation(
   const adminFee = isBookingRefundable ? await getAdminServiceFee(booking) : 0;
   // For VOID (unticketed), provider may return refundAmount=0 since no ticket was issued
   // In that case, the customer gets originalAmount back (minus admin fee)
-  const effectiveRefundAmount = providerResult.refundAmount > 0
-    ? providerResult.refundAmount
-    : (isVoid ? originalAmount : 0);
+  // Manual override (Force Cancel + Refund) takes precedence over the provider-derived
+  // amount — used when the auto-quote can't produce a trustworthy USD refund.
+  const effectiveRefundAmount = (overrideRefundAmount != null && overrideRefundAmount >= 0)
+    ? overrideRefundAmount
+    : (providerResult.refundAmount > 0
+        ? providerResult.refundAmount
+        : (isVoid ? originalAmount : 0));
+  if (overrideRefundAmount != null) {
+    console.log(`[Cancel][Override]${forcedBy ? ` (forced by ${forcedBy})` : ''} manual refund amount applied: ${overrideRefundAmount} (provider-derived was ${providerResult.refundAmount})`);
+  }
   const netRefundAmount = effectiveRefundAmount > 0
     ? Math.max(0, effectiveRefundAmount - adminFee)
     : 0;
@@ -429,6 +452,9 @@ async function processCustomerRefund(
         console.log(`[CancellationOrchestrator] ✅ Stripe refund: ${stripeRefund.id} — $${(stripeRefund.amount / 100).toFixed(2)} ${stripeRefund.currency}`);
 
         const refundCompleted = stripeRefund.status === 'succeeded';
+
+        // Explicit refund-status log (FareMind-side Stripe refund outcome).
+        console.log(`[Cancel][Stripe] status=${refundCompleted ? 'CUSTOMER_REFUNDED' : 'CUSTOMER_REFUND_PENDING'} stripeRefundId=${stripeRefund.id} amount=${(stripeRefund.amount / 100).toFixed(2)} ${String(stripeRefund.currency).toUpperCase()} bookingRef=${booking?.masterBookingReference ?? bookingId} bookingRefundId=${bookingRefundId}`);
 
         // Update BookingRefund
         await prisma.bookingRefund.update({

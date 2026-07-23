@@ -248,6 +248,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const [submitting, setSubmitting] = useState(false);
   const [expandedPayload, setExpandedPayload] = useState<string | null>(null);
   const [saving, setSaving]     = useState(false);
+  const [forceCancelling, setForceCancelling] = useState(false);
 
   // ── Edit / delete state ──
   const [confirmDel, setConfirmDel] = useState<{ apiPath: string; label: string; redirect?: string } | null>(null);
@@ -294,6 +295,31 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleForceCancel() {
+    if (!window.confirm(`Force Cancel + Refund booking ${id}?\n\nThis executes the provider cancellation (void/refund PTR) AND refunds the customer via Stripe. This cannot be undone.`)) return;
+    const amtStr = window.prompt('Confirmed refund amount in USD (leave blank to use the provider/auto amount):', '');
+    if (amtStr === null) return; // cancelled
+    const reason = window.prompt('Reason (optional):', '') || '';
+    const overrideRefundAmount = amtStr.trim() && !isNaN(parseFloat(amtStr)) ? parseFloat(amtStr) : undefined;
+    setForceCancelling(true);
+    try {
+      const res = await adminFetch(`/api/admin/bookings/${id}/force-cancel`, {
+        method: 'POST',
+        body: JSON.stringify({ overrideRefundAmount, reason }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (res.ok && data?.success !== false) {
+        alert(`Force Cancel submitted.\nRefund: ${data?.refundAmount ?? data?.netRefundAmount ?? 'see booking'} ${data?.refundCurrency ?? ''}\nStatus: ${data?.newStatus ?? 'CANCELLED'}`);
+      } else {
+        alert(`Force Cancel failed: ${data?.error ?? ('HTTP ' + res.status)}`);
+      }
+    } catch (e: any) {
+      alert(`Force Cancel error: ${e?.message ?? 'unknown'}`);
+    }
+    setForceCancelling(false);
+    await load(true);
   }
 
   async function doConfirmDelete() {
@@ -489,6 +515,16 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <button onClick={() => load(true)} className="p-2 rounded-xl border border-slate-700 text-slate-400 hover:text-white transition-all">
             <RefreshCw size={16} />
           </button>
+          {isOps && booking.status !== 'CANCELLED' && (
+            <button
+              onClick={handleForceCancel}
+              disabled={forceCancelling}
+              title="Force Cancel + Refund (provider PTR → Stripe refund → cancel)"
+              className="px-3 py-2 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all text-xs font-bold disabled:opacity-40"
+            >
+              {forceCancelling ? 'Processing…' : 'Force Cancel + Refund'}
+            </button>
+          )}
           {isOps && (
             <button
               onClick={() => setConfirmDel({
