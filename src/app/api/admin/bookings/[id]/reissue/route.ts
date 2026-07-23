@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAdmin } from '@/lib/admin-rbac';
 import prisma from '@/lib/db';
+import { resolveBookingByAnyRef } from '@/lib/resolve-booking';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 
@@ -17,11 +18,9 @@ export const POST = withAdmin(async (req: NextRequest, { admin, params }: any) =
     if (!newFareSourceCode) return NextResponse.json({ error: 'newFareSourceCode is required' }, { status: 400 });
     const isQuoteOnly = mode === 'quote';
 
-    const booking = await prisma.masterBooking.findFirst({
-      where: { OR: [{ id }, { masterBookingReference: id }] },
-      select: { id: true, masterBookingReference: true, bookingStatus: true },
-    });
-    if (!booking) return NextResponse.json({ error: 'Booking not found' }, { status: 404 });
+    // `id` may be the MasterBooking id, FareMind reference, airline PNR, or Mystifly MFRef.
+    const booking = await resolveBookingByAnyRef(id);
+    if (!booking) return NextResponse.json({ error: `No booking found for "${id}". Enter the FareMind reference, booking ID, airline PNR, or Mystifly MFRef.` }, { status: 404 });
 
     const res = await fetch(`${BACKEND_URL}/api/manage-booking/${booking.id}/reissue`, {
       method: 'POST',

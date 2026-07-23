@@ -4,6 +4,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAgent } from '@/lib/agent-auth';
 import { prisma } from '@/lib/db';
+import { resolveBookingByAnyRef } from '@/lib/resolve-booking';
 
 const BACKEND_URL = process.env.BACKEND_URL || 'http://localhost:3001';
 
@@ -16,18 +17,12 @@ export const POST = withAgent(async (req: NextRequest, { agent, params }: any) =
     const { overrideRefundAmount, refundMethod, reason, mode } = body || {};
     const isQuoteOnly = mode === 'quote';
 
-    // `fbr` may be the masterBookingReference OR the MasterBooking id (the agent
-    // post-booking console works off the booking id).
-    const booking = await prisma.masterBooking.findFirst({
-      where: {
-        AND: [
-          { OR: [{ masterBookingReference: fbr }, { id: fbr }] },
-          { OR: [{ agentUserId: agent.id }, { userId: agent.id }] },
-        ],
-      },
-      select: { id: true, masterBookingReference: true, bookingStatus: true },
-    });
-    if (!booking) return NextResponse.json({ error: 'Booking not found or access denied' }, { status: 404 });
+    // `fbr` may be the FareMind reference, the MasterBooking id, the airline PNR,
+    // or the Mystifly UniqueID (MFRef). Agents are internal staff servicing any
+    // customer booking from this console, so it is NOT restricted to bookings the
+    // agent created (mirrors the admin post-booking console).
+    const booking = await resolveBookingByAnyRef(fbr);
+    if (!booking) return NextResponse.json({ error: `No booking found for "${fbr}". Enter the FareMind reference, booking ID, airline PNR, or Mystifly MFRef.` }, { status: 404 });
 
     const actor = (agent as any).email || agent.id;
     const res = await fetch(`${BACKEND_URL}/api/manage-booking/${booking.id}/force-cancel`, {
