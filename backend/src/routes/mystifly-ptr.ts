@@ -214,7 +214,13 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
       if (hasError) {
         if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date() });
-        return reply.code(422).send({ error: message, errorCode: 'MYSTIFLY_REFUND_QUOTE_FAILED', raw: result });
+        // The airline refused a refund PTR (non-refundable, still in void window, or
+        // already processed). Point staff at the right alternative instead of a dead end.
+        const notEligible = /not eligible|non.?refundable|no refund|not allowed|not permitted|verify the request/i.test(message);
+        const friendly = notEligible
+          ? `This ticket cannot be refunded through the airline's refund process (${message}). If it is still within the void window use "Get Void Quote"; otherwise use "Force Cancel + Refund" to cancel and issue a manual refund.`
+          : message;
+        return reply.code(422).send({ error: friendly, errorCode: 'MYSTIFLY_REFUND_QUOTE_FAILED', raw: result });
       }
 
       const quoteData = result?.Data || result;
