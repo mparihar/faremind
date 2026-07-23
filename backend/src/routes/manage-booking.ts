@@ -7,6 +7,8 @@ import { FastifyPluginAsync } from 'fastify';
 import { getProvider } from '../services/provider-adapter';
 import { initiateCancellation, getAdminServiceFee as getCancelServiceFee } from '../services/cancellation-orchestrator';
 import { getReissueQuote, initiateReissue } from '../services/reissue-orchestrator';
+import { toUsd } from '../services/fx';
+import { chargeOriginalCard, refundCollection } from '../services/customer-collect';
 import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
 import * as mbq from '../lib/manage-booking-queries';
 import * as emails from '../lib/manage-booking-emails';
@@ -1355,12 +1357,19 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         },
       }).catch(() => null);
 
-      return {
-        supported: true,
-        requestId: result.requestId,
-        provider: booking.primaryProvider,
-        offerCount: result.offers.length,
-        offers: result.offers.map((o: any) => ({
+      // FareMind service fee added to the customer's collection for a change,
+      // mirroring "Reissue + Collect Difference". Same per-ticket fee helper used
+      // by cancel/reissue, so a change and a reissue charge the identical fee.
+      const changeServiceFee = await getCancelServiceFee(booking);
+      const offers = await Promise.all(result.offers.map(async (o: any) => {
+        const providerAmount = Number(o.changeTotalAmount) || 0;
+        const providerCcy = (o.changeTotalCurrency || 'USD').toUpperCase();
+        // Provider "amount to pay" → USD (the fare difference we must collect).
+        const fareDiffUsd = providerAmount > 0
+          ? (providerCcy !== 'USD' ? await toUsd(providerAmount, providerCcy) : providerAmount)
+          : 0;
+        const totalCollect = Math.round((Math.max(0, fareDiffUsd) + Math.max(0, changeServiceFee)) * 100) / 100;
+        return {
           id: o.id,
           changeTotalAmount: o.changeTotalAmount,
           changeTotalCurrency: o.changeTotalCurrency,
@@ -1376,12 +1385,24 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           supplierFee: o.supplierFee ?? 0,
           originalTicketValue: o.originalTicketValue ?? Number(booking.totalAmount),
           newTicketValue: o.newTicketValue ?? 0,
+          // FareMind service fee + total the customer will actually be charged (USD)
+          serviceFee: Math.round(changeServiceFee * 100) / 100,
+          fareDifferenceUsd: Math.round(fareDiffUsd * 100) / 100,
+          totalCollect,
+          collectCurrency: 'USD',
           // Enhanced itinerary (Mystifly PTR)
           newItinerary: o.newItinerary ?? null,
           newSlices: o.slices?.add || [],
           removedSlices: o.slices?.remove || [],
           conditions: o.conditions,
-        })),
+        };
+      }));
+      return {
+        supported: true,
+        requestId: result.requestId,
+        provider: booking.primaryProvider,
+        offerCount: result.offers.length,
+        offers,
         currentItinerary,
       };
     } catch (e: any) {
@@ -1446,12 +1467,71 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const provider = getProvider(booking.primaryProvider);
 
-      // Confirm the change via the provider adapter (Duffel or Mystifly)
-      const result = await provider.confirmChangeOption(
-        changeOfferId,
-        paymentAmount,
-        paymentCurrency
-      );
+      // ── Collect the fare difference + FareMind service fee from the customer ──
+      // Mirrors "Reissue + Collect Difference": compute the USD amount to charge,
+      // take it off-session on the original card BEFORE executing the provider
+      // change, and refund it if the provider change then fails. This closes the
+      // gap where the change flow showed "Confirm & Pay X" but collected nothing.
+      const providerAmount = Number(paymentAmount) || 0;
+      const providerCcy = (paymentCurrency || booking.currency || 'USD').toUpperCase();
+      const fareDiffUsd = providerAmount > 0
+        ? (providerCcy !== 'USD' ? await toUsd(providerAmount, providerCcy) : providerAmount)
+        : 0;
+      const changeServiceFee = await getCancelServiceFee(booking);
+      const totalCollect = Math.round((Math.max(0, fareDiffUsd) + Math.max(0, changeServiceFee)) * 100) / 100;
+      console.log(`[Change][Quote] bookingRef=${booking.masterBookingReference} offer=${changeOfferId} providerAmount=${providerAmount} ${providerCcy} fareDiffUsd=${fareDiffUsd} serviceFee=${changeServiceFee} totalCollect=${totalCollect} USD`);
+
+      // Lock (shared with cancel) — prevents concurrent change/cancel + double charge.
+      if (!acquireCancelLock(bookingId)) {
+        return reply.code(409).send({ error: 'Another change or cancellation is already in progress for this booking. Please wait a moment and try again.', code: 'CHANGE_IN_PROGRESS' });
+      }
+
+      let chargeId: string | null = null;
+      if (totalCollect > 0) {
+        const collect = await chargeOriginalCard(booking, totalCollect, {
+          description: `Flight change — ${booking.masterBookingReference}`,
+          kind: 'change_collect',
+          idempotencyKey: `change-collect:${bookingId}:${changeOfferId}`,
+        });
+        if (collect.status === 'NO_SAVED_CARD' || collect.status === 'FAILED') {
+          // Do NOT execute the change — record a pending collection task instead.
+          await prisma.servicePayment.create({
+            data: {
+              bookingId, userId: booking.userId ?? null, serviceType: 'DATE_CHANGE',
+              description: `Flight change difference to collect: fare diff $${Math.max(0, fareDiffUsd).toFixed(2)} + service fee $${changeServiceFee.toFixed(2)} = $${totalCollect.toFixed(2)}. ${collect.status === 'NO_SAVED_CARD' ? 'No saved card on file.' : `Charge failed: ${collect.error}`}`,
+              amount: totalCollect, currency: 'USD', status: 'PENDING',
+              customerEmail: booking.customerEmail ?? 'unknown@unknown.com',
+              customerName: booking.customerName ?? 'Customer',
+              requestedBy: 'CUSTOMER',
+            },
+          }).catch(() => {});
+          console.warn(`[Change][Collect] status=${collect.status} bookingRef=${booking.masterBookingReference} amount=${totalCollect}${collect.error ? ` err=${collect.error}` : ''}`);
+          releaseCancelLock(bookingId);
+          return reply.code(402).send({
+            error: collect.status === 'NO_SAVED_CARD'
+              ? 'We could not automatically charge the change difference (no saved card on file). Our team will send you a secure payment link to complete this change.'
+              : `We could not charge the change difference: ${collect.error}. Please try another payment method or contact support.`,
+            code: collect.status === 'NO_SAVED_CARD' ? 'COLLECT_REQUIRES_PAYMENT' : 'COLLECT_FAILED',
+          });
+        }
+        chargeId = collect.chargeId;
+        if (chargeId) console.log(`[Change][Collect] status=CHARGED paymentIntent=${chargeId} amount=${totalCollect} USD bookingRef=${booking.masterBookingReference}`);
+      }
+
+      // Confirm the change via the provider adapter (Duffel or Mystifly).
+      // If it fails after we charged, refund the collection before surfacing the error.
+      let result: any;
+      try {
+        result = await provider.confirmChangeOption(changeOfferId, paymentAmount, paymentCurrency);
+      } catch (changeErr: any) {
+        if (chargeId) {
+          try { await refundCollection(chargeId); console.log(`[Change][Collect] refunded ${chargeId} after change failure`); }
+          catch (rfErr: any) { console.error(`[Change][Collect] CRITICAL: refund of ${chargeId} failed after change failure: ${rfErr.message}`); }
+        }
+        releaseCancelLock(bookingId);
+        throw Object.assign(changeErr, { _chargeRefunded: !!chargeId });
+      }
+      releaseCancelLock(bookingId);
 
       // Record change request in DB
       const changeReq = await mbq.createChangeRequest({
@@ -1488,9 +1568,26 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       await mbq.createBookingEvent({
         bookingId, eventType: 'CHANGE_CONFIRMED',
         eventTitle: 'Flight change confirmed',
-        eventDescription: `Change confirmed. New total: ${fmtCurrency(result.newTotalAmount, result.newTotalCurrency)}`,
+        eventDescription: `Change confirmed. New total: ${fmtCurrency(result.newTotalAmount, result.newTotalCurrency)}. Collected $${totalCollect.toFixed(2)} (fare diff $${Math.max(0, fareDiffUsd).toFixed(2)} + service fee $${changeServiceFee.toFixed(2)}).`,
         actorType: 'system',
       });
+
+      // Record the collected fare difference + service fee (ServicePayment).
+      if (totalCollect > 0) {
+        await prisma.servicePayment.create({
+          data: {
+            bookingId, userId: booking.userId ?? null, serviceType: 'DATE_CHANGE',
+            description: `Flight change: fare difference $${Math.max(0, fareDiffUsd).toFixed(2)} + service fee $${changeServiceFee.toFixed(2)} = $${totalCollect.toFixed(2)}.`,
+            amount: totalCollect, currency: 'USD',
+            status: chargeId ? 'SUCCEEDED' : 'PENDING',
+            stripePaymentIntentId: chargeId,
+            customerEmail: booking.customerEmail ?? 'unknown@unknown.com',
+            customerName: booking.customerName ?? 'Customer',
+            requestedBy: 'CUSTOMER',
+            paidAt: chargeId ? new Date() : null,
+          },
+        }).catch(() => {});
+      }
 
       // Email notification for confirmed flight change
       if (booking.customerEmail) {
@@ -1539,14 +1636,21 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         confirmedAt: result.confirmedAt,
         newTotalAmount: result.newTotalAmount,
         newTotalCurrency: result.newTotalCurrency,
+        // Collection breakdown (USD) — what the customer was actually charged.
+        collected: totalCollect,
+        collectCurrency: 'USD',
+        fareDifference: Math.round(Math.max(0, fareDiffUsd) * 100) / 100,
+        serviceFee: Math.round(changeServiceFee * 100) / 100,
+        chargeId,
         message: 'Your flight has been successfully changed.',
       };
     } catch (e: any) {
       fastify.log.error(e, '[manage-booking/change/confirm]');
-      if (e.message?.includes('Duffel')) {
-        return reply.code(502).send({ error: `Change failed: ${e.message}` });
+      const refundNote = e?._chargeRefunded ? ' Your payment has been refunded.' : '';
+      if (e.message?.includes('Duffel') || e.message?.includes('Mystifly') || e.message?.includes('ReIssue')) {
+        return reply.code(502).send({ error: `Change failed: ${e.message}${refundNote}`, chargeRefunded: !!e?._chargeRefunded });
       }
-      reply.code(500).send({ error: 'Server error' });
+      reply.code(500).send({ error: `Server error.${refundNote}`, chargeRefunded: !!e?._chargeRefunded });
     }
   });
 

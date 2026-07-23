@@ -333,16 +333,23 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
                     <span className="text-red-400 font-medium">+{fmt(selectedOffer.supplierFee, selectedOffer.changeTotalCurrency)}</span>
                   </div>
                 )}
+                {(selectedOffer.serviceFee ?? 0) > 0 && (
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">FareMind service fee</span>
+                    <span className="text-red-400 font-medium">+{fmt(selectedOffer.serviceFee, selectedOffer.collectCurrency || 'USD')}</span>
+                  </div>
+                )}
                 <div className="flex justify-between items-center pt-2 border-t border-white/[0.05]">
                   <span className="text-white font-bold">
-                    {selectedOffer.changeTotalAmount > 0 ? 'Amount to pay' : selectedOffer.changeTotalAmount < 0 ? 'Remaining ticket value' : 'No additional cost'}
+                    {(selectedOffer.totalCollect ?? 0) > 0 ? 'Total to pay' : 'No additional cost'}
                   </span>
-                  <span className={`font-black text-lg ${selectedOffer.changeTotalAmount > 0 ? 'text-amber-400' : selectedOffer.changeTotalAmount < 0 ? 'text-emerald-400' : 'text-[#1ABC9C]'}`}>
-                    {selectedOffer.changeTotalAmount !== 0
-                      ? `${selectedOffer.changeTotalAmount > 0 ? '' : ''}${fmt(Math.abs(selectedOffer.changeTotalAmount), selectedOffer.changeTotalCurrency)}`
+                  <span className={`font-black text-lg ${(selectedOffer.totalCollect ?? 0) > 0 ? 'text-amber-400' : 'text-[#1ABC9C]'}`}>
+                    {(selectedOffer.totalCollect ?? 0) > 0
+                      ? fmt(selectedOffer.totalCollect, selectedOffer.collectCurrency || 'USD')
                       : '$0'}
                   </span>
                 </div>
+                <p className="text-[10px] text-slate-500 pt-1">Charged to your original payment method on confirmation.</p>
               </div>
             </div>
 
@@ -365,8 +372,8 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
               <button onClick={handleConfirm} disabled={changeConfirmLoading}
                 className="flex-1 py-3 rounded-xl bg-purple-500 hover:bg-purple-600 text-white font-bold text-sm disabled:opacity-50 transition-all">
                 {changeConfirmLoading ? <Loader2 size={16} className="animate-spin mx-auto" /> : (
-                  selectedOffer.changeTotalAmount > 0
-                    ? `Confirm & Pay ${fmt(selectedOffer.changeTotalAmount, selectedOffer.changeTotalCurrency)}`
+                  (selectedOffer.totalCollect ?? 0) > 0
+                    ? `Confirm & Pay ${fmt(selectedOffer.totalCollect, selectedOffer.collectCurrency || 'USD')}`
                     : 'Confirm Flight Change'
                 )}
               </button>

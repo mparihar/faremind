@@ -687,14 +687,21 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
                             <span className="text-red-500 font-medium">+{fmtAmt(dcSelectedOffer.supplierFee, dcSelectedOffer.changeTotalCurrency)}</span>
                           </div>
                         )}
+                        {(dcSelectedOffer.serviceFee ?? 0) > 0 && (
+                          <div className="flex justify-between">
+                            <span className="text-slate-500">FareMind service fee</span>
+                            <span className="text-red-500 font-medium">+{fmtAmt(dcSelectedOffer.serviceFee, dcSelectedOffer.collectCurrency || 'USD')}</span>
+                          </div>
+                        )}
                         <div className="flex justify-between items-center pt-1.5 border-t border-slate-100">
                           <span className="text-slate-800 font-bold text-[12px]">
-                            {dcSelectedOffer.changeTotalAmount > 0 ? 'Amount to pay' : dcSelectedOffer.changeTotalAmount < 0 ? 'Remaining ticket value' : 'No additional cost'}
+                            {(dcSelectedOffer.totalCollect ?? 0) > 0 ? 'Total to pay' : 'No additional cost'}
                           </span>
-                          <span className={`font-black text-[14px] ${dcSelectedOffer.changeTotalAmount > 0 ? 'text-amber-600' : dcSelectedOffer.changeTotalAmount < 0 ? 'text-emerald-600' : 'text-emerald-600'}`}>
-                            {dcSelectedOffer.changeTotalAmount !== 0 ? fmtAmt(Math.abs(dcSelectedOffer.changeTotalAmount), dcSelectedOffer.changeTotalCurrency) : '$0'}
+                          <span className={`font-black text-[14px] ${(dcSelectedOffer.totalCollect ?? 0) > 0 ? 'text-amber-600' : 'text-emerald-600'}`}>
+                            {(dcSelectedOffer.totalCollect ?? 0) > 0 ? fmtAmt(dcSelectedOffer.totalCollect, dcSelectedOffer.collectCurrency || 'USD') : '$0'}
                           </span>
                         </div>
+                        <p className="text-[9px] text-slate-400 pt-0.5">Charged to your original payment method on confirmation.</p>
                       </div>
                     </div>
 
@@ -734,8 +741,8 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
                         className="flex-1 py-2 rounded-lg bg-purple-600 hover:bg-purple-700 text-white text-[11px] font-bold transition-all disabled:opacity-50"
                       >
                         {mbStore.changeConfirmLoading ? <Loader2 className="w-4 h-4 animate-spin mx-auto" /> : (
-                          dcSelectedOffer.changeTotalAmount > 0
-                            ? `Confirm & Pay ${fmtAmt(dcSelectedOffer.changeTotalAmount, dcSelectedOffer.changeTotalCurrency)}`
+                          (dcSelectedOffer.totalCollect ?? 0) > 0
+                            ? `Confirm & Pay ${fmtAmt(dcSelectedOffer.totalCollect, dcSelectedOffer.collectCurrency || 'USD')}`
                             : 'Confirm Flight Change'
                         )}
                       </button>

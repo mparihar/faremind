@@ -14,13 +14,11 @@
  * Logs: [Reissue][Quote], [Reissue][Collect] (Stripe), [Reissue][PTR].
  */
 
-import Stripe from 'stripe';
 import { prisma } from '../lib/db';
 import * as mystifly from './mystifly';
 import { getAdminServiceFee } from './cancellation-orchestrator';
 import { toUsd } from './fx';
-
-const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
+import { chargeOriginalCard, refundCollection } from './customer-collect';
 
 function mfRefOf(booking: any): string | null {
   return booking?.pnrs?.find((p: any) => p.providerOrderId)?.providerOrderId
@@ -109,45 +107,22 @@ export async function initiateReissue(
   // 2. Collect the difference from the customer (off-session on the original card)
   let chargeId: string | null = null;
   if (quote.totalCollect > 0) {
-    const lastPayment = await prisma.bookingPayment.findFirst({
-      where: { bookingId, status: 'SUCCEEDED' },
-      orderBy: { paidAt: 'desc' },
+    const collect = await chargeOriginalCard(booking, quote.totalCollect, {
+      description: `Reissue difference — ${booking.masterBookingReference}`,
+      kind: 'reissue_collect',
     });
-    let payment_method: string | undefined;
-    let customer: string | undefined;
-    if (lastPayment?.stripePaymentIntentId) {
-      try {
-        const pi = await stripe.paymentIntents.retrieve(lastPayment.stripePaymentIntentId);
-        payment_method = (pi.payment_method as string) || undefined;
-        customer = (pi.customer as string) || undefined;
-      } catch { /* ignore */ }
-    }
-
-    if (!payment_method) {
+    if (collect.status === 'NO_SAVED_CARD') {
       await recordPendingCollect(booking, quote, forcedBy, 'No saved card available for off-session charge — collect via payment link, then retry reissue.');
       console.warn(`[Reissue][Collect] status=NO_SAVED_CARD bookingRef=${booking.masterBookingReference} amount=${quote.totalCollect}`);
       throw Object.assign(new Error('Could not auto-charge the reissue difference (no saved card on file). A payment task was created — collect the payment, then execute the reissue.'), { code: 'COLLECT_REQUIRES_PAYMENT' });
     }
-
-    try {
-      const pi = await stripe.paymentIntents.create({
-        amount: Math.round(quote.totalCollect * 100),
-        currency: 'usd',
-        customer,
-        payment_method,
-        off_session: true,
-        confirm: true,
-        description: `Reissue difference — ${booking.masterBookingReference}`,
-        metadata: { bookingId, kind: 'reissue_collect' },
-      });
-      if (pi.status !== 'succeeded') throw new Error(`charge not completed (status ${pi.status})`);
-      chargeId = pi.id;
-      console.log(`[Reissue][Collect] status=CHARGED paymentIntent=${pi.id} amount=${quote.totalCollect} USD bookingRef=${booking.masterBookingReference}`);
-    } catch (chargeErr: any) {
-      await recordPendingCollect(booking, quote, forcedBy, `Off-session charge failed: ${chargeErr.message}`);
-      console.error(`[Reissue][Collect] status=FAILED bookingRef=${booking.masterBookingReference} amount=${quote.totalCollect}: ${chargeErr.message}`);
-      throw Object.assign(new Error(`Could not charge the reissue difference: ${chargeErr.message}. A payment task was created — collect the payment, then retry.`), { code: 'COLLECT_FAILED' });
+    if (collect.status === 'FAILED') {
+      await recordPendingCollect(booking, quote, forcedBy, `Off-session charge failed: ${collect.error}`);
+      console.error(`[Reissue][Collect] status=FAILED bookingRef=${booking.masterBookingReference} amount=${quote.totalCollect}: ${collect.error}`);
+      throw Object.assign(new Error(`Could not charge the reissue difference: ${collect.error}. A payment task was created — collect the payment, then retry.`), { code: 'COLLECT_FAILED' });
     }
+    chargeId = collect.chargeId;
+    console.log(`[Reissue][Collect] status=CHARGED paymentIntent=${chargeId} amount=${quote.totalCollect} USD bookingRef=${booking.masterBookingReference}`);
   }
 
   // 3. Execute the provider reissue
@@ -159,7 +134,7 @@ export async function initiateReissue(
   } catch (reErr: any) {
     // Reissue failed after we charged → refund the collection
     if (chargeId) {
-      try { await stripe.refunds.create({ payment_intent: chargeId }); console.log(`[Reissue][Collect] refunded ${chargeId} after reissue failure`); }
+      try { await refundCollection(chargeId); console.log(`[Reissue][Collect] refunded ${chargeId} after reissue failure`); }
       catch (rfErr: any) { console.error(`[Reissue][Collect] CRITICAL: refund of ${chargeId} failed after reissue failure: ${rfErr.message}`); }
     }
     throw Object.assign(new Error(`Reissue failed at the provider: ${reErr.message}.${chargeId ? ' Your charge has been refunded.' : ''}`), { code: 'REISSUE_FAILED' });
