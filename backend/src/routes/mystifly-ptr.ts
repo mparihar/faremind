@@ -52,6 +52,16 @@ function extractPtrError(result: any): { hasError: boolean; message: string; cod
   return { hasError: false, message: '', code: '' };
 }
 
+/** Resolve a MasterBooking id from either its cuid `id` or its `masterBookingReference`. */
+async function resolveMasterBookingId(input?: string): Promise<string | null> {
+  if (!input) return null;
+  const b = await prisma.masterBooking.findFirst({
+    where: { OR: [{ id: input }, { masterBookingReference: input }] },
+    select: { id: true },
+  });
+  return b?.id ?? null;
+}
+
 async function createPtrRecord(params: {
   bookingId: string;
   providerUniqueId: string;
@@ -60,9 +70,18 @@ async function createPtrRecord(params: {
   requestedByRole?: string;
   notes?: string;
 }) {
+  // The caller may pass a booking reference (e.g. FM5GQXHT) OR the MasterBooking id.
+  // postTicketingRequest.bookingId is an FK to MasterBooking.id, so resolve first —
+  // otherwise a reference triggers a foreign-key constraint violation. If it can't be
+  // resolved, skip DB linkage (bookingId is optional tracking) rather than crash.
+  const resolvedId = await resolveMasterBookingId(params.bookingId);
+  if (!resolvedId) {
+    console.warn(`[PTR] createPtrRecord: no MasterBooking found for "${params.bookingId}" — skipping PTR tracking record.`);
+    return null;
+  }
   return prisma.postTicketingRequest.create({
     data: {
-      bookingId: params.bookingId,
+      bookingId: resolvedId,
       provider: 'MYSTIFLY',
       providerUniqueId: params.providerUniqueId,
       requestType: params.requestType as any,
