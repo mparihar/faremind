@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, Users2, DollarSign,
   ScrollText, Bell, Settings, LogOut, Shield, ChevronRight,
   Brain, UserRoundSearch, AlertTriangle, Headset, Mail, MessageCircle,
-  Activity, Plug2, Tag, BarChart3, ToggleRight, CreditCard, BookMarked, Target,
+  Activity, Plug2, Tag, BarChart3, ToggleRight, CreditCard, BookMarked, Target, RotateCcw,
 } from 'lucide-react';
 import type { AdminRole } from '@/store/useAdminStore';
 
@@ -22,6 +22,7 @@ interface NavItem {
 const NAV: NavItem[] = [
   { href: '/admin/dashboard',            label: 'Dashboard',            icon: LayoutDashboard },
   { href: '/admin/bookings',             label: 'Bookings',             icon: BookOpen },
+  { href: '/admin/post-booking',         label: 'Post-Booking',         icon: RotateCcw, minRole: 'SUPPORT' },
   { href: '/admin/operations',           label: 'Operations',           icon: Activity, minRole: 'SUPPORT' },
   { href: '/admin/providers',            label: 'Providers',            icon: Plug2, minRole: 'OPS_ADMIN' },
   { href: '/admin/fare-management',      label: 'Fare Management',      icon: Tag, minRole: 'OPS_ADMIN' },
