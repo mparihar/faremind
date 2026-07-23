@@ -24,9 +24,30 @@ import { prisma } from '../lib/db';
 // ═══════════════════════════════════════════════
 
 function extractPtrError(result: any): { hasError: boolean; message: string; code: string } {
+  // 1. Structured Mystifly error object (Data.Error / Error with ErrorCode).
   const err = result?.Data?.Error || result?.Error;
   if (err?.ErrorCode && err.ErrorCode !== '0') {
     return { hasError: true, message: err.ErrorMessage || 'PTR request failed', code: err.ErrorCode };
+  }
+  // 2. Array-style errors (Data.Errors[] / Errors[]).
+  const errArr = result?.Data?.Errors || result?.Errors;
+  if (Array.isArray(errArr) && errArr.length > 0) {
+    const e0 = errArr[0] || {};
+    return { hasError: true, message: e0.Message || e0.ErrorMessage || 'PTR request failed', code: e0.Code || e0.ErrorCode || 'UNKNOWN' };
+  }
+  // 3. Envelope-level failure: Success === false with a Message. This is how a
+  //    provider 500 (e.g. "The remote server returned an error: (500) …") arrives
+  //    when Mystifly wraps it in an HTTP 200 body — must NOT be treated as a quote.
+  if (result && result.Success === false) {
+    const msg: string = result.Message || 'The airline system returned an error for this request.';
+    const isTransient = /\(5\d\d\)|internal server error|timeout|temporarily/i.test(msg);
+    return {
+      hasError: true,
+      message: isTransient
+        ? `The airline system is temporarily unavailable (${msg}). Please retry in a moment; if it persists, use Force Cancel + Refund or contact support.`
+        : msg,
+      code: isTransient ? 'PROVIDER_UNAVAILABLE' : 'PROVIDER_ERROR',
+    };
   }
   return { hasError: false, message: '', code: '' };
 }
