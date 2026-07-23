@@ -1012,6 +1012,7 @@ export async function postTicketingRequest(
 ): Promise<any> {
   const rq: Record<string, unknown> = {
     mFRef: uniqueId,
+    Target: MYSTIFLY_TARGET, // required by Mystifly on every request; PTR omitted it → "Please verify the request."
     ...(remarks ? { AdditionalNote: remarks } : {}),
     ...(newFareSourceCode ? { NewFareSourceCode: newFareSourceCode } : {}),
   };
@@ -1100,6 +1101,7 @@ export async function reissueQuote(
   const requestBody = {
     ptrType: 'ReIssueQuote',
     mFRef: mfRef,
+    Target: MYSTIFLY_TARGET,
     reissueQuoteRequestType: 'OND',
     originDestinations: originDestinations.map(od => ({
       originLocationCode: od.originLocationCode,
@@ -1146,6 +1148,7 @@ export async function confirmReissue(
       PtrId: ptrId,
       AcceptQuote: 'yes',
       PreferenceOption: preferenceOption,
+      Target: MYSTIFLY_TARGET,
     } as unknown as Record<string, unknown>,
     retries: 0,
   });
@@ -1176,6 +1179,7 @@ export async function voidQuote(mfRef: string): Promise<any> {
     body: {
       ptrType: 'VoidQuote',
       mFRef: mfRef,
+      Target: MYSTIFLY_TARGET,
     } as unknown as Record<string, unknown>,
     retries: 0,
   });
@@ -1202,6 +1206,7 @@ export async function executeVoid(
       mFRef: mfRef,
       PtrId: ptrId,
       AcceptQuote: 'yes',
+      Target: MYSTIFLY_TARGET,
     } as unknown as Record<string, unknown>,
     retries: 0, // Never retry void executions
   });
@@ -1225,6 +1230,7 @@ export async function refundQuote(mfRef: string): Promise<any> {
     body: {
       ptrType: 'RefundQuote',
       mFRef: mfRef,
+      Target: MYSTIFLY_TARGET,
     } as unknown as Record<string, unknown>,
     retries: 0,
   });
@@ -1251,6 +1257,7 @@ export async function executeRefund(
       mFRef: mfRef,
       PtrId: ptrId,
       AcceptQuote: 'yes',
+      Target: MYSTIFLY_TARGET,
     } as unknown as Record<string, unknown>,
     retries: 0, // Never retry refund executions
   });
