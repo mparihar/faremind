@@ -132,7 +132,14 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
       if (hasError) {
         if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date() });
-        return reply.code(422).send({ error: message, errorCode: 'MYSTIFLY_VOID_QUOTE_FAILED', raw: result });
+        // Void is only allowed inside the airline's void window (typically same day
+        // as ticketing). A generic rejection here almost always means the ticket is
+        // outside that window — point the agent at Refund / Force Cancel instead.
+        const notEligible = /verify the request|not eligible|not allowed|not permitted|window|invalid/i.test(message);
+        const friendly = notEligible
+          ? `Void is not available for this ticket (${message}). Void is only allowed within the airline's void window — usually the same day as ticketing. Use "Get Refund Quote" instead, or "Force Cancel + Refund".`
+          : message;
+        return reply.code(422).send({ error: friendly, errorCode: 'MYSTIFLY_VOID_QUOTE_FAILED', raw: result });
       }
 
       // Extract quote info
