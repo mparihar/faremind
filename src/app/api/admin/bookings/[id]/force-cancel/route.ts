@@ -14,7 +14,8 @@ export const POST = withAdmin(async (req: NextRequest, { admin, params }: any) =
     if (!id) return NextResponse.json({ error: 'Missing id' }, { status: 400 });
 
     const body = await req.json().catch(() => ({}));
-    const { overrideRefundAmount, refundMethod, reason } = body || {};
+    const { overrideRefundAmount, refundMethod, reason, mode } = body || {};
+    const isQuoteOnly = mode === 'quote';
 
     const booking = await prisma.masterBooking.findFirst({
       where: { OR: [{ id }, { masterBookingReference: id }] },
@@ -30,9 +31,14 @@ export const POST = withAdmin(async (req: NextRequest, { admin, params }: any) =
         refundMethod: refundMethod || 'ORIGINAL_PAYMENT',
         requestedBy: admin.email,
         role: 'ADMIN',
+        mode,
       }),
     });
     const data = await res.json().catch(() => ({}));
+
+    // Quote-only: return the live quote for the confirm modal, no logging/audit.
+    if (isQuoteOnly) return NextResponse.json(data, { status: res.ok ? 200 : res.status });
+
     console.log(`[Admin][ForceCancel] admin=${admin.email} bookingRef=${booking.masterBookingReference} httpStatus=${res.status} success=${data?.success} refundAmount=${data?.refundAmount ?? data?.netRefundAmount ?? 'n/a'}`);
 
     // Audit event (best-effort)

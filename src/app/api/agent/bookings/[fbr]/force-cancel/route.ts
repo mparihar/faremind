@@ -13,7 +13,8 @@ export const POST = withAgent(async (req: NextRequest, { agent, params }: any) =
     if (!fbr) return NextResponse.json({ error: 'Missing booking reference' }, { status: 400 });
 
     const body = await req.json().catch(() => ({}));
-    const { overrideRefundAmount, refundMethod, reason } = body || {};
+    const { overrideRefundAmount, refundMethod, reason, mode } = body || {};
+    const isQuoteOnly = mode === 'quote';
 
     // `fbr` may be the masterBookingReference OR the MasterBooking id (the agent
     // post-booking console works off the booking id).
@@ -37,9 +38,14 @@ export const POST = withAgent(async (req: NextRequest, { agent, params }: any) =
         refundMethod: refundMethod || 'ORIGINAL_PAYMENT',
         requestedBy: actor,
         role: 'AGENT',
+        mode,
       }),
     });
     const data = await res.json().catch(() => ({}));
+
+    // Quote-only: return the live quote for the confirm modal, no logging/audit.
+    if (isQuoteOnly) return NextResponse.json(data, { status: res.ok ? 200 : res.status });
+
     console.log(`[Agent][ForceCancel] agent=${actor} bookingRef=${booking.masterBookingReference} httpStatus=${res.status} success=${data?.success} refundAmount=${data?.refundAmount ?? data?.netRefundAmount ?? 'n/a'}`);
 
     await prisma.bookingEvent.create({

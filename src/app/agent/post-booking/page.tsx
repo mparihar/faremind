@@ -65,6 +65,16 @@ export default function AgentPostBookingPage() {
   const [ptrRecords, setPtrRecords] = useState<any[]>([]);
   const [recordsLoading, setRecordsLoading] = useState(false);
 
+  // Force Cancel + Refund modal
+  const [fcOpen, setFcOpen] = useState(false);
+  const [fcQuote, setFcQuote] = useState<any>(null);
+  const [fcLoadingQuote, setFcLoadingQuote] = useState(false);
+  const [fcAmount, setFcAmount] = useState('');
+  const [fcReason, setFcReason] = useState('');
+  const [fcSubmitting, setFcSubmitting] = useState(false);
+  const [fcResult, setFcResult] = useState<any>(null);
+  const [fcError, setFcError] = useState<string | null>(null);
+
   // Load existing PTR records for the booking
   useEffect(() => {
     if (bookingId) loadPtrRecords();
@@ -130,29 +140,45 @@ export default function AgentPostBookingPage() {
     setExecLoading(false);
   }
 
-  async function handleForceCancel() {
-    const target = (bookingId.trim() || uniqueId.trim());
-    if (!target) { setExecResult({ error: 'Enter a Booking ID (or MFRef) first.' }); return; }
-    if (!window.confirm('Force Cancel + Refund this booking?\n\nThis executes the provider cancellation (void/refund PTR) AND refunds the customer via Stripe. This cannot be undone.')) return;
-    const amtStr = window.prompt('Confirmed refund amount in USD (leave blank to use the provider/auto amount):', '');
-    if (amtStr === null) return; // user cancelled
-    const reason = window.prompt('Reason (optional):', '') || '';
-    const overrideRefundAmount = amtStr.trim() && !isNaN(parseFloat(amtStr)) ? parseFloat(amtStr) : undefined;
-    setExecLoading(true);
-    setExecResult(null);
+  const fcTarget = () => (bookingId.trim() || uniqueId.trim());
+
+  function openForceCancel() {
+    if (!fcTarget()) { setExecResult({ error: 'Enter a Booking ID (or MFRef) first.' }); return; }
+    setFcOpen(true); setFcQuote(null); setFcResult(null); setFcError(null); setFcAmount(''); setFcReason('');
+    loadForceCancelQuote();
+  }
+
+  async function loadForceCancelQuote() {
+    const target = fcTarget();
+    if (!target) return;
+    setFcLoadingQuote(true); setFcError(null);
     try {
       const res = await fetch(`/api/agent/bookings/${encodeURIComponent(target)}/force-cancel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ overrideRefundAmount, reason }),
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ mode: 'quote' }),
       });
       const data = await res.json();
-      setExecResult(data);
-      if (bookingId) loadPtrRecords();
-    } catch (e: any) {
-      setExecResult({ error: e.message });
-    }
-    setExecLoading(false);
+      if (!res.ok) setFcError(data?.error || `Quote failed (HTTP ${res.status})`);
+      else { setFcQuote(data); setFcAmount(data?.providerRefund != null ? String(data.providerRefund) : ''); }
+    } catch (e: any) { setFcError(e?.message || 'Quote failed'); }
+    setFcLoadingQuote(false);
+  }
+
+  async function submitForceCancel() {
+    const target = fcTarget();
+    if (!target) return;
+    const overrideRefundAmount = fcAmount.trim() && !isNaN(parseFloat(fcAmount)) ? parseFloat(fcAmount) : undefined;
+    setFcSubmitting(true); setFcResult(null); setFcError(null);
+    try {
+      const res = await fetch(`/api/agent/bookings/${encodeURIComponent(target)}/force-cancel`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ overrideRefundAmount, reason: fcReason }),
+      });
+      const data = await res.json();
+      if (!res.ok) setFcError(data?.error || `Force cancel failed (HTTP ${res.status})`);
+      else { setFcResult(data); if (bookingId) loadPtrRecords(); }
+    } catch (e: any) { setFcError(e?.message || 'Force cancel failed'); }
+    setFcSubmitting(false);
   }
 
   async function handleStatusSearch() {
@@ -249,11 +275,11 @@ export default function AgentPostBookingPage() {
                 <p className="text-[11px] text-slate-400 mt-0.5">Executes the provider void/refund PTR, refunds the customer via Stripe, and cancels the booking. Use for refundable tickets the auto-quote couldn&apos;t process.</p>
               </div>
               <button
-                onClick={handleForceCancel}
-                disabled={execLoading || (!bookingId.trim() && !uniqueId.trim())}
+                onClick={openForceCancel}
+                disabled={!bookingId.trim() && !uniqueId.trim()}
                 className="shrink-0 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-bold"
               >
-                {execLoading ? 'Processing…' : 'Force Cancel + Refund'}
+                Force Cancel + Refund
               </button>
             </div>
           </div>
@@ -424,6 +450,65 @@ export default function AgentPostBookingPage() {
           )}
         </div>
       </div>
+
+      {/* ── Force Cancel + Refund modal ── */}
+      {fcOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => { if (!fcSubmitting) setFcOpen(false); }}>
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+              <h3 className="text-white font-bold text-base flex items-center gap-2">
+                <RotateCcw size={16} className="text-red-400" /> Force Cancel + Refund
+              </h3>
+              <button onClick={() => { if (!fcSubmitting) setFcOpen(false); }} className="text-slate-400 hover:text-white text-lg leading-none">✕</button>
+            </div>
+            <div className="p-5 space-y-4">
+              {fcResult ? (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm text-emerald-200">
+                  <p className="font-bold text-emerald-300 mb-1">✓ Cancellation submitted</p>
+                  <p>Refund: <span className="font-bold">{fcResult?.refundAmount ?? fcResult?.netRefundAmount ?? '—'} {fcResult?.refundCurrency ?? ''}</span></p>
+                  <p>Status: {fcResult?.paymentStatus ?? fcResult?.newStatus ?? 'CANCELLED'}</p>
+                  <p className="text-emerald-400/70 text-xs mt-1">The customer&apos;s Stripe refund is processing — check the booking timeline.</p>
+                  <button onClick={() => setFcOpen(false)} className="mt-3 px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-bold">Close</button>
+                </div>
+              ) : (
+                <>
+                  {fcLoadingQuote && <p className="text-slate-400 text-sm">Fetching live provider quote…</p>}
+                  {fcError && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-sm">{fcError}</div>}
+                  {fcQuote && (
+                    <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-300 space-y-1">
+                      <div className="flex justify-between"><span className="text-slate-500">Route</span><span>{fcQuote.route}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Airline PNR</span><span className="font-mono">{fcQuote.airlinePnr ?? '—'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Method</span><span className="font-bold">{fcQuote.method}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">PTR #</span><span className="font-mono">{fcQuote.ptrNumber}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Provider refund</span><span>{fcQuote.providerRefund} {fcQuote.refundCurrency}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Airline penalty</span><span>{fcQuote.airlinePenalty ?? '—'}</span></div>
+                    </div>
+                  )}
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Confirmed refund to customer (USD)</label>
+                    <input value={fcAmount} onChange={e => setFcAmount(e.target.value)} placeholder="Leave blank to use provider/auto amount"
+                      className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-[#1ABC9C]" />
+                  </div>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Reason (optional)</label>
+                    <input value={fcReason} onChange={e => setFcReason(e.target.value)}
+                      className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm focus:outline-none focus:border-[#1ABC9C]" />
+                  </div>
+                  <p className="text-[11px] text-amber-400/80">Executes the provider cancellation (PTR) and refunds the customer via Stripe. This cannot be undone.</p>
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => setFcOpen(false)} disabled={fcSubmitting} className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm font-bold disabled:opacity-40">Cancel</button>
+                    <button onClick={submitForceCancel} disabled={fcSubmitting || fcLoadingQuote} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-bold disabled:opacity-40">
+                      {fcSubmitting ? 'Processing…' : 'Confirm Cancel + Refund'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }

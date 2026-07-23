@@ -798,10 +798,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   fastify.post('/:bookingId/force-cancel', async (request, reply) => {
     const { bookingId } = request.params as { bookingId: string };
     try {
-      const { overrideRefundAmount, refundMethod, requestedBy, role } = request.body as {
-        overrideRefundAmount?: number; refundMethod?: string; requestedBy?: string; role?: string;
+      const { overrideRefundAmount, refundMethod, requestedBy, role, mode } = request.body as {
+        overrideRefundAmount?: number; refundMethod?: string; requestedBy?: string; role?: string; mode?: string;
       };
       const forcedBy = `${role || 'STAFF'}${requestedBy ? `:${requestedBy}` : ''}`;
+      const isQuoteOnly = mode === 'quote';
 
       const booking = await mbq.getMasterBookingFull(bookingId);
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
@@ -811,7 +812,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(422).send({ error: 'No provider order linked to this booking — cannot force cancel automatically.', code: 'NO_PROVIDER_ORDER' });
       }
 
-      if (!acquireCancelLock(bookingId)) {
+      if (!isQuoteOnly && !acquireCancelLock(bookingId)) {
         return reply.code(409).send({ error: 'A cancellation is already in progress for this booking.', code: 'CANCEL_IN_PROGRESS' });
       }
 
@@ -822,7 +823,28 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           ticketingStatus: booking.ticketingStatus,
           bookingAmount: Number(booking.totalAmount) || 0,
         });
-        console.log(`[ForceCancel][Quote] forcedBy=${forcedBy} bookingRef=${booking.masterBookingReference} method=${quote.method} quoteId=${quote.quoteId} providerRefund=${quote.refundAmount} ${quote.refundCurrency || ''} airlinePenalty=${quote.airlinePenalty ?? 'n/a'} supplierFee=${quote.supplierFee ?? 'n/a'} overrideRefundAmount=${overrideRefundAmount ?? 'none'}`);
+        const ptrNumber = quote.quoteId.match(/_(\d+)$/)?.[1] || 'N/A';
+        console.log(`[ForceCancel][Quote] mode=${mode || 'execute'} forcedBy=${forcedBy} bookingRef=${booking.masterBookingReference} method=${quote.method} quoteId=${quote.quoteId} ptrNumber=${ptrNumber} providerRefund=${quote.refundAmount} ${quote.refundCurrency || ''} airlinePenalty=${quote.airlinePenalty ?? 'n/a'} supplierFee=${quote.supplierFee ?? 'n/a'} overrideRefundAmount=${overrideRefundAmount ?? 'none'}`);
+
+        // Quote-only: return the live quote for the confirm modal (no execution, no lock).
+        if (isQuoteOnly) {
+          return {
+            success: true,
+            mode: 'quote',
+            method: quote.method,
+            quoteId: quote.quoteId,
+            ptrNumber,
+            providerRefund: quote.refundAmount,
+            airlinePenalty: quote.airlinePenalty ?? null,
+            supplierFee: quote.supplierFee ?? null,
+            refundCurrency: quote.refundCurrency,
+            originalAmount: ((quote as any).originalAmount ?? Number(booking.totalAmount)) || 0,
+            bookingRef: booking.masterBookingReference,
+            route: `${booking.originAirport} → ${booking.destinationAirport}`,
+            airlinePnr: booking.masterPnr ?? null,
+          };
+        }
+
         await mbq.storeProviderPayload({
           bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote',
           providerReference: quote.quoteId, payloadJson: { ...(quote.raw as object), expiresAt: quote.expiresAt },
@@ -840,7 +862,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         releaseCancelLock(bookingId);
         return { success: true, forced: true, ...result };
       } catch (inner) {
-        releaseCancelLock(bookingId);
+        if (!isQuoteOnly) releaseCancelLock(bookingId);
         throw inner;
       }
     } catch (e: any) {
