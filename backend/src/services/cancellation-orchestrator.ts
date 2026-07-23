@@ -908,7 +908,7 @@ async function onProviderReimbursementFailed(bookingRefundId: string): Promise<v
 // Admin Service Fee Helper (moved from manage-booking.ts)
 // ═══════════════════════════════════════════════════════════════════════
 
-async function getAdminServiceFee(booking: any): Promise<number> {
+export async function getAdminServiceFee(booking: any): Promise<number> {
   try {
     // Use the booking's stored platform fee as the cancellation service fee.
     // This is the fee FareMind charged on booking, retained on cancellation.

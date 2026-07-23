@@ -256,6 +256,13 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
   const [fcSubmitting, setFcSubmitting] = useState(false);
   const [fcResult, setFcResult] = useState<any>(null);
   const [fcError, setFcError] = useState<string | null>(null);
+  const [riOpen, setRiOpen] = useState(false);
+  const [riFsc, setRiFsc] = useState('');
+  const [riQuote, setRiQuote] = useState<any>(null);
+  const [riLoadingQuote, setRiLoadingQuote] = useState(false);
+  const [riSubmitting, setRiSubmitting] = useState(false);
+  const [riResult, setRiResult] = useState<any>(null);
+  const [riError, setRiError] = useState<string | null>(null);
 
   // ── Edit / delete state ──
   const [confirmDel, setConfirmDel] = useState<{ apiPath: string; label: string; redirect?: string } | null>(null);
@@ -334,6 +341,38 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       else { setFcResult(data); await load(true); }
     } catch (e: any) { setFcError(e?.message || 'Force cancel failed'); }
     setFcSubmitting(false);
+  }
+
+  function openReissue() {
+    setRiOpen(true); setRiFsc(''); setRiQuote(null); setRiResult(null); setRiError(null);
+  }
+
+  async function loadReissueQuote() {
+    if (!riFsc.trim()) { setRiError('Enter the new FareSourceCode.'); return; }
+    setRiLoadingQuote(true); setRiError(null); setRiQuote(null);
+    try {
+      const res = await adminFetch(`/api/admin/bookings/${id}/reissue`, {
+        method: 'POST', body: JSON.stringify({ newFareSourceCode: riFsc.trim(), mode: 'quote' }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) setRiError(data?.error || `Quote failed (HTTP ${res.status})`);
+      else setRiQuote(data);
+    } catch (e: any) { setRiError(e?.message || 'Quote failed'); }
+    setRiLoadingQuote(false);
+  }
+
+  async function submitReissue() {
+    if (!riFsc.trim()) return;
+    setRiSubmitting(true); setRiResult(null); setRiError(null);
+    try {
+      const res = await adminFetch(`/api/admin/bookings/${id}/reissue`, {
+        method: 'POST', body: JSON.stringify({ newFareSourceCode: riFsc.trim() }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data?.success === false) setRiError(data?.error || `Reissue failed (HTTP ${res.status})`);
+      else { setRiResult(data); await load(true); }
+    } catch (e: any) { setRiError(e?.message || 'Reissue failed'); }
+    setRiSubmitting(false);
   }
 
   async function doConfirmDelete() {
@@ -536,6 +575,15 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               className="px-3 py-2 rounded-xl border border-red-500/30 text-red-400 hover:bg-red-500/10 transition-all text-xs font-bold"
             >
               Force Cancel + Refund
+            </button>
+          )}
+          {isOps && booking.status !== 'CANCELLED' && (
+            <button
+              onClick={openReissue}
+              title="Reissue + Collect Difference (charge customer → provider reissue)"
+              className="px-3 py-2 rounded-xl border border-emerald-500/30 text-emerald-400 hover:bg-emerald-500/10 transition-all text-xs font-bold"
+            >
+              Reissue + Collect
             </button>
           )}
           {isOps && (
@@ -1955,6 +2003,64 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                       {fcSubmitting ? 'Processing…' : 'Confirm Cancel + Refund'}
                     </button>
                   </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reissue + Collect Difference modal ── */}
+      {riOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 backdrop-blur-sm p-4"
+          onClick={() => { if (!riSubmitting) setRiOpen(false); }}>
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+              <h3 className="text-white font-bold text-base">Reissue + Collect Difference</h3>
+              <button onClick={() => { if (!riSubmitting) setRiOpen(false); }} className="text-slate-400 hover:text-white"><X size={16} /></button>
+            </div>
+            <div className="p-5 space-y-4">
+              {riResult ? (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm text-emerald-200">
+                  <p className="font-bold text-emerald-300 mb-1">✓ Reissued</p>
+                  <p>Collected: <span className="font-bold">{riResult?.collected ?? '—'} {riResult?.currency ?? 'USD'}</span> (fare diff {riResult?.fareDifference ?? '—'} + service fee {riResult?.serviceFee ?? '—'})</p>
+                  <p>PTR #: <span className="font-mono">{riResult?.ptrNumber ?? '—'}</span></p>
+                  <button onClick={() => setRiOpen(false)} className="mt-3 px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-bold">Close</button>
+                </div>
+              ) : (
+                <>
+                  <div>
+                    <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">New FareSourceCode</label>
+                    <input value={riFsc} onChange={e => setRiFsc(e.target.value)} placeholder="Paste the new itinerary's FareSourceCode…"
+                      className="w-full px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-lg text-white text-sm font-mono focus:outline-none focus:border-[#1ABC9C]" />
+                    <button onClick={loadReissueQuote} disabled={!riFsc.trim() || riLoadingQuote}
+                      className="mt-2 px-4 py-2 rounded-lg bg-slate-700 hover:bg-slate-600 text-white text-sm font-bold disabled:opacity-40">
+                      {riLoadingQuote ? 'Fetching…' : 'Get Reissue Quote'}
+                    </button>
+                  </div>
+                  {riError && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-sm">{riError}</div>}
+                  {riQuote && (
+                    <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-300 space-y-1">
+                      <div className="flex justify-between"><span className="text-slate-500">Route</span><span>{riQuote.route}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">PTR #</span><span className="font-mono">{riQuote.ptrNumber}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Fare difference</span><span>{riQuote.fareDifference} {riQuote.currency}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Airline penalty</span><span>{riQuote.penalty} {riQuote.currency}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Service fee</span><span>{riQuote.serviceFee} {riQuote.currency}</span></div>
+                      <div className="flex justify-between border-t border-slate-700 pt-1 mt-1 font-bold text-white"><span>Total to charge</span><span>{riQuote.totalCollect} {riQuote.currency}</span></div>
+                    </div>
+                  )}
+                  {riQuote && (
+                    <>
+                      <p className="text-[11px] text-amber-400/80">Confirm charges the customer&apos;s card for the total, then reissues. If the charge fails, the reissue is NOT executed.</p>
+                      <div className="flex items-center justify-end gap-2">
+                        <button onClick={() => setRiOpen(false)} disabled={riSubmitting} className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm font-bold disabled:opacity-40">Cancel</button>
+                        <button onClick={submitReissue} disabled={riSubmitting} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-40">
+                          {riSubmitting ? 'Processing…' : 'Confirm Reissue + Charge'}
+                        </button>
+                      </div>
+                    </>
+                  )}
                 </>
               )}
             </div>

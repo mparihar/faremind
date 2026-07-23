@@ -75,6 +75,14 @@ export default function AgentPostBookingPage() {
   const [fcResult, setFcResult] = useState<any>(null);
   const [fcError, setFcError] = useState<string | null>(null);
 
+  // Reissue + Collect Difference modal
+  const [riOpen, setRiOpen] = useState(false);
+  const [riQuote, setRiQuote] = useState<any>(null);
+  const [riLoadingQuote, setRiLoadingQuote] = useState(false);
+  const [riSubmitting, setRiSubmitting] = useState(false);
+  const [riResult, setRiResult] = useState<any>(null);
+  const [riError, setRiError] = useState<string | null>(null);
+
   // Load existing PTR records for the booking
   useEffect(() => {
     if (bookingId) loadPtrRecords();
@@ -179,6 +187,45 @@ export default function AgentPostBookingPage() {
       else { setFcResult(data); if (bookingId) loadPtrRecords(); }
     } catch (e: any) { setFcError(e?.message || 'Force cancel failed'); }
     setFcSubmitting(false);
+  }
+
+  function openReissue() {
+    if (!fcTarget()) { setExecResult({ error: 'Enter a Booking ID (or MFRef) first.' }); return; }
+    if (!newFSC.trim()) { setExecResult({ error: 'Enter the new FareSourceCode above first.' }); return; }
+    setRiOpen(true); setRiQuote(null); setRiResult(null); setRiError(null);
+    loadReissueQuote();
+  }
+
+  async function loadReissueQuote() {
+    const target = fcTarget();
+    if (!target) return;
+    setRiLoadingQuote(true); setRiError(null);
+    try {
+      const res = await fetch(`/api/agent/bookings/${encodeURIComponent(target)}/reissue`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newFareSourceCode: newFSC.trim(), mode: 'quote' }),
+      });
+      const data = await res.json();
+      if (!res.ok) setRiError(data?.error || `Quote failed (HTTP ${res.status})`);
+      else setRiQuote(data);
+    } catch (e: any) { setRiError(e?.message || 'Quote failed'); }
+    setRiLoadingQuote(false);
+  }
+
+  async function submitReissue() {
+    const target = fcTarget();
+    if (!target) return;
+    setRiSubmitting(true); setRiResult(null); setRiError(null);
+    try {
+      const res = await fetch(`/api/agent/bookings/${encodeURIComponent(target)}/reissue`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ newFareSourceCode: newFSC.trim() }),
+      });
+      const data = await res.json();
+      if (!res.ok) setRiError(data?.error || `Reissue failed (HTTP ${res.status})`);
+      else { setRiResult(data); if (bookingId) loadPtrRecords(); }
+    } catch (e: any) { setRiError(e?.message || 'Reissue failed'); }
+    setRiSubmitting(false);
   }
 
   async function handleStatusSearch() {
@@ -341,6 +388,18 @@ export default function AgentPostBookingPage() {
                   {execLoading ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />} Execute Reissue
                 </button>
               </div>
+              <div className="mt-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
+                <div className="flex items-center justify-between gap-3">
+                  <div>
+                    <p className="text-sm font-bold text-emerald-300">Reissue + Collect Difference</p>
+                    <p className="text-[11px] text-slate-400 mt-0.5">One click: quote (fare difference + service fee) → charge the customer&apos;s card → execute the reissue. Enter the new FareSourceCode above first.</p>
+                  </div>
+                  <button onClick={openReissue} disabled={!newFSC.trim() || (!bookingId.trim() && !uniqueId.trim())}
+                    className="shrink-0 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-bold">
+                    Reissue + Collect
+                  </button>
+                </div>
+              </div>
             </div>
           )}
 
@@ -501,6 +560,55 @@ export default function AgentPostBookingPage() {
                     <button onClick={() => setFcOpen(false)} disabled={fcSubmitting} className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm font-bold disabled:opacity-40">Cancel</button>
                     <button onClick={submitForceCancel} disabled={fcSubmitting || fcLoadingQuote} className="px-4 py-2 rounded-lg bg-red-600 hover:bg-red-500 text-white text-sm font-bold disabled:opacity-40">
                       {fcSubmitting ? 'Processing…' : 'Confirm Cancel + Refund'}
+                    </button>
+                  </div>
+                </>
+              )}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* ── Reissue + Collect Difference modal ── */}
+      {riOpen && (
+        <div className="fixed inset-0 z-[100] flex items-center justify-center bg-black/60 backdrop-blur-sm p-4"
+          onClick={() => { if (!riSubmitting) setRiOpen(false); }}>
+          <div className="w-full max-w-lg bg-slate-900 border border-slate-700 rounded-2xl shadow-2xl overflow-hidden"
+            onClick={e => e.stopPropagation()}>
+            <div className="flex items-center justify-between px-5 py-4 border-b border-slate-700">
+              <h3 className="text-white font-bold text-base flex items-center gap-2">
+                <ArrowLeftRight size={16} className="text-emerald-400" /> Reissue + Collect Difference
+              </h3>
+              <button onClick={() => { if (!riSubmitting) setRiOpen(false); }} className="text-slate-400 hover:text-white text-lg leading-none">✕</button>
+            </div>
+            <div className="p-5 space-y-4">
+              {riResult ? (
+                <div className="rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4 text-sm text-emerald-200">
+                  <p className="font-bold text-emerald-300 mb-1">✓ Reissued</p>
+                  <p>Collected: <span className="font-bold">{riResult?.collected ?? '—'} {riResult?.currency ?? 'USD'}</span> (fare diff {riResult?.fareDifference ?? '—'} + service fee {riResult?.serviceFee ?? '—'})</p>
+                  <p>PTR #: <span className="font-mono">{riResult?.ptrNumber ?? '—'}</span></p>
+                  <button onClick={() => setRiOpen(false)} className="mt-3 px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-bold">Close</button>
+                </div>
+              ) : (
+                <>
+                  {riLoadingQuote && <p className="text-slate-400 text-sm">Fetching reissue quote…</p>}
+                  {riError && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-sm">{riError}</div>}
+                  {riQuote && (
+                    <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-300 space-y-1">
+                      <div className="flex justify-between"><span className="text-slate-500">Route</span><span>{riQuote.route}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Airline PNR</span><span className="font-mono">{riQuote.airlinePnr ?? '—'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">PTR #</span><span className="font-mono">{riQuote.ptrNumber}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Fare difference</span><span>{riQuote.fareDifference} {riQuote.currency}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Airline penalty</span><span>{riQuote.penalty} {riQuote.currency}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Service fee</span><span>{riQuote.serviceFee} {riQuote.currency}</span></div>
+                      <div className="flex justify-between border-t border-slate-700 pt-1 mt-1 font-bold text-white"><span>Total to charge customer</span><span>{riQuote.totalCollect} {riQuote.currency}</span></div>
+                    </div>
+                  )}
+                  <p className="text-[11px] text-amber-400/80">Confirm charges the customer&apos;s card for the total above, then reissues the ticket. If the charge fails, the reissue is NOT executed.</p>
+                  <div className="flex items-center justify-end gap-2">
+                    <button onClick={() => setRiOpen(false)} disabled={riSubmitting} className="px-4 py-2 rounded-lg border border-slate-600 text-slate-300 text-sm font-bold disabled:opacity-40">Cancel</button>
+                    <button onClick={submitReissue} disabled={riSubmitting || riLoadingQuote || !riQuote} className="px-4 py-2 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-white text-sm font-bold disabled:opacity-40">
+                      {riSubmitting ? 'Processing…' : 'Confirm Reissue + Charge'}
                     </button>
                   </div>
                 </>

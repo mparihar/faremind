@@ -6,6 +6,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { getProvider } from '../services/provider-adapter';
 import { initiateCancellation } from '../services/cancellation-orchestrator';
+import { getReissueQuote, initiateReissue } from '../services/reissue-orchestrator';
 import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
 import * as mbq from '../lib/manage-booking-queries';
 import * as emails from '../lib/manage-booking-emails';
@@ -874,6 +875,66 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
       fastify.log.error(e, '[manage-booking/force-cancel]');
       return reply.code(502).send({ error: e?.message || 'Force cancellation failed', code: 'FORCE_CANCEL_FAILED' });
+    }
+  });
+
+  // ── Reissue + Collect Difference (staff-only: admin / agent) ───────────────
+  // Quotes the reissue against a new FareSourceCode (fare difference + penalty,
+  // converted to USD + FareMind service fee), auto-charges the customer's original
+  // card off-session, then executes the provider reissue. mode:'quote' returns the
+  // breakdown for the confirm modal without charging or executing.
+  fastify.post('/:bookingId/reissue', async (request, reply) => {
+    const { bookingId } = request.params as { bookingId: string };
+    try {
+      const { newFareSourceCode, mode, requestedBy, role } = request.body as {
+        newFareSourceCode?: string; mode?: string; requestedBy?: string; role?: string;
+      };
+      if (!newFareSourceCode) return reply.code(400).send({ error: 'newFareSourceCode is required', code: 'MISSING_FSC' });
+      const forcedBy = `${role || 'STAFF'}${requestedBy ? `:${requestedBy}` : ''}`;
+      const isQuoteOnly = mode === 'quote';
+
+      const booking = await mbq.getMasterBookingFull(bookingId);
+      if (!booking) return reply.code(404).send({ error: 'Booking not found' });
+      if (booking.bookingStatus === 'CANCELLED') return reply.code(400).send({ error: 'Booking is cancelled', code: 'ALREADY_CANCELLED' });
+      const providerPnr = booking.pnrs.find((p: any) => p.providerOrderId);
+      if (!providerPnr?.providerOrderId) return reply.code(422).send({ error: 'No provider order linked to this booking.', code: 'NO_PROVIDER_ORDER' });
+
+      // Quote-only: return the breakdown for the modal (no charge, no execute, no lock).
+      if (isQuoteOnly) {
+        const quote = await getReissueQuote(booking, newFareSourceCode);
+        console.log(`[Reissue][Quote] mode=quote forcedBy=${forcedBy} bookingRef=${booking.masterBookingReference} ptrNumber=${quote.ptrNumber} fareDifference=${quote.fareDifference} serviceFee=${quote.serviceFee} totalCollect=${quote.totalCollect} USD`);
+        return {
+          success: true, mode: 'quote',
+          fareDifference: quote.fareDifference, penalty: quote.penalty, serviceFee: quote.serviceFee,
+          totalCollect: quote.totalCollect, currency: quote.currency, providerCurrency: quote.providerCurrency,
+          ptrNumber: quote.ptrNumber,
+          bookingRef: booking.masterBookingReference,
+          route: `${booking.originAirport} → ${booking.destinationAirport}`,
+          airlinePnr: booking.masterPnr ?? null,
+        };
+      }
+
+      if (!acquireCancelLock(bookingId)) {
+        return reply.code(409).send({ error: 'Another servicing operation is in progress for this booking.', code: 'OP_IN_PROGRESS' });
+      }
+      try {
+        const result = await initiateReissue({ bookingId, newFareSourceCode, forcedBy }, booking);
+        releaseCancelLock(bookingId);
+        return { success: true, forced: true, ...result };
+      } catch (inner) {
+        releaseCancelLock(bookingId);
+        throw inner;
+      }
+    } catch (e: any) {
+      const code = e?.code;
+      if (code === 'COLLECT_FAILED' || code === 'COLLECT_REQUIRES_PAYMENT') {
+        return reply.code(402).send({ error: e.message, code, supportTicketCreated: false });
+      }
+      if (code === 'REISSUE_FAILED' || code === 'REISSUE_QUOTE_FAILED' || code === 'NO_PROVIDER_ORDER') {
+        return reply.code(422).send({ error: e.message, code });
+      }
+      fastify.log.error(e, '[manage-booking/reissue]');
+      return reply.code(502).send({ error: e?.message || 'Reissue failed', code: 'REISSUE_ERROR' });
     }
   });
 
