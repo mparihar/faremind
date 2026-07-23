@@ -1984,6 +1984,8 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                       <div className="flex justify-between"><span className="text-slate-500">PTR #</span><span className="font-mono">{fcQuote.ptrNumber}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Provider refund</span><span>{fcQuote.providerRefund} {fcQuote.refundCurrency}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Airline penalty</span><span>{fcQuote.airlinePenalty ?? '—'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">FareMind service fee</span><span className="text-amber-400">− {fcQuote.serviceFee ?? 0} USD</span></div>
+                      <div className="flex justify-between border-t border-slate-700 pt-1 mt-1"><span className="text-slate-400 font-bold">Net refund to customer</span><span className="font-bold text-emerald-400">{fcQuote.netRefund ?? '—'} USD</span></div>
                     </div>
                   )}
                   <div>

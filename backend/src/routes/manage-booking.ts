@@ -5,7 +5,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { getProvider } from '../services/provider-adapter';
-import { initiateCancellation } from '../services/cancellation-orchestrator';
+import { initiateCancellation, getAdminServiceFee as getCancelServiceFee } from '../services/cancellation-orchestrator';
 import { getReissueQuote, initiateReissue } from '../services/reissue-orchestrator';
 import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
 import * as mbq from '../lib/manage-booking-queries';
@@ -829,6 +829,16 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
         // Quote-only: return the live quote for the confirm modal (no execution, no lock).
         if (isQuoteOnly) {
+          const originalAmount = ((quote as any).originalAmount ?? Number(booking.totalAmount)) || 0;
+          const isVoid = quote.method === 'VOID' || String(quote.quoteId).includes('void');
+          // Mirror the orchestrator's financials so the preview == what execution deducts.
+          const effectiveRefund = (typeof overrideRefundAmount === 'number' && overrideRefundAmount >= 0)
+            ? overrideRefundAmount
+            : (quote.refundAmount > 0 ? quote.refundAmount : (isVoid ? originalAmount : 0));
+          const isBookingRefundable = effectiveRefund > 0;
+          const serviceFee = isBookingRefundable ? await getCancelServiceFee(booking) : 0;
+          const netRefund = effectiveRefund > 0 ? Math.max(0, effectiveRefund - serviceFee) : 0;
+          console.log(`[ForceCancel][Quote] serviceFee=${serviceFee} effectiveRefund=${effectiveRefund} netRefund=${netRefund} (fee retained by FareMind, customer receives netRefund)`);
           return {
             success: true,
             mode: 'quote',
@@ -838,8 +848,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             providerRefund: quote.refundAmount,
             airlinePenalty: quote.airlinePenalty ?? null,
             supplierFee: quote.supplierFee ?? null,
+            serviceFee,
+            netRefund,
             refundCurrency: quote.refundCurrency,
-            originalAmount: ((quote as any).originalAmount ?? Number(booking.totalAmount)) || 0,
+            originalAmount,
             bookingRef: booking.masterBookingReference,
             route: `${booking.originAirport} → ${booking.destinationAirport}`,
             airlinePnr: booking.masterPnr ?? null,
