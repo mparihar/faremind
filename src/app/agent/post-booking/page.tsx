@@ -8,6 +8,7 @@ import {
   XCircle, AlertTriangle, Clock, DollarSign, FileText, Copy, Check,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { useAuthStore } from '@/store/useAuthStore';
 
 /**
  * Agent Post-Booking Servicing Page — MYSTIFLY ONLY
@@ -45,6 +46,12 @@ const STATUS_COLORS: Record<string, string> = {
 
 export default function AgentPostBookingPage() {
   const searchParams = useSearchParams();
+  const { sessionToken } = useAuthStore();
+  // Agent-gated API calls (/api/agent/*) require the Bearer session token.
+  const agentHeaders = (): Record<string, string> => ({
+    'Content-Type': 'application/json',
+    ...(sessionToken ? { Authorization: `Bearer ${sessionToken}` } : {}),
+  });
   const [activeTab, setActiveTab] = useState<PtrTab>('void');
 
   // State for each PTR type
@@ -162,7 +169,7 @@ export default function AgentPostBookingPage() {
     setFcLoadingQuote(true); setFcError(null);
     try {
       const res = await fetch(`/api/agent/bookings/${encodeURIComponent(target)}/force-cancel`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: agentHeaders(),
         body: JSON.stringify({ mode: 'quote' }),
       });
       const data = await res.json();
@@ -179,7 +186,7 @@ export default function AgentPostBookingPage() {
     setFcSubmitting(true); setFcResult(null); setFcError(null);
     try {
       const res = await fetch(`/api/agent/bookings/${encodeURIComponent(target)}/force-cancel`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: agentHeaders(),
         body: JSON.stringify({ overrideRefundAmount, reason: fcReason }),
       });
       const data = await res.json();
@@ -202,7 +209,7 @@ export default function AgentPostBookingPage() {
     setRiLoadingQuote(true); setRiError(null);
     try {
       const res = await fetch(`/api/agent/bookings/${encodeURIComponent(target)}/reissue`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: agentHeaders(),
         body: JSON.stringify({ newFareSourceCode: newFSC.trim(), mode: 'quote' }),
       });
       const data = await res.json();
@@ -218,7 +225,7 @@ export default function AgentPostBookingPage() {
     setRiSubmitting(true); setRiResult(null); setRiError(null);
     try {
       const res = await fetch(`/api/agent/bookings/${encodeURIComponent(target)}/reissue`, {
-        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        method: 'POST', headers: agentHeaders(),
         body: JSON.stringify({ newFareSourceCode: newFSC.trim() }),
       });
       const data = await res.json();
