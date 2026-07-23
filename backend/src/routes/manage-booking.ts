@@ -840,15 +840,26 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           const isBookingRefundable = effectiveRefund > 0;
           const serviceFee = isBookingRefundable ? await getCancelServiceFee(booking) : 0;
           const netRefund = effectiveRefund > 0 ? Math.max(0, effectiveRefund - serviceFee) : 0;
-          console.log(`[ForceCancel][Quote] serviceFee=${serviceFee} effectiveRefund=${effectiveRefund} netRefund=${netRefund} (fee retained by FareMind, customer receives netRefund)`);
+          // Not a live provider quote: the adapter fell back to direct-cancel because
+          // VoidQuote (out of window) and RefundQuote (provider 500/transient) both
+          // failed. In that case there is NO provider PTR (ptrNumber = N/A) and the
+          // refund(0)/penalty(=full fare) shown are PLACEHOLDERS, not provider truth.
+          const isDirectCancelFallback = !!(quote as any).raw?.directCancel || quote.method === 'CANCEL';
+          const liveQuote = !isDirectCancelFallback && ptrNumber !== 'N/A';
+          const notice = liveQuote
+            ? null
+            : 'No live provider quote — the airline could not return a void/refund quote for this PNR (void window passed and/or the refund quote errored). The refund and penalty below are NOT provider-confirmed. Enter the correct refund amount manually before confirming; the customer will be refunded exactly that amount via Stripe.';
+          console.log(`[ForceCancel][Quote] serviceFee=${serviceFee} effectiveRefund=${effectiveRefund} netRefund=${netRefund} liveQuote=${liveQuote} method=${quote.method} ptr=${ptrNumber} (fee retained by FareMind, customer receives netRefund)`);
           return {
             success: true,
             mode: 'quote',
             method: quote.method,
             quoteId: quote.quoteId,
             ptrNumber,
+            liveQuote,
+            notice,
             providerRefund: quote.refundAmount,
-            airlinePenalty: quote.airlinePenalty ?? null,
+            airlinePenalty: liveQuote ? (quote.airlinePenalty ?? null) : null,
             supplierFee: quote.supplierFee ?? null,
             serviceFee,
             netRefund,
