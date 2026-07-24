@@ -20,6 +20,8 @@
  * - Target environment passed in every request body (Test/Production)
  */
 
+import type { PtrPassenger } from '../lib/ptr-passengers';
+
 // ═══════════════════════════════════════════════
 // Configuration
 // ═══════════════════════════════════════════════
@@ -1098,33 +1100,83 @@ export async function reissueQuote(
   originDestinations: MystiflyReissueOriginDestination[],
   passengers: MystiflyReissuePassenger[],
 ): Promise<any> {
+  // Matches Mystifly ReissueQuoteRQ exactly (OND flow). Returns PTRId + PTRStatus=Completed;
+  // the actual fare options come from getExchangeQuote (Search PTR).
   const requestBody = {
-    ptrType: 'ReIssueQuote',
+    AcceptQuote: 'None',
+    AdditionalNote: null,
+    AllowChildPassenger: false,
+    IsScheduleChange: false,
     mFRef: mfRef,
-    Target: MYSTIFLY_TARGET,
-    reissueQuoteRequestType: 'OND',
-    originDestinations: originDestinations.map(od => ({
-      originLocationCode: od.originLocationCode,
-      destinationLocationCode: od.destinationLocationCode,
+    originDestinations: (Array.isArray(originDestinations) ? originDestinations : []).map(od => ({
+      airlineCode: (od as any).airlineCode || '',
+      cabinPreference: od.cabinPreference || 'Y',
       departureDateTime: od.departureDateTime,
-      cabinPreference: od.cabinPreference,
+      destinationLocationCode: od.destinationLocationCode,
+      flightNumber: 0,
+      originLocationCode: od.originLocationCode,
     })),
-    passengers: passengers.map(p => ({
+    passengers: (Array.isArray(passengers) ? passengers : []).map(p => ({
+      eTicket: p.eTicket || '',
       firstName: p.firstName,
       lastName: p.lastName,
       passengerType: p.passengerType,
-      ...(p.eTicket ? { eTicket: p.eTicket } : {}),
+      title: (p as any).title || 'Mr',
     })),
+    PaymentCardInfo: null,
+    PreferenceOption: 0,
+    PtrId: 0,
+    ptrType: 'ReIssueQuote',
+    RefundDetails: null,
+    reissueQuoteRequestType: 'OND',
   };
 
-  const result = await mystiflyRequest<any>({
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
     body: requestBody as unknown as Record<string, unknown>,
     retries: 0,
   });
+}
 
-  return result;
+/**
+ * Get Exchange Quote — the reissue fare options (Search PTR).
+ * Returns Data.RequestedPreferences[].QuotedFares[] (TotalFareDifference, Penalty, …).
+ */
+export async function getExchangeQuote(mfRef: string, ptrId: number): Promise<any> {
+  return mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/Search/PostTicketingRequest',
+    body: {
+      MFRef: mfRef,
+      Page: 1,
+      PTRCategory: 'None',
+      PTRId: ptrId,
+      PTRStatus: 'None',
+      ptrType: 'GetExchangeQuote',
+      ShowProcessingMethod: 'False',
+    } as unknown as Record<string, unknown>,
+    retries: 1,
+  });
+}
+
+/**
+ * Search a PTR's status/resolution (Search PTR). Used to poll async executions
+ * (Void/Refund/Reissue) for PTRStatus=Completed and the Resolution tag.
+ */
+export async function searchPtr(ptrType: 'Void' | 'Refund' | 'Reissue', mfRef: string, ptrId: number): Promise<any> {
+  return mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/Search/PostTicketingRequest',
+    body: {
+      ptrType,
+      MFRef: mfRef,
+      PTRId: ptrId,
+      ...(ptrType === 'Reissue' ? { PTRCategory: 'All' } : {}),
+      Page: 1,
+    } as unknown as Record<string, unknown>,
+    retries: 1,
+  });
 }
 
 /**
@@ -1143,12 +1195,19 @@ export async function confirmReissue(
     method: 'POST',
     path: '/api/PostTicketingRequest',
     body: {
-      ptrType: 'ReIssue',
-      mFRef: mfRef,
-      PtrId: ptrId,
       AcceptQuote: 'yes',
+      AdditionalNote: 'Please reissue as per quoted fare',
+      AllowChildPassenger: false,
+      IsScheduleChange: false,
+      mFRef: mfRef,
+      originDestinations: null,
+      passengers: null,
+      PaymentCardInfo: null,
       PreferenceOption: preferenceOption,
-      Target: MYSTIFLY_TARGET,
+      PtrId: ptrId,
+      ptrType: 'ReIssueQuote',
+      RefundDetails: null,
+      reissueQuoteRequestType: 'None',
     } as unknown as Record<string, unknown>,
     retries: 0,
   });
@@ -1171,20 +1230,19 @@ export async function confirmReissue(
  * Void is only available within the airline's void window
  * (typically 24h after ticketing, before midnight).
  */
-export async function voidQuote(mfRef: string): Promise<any> {
-
-  const result = await mystiflyRequest<any>({
+export async function voidQuote(mfRef: string, passengers: PtrPassenger[] = []): Promise<any> {
+  // Mystifly requires the passengers array (firstName/lastName/title/eTicket/passengerType).
+  // VoidQuote returns synchronously with PTRStatus=Completed + Data.VoidQuotes[].
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
     body: {
       ptrType: 'VoidQuote',
       mFRef: mfRef,
-      Target: MYSTIFLY_TARGET,
+      passengers,
     } as unknown as Record<string, unknown>,
     retries: 0,
   });
-
-  return result;
 }
 
 /**
@@ -1195,23 +1253,21 @@ export async function voidQuote(mfRef: string): Promise<any> {
  */
 export async function executeVoid(
   mfRef: string,
-  ptrId: number,
+  passengers: PtrPassenger[] = [],
 ): Promise<any> {
-
-  const result = await mystiflyRequest<any>({
+  // Direct Void (per Mystifly "Void Steps"): create a Void PTR with the passengers
+  // array. Returns PTRStatus=InProcess + PTRId; fulfilment is async — poll searchPtr
+  // until PTRStatus=Completed & Resolution=Voided.
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
     body: {
       ptrType: 'Void',
       mFRef: mfRef,
-      PtrId: ptrId,
-      AcceptQuote: 'yes',
-      Target: MYSTIFLY_TARGET,
+      passengers,
     } as unknown as Record<string, unknown>,
     retries: 0, // Never retry void executions
   });
-
-  return result;
 }
 
 /**
@@ -1222,20 +1278,19 @@ export async function executeVoid(
  *
  * Used when void is not available (outside void window).
  */
-export async function refundQuote(mfRef: string): Promise<any> {
-
-  const result = await mystiflyRequest<any>({
+export async function refundQuote(mfRef: string, passengers: PtrPassenger[] = []): Promise<any> {
+  // RefundQuote returns synchronously with PTRStatus=Completed + Data.RefundQuotes[]
+  // (TotalRefundAmount / TotalRefundCharges / CancellationCharge / Currency) + PTRId.
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
     body: {
       ptrType: 'RefundQuote',
       mFRef: mfRef,
-      Target: MYSTIFLY_TARGET,
+      passengers,
     } as unknown as Record<string, unknown>,
     retries: 0,
   });
-
-  return result;
 }
 
 /**
@@ -1247,22 +1302,25 @@ export async function refundQuote(mfRef: string): Promise<any> {
 export async function executeRefund(
   mfRef: string,
   ptrId: number,
+  passengers: PtrPassenger[] = [],
+  note = 'Refund accepted',
 ): Promise<any> {
-
-  const result = await mystiflyRequest<any>({
+  // Accept Refund (per Mystifly): ptrType stays "RefundQuote" with AcceptQuote=yes and the
+  // RefundQuote PtrId. Returns PTRType=Refund, PTRStatus=InProcess; poll searchPtr('Refund')
+  // until PTRStatus=Completed & Resolution=Refunded.
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
     body: {
-      ptrType: 'Refund',
+      ptrType: 'RefundQuote',
       mFRef: mfRef,
       PtrId: ptrId,
       AcceptQuote: 'yes',
-      Target: MYSTIFLY_TARGET,
+      AdditionalNote: note,
+      passengers,
     } as unknown as Record<string, unknown>,
     retries: 0, // Never retry refund executions
   });
-
-  return result;
 }
 
 export default {

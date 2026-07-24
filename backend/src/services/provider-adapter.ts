@@ -12,6 +12,7 @@
 import * as duffelClient from './duffel';
 import type { DuffelOrder, DuffelCancellation } from './duffel';
 import { toUsd } from './fx';
+import type { PtrPassenger } from '../lib/ptr-passengers';
 
 // ═══════════════════════════════════════════════
 // Unified Types (Provider-Agnostic)
@@ -103,6 +104,8 @@ export interface CancelQuoteOptions {
   ticketingStatus?: string;
   /** The booking's total amount from DB — fallback when provider API doesn't return fare data */
   bookingAmount?: number;
+  /** Mystifly PTR passengers (firstName/lastName/title/eTicket/passengerType) — REQUIRED by Mystifly on every PTR. */
+  passengers?: import('../lib/ptr-passengers').PtrPassenger[];
 }
 
 export interface NormalizedProviderRefundStatus {
@@ -184,7 +187,7 @@ export interface IBookingProvider {
   getCancellationQuote(orderId: string, options?: CancelQuoteOptions): Promise<CancelQuote>;
 
   /** Confirm and execute cancellation */
-  confirmCancellation(quoteId: string): Promise<CancelResult>;
+  confirmCancellation(quoteId: string, passengers?: PtrPassenger[]): Promise<CancelResult>;
 
   /** Get seat map for a specific segment */
   getSeatMap(offerId: string, sliceId?: string): Promise<SeatMapData[]>;
@@ -630,11 +633,13 @@ export class MystiflyAdapter implements IBookingProvider {
     }
 
     // ── Step 2: Try VoidQuote first (within void window) ──
+    const passengers = options?.passengers || [];
     try {
-      const voidResult = await mystiflyClient.voidQuote(mfRef);
+      const voidResult = await mystiflyClient.voidQuote(mfRef, passengers);
       const voidData = voidResult?.Data || voidResult;
       const voidSuccess = voidData?.Success ?? voidResult?.Success;
-      const ptrId = voidData?.PtrId || voidData?.ptrId || voidResult?.PtrId;
+      const ptrId = voidData?.PTRId || voidData?.PtrId || voidResult?.PTRId;
+      const voidQuotes = Array.isArray(voidData?.VoidQuotes) ? voidData.VoidQuotes : [];
       const voidErrors = voidData?.Errors || voidResult?.Errors || [];
 
       // Check for business-level "not eligible" vs technical failure
@@ -643,13 +648,15 @@ export class MystiflyAdapter implements IBookingProvider {
         (e.Message || e.message || '').match(/void.*not.*eligible|void.*window|not.*voidable|cannot.*void/i)
       );
 
-      if (voidSuccess && ptrId) {
-        // Void IS eligible — extract fee info
-        const voidCcy = voidData?.Currency || voidData?.currency;
-        const voidPenalty = await toUsdAmount(parseFloat(voidData?.Penalty || voidData?.penalty || '0'), voidCcy);
-        const supplierFee = await toUsdAmount(parseFloat(voidData?.SupplierFee || voidData?.supplierFee || '0'), voidCcy);
-        const totalDeductions = voidPenalty + supplierFee;
-        const refundAmount = Math.max(0, originalAmount - totalDeductions);
+      if (voidSuccess && ptrId && voidQuotes.length > 0) {
+        // Void IS eligible — Data.VoidQuotes[] carries TotalVoidingFee + TotalRefundAmount
+        // in the fare's native currency (convert to USD).
+        const voidCcy = voidQuotes[0]?.Currency || voidData?.Currency;
+        const voidFeeNative = voidQuotes.reduce((s: number, q: any) => s + (parseFloat(q?.TotalVoidingFee) || 0), 0);
+        const voidRefundNative = voidQuotes.reduce((s: number, q: any) => s + (parseFloat(q?.TotalRefundAmount) || 0), 0);
+        const voidPenalty = await toUsdAmount(voidFeeNative, voidCcy);
+        const providerRefund = await toUsdAmount(voidRefundNative, voidCcy);
+        const refundAmount = providerRefund > 0 ? providerRefund : Math.max(0, originalAmount - voidPenalty);
 
         return {
           quoteId: `mystifly_void_${mfRef}_${ptrId}`,
@@ -657,11 +664,11 @@ export class MystiflyAdapter implements IBookingProvider {
           refundAmount,
           refundCurrency: currency,
           refundTo: 'original_payment',
-          penaltyAmount: totalDeductions,
+          penaltyAmount: voidPenalty,
           expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(), // 15 min — void window can expire
           method: 'VOID',
           airlinePenalty: voidPenalty,
-          supplierFee,
+          supplierFee: 0,
           originalAmount,
           raw: voidResult,
         };
@@ -686,7 +693,7 @@ export class MystiflyAdapter implements IBookingProvider {
     // ── Step 3: VoidQuote not eligible or failed → try RefundQuote ──
     let refundResult;
     try {
-      refundResult = await mystiflyClient.refundQuote(mfRef);
+      refundResult = await mystiflyClient.refundQuote(mfRef, passengers);
     } catch (refundErr) {
       // RefundQuote API crashed (e.g. Mystifly 500 bug on certain bookings)
       // Fall back to direct cancel path
@@ -714,7 +721,8 @@ export class MystiflyAdapter implements IBookingProvider {
 
     const refundData = refundResult?.Data || refundResult;
     const refundSuccess = refundData?.Success ?? refundResult?.Success;
-    const refundPtrId = refundData?.PtrId || refundData?.ptrId || refundResult?.PtrId;
+    const refundPtrId = refundData?.PTRId || refundData?.PtrId || refundResult?.PTRId;
+    const refundQuotes = Array.isArray(refundData?.RefundQuotes) ? refundData.RefundQuotes : [];
     const refundErrors = refundData?.Errors || refundResult?.Errors || [];
     const refundMsg = refundResult?.Message || refundData?.Message || '';
 
@@ -749,11 +757,15 @@ export class MystiflyAdapter implements IBookingProvider {
       });
     }
 
-    // Extract refund breakdown from PTR response
-    const refundCcy = refundData?.Currency || refundData?.currency;
-    const airlinePenalty = await toUsdAmount(parseFloat(refundData?.Penalty || refundData?.penalty || refundData?.CancellationCharge || '0'), refundCcy);
-    const supplierFee = await toUsdAmount(parseFloat(refundData?.SupplierFee || refundData?.supplierFee || '0'), refundCcy);
-    const providerRefundAmount = await toUsdAmount(parseFloat(refundData?.RefundAmount || refundData?.refundAmount || '0'), refundCcy);
+    // Extract refund breakdown from PTR response — Data.RefundQuotes[] carries
+    // TotalRefundAmount / TotalRefundCharges / CancellationCharge in native currency.
+    const refundCcy = refundQuotes[0]?.Currency || refundData?.Currency || refundData?.currency;
+    const cancellationNative = refundQuotes.reduce((s: number, q: any) => s + (parseFloat(q?.CancellationCharge) || 0), 0);
+    const chargesNative = refundQuotes.reduce((s: number, q: any) => s + (parseFloat(q?.TotalRefundCharges) || 0), 0);
+    const refundNative = refundQuotes.reduce((s: number, q: any) => s + (parseFloat(q?.TotalRefundAmount) || 0), 0);
+    const airlinePenalty = await toUsdAmount(cancellationNative || chargesNative, refundCcy);
+    const supplierFee = 0;
+    const providerRefundAmount = await toUsdAmount(refundNative, refundCcy);
     const totalDeductions = airlinePenalty + supplierFee;
     // Use provider-returned refund amount if available, otherwise calculate
     const refundAmount = providerRefundAmount > 0 ? providerRefundAmount : Math.max(0, originalAmount - totalDeductions);
@@ -774,17 +786,17 @@ export class MystiflyAdapter implements IBookingProvider {
     };
   }
 
-  async confirmCancellation(quoteId: string): Promise<CancelResult> {
+  async confirmCancellation(quoteId: string, passengers: PtrPassenger[] = []): Promise<CancelResult> {
     // quoteId format: "mystifly_void_{mfRef}_{ptrId}" or "mystifly_refund_{mfRef}_{ptrId}"
     const voidMatch = quoteId.match(/^mystifly_void_(.+)_(\d+)$/);
     const refundMatch = quoteId.match(/^mystifly_refund_(.+)_(\d+)$/);
 
     if (voidMatch) {
-      // ── Execute Void ──
+      // ── Execute Void (direct void with passengers; async fulfilment) ──
       const [, mfRef, ptrIdStr] = voidMatch;
       const ptrId = parseInt(ptrIdStr, 10);
 
-      const result = await mystiflyClient.executeVoid(mfRef, ptrId);
+      const result = await mystiflyClient.executeVoid(mfRef, passengers);
       const data = result?.Data || result;
       const success = data?.Success ?? result?.Success;
 
@@ -812,7 +824,7 @@ export class MystiflyAdapter implements IBookingProvider {
       const [, mfRef, ptrIdStr] = refundMatch;
       const ptrId = parseInt(ptrIdStr, 10);
 
-      const result = await mystiflyClient.executeRefund(mfRef, ptrId);
+      const result = await mystiflyClient.executeRefund(mfRef, ptrId, passengers);
       const data = result?.Data || result;
       const success = data?.Success ?? result?.Success;
 
@@ -843,13 +855,13 @@ export class MystiflyAdapter implements IBookingProvider {
 
       // Step 1: Try Void PTR
       try {
-        const voidQuoteResult = await mystiflyClient.voidQuote(mfRef);
+        const voidQuoteResult = await mystiflyClient.voidQuote(mfRef, passengers);
         const voidData = voidQuoteResult?.Data || voidQuoteResult;
         const voidSuccess = voidData?.Success ?? voidQuoteResult?.Success;
         const voidPtrId = voidData?.PtrId || voidData?.ptrId || voidQuoteResult?.PtrId;
 
         if (voidSuccess && voidPtrId) {
-          const execResult = await mystiflyClient.executeVoid(mfRef, voidPtrId);
+          const execResult = await mystiflyClient.executeVoid(mfRef, passengers);
           const execData = execResult?.Data || execResult;
           const execSuccess = execData?.Success ?? execResult?.Success;
 
@@ -942,14 +954,14 @@ export class MystiflyAdapter implements IBookingProvider {
 
       // Try VoidQuote → executeVoid
       try {
-        const voidQuoteResult = await mystiflyClient.voidQuote(mfRef);
+        const voidQuoteResult = await mystiflyClient.voidQuote(mfRef, passengers);
         console.log(`[MystiflyAdapter] VoidQuote fallback response for ${mfRef}:`, JSON.stringify(voidQuoteResult));
         const voidData = voidQuoteResult?.Data || voidQuoteResult;
         const voidSuccess = voidData?.Success ?? voidQuoteResult?.Success;
         const voidPtrId = voidData?.PtrId || voidData?.ptrId || voidQuoteResult?.PtrId;
 
         if (voidSuccess && voidPtrId) {
-          const execResult = await mystiflyClient.executeVoid(mfRef, voidPtrId);
+          const execResult = await mystiflyClient.executeVoid(mfRef, passengers);
           console.log(`[MystiflyAdapter] executeVoid fallback response for ${mfRef}:`, JSON.stringify(execResult));
           const execData = execResult?.Data || execResult;
           const execSuccess = execData?.Success ?? execResult?.Success;
@@ -971,14 +983,14 @@ export class MystiflyAdapter implements IBookingProvider {
 
       // Try RefundQuote → executeRefund
       try {
-        const refundQuoteResult = await mystiflyClient.refundQuote(mfRef);
+        const refundQuoteResult = await mystiflyClient.refundQuote(mfRef, passengers);
         console.log(`[MystiflyAdapter] RefundQuote fallback response for ${mfRef}:`, JSON.stringify(refundQuoteResult));
         const refundData = refundQuoteResult?.Data || refundQuoteResult;
         const refundSuccess = refundData?.Success ?? refundQuoteResult?.Success;
         const refundPtrId = refundData?.PtrId || refundData?.ptrId || refundQuoteResult?.PtrId;
 
         if (refundSuccess && refundPtrId) {
-          const execResult = await mystiflyClient.executeRefund(mfRef, refundPtrId);
+          const execResult = await mystiflyClient.executeRefund(mfRef, refundPtrId, passengers);
           console.log(`[MystiflyAdapter] executeRefund fallback response for ${mfRef}:`, JSON.stringify(execResult));
           const execData = execResult?.Data || execResult;
           const execSuccess = execData?.Success ?? execResult?.Success;

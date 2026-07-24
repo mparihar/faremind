@@ -12,6 +12,7 @@
 import { prisma } from '../lib/db';
 import * as mbq from '../lib/manage-booking-queries';
 import { getProvider, type CancelResult } from './provider-adapter';
+import { buildPtrPassengers } from '../lib/ptr-passengers';
 import { fireNotification } from '../lib/notify';
 import Stripe from 'stripe';
 import { randomBytes } from 'crypto';
@@ -196,7 +197,7 @@ export async function initiateCancellation(
   try {
     const provider = getProvider(booking.primaryProvider);
     console.log(`[CANCEL_CONFIRM] Step 3: calling confirmCancellation`, JSON.stringify({ bookingId, quoteId, provider: booking.primaryProvider, isVoid, isCancelAnyway }));
-    providerResult = await provider.confirmCancellation(quoteId);
+    providerResult = await provider.confirmCancellation(quoteId, buildPtrPassengers(booking));
     console.log(`[CANCEL_CONFIRM] Step 3 OK: provider confirmed`, JSON.stringify({ cancellationId: providerResult.cancellationId, refundAmount: providerResult.refundAmount, refundCurrency: providerResult.refundCurrency }));
 
     // Real provider penalty/refund + PTR number (PTR id is embedded in the quote/cancellation id).

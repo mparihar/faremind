@@ -18,10 +18,37 @@ import { FastifyPluginAsync } from 'fastify';
 import * as mystifly from '../services/mystifly';
 import type { PtrType } from '../services/mystifly';
 import { prisma } from '../lib/db';
+import { buildPtrPassengers, type PtrPassenger } from '../lib/ptr-passengers';
 
 // ═══════════════════════════════════════════════
 // Helpers
 // ═══════════════════════════════════════════════
+
+/**
+ * Load the PTR passengers array for a Mystifly booking. Mystifly requires it on
+ * every PTR request. Resolves the booking by Mystifly UniqueID (MFRef) or the
+ * provided FareMind booking id/reference, then maps passengers + e-tickets.
+ */
+async function loadPtrPassengers(uniqueId: string, bookingId?: string): Promise<PtrPassenger[]> {
+  try {
+    const booking = await prisma.masterBooking.findFirst({
+      where: {
+        OR: [
+          { mystiflyMfRef: uniqueId },
+          { providerOrderId: uniqueId },
+          { masterPnr: uniqueId },
+          { pnrs: { some: { providerOrderId: uniqueId } } },
+          ...(bookingId ? [{ id: bookingId }, { masterBookingReference: bookingId }] : []),
+        ],
+      },
+      include: { passengers: { orderBy: { passengerOrder: 'asc' } }, tickets: true },
+    });
+    if (!booking) return [];
+    return buildPtrPassengers(booking);
+  } catch {
+    return [];
+  }
+}
 
 function extractPtrError(result: any): { hasError: boolean; message: string; code: string } {
   // 1. Structured Mystifly error object (Data.Error / Error with ErrorCode).
@@ -127,14 +154,12 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const result = await mystifly.postTicketingRequest(uniqueId, 'VoidQuote');
+      const passengers = await loadPtrPassengers(uniqueId, bookingId);
+      const result = await mystifly.voidQuote(uniqueId, passengers);
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
         if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date() });
-        // Void is only allowed inside the airline's void window (typically same day
-        // as ticketing). A generic rejection here almost always means the ticket is
-        // outside that window — point the agent at Refund / Force Cancel instead.
         const notEligible = /verify the request|not eligible|not allowed|not permitted|window|invalid/i.test(message);
         const friendly = notEligible
           ? `Void was rejected by the airline (${message}). Void is only possible within the airline's void window and while the ticket is in a voidable state. If this is a fresh booking, ticketing may still be settling — retry in a moment; otherwise use "Get Refund Quote" or "Force Cancel + Refund".`
@@ -142,19 +167,30 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(422).send({ error: friendly, errorCode: 'MYSTIFLY_VOID_QUOTE_FAILED', raw: result });
       }
 
-      // Extract quote info
+      // Void quote returns synchronously: Data.VoidQuotes[] with TotalRefundAmount / TotalVoidingFee.
       const quoteData = result?.Data || result;
+      const vq = Array.isArray(quoteData?.VoidQuotes) ? quoteData.VoidQuotes : [];
+      const providerPtrId = quoteData?.PTRId ?? quoteData?.PtrId ?? null;
+      const totalRefund = vq.reduce((s: number, q: any) => s + (parseFloat(q?.TotalRefundAmount) || 0), 0);
+      const totalVoidingFee = vq.reduce((s: number, q: any) => s + (parseFloat(q?.TotalVoidingFee) || 0), 0);
+      const currency = vq[0]?.Currency || quoteData?.Currency || 'USD';
       if (ptrRecord) {
         await updatePtrRecord(ptrRecord.id, {
           status: 'QUOTE_RECEIVED',
-          quoteTotalAmount: quoteData?.TotalAmount || null,
-          quotePenaltyAmount: quoteData?.PenaltyAmount || null,
-          quoteCurrency: quoteData?.Currency || 'USD',
+          quoteTotalAmount: totalRefund || null,
+          quotePenaltyAmount: totalVoidingFee || null,
+          quoteRefundAmount: totalRefund || null,
+          quoteCurrency: currency,
           providerQuoteResponse: result,
         });
       }
 
-      return { success: true, ptrId: ptrRecord?.id, quote: quoteData, raw: result };
+      return {
+        success: true, ptrId: ptrRecord?.id, providerPtrId,
+        ptrStatus: quoteData?.PTRStatus, voidingWindow: quoteData?.VoidingWindow,
+        quote: { TotalRefundAmount: totalRefund, TotalVoidingFee: totalVoidingFee, Currency: currency, VoidQuotes: vq },
+        raw: result,
+      };
     } catch (error: any) {
       console.error('[PTR] VoidQuote error:', error.message);
       return reply.code(502).send({ error: `VoidQuote failed: ${error.message}` });
@@ -165,14 +201,17 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/void', async (request, reply) => {
     try {
-      const { uniqueId, ptrId, requestedBy } = request.body as {
-        uniqueId: string; ptrId?: string; requestedBy?: string;
+      const { uniqueId, ptrId, bookingId, requestedBy } = request.body as {
+        uniqueId: string; ptrId?: string; bookingId?: string; requestedBy?: string;
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
 
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 
-      const result = await mystifly.postTicketingRequest(uniqueId, 'Void');
+      // Direct Void — submit with the passengers array. Returns PTRStatus=InProcess;
+      // fulfilment (Resolution=Voided) settles async and is polled via searchPtr.
+      const passengers = await loadPtrPassengers(uniqueId, bookingId);
+      const result = await mystifly.executeVoid(uniqueId, passengers);
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
@@ -180,9 +219,13 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(422).send({ error: message, errorCode: 'MYSTIFLY_VOID_FAILED', raw: result });
       }
 
-      if (ptrId) await updatePtrRecord(ptrId, { status: 'COMPLETED', executedAt: new Date(), providerExecResponse: result });
+      const data = result?.Data || result;
+      const providerPtrId = data?.PTRId ?? data?.PtrId ?? null;
+      const ptrStatus = data?.PTRStatus || 'InProcess';
+      // COMPLETED only if the provider already reports it; otherwise EXECUTING (async).
+      if (ptrId) await updatePtrRecord(ptrId, { status: /completed/i.test(ptrStatus) ? 'COMPLETED' : 'EXECUTING', executedAt: new Date(), providerExecResponse: result });
 
-      return { success: true, ptrId, raw: result };
+      return { success: true, ptrId, providerPtrId, ptrStatus, raw: result };
     } catch (error: any) {
       console.error('[PTR] Void error:', error.message);
       return reply.code(502).send({ error: `Void failed: ${error.message}` });
@@ -209,7 +252,8 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const result = await mystifly.postTicketingRequest(uniqueId, 'RefundQuote');
+      const passengers = await loadPtrPassengers(uniqueId, bookingId);
+      const result = await mystifly.refundQuote(uniqueId, passengers);
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
@@ -223,19 +267,32 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(422).send({ error: friendly, errorCode: 'MYSTIFLY_REFUND_QUOTE_FAILED', raw: result });
       }
 
+      // Refund quote returns synchronously: Data.RefundQuotes[] (TotalRefundAmount /
+      // TotalRefundCharges / CancellationCharge) + PTRId (needed to accept the refund).
       const quoteData = result?.Data || result;
+      const rq = Array.isArray(quoteData?.RefundQuotes) ? quoteData.RefundQuotes : [];
+      const providerPtrId = quoteData?.PTRId ?? quoteData?.PtrId ?? null;
+      const totalRefund = rq.reduce((s: number, q: any) => s + (parseFloat(q?.TotalRefundAmount) || 0), 0);
+      const totalCharges = rq.reduce((s: number, q: any) => s + (parseFloat(q?.TotalRefundCharges) || 0), 0);
+      const cancellationCharge = rq.reduce((s: number, q: any) => s + (parseFloat(q?.CancellationCharge) || 0), 0);
+      const currency = rq[0]?.Currency || quoteData?.Currency || 'USD';
       if (ptrRecord) {
         await updatePtrRecord(ptrRecord.id, {
           status: 'QUOTE_RECEIVED',
-          quoteTotalAmount: quoteData?.TotalAmount || null,
-          quotePenaltyAmount: quoteData?.PenaltyAmount || null,
-          quoteRefundAmount: quoteData?.RefundAmount || null,
-          quoteCurrency: quoteData?.Currency || 'USD',
+          quoteTotalAmount: totalRefund || null,
+          quotePenaltyAmount: totalCharges || null,
+          quoteRefundAmount: totalRefund || null,
+          quoteCurrency: currency,
           providerQuoteResponse: result,
         });
       }
 
-      return { success: true, ptrId: ptrRecord?.id, quote: quoteData, raw: result };
+      return {
+        success: true, ptrId: ptrRecord?.id, providerPtrId,
+        ptrStatus: quoteData?.PTRStatus,
+        quote: { TotalRefundAmount: totalRefund, TotalRefundCharges: totalCharges, CancellationCharge: cancellationCharge, Currency: currency, RefundQuotes: rq },
+        raw: result,
+      };
     } catch (error: any) {
       console.error('[PTR] RefundQuote error:', error.message);
       return reply.code(502).send({ error: `RefundQuote failed: ${error.message}` });
@@ -246,14 +303,18 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/refund', async (request, reply) => {
     try {
-      const { uniqueId, ptrId, requestedBy } = request.body as {
-        uniqueId: string; ptrId?: string; requestedBy?: string;
+      const { uniqueId, ptrId, providerPtrId, bookingId, requestedBy } = request.body as {
+        uniqueId: string; ptrId?: string; providerPtrId?: number; bookingId?: string; requestedBy?: string;
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
+      if (!providerPtrId) return reply.code(400).send({ error: 'providerPtrId (the RefundQuote PTR id) is required — run Get Refund Quote first.', errorCode: 'MISSING_PTR_ID' });
 
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 
-      const result = await mystifly.postTicketingRequest(uniqueId, 'Refund');
+      // Accept Refund — RefundQuote + AcceptQuote=yes + the RefundQuote PTR id + passengers.
+      // Returns PTRType=Refund, PTRStatus=InProcess; settles async (Resolution=Refunded).
+      const passengers = await loadPtrPassengers(uniqueId, bookingId);
+      const result = await mystifly.executeRefund(uniqueId, providerPtrId, passengers, 'Refund accepted via FareMind');
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
@@ -261,9 +322,11 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(422).send({ error: message, errorCode: 'MYSTIFLY_REFUND_FAILED', raw: result });
       }
 
-      if (ptrId) await updatePtrRecord(ptrId, { status: 'COMPLETED', executedAt: new Date(), providerExecResponse: result });
+      const data = result?.Data || result;
+      const ptrStatus = data?.PTRStatus || 'InProcess';
+      if (ptrId) await updatePtrRecord(ptrId, { status: /completed/i.test(ptrStatus) ? 'COMPLETED' : 'EXECUTING', executedAt: new Date(), providerExecResponse: result });
 
-      return { success: true, ptrId, raw: result };
+      return { success: true, ptrId, providerPtrId, ptrStatus, raw: result };
     } catch (error: any) {
       console.error('[PTR] Refund error:', error.message);
       return reply.code(502).send({ error: `Refund failed: ${error.message}` });

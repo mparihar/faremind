@@ -137,6 +137,8 @@ export default function AdminPostBookingPage() {
     try {
       const body: any = { uniqueId: uniqueId.trim(), requestedBy: 'admin' };
       if (quoteResult?.ptrId) body.ptrId = quoteResult.ptrId;
+      if (quoteResult?.providerPtrId) body.providerPtrId = quoteResult.providerPtrId; // Mystifly PTR id (required to accept refund)
+      if (bookingId) body.bookingId = bookingId;
       if (type === 'reissue' && newFSC) body.newFareSourceCode = newFSC;
 
       const res = await fetch(`${BACKEND_URL}/api/mystifly-ptr/${type}`, {

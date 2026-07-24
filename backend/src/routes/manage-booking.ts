@@ -9,6 +9,7 @@ import { initiateCancellation, getAdminServiceFee as getCancelServiceFee } from 
 import { getReissueQuote, initiateReissue } from '../services/reissue-orchestrator';
 import { toUsd } from '../services/fx';
 import { chargeOriginalCard, refundCollection } from '../services/customer-collect';
+import { buildPtrPassengers } from '../lib/ptr-passengers';
 import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
 import * as mbq from '../lib/manage-booking-queries';
 import * as emails from '../lib/manage-booking-emails';
@@ -498,7 +499,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       let quote;
       try {
         const provider = getProvider(booking.primaryProvider);
-        quote = await provider.getCancellationQuote(providerPnr.providerOrderId, { ticketingStatus: booking.ticketingStatus, bookingAmount: Number(booking.totalAmount) || 0 });
+        quote = await provider.getCancellationQuote(providerPnr.providerOrderId, { ticketingStatus: booking.ticketingStatus, bookingAmount: Number(booking.totalAmount) || 0, passengers: buildPtrPassengers(booking) });
         await mbq.storeProviderPayload({ bookingId, provider: booking.primaryProvider, payloadType: 'cancellation_quote', providerReference: quote.quoteId, payloadJson: { ...quote.raw as object, expiresAt: quote.expiresAt } });
       } catch (providerErr) {
         // Classify the error using MystiflyCancellationError
@@ -825,6 +826,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         const quote = await provider.getCancellationQuote(providerPnr.providerOrderId, {
           ticketingStatus: booking.ticketingStatus,
           bookingAmount: Number(booking.totalAmount) || 0,
+          passengers: buildPtrPassengers(booking),
         });
         const ptrNumber = quote.quoteId.match(/_(\d+)$/)?.[1] || 'N/A';
         console.log(`[ForceCancel][Quote] mode=${mode || 'execute'} forcedBy=${forcedBy} bookingRef=${booking.masterBookingReference} method=${quote.method} quoteId=${quote.quoteId} ptrNumber=${ptrNumber} providerRefund=${quote.refundAmount} ${quote.refundCurrency || ''} airlinePenalty=${quote.airlinePenalty ?? 'n/a'} supplierFee=${quote.supplierFee ?? 'n/a'} overrideRefundAmount=${overrideRefundAmount ?? 'none'}`);
