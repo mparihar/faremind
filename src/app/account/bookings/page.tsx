@@ -198,6 +198,17 @@ export default function MyTripsPage() {
                             Airline PNR: {b.masterPnr || b.masterBookingReference}
                           </span>
                           <StatusBadge status={b.bookingStatus} />
+                          {b.ticketingStatus && b.ticketingStatus !== 'NOT_STARTED' && (
+                            <span className={`text-[11px] font-bold uppercase tracking-wider px-2.5 py-0.5 rounded-full border ${
+                              ['ISSUED', 'TICKETED'].includes(b.ticketingStatus)
+                                ? 'text-emerald-400 bg-emerald-400/10 border-emerald-400/20'
+                                : ['VOIDED', 'FAILED'].includes(b.ticketingStatus)
+                                  ? 'text-red-400 bg-red-400/10 border-red-400/20'
+                                  : 'text-amber-400 bg-amber-400/10 border-amber-400/20'
+                            }`} title="Ticketing status">
+                              {b.ticketingStatus.replace(/_/g, ' ')}
+                            </span>
+                          )}
                           {isRT && (
                             <span className="text-[11px] font-bold text-slate-400 uppercase tracking-wider bg-white/[0.04] px-2.5 py-0.5 rounded-full border border-white/[0.06]">
                               Round Trip

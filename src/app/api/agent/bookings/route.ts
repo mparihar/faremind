@@ -57,6 +57,7 @@ export const GET = withAgent(async (req: NextRequest, { agent }) => {
         tripType: true,
         bookingStatus: true,
         paymentStatus: true,
+        ticketingStatus: true,
         totalAmount: true,
         currency: true,
         primaryProvider: true,

@@ -32,6 +32,7 @@ interface AgentBooking {
   tripType: string;
   bookingStatus: string;
   paymentStatus: string;
+  ticketingStatus?: string;
   totalAmount: number;
   currency: string;
   createdAt: string;
@@ -181,6 +182,18 @@ export default function AgentBookingsPage() {
                     )}>
                       {b.paymentStatus.replace(/_/g, ' ')}
                     </span>
+                    {b.ticketingStatus && (
+                      <span className={cn(
+                        'inline-block px-2 py-0.5 rounded text-[10px] font-bold uppercase tracking-wider border',
+                        ['ISSUED', 'TICKETED'].includes(b.ticketingStatus)
+                          ? 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25'
+                          : ['VOIDED', 'FAILED'].includes(b.ticketingStatus)
+                            ? 'bg-red-500/15 text-red-400 border-red-500/25'
+                            : 'bg-amber-500/15 text-amber-400 border-amber-500/25'
+                      )} title="Ticketing status">
+                        {b.ticketingStatus.replace(/_/g, ' ')}
+                      </span>
+                    )}
                   </div>
                   <p className="text-sm font-semibold text-white">
                     {b.originAirport} {b.tripType?.toLowerCase().includes('round') ? '⇄' : '→'} {b.destinationAirport}
