@@ -173,6 +173,18 @@ export interface PassengerUpdateResult {
   raw: unknown;
 }
 
+/** Provider-identity context for a passenger update (from the persisted booking). */
+export interface PassengerUpdateContext {
+  providerPassengerId?: string | null; // Mystifly paxId
+  eTicket?: string | null;
+  firstName?: string | null;
+  lastName?: string | null;
+  title?: string | null;
+  passengerType?: string | null;
+  gender?: string | null;
+  dateOfBirth?: string | null;
+}
+
 // ═══════════════════════════════════════════════
 // Provider Interface
 // ═══════════════════════════════════════════════
@@ -196,7 +208,8 @@ export interface IBookingProvider {
   updatePassenger(
     orderId: string,
     passengerId: string,
-    updates: Record<string, string>
+    updates: Record<string, string>,
+    ctx?: PassengerUpdateContext
   ): Promise<PassengerUpdateResult>;
 
   // ── Capability checks ─────────────────────────
@@ -404,7 +417,8 @@ export class DuffelAdapter implements IBookingProvider {
   async updatePassenger(
     orderId: string,
     passengerId: string,
-    updates: Record<string, string>
+    updates: Record<string, string>,
+    _ctx?: PassengerUpdateContext
   ): Promise<PassengerUpdateResult> {
     // Duffel allows updating passenger details via PATCH /air/orders/:id
     const result = await duffelClient.updateOrderPassenger(orderId, passengerId, updates);
@@ -1102,17 +1116,56 @@ export class MystiflyAdapter implements IBookingProvider {
 
   async updatePassenger(
     mfRef: string,
-    _passengerId: string,
-    updates: Record<string, string>
+    passengerId: string,
+    updates: Record<string, string>,
+    ctx?: PassengerUpdateContext
   ): Promise<PassengerUpdateResult> {
-    // Mystifly uses the NameCorrection API for passenger updates
-    // This is a simplified implementation — full impl would map fields properly
-    return {
-      success: false,
-      passengerId: _passengerId,
-      updatedFields: updates,
-      raw: { note: 'Mystifly passenger updates require NameCorrectionRequest API — not yet fully implemented' },
+    // Live provider call: POST /api/UpdatePassenger. Requires Mystifly's paxId
+    // (= BookingPassenger.providerPassengerId). Mystifly's UpdatePassenger accepts
+    // contact/name/DOB/gender/FFN/KTN/redress — but NOT passport number/expiry/
+    // nationality, which therefore stay FareMind-local (still persisted in our DB).
+    const paxId = parseInt(String(ctx?.providerPassengerId ?? ''), 10);
+    if (!ctx?.providerPassengerId || Number.isNaN(paxId)) {
+      throw new Error('Mystifly UpdatePassenger requires the provider paxId (providerPassengerId) — not available for this passenger.');
+    }
+
+    // Map FareMind editable fields → Mystifly UpdatePassenger fields.
+    const body: mystiflyClient.MystiflyUpdatePassengerRQ = {
+      paxId,
+      eTicket: ctx.eTicket || undefined,
+      firstName: ctx.firstName || undefined,
+      lastName: ctx.lastName || undefined,
+      title: ctx.title || undefined,
+      passengerType: ctx.passengerType || undefined,
     };
+    if (updates.email) body.email = updates.email;
+    if (updates.phone) body.phone = updates.phone;
+    if (updates.dateOfBirth || ctx.dateOfBirth) body.DOB = updates.dateOfBirth || ctx.dateOfBirth || undefined;
+    if (updates.gender || ctx.gender) body.gender = updates.gender || ctx.gender || undefined;
+
+    const result = await mystiflyClient.updatePassenger(mfRef, body);
+    const data = result?.Data ?? result;
+    const success = (data?.Success ?? result?.Success) !== false;
+    if (!success) {
+      const errMsg = data?.Errors?.[0]?.Message || data?.Message || result?.Message || 'UpdatePassenger failed';
+      throw new Error(`Mystifly UpdatePassenger failed: ${errMsg}`);
+    }
+    return { success: true, passengerId, updatedFields: updates, raw: result };
+  }
+
+  /** Name correction (POST /api/NameCorrectionRequest). */
+  async correctPassengerName(
+    mfRef: string,
+    passengers: mystiflyClient.MystiflyNameCorrectionPassenger[],
+  ): Promise<{ success: boolean; raw: unknown }> {
+    const result = await mystiflyClient.nameCorrection(mfRef, passengers);
+    const data = result?.Data ?? result;
+    const success = (data?.Success ?? result?.Success) !== false;
+    if (!success) {
+      const errMsg = data?.Errors?.[0]?.Message || data?.Message || result?.Message || 'NameCorrection failed';
+      throw new Error(`Mystifly NameCorrectionRequest failed: ${errMsg}`);
+    }
+    return { success: true, raw: result };
   }
 
   // ── Capability checks ─────────────────────────

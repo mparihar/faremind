@@ -1262,7 +1262,19 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (providerPnr?.providerOrderId) {
         try {
           const provider = getProvider(booking.primaryProvider);
-          await provider.updatePassenger(providerPnr.providerOrderId, passengerId, updates);
+          // Resolve the provider paxId + e-ticket from the persisted booking so
+          // the live provider update (Mystifly /api/UpdatePassenger) can identify
+          // the passenger. Passport fields stay local (provider API can't take them).
+          const paxTicket = (booking.tickets || []).find((t: any) => t.passengerId === passengerId);
+          await provider.updatePassenger(providerPnr.providerOrderId, passengerId, updates, {
+            providerPassengerId: (passenger as any).providerPassengerId,
+            eTicket: paxTicket?.eTicketNumber || paxTicket?.ticketNumber || null,
+            firstName: passenger.firstName,
+            lastName: passenger.lastName,
+            passengerType: (passenger as any).passengerType,
+            gender: (passenger as any).gender,
+            dateOfBirth: (passenger as any).dateOfBirth ? new Date((passenger as any).dateOfBirth).toISOString().slice(0, 10) : null,
+          });
           providerSynced = true;
           fastify.log.info(`[manage-booking/passenger] Updated via ${booking.primaryProvider} for order ${providerPnr.providerOrderId}`);
         } catch (providerErr) {

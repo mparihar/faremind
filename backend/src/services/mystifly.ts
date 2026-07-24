@@ -1378,6 +1378,146 @@ export async function executeRefund(
   return res;
 }
 
+// ═══════════════════════════════════════════════
+// Passenger Update / Name Correction
+// ═══════════════════════════════════════════════
+
+export interface MystiflyUpdatePassengerRQ {
+  paxId: number;
+  title?: string;
+  firstName?: string;
+  lastName?: string;
+  email?: string;
+  phone?: string;
+  address?: string;
+  FFN?: string;
+  DOB?: string;
+  gender?: string;
+  eTicket?: string;
+  passengerType?: string;
+  KTNNumber?: string;
+  KTNCountry?: string;
+  redressNumber?: string;
+  redressCountry?: string;
+}
+
+/**
+ * Update a passenger's mutable details (contact, DOB, gender, FFN, KTN, redress).
+ * POST /api/UpdatePassenger. Note: Mystifly's UpdatePassenger does NOT accept
+ * passport number/expiry/nationality — those stay FareMind-local. Post-booking,
+ * billable-adjacent — no retry.
+ */
+export async function updatePassenger(mfRef: string, pax: MystiflyUpdatePassengerRQ): Promise<any> {
+  return mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/UpdatePassenger',
+    body: { MFRef: mfRef, ...pax } as unknown as Record<string, unknown>,
+    retries: 0,
+  });
+}
+
+export interface MystiflyNameCorrectionPassenger {
+  PaxId: number;
+  firstName: string;
+  lastName: string;
+  title?: string;
+  eTicket?: string;
+  email?: string;
+  phoneNo?: string;
+  passengerType?: string;
+}
+
+/**
+ * Request a name correction for one or more passengers.
+ * POST /api/NameCorrectionRequest. Post-booking, billable — no retry.
+ */
+export async function nameCorrection(mfRef: string, passengers: MystiflyNameCorrectionPassenger[]): Promise<any> {
+  return mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/NameCorrectionRequest',
+    body: { MFRef: mfRef, passengers } as unknown as Record<string, unknown>,
+    retries: 0,
+  });
+}
+
+// ═══════════════════════════════════════════════
+// Schedule Change (airline-initiated / IROPS)
+// ═══════════════════════════════════════════════
+
+export type MystiflyScheduleActionType =
+  | 'None' | 'Accept' | 'ChooseAlternative' | 'Refund' | 'ReIssue'
+  | 'ASCRefund' | 'ASCReissue' | 'ASCReissueQuote' | 'Reject' | 'Retain';
+
+export type MystiflyScheduleRejectOption =
+  | 'None' | 'ASCReissueSearch' | 'ASCReissue' | 'QuoteforRefund' | 'ApplyforRefund';
+
+export interface MystiflyScheduleFlightOption {
+  FlightNumber?: number;
+  AirlineCode?: string;
+  TravelDate?: string;
+  DepartureTime?: string;
+  CityPair?: string;
+}
+
+/**
+ * Get the schedule-change policy/details for a booking.
+ * POST /api/GetPolicyInfoForScheduleChange { ActionType, MFRef }. Used to detect
+ * whether a booking has a pending airline schedule change and what options apply.
+ */
+export async function getScheduleChangePolicy(mfRef: string, actionType: MystiflyScheduleActionType = 'None'): Promise<any> {
+  return mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/GetPolicyInfoForScheduleChange',
+    body: { ActionType: actionType, MFRef: mfRef } as unknown as Record<string, unknown>,
+    retries: 1,
+  });
+}
+
+/**
+ * Act on a schedule change (Accept / Refund / ReIssue / Reject / Retain / …).
+ * POST /api/ScheduleChange. Billable action — no retry.
+ */
+export async function applyScheduleChange(
+  mfRef: string,
+  actionType: MystiflyScheduleActionType,
+  opts: {
+    rejectOption?: MystiflyScheduleRejectOption;
+    flightOptions?: MystiflyScheduleFlightOption[];
+    comments?: string;
+    allowRevalidation?: boolean;
+    allowReissue?: boolean;
+    isOverridden?: boolean;
+  } = {},
+): Promise<any> {
+  return mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/ScheduleChange',
+    body: {
+      ActionType: actionType,
+      MFRef: mfRef,
+      RejectOption: opts.rejectOption || 'None',
+      FlightOptions: opts.flightOptions || [],
+      Comments: opts.comments || null,
+      AllowRevalidation: opts.allowRevalidation ?? false,
+      AllowReissue: opts.allowReissue ?? false,
+      IsOverridden: opts.isOverridden ?? false,
+    } as unknown as Record<string, unknown>,
+    retries: 0,
+  });
+}
+
+/**
+ * Accept a specific schedule-changed flight by id.
+ * GET /api/ScheduleChangeAccept/{MFRef}/{FlightId}. Billable action — no retry.
+ */
+export async function acceptScheduleChangeByFlight(mfRef: string, flightId: string | number): Promise<any> {
+  return mystiflyRequest<any>({
+    method: 'GET',
+    path: `/api/ScheduleChangeAccept/${encodeURIComponent(mfRef)}/${encodeURIComponent(String(flightId))}`,
+    retries: 0,
+  });
+}
+
 export default {
   searchFlights,
   revalidateFlight,
@@ -1403,6 +1543,13 @@ export default {
   executeVoid,
   refundQuote,
   executeRefund,
+  // Passenger update / name correction
+  updatePassenger,
+  nameCorrection,
+  // Schedule change (IROPS)
+  getScheduleChangePolicy,
+  applyScheduleChange,
+  acceptScheduleChangeByFlight,
   // Helpers
   toCabinType,
   fromCabinType,
