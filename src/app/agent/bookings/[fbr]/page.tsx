@@ -790,8 +790,15 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                           </div>
                         </div>
 
-                        {/* Void/Refund method badge — agent-only */}
-                        {cancelQuote.cancellationMethod && (
+                        {/* Method badge — agent-only. A ticket that is still being
+                            issued has no PTR yet and cannot be voided immediately;
+                            show the "in progress" state instead of "Immediate Void". */}
+                        {cancelQuote.pendingIssuance ? (
+                          <div className="flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold bg-amber-500/5 border border-amber-500/20 text-amber-400">
+                            <Clock className="w-3.5 h-3.5 shrink-0" />
+                            <span>Cancellation In Progress — voids &amp; refunds once the airline issues the ticket</span>
+                          </div>
+                        ) : cancelQuote.cancellationMethod && (
                           <div className={`flex items-center gap-2 px-3 py-2 rounded-xl text-xs font-semibold ${
                             cancelQuote.cancellationMethod === 'VOID'
                               ? 'bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 text-[#1ABC9C]'

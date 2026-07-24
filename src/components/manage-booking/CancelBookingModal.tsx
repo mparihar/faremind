@@ -215,7 +215,12 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                 </div>
 
                 {/* Cancellation type badge */}
-                {cancelQuote.cancellationMethod === 'VOID' && (
+                {cancelQuote.pendingIssuance ? (
+                  <div className="flex items-center gap-2 bg-amber-500/5 border border-amber-500/20 rounded-xl px-3 py-2">
+                    <Clock size={13} className="text-amber-400 shrink-0" />
+                    <p className="text-amber-400 text-xs font-semibold">Cancellation in progress — we&apos;ll void &amp; refund once the airline issues the ticket</p>
+                  </div>
+                ) : cancelQuote.cancellationMethod === 'VOID' && (
                   <div className="flex items-center gap-2 bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 rounded-xl px-3 py-2">
                     <Shield size={13} className="text-[#1ABC9C] shrink-0" />
                     <p className="text-[#1ABC9C] text-xs font-semibold">Eligible for immediate cancellation — full amount returned</p>
@@ -327,8 +332,32 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
           </>
         )}
 
+        {/* ── Queued (ticket still issuing → auto-void once ticketed) ── */}
+        {step === 'success' && cancelSuccess?.queued && (
+          <>
+            <div className="px-5 pt-6 pb-4 text-center">
+              <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-4">
+                <Clock size={30} className="text-amber-400" />
+              </div>
+              <h3 className="text-white font-black text-xl mb-1">Cancellation In Progress</h3>
+              <p className="text-slate-400 text-sm px-2">
+                {cancelSuccess.message || 'The airline is still issuing your ticket. We\'ll void it and refund you (minus the service fee) automatically once issuance completes — no further action is needed.'}
+              </p>
+            </div>
+            <div className="px-5 pb-5">
+              <button
+                onClick={handleDone}
+                className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#1ABC9C] hover:bg-[#16a085] text-white font-bold text-sm transition-all"
+              >
+                Return to My Trips
+                <ChevronRight size={14} />
+              </button>
+            </div>
+          </>
+        )}
+
         {/* ── Success ─────────────────────────────── */}
-        {step === 'success' && cancelSuccess && (
+        {step === 'success' && cancelSuccess && !cancelSuccess.queued && (
           <>
             <div className="px-5 pt-6 pb-4 text-center">
               <div className="w-16 h-16 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/30 flex items-center justify-center mx-auto mb-4">
