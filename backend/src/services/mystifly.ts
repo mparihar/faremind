@@ -918,16 +918,27 @@ export async function getAncillaryServices(
     ...(options.seatMapKey ? { SeatMapKey: options.seatMapKey } : {}),
   };
 
+  // Tag the operation (LIST / CONFIRM / CANCEL) and which service(s) are requested
+  // so baggage calls can be filtered from meal/seat on the same AncillaryServiceRequest.
+  const op = options.isConfirmed ? 'CONFIRM' : options.isCancel ? 'CANCEL' : 'LIST';
+  const svc = [rq.isBaggage && 'baggage', rq.isMeal && 'meal', rq.isSeatMap && 'seat'].filter(Boolean).join('+') || 'none';
+  console.log(`[BAGGAGE][DEBUG] Ancillary ${op} (${svc}) REQUEST →`, JSON.stringify(rq));
+
   try {
-    return await mystiflyRequest<any>({
+    const res = await mystiflyRequest<any>({
       method: 'POST',
       path: '/api/AncillaryServiceRequest',
       body: rq as unknown as Record<string, unknown>,
       // Never retry a confirm/cancel — it mutates the booking (billable).
       retries: isMutation ? 0 : 1,
     });
+    const topKeys = res && typeof res === 'object' ? Object.keys(res) : [];
+    const dataKeys = res?.Data && typeof res.Data === 'object' ? Object.keys(res.Data) : [];
+    console.log(`[BAGGAGE][DEBUG] Ancillary ${op} (${svc}) RESPONSE ← topKeys=[${topKeys.join(',')}] dataKeys=[${dataKeys.join(',')}]`);
+    console.log(`[BAGGAGE][DEBUG] Ancillary ${op} (${svc}) RAW ←`, JSON.stringify(res)?.slice(0, 4000));
+    return res;
   } catch (error) {
-    console.warn('[Mystifly] Ancillary services request failed:', (error as Error).message);
+    console.warn(`[BAGGAGE][DEBUG] Ancillary ${op} (${svc}) FAILED:`, (error as Error).message);
     return { error: (error as Error).message };
   }
 }
