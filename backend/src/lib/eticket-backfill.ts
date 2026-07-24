@@ -56,7 +56,8 @@ export async function backfillEticketsFromTripDetails(bookingId: string, mfRef: 
 
   let tripResult: any = null;
   let statusResult: any = null;
-  try { tripResult = await mystifly.getTripDetails(mfRef); } catch (e) { console.warn(`[TICKETS][DEBUG] TripDetails failed for ${mfRef}:`, (e as Error).message); }
+  // Version-fallback TripDetails (v3 errors on some bookings — see getTripDetailsResilient).
+  try { tripResult = await mystifly.getTripDetailsResilient(mfRef); } catch (e) { console.warn(`[TICKETS][DEBUG] TripDetails failed for ${mfRef}:`, (e as Error).message); }
   try { statusResult = await mystifly.getTicketOrderStatus(mfRef); } catch { /* best-effort */ }
 
   // Raw shape capture — so if extraction finds nothing we can see where the

@@ -819,6 +819,38 @@ export async function getTripDetails(mfRef: string): Promise<any> {
 }
 
 /**
+ * TripDetails with version fallback. Mystifly exposes /api/TripDetails,
+ * /api/v1.1/TripDetails, /api/v2/TripDetails and /api/v3/TripDetails — v3 has
+ * been observed returning {"Data":"Error occured in Trip Details V3","Success":false}
+ * for some bookings. Try the documented base first, then older versions, and
+ * return the first response that is NOT an error (so callers get a real payload
+ * — e.g. e-ticket numbers). Falls back to the last response if all error.
+ */
+export async function getTripDetailsResilient(mfRef: string): Promise<any> {
+  const bases = ['/api/TripDetails/', '/api/v2/TripDetails/', '/api/v1.1/TripDetails/', '/api/v3/TripDetails/'];
+  let last: any = null;
+  for (const base of bases) {
+    try {
+      const res = await mystiflyRequest<any>({
+        method: 'GET',
+        path: `${base}${encodeURIComponent(mfRef)}`,
+        retries: 1,
+      });
+      last = res;
+      const failed =
+        res?.Success === false ||
+        (typeof res?.Data === 'string' && /error/i.test(res.Data)) ||
+        !res?.Data;
+      console.log(`[TICKETS][DEBUG] TripDetails ${base}${mfRef} → ${failed ? 'ERROR' : 'OK'}${failed ? ` (${JSON.stringify(res?.Data)?.slice(0, 120)})` : ''}`);
+      if (!failed && res?.Data && typeof res.Data === 'object') return res;
+    } catch (e) {
+      console.warn(`[TICKETS][DEBUG] TripDetails ${base}${mfRef} threw:`, (e as Error).message);
+    }
+  }
+  return last;
+}
+
+/**
  * Resolve the Mystifly reference (MFRef) for a FareSourceCode.
  *
  * Used to recover a poll-able reference when BookFlight returns a pending /
