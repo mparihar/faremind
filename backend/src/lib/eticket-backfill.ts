@@ -18,11 +18,25 @@
 import { prisma } from './db';
 import * as mystifly from '../services/mystifly';
 
+/** The TravelItinerary object, regardless of TripDetails version nesting. */
+function travelItinerary(tripResult: any): any {
+  const d = tripResult?.Data;
+  // Base /api/TripDetails: Data.TripDetailsResult.TravelItinerary
+  // Older/other shapes: Data.TravelItinerary
+  return d?.TripDetailsResult?.TravelItinerary || d?.TravelItinerary || null;
+}
+
+/** The provider ticket status (e.g. "Ticketed" / "TktInProcess" / "Void"). */
+export function tripTicketStatus(tripResult: any): string {
+  const ti = travelItinerary(tripResult);
+  return String(ti?.TicketStatus || tripResult?.Data?.TktStatus || '').trim();
+}
+
 /** Extract e-ticket numbers from TripDetails / AirTicketOrderStatus responses. */
 function extractEtickets(tripResult: any, statusResult: any): string[] {
   const nums: string[] = [];
   const push = (n: any) => {
-    const s = typeof n === 'string' ? n.trim() : '';
+    const s = typeof n === 'string' ? n.trim() : typeof n === 'number' ? String(n) : '';
     if (s && !nums.includes(s)) nums.push(s);
   };
 
@@ -30,11 +44,25 @@ function extractEtickets(tripResult: any, statusResult: any): string[] {
   const st = statusResult?.Data || statusResult;
   (st?.TicketNumbers || st?.ETicketNumbers || []).forEach(push);
 
-  // TripDetails — CustomerInfos[].ETicketNumbers[] | .TicketDocumentInfo[]
-  const travelers = tripResult?.Data?.TravelItinerary?.ItineraryInfo?.CustomerInfos || [];
-  for (const wrap of travelers) {
-    const t = wrap?.CustomerInfo || wrap; // Mystifly sometimes wraps in CustomerInfo
-    const list = t?.ETicketNumbers || t?.TicketDocumentInfo || t?.eTicketNumbers || [];
+  const ti = travelItinerary(tripResult);
+
+  // Primary shape: TravelItinerary.PassengerInfos[].Passenger.{TicketNumber,...}
+  const paxInfos = ti?.PassengerInfos || [];
+  for (const wrap of Array.isArray(paxInfos) ? paxInfos : [paxInfos]) {
+    const p = wrap?.Passenger || wrap;
+    push(p?.TicketNumber || p?.ETicketNumber || p?.eTicketNumber || p?.TicketDocumentNumber || p?.Ticket);
+    // Some responses attach a list of ticket docs per passenger.
+    const list = p?.ETicketNumbers || p?.TicketDocumentInfo || [];
+    for (const tk of Array.isArray(list) ? list : [list]) {
+      push(tk?.eTicketNumber || tk?.TicketNumber || tk?.ETicketNumber || tk?.Number || tk);
+    }
+  }
+
+  // Legacy fallback shape: TravelItinerary.ItineraryInfo.CustomerInfos[]
+  const customers = ti?.ItineraryInfo?.CustomerInfos || [];
+  for (const wrap of Array.isArray(customers) ? customers : [customers]) {
+    const c = wrap?.CustomerInfo || wrap;
+    const list = c?.ETicketNumbers || c?.TicketDocumentInfo || [];
     for (const tk of Array.isArray(list) ? list : [list]) {
       push(tk?.eTicketNumber || tk?.TicketNumber || tk?.ETicketNumber || tk?.Number || tk);
     }
@@ -64,9 +92,15 @@ export async function backfillEticketsFromTripDetails(bookingId: string, mfRef: 
   // e-ticket actually lives and fix the field mapping.
   console.log(`[TICKETS][DEBUG] TripDetails RAW for ${mfRef} ←`, JSON.stringify(tripResult)?.slice(0, 4000));
 
+  const status = tripTicketStatus(tripResult);
   const nums = extractEtickets(tripResult, statusResult);
-  console.log(`[TICKETS][DEBUG] ${mfRef}: extracted eTickets=[${nums.join(', ')}] | ticketRows=${tickets.length} missing=${missing.length}`);
-  if (nums.length === 0) return 0;
+  console.log(`[TICKETS][DEBUG] ${mfRef}: provider TicketStatus="${status}" extracted eTickets=[${nums.join(', ')}] | ticketRows=${tickets.length} missing=${missing.length}`);
+  if (nums.length === 0) {
+    if (status && !/ticketed|issued/i.test(status)) {
+      console.warn(`[TICKETS][DEBUG] ${mfRef}: ticket NOT issued (status="${status}") — no e-ticket exists yet; void/refund is not applicable until ticketing completes.`);
+    }
+    return 0;
+  }
 
   // Best-effort 1:1 assignment to the rows still missing a number.
   let updated = 0;
