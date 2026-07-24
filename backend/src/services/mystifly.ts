@@ -857,14 +857,22 @@ export async function getSeatMap(fareSourceCode: string): Promise<any> {
     Target: MYSTIFLY_TARGET,
   };
 
+  console.log(`[SEATMAP][DEBUG] SeatMap REQUEST → FareSourceCode=${fareSourceCode?.slice(0, 40)}... (len=${fareSourceCode?.length ?? 0})`);
   try {
-    return await mystiflyRequest<any>({
+    const res = await mystiflyRequest<any>({
       method: 'POST',
       path: '/api/v1/SeatMap/Flight',
       body: rq as unknown as Record<string, unknown>,
     });
+    // Log top-level keys so we can spot the real response shape vs our normalizer
+    // (which currently expects Data.SeatMapResponses[].Rows[].Seats[]).
+    const topKeys = res && typeof res === 'object' ? Object.keys(res) : [];
+    const dataKeys = res?.Data && typeof res.Data === 'object' ? Object.keys(res.Data) : [];
+    console.log(`[SEATMAP][DEBUG] SeatMap RESPONSE ← topKeys=[${topKeys.join(',')}] dataKeys=[${dataKeys.join(',')}]`);
+    console.log(`[SEATMAP][DEBUG] SeatMap RAW ←`, JSON.stringify(res)?.slice(0, 4000));
+    return res;
   } catch (error) {
-    console.warn('[Mystifly] Seat map fetch failed:', (error as Error).message);
+    console.warn('[SEATMAP][DEBUG] Seat map fetch FAILED:', (error as Error).message);
     return null;
   }
 }
@@ -1240,16 +1248,16 @@ export async function confirmReissue(
 export async function voidQuote(mfRef: string, passengers: PtrPassenger[] = []): Promise<any> {
   // Mystifly requires the passengers array (firstName/lastName/title/eTicket/passengerType).
   // VoidQuote returns synchronously with PTRStatus=Completed + Data.VoidQuotes[].
-  return mystiflyRequest<any>({
+  const body = { ptrType: 'VoidQuote', mFRef: mfRef, passengers };
+  console.log(`[CANCEL][DEBUG] VoidQuote REQUEST →`, JSON.stringify(body));
+  const res = await mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
-    body: {
-      ptrType: 'VoidQuote',
-      mFRef: mfRef,
-      passengers,
-    } as unknown as Record<string, unknown>,
+    body: body as unknown as Record<string, unknown>,
     retries: 0,
   });
+  console.log(`[CANCEL][DEBUG] VoidQuote RESPONSE ←`, JSON.stringify(res));
+  return res;
 }
 
 /**
@@ -1265,16 +1273,16 @@ export async function executeVoid(
   // Direct Void (per Mystifly "Void Steps"): create a Void PTR with the passengers
   // array. Returns PTRStatus=InProcess + PTRId; fulfilment is async — poll searchPtr
   // until PTRStatus=Completed & Resolution=Voided.
-  return mystiflyRequest<any>({
+  const body = { ptrType: 'Void', mFRef: mfRef, passengers };
+  console.log(`[CANCEL][DEBUG] Void EXECUTE REQUEST →`, JSON.stringify(body));
+  const res = await mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
-    body: {
-      ptrType: 'Void',
-      mFRef: mfRef,
-      passengers,
-    } as unknown as Record<string, unknown>,
+    body: body as unknown as Record<string, unknown>,
     retries: 0, // Never retry void executions
   });
+  console.log(`[CANCEL][DEBUG] Void EXECUTE RESPONSE ←`, JSON.stringify(res));
+  return res;
 }
 
 /**
@@ -1288,16 +1296,16 @@ export async function executeVoid(
 export async function refundQuote(mfRef: string, passengers: PtrPassenger[] = []): Promise<any> {
   // RefundQuote returns synchronously with PTRStatus=Completed + Data.RefundQuotes[]
   // (TotalRefundAmount / TotalRefundCharges / CancellationCharge / Currency) + PTRId.
-  return mystiflyRequest<any>({
+  const body = { ptrType: 'RefundQuote', mFRef: mfRef, passengers };
+  console.log(`[CANCEL][DEBUG] RefundQuote REQUEST →`, JSON.stringify(body));
+  const res = await mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
-    body: {
-      ptrType: 'RefundQuote',
-      mFRef: mfRef,
-      passengers,
-    } as unknown as Record<string, unknown>,
+    body: body as unknown as Record<string, unknown>,
     retries: 0,
   });
+  console.log(`[CANCEL][DEBUG] RefundQuote RESPONSE ←`, JSON.stringify(res));
+  return res;
 }
 
 /**
@@ -1315,19 +1323,16 @@ export async function executeRefund(
   // Accept Refund (per Mystifly): ptrType stays "RefundQuote" with AcceptQuote=yes and the
   // RefundQuote PtrId. Returns PTRType=Refund, PTRStatus=InProcess; poll searchPtr('Refund')
   // until PTRStatus=Completed & Resolution=Refunded.
-  return mystiflyRequest<any>({
+  const body = { ptrType: 'RefundQuote', mFRef: mfRef, PtrId: ptrId, AcceptQuote: 'yes', AdditionalNote: note, passengers };
+  console.log(`[CANCEL][DEBUG] Refund EXECUTE (accept) REQUEST →`, JSON.stringify(body));
+  const res = await mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
-    body: {
-      ptrType: 'RefundQuote',
-      mFRef: mfRef,
-      PtrId: ptrId,
-      AcceptQuote: 'yes',
-      AdditionalNote: note,
-      passengers,
-    } as unknown as Record<string, unknown>,
+    body: body as unknown as Record<string, unknown>,
     retries: 0, // Never retry refund executions
   });
+  console.log(`[CANCEL][DEBUG] Refund EXECUTE (accept) RESPONSE ←`, JSON.stringify(res));
+  return res;
 }
 
 export default {

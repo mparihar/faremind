@@ -607,6 +607,12 @@ export class MystiflyAdapter implements IBookingProvider {
   }
 
   async getCancellationQuote(mfRef: string, options?: CancelQuoteOptions): Promise<CancelQuote> {
+    // ── DEBUG: surface the PTR passenger array (esp. eTicket presence) ──
+    const dbgPax = options?.passengers || [];
+    console.log(`[CANCEL][DEBUG] getCancellationQuote mfRef=${mfRef} ticketingStatus=${options?.ticketingStatus} bookingAmount=${options?.bookingAmount} passengers(${dbgPax.length})=`, JSON.stringify(dbgPax));
+    if (dbgPax.length && dbgPax.every((p: any) => !p.eTicket)) {
+      console.warn(`[CANCEL][DEBUG] ⚠️ NO eTicket on any passenger for ${mfRef} — Mystifly VoidQuote/RefundQuote will likely be rejected and fall back to non-live cancel.`);
+    }
     // ── Step 1: Get order details for original amount ──
     const order = await this.getOrder(mfRef);
     // Mystifly returns the order total AND all PTR penalties in the fare's NATIVE
@@ -1046,12 +1052,16 @@ export class MystiflyAdapter implements IBookingProvider {
 
   async getSeatMap(fareSourceCode: string): Promise<SeatMapData[]> {
     const result = await mystiflyClient.getSeatMap(fareSourceCode);
-    if (!result) return [];
+    if (!result) {
+      console.log('[SEATMAP][DEBUG] normalizer: null response → 0 seat maps');
+      return [];
+    }
 
     // Mystifly seat map response normalization
     const seatMaps: SeatMapData[] = [];
     const data = result?.Data || result;
     const cabins = data?.SeatMapResponses || data?.seatMapResponses || [];
+    console.log(`[SEATMAP][DEBUG] normalizer: cabins found under Data.SeatMapResponses = ${Array.isArray(cabins) ? cabins.length : 'not-an-array'} (if 0 but RAW above has seats, our field names are wrong)`);
 
     for (const cabin of cabins) {
       const rows: SeatMapRow[] = [];
@@ -1086,6 +1096,7 @@ export class MystiflyAdapter implements IBookingProvider {
       });
     }
 
+    console.log(`[SEATMAP][DEBUG] normalizer: parsed ${seatMaps.length} seat map(s), ${seatMaps.reduce((n, s) => n + s.rows.length, 0)} row(s) total`);
     return seatMaps;
   }
 
