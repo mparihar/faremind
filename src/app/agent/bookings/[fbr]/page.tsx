@@ -23,6 +23,7 @@ import {
   ChevronDown,
   ChevronUp,
   Calendar,
+  Ticket,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 
@@ -229,11 +230,26 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
 
         <div className="flex flex-col sm:flex-row sm:items-center gap-3 justify-between">
           <div>
-            <div className="flex items-center gap-3 mb-1">
+            <div className="flex items-center gap-3 mb-1 flex-wrap">
               <h1 className="text-xl font-black text-white">{booking.masterBookingReference}</h1>
               <span className={cn('px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border', STATUS_COLORS[booking.bookingStatus] || '')}>
                 {booking.bookingStatus?.replace(/_/g, ' ')}
               </span>
+              {booking.ticketingStatus && (
+                <span
+                  className={cn(
+                    'px-2.5 py-1 rounded-lg text-[10px] font-bold uppercase border',
+                    ['ISSUED', 'TICKETED'].includes(booking.ticketingStatus)
+                      ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20'
+                      : ['VOIDED', 'FAILED'].includes(booking.ticketingStatus)
+                        ? 'bg-red-500/10 text-red-400 border-red-500/20'
+                        : 'bg-amber-500/10 text-amber-400 border-amber-500/20',
+                  )}
+                  title="Ticketing status"
+                >
+                  {booking.ticketingStatus.replace(/_/g, ' ')}
+                </span>
+              )}
             </div>
             <p className="text-sm text-slate-400">
               {booking.originAirport} {(booking.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} {booking.destinationAirport} • {booking.customerName}
@@ -486,6 +502,20 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                 <div>
                   <p className="text-sm font-bold text-white">{pax.firstName} {pax.middleName || ''} {pax.lastName}</p>
                   <p className="text-xs text-slate-500">{pax.type || 'ADULT'} • {pax.gender || 'Not specified'} • DOB: {pax.dateOfBirth ? new Date(pax.dateOfBirth).toLocaleDateString() : 'N/A'}</p>
+                  {(() => {
+                    const t = (booking.tickets || []).find((x: any) => x.passengerId === pax.id);
+                    const tno = t?.eTicketNumber || t?.ticketNumber || pax.eTicketNumber || pax.ticketNumber;
+                    return (
+                      <p className="mt-1.5 flex items-center gap-1.5 text-[11px]">
+                        <Ticket className="w-3 h-3 text-slate-500 shrink-0" />
+                        {tno ? (
+                          <span className="font-mono text-emerald-400">{tno}</span>
+                        ) : (
+                          <span className="text-amber-400">Ticketing pending — e-ticket issues shortly</span>
+                        )}
+                      </p>
+                    );
+                  })()}
                 </div>
                 {editingPassenger !== pax.id && (
                   <button
