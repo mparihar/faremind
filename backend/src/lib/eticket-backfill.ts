@@ -33,7 +33,7 @@ export function tripTicketStatus(tripResult: any): string {
 }
 
 /** Extract e-ticket numbers from TripDetails / AirTicketOrderStatus responses. */
-function extractEtickets(tripResult: any, statusResult: any): string[] {
+export function extractEticketNumbers(tripResult: any, statusResult?: any): string[] {
   const nums: string[] = [];
   const push = (n: any) => {
     const s = typeof n === 'string' ? n.trim() : typeof n === 'number' ? String(n) : '';
@@ -93,7 +93,7 @@ export async function backfillEticketsFromTripDetails(bookingId: string, mfRef: 
   console.log(`[TICKETS][DEBUG] TripDetails RAW for ${mfRef} ←`, JSON.stringify(tripResult)?.slice(0, 4000));
 
   const status = tripTicketStatus(tripResult);
-  const nums = extractEtickets(tripResult, statusResult);
+  const nums = extractEticketNumbers(tripResult, statusResult);
   console.log(`[TICKETS][DEBUG] ${mfRef}: provider TicketStatus="${status}" extracted eTickets=[${nums.join(', ')}] | ticketRows=${tickets.length} missing=${missing.length}`);
   if (nums.length === 0) {
     if (status && !/ticketed|issued/i.test(status)) {

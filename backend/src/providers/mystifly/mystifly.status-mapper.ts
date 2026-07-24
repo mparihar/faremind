@@ -46,14 +46,23 @@ export function mapProviderBookingStatus(rawStatus: string | null | undefined): 
     case 'ticketed':
     case 'ticket issued':
     case 'ticket-issued':
+    case 'tktissued':
+    case 'tktcomplete':
+    case 'tktcompleted':
       return 'TICKETED';
 
-    // Ticketing in progress — this is the critical one
+    // Ticketing in progress — this is the critical one.
+    // Mystifly TripDetails returns "TktInProcess" (no space) — must be matched
+    // here, otherwise it falls through to the CONFIRMED default and the booking
+    // looks ticketed/voidable with no e-ticket issued.
     case 'ticket-in process':
     case 'ticket in process':
     case 'ticketing_pending':
     case 'ticket-in-process':
     case 'ticketinprocess':
+    case 'tktinprocess':
+    case 'tkt-in process':
+    case 'tkt in process':
     case 'in process':
       return 'TICKETING_PENDING';
 
@@ -95,6 +104,9 @@ export function mapProviderTicketingStatus(rawStatus: string | null | undefined)
     case 'ticketed':
     case 'ticket issued':
     case 'ticket-issued':
+    case 'tktissued':
+    case 'tktcomplete':
+    case 'tktcompleted':
       return 'ISSUED';
 
     case 'ticket-in process':
@@ -102,6 +114,9 @@ export function mapProviderTicketingStatus(rawStatus: string | null | undefined)
     case 'ticketing_pending':
     case 'ticket-in-process':
     case 'ticketinprocess':
+    case 'tktinprocess':
+    case 'tkt-in process':
+    case 'tkt in process':
     case 'in process':
       return 'TICKETING_PENDING';
 

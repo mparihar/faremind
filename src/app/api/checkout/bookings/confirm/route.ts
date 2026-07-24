@@ -1393,13 +1393,16 @@ export async function POST(req: NextRequest) {
             const ticketData = await ticketRes.json();
 
             if (ticketRes.ok && ticketData.success) {
-              // Check if truly ticketed or just "Ticket-in Process"
-              const rawStatus = (ticketData.status || ticketData.ticketStatus || '').toLowerCase();
-              if (rawStatus.includes('ticket-in process') || rawStatus.includes('in process')) {
-                ticketingStatus = 'TICKETING_PENDING';
-              } else {
-                ticketingStatus = 'ISSUED';
-              }
+              // Only mark ISSUED when the provider EXPLICITLY reports a ticketed
+              // status. Mystifly returns "TktInProcess" (→ "tktinprocess", no
+              // space) among others, which the old substring check missed and so
+              // defaulted to ISSUED — making a not-yet-issued ticket look
+              // refundable/voidable with no e-ticket on file. Flip the default:
+              // anything not clearly ticketed stays PENDING for the reconciliation
+              // worker to poll until the ticket is genuinely issued.
+              const rawStatus = (ticketData.status || ticketData.ticketStatus || '').toLowerCase().replace(/[^a-z]/g, '');
+              const isIssued = /ticketed|ticketissued|tktissued|tktcomplete/.test(rawStatus) || rawStatus === 'issued';
+              ticketingStatus = isIssued ? 'ISSUED' : 'TICKETING_PENDING';
             } else {
               ticketingStatus = 'TICKETING_PENDING';
               console.warn(`[Mystifly] ⚠️ Ticketing returned error (non-blocking): ${ticketData.error || 'unknown'} — queuing for reconciliation`);

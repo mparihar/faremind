@@ -20,6 +20,7 @@
 
 import { prisma } from '../lib/db';
 import * as mystifly from '../services/mystifly';
+import { extractEticketNumbers, backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
 import {
   mapProviderBookingStatus,
   mapProviderTicketingStatus,
@@ -137,19 +138,12 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
 
   if (ticketStatus && isTerminalStatus(ticketStatus)) {
     try {
-      const tripResult = await mystifly.getTripDetails(mfRef);
+      // Version-fallback TripDetails (v3 errors on some bookings) + the corrected
+      // extraction path (Data.TripDetailsResult.TravelItinerary.PassengerInfos[]).
+      const tripResult = await mystifly.getTripDetailsResilient(mfRef);
       tripDetailsResponse = tripResult;
-
-      // Extract ticket numbers from trip details (more reliable)
-      const travelers = tripResult?.Data?.TravelItinerary?.ItineraryInfo?.CustomerInfos || [];
-      for (const traveler of travelers) {
-        const eTickets = traveler?.ETicketNumbers || traveler?.TicketDocumentInfo || [];
-        for (const ticket of eTickets) {
-          const num = ticket?.eTicketNumber || ticket?.TicketNumber || ticket;
-          if (num && typeof num === 'string' && !ticketNumbers.includes(num)) {
-            ticketNumbers.push(num);
-          }
-        }
+      for (const num of extractEticketNumbers(tripResult, rawStatusResponse)) {
+        if (!ticketNumbers.includes(num)) ticketNumbers.push(num);
       }
     } catch (err) {
       console.warn(`[TicketRecon] TripDetails failed for ${mfRef}:`, (err as Error).message);
@@ -188,6 +182,12 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
         providerBookingStatus: ticketStatus,
       },
     });
+
+    // Persist the e-ticket number(s) onto booking_tickets so post-booking PTRs
+    // (void/refund/reissue) carry a real eTicket. Best-effort — never fail the
+    // reconciliation on a backfill error.
+    try { await backfillEticketsFromTripDetails(record.bookingId, mfRef); }
+    catch (err) { console.warn(`[TicketRecon] eTicket persist failed for ${mfRef}:`, (err as Error).message); }
 
     // Log timeline event
     await prisma.bookingEvent.create({
