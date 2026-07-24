@@ -638,8 +638,31 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm">
           <div className="bg-slate-900 border border-white/10 rounded-2xl w-full max-w-md shadow-2xl overflow-hidden">
 
+            {/* ── Queued State (ticket still issuing → auto-void on issuance) ── */}
+            {cancelStep === 'success' && cancelSuccess?.queued && (
+              <>
+                <div className="px-5 pt-6 pb-4 text-center">
+                  <div className="w-16 h-16 rounded-full bg-amber-500/10 border border-amber-500/30 flex items-center justify-center mx-auto mb-4">
+                    <Clock className="w-7 h-7 text-amber-400" />
+                  </div>
+                  <h3 className="text-white font-black text-xl mb-1">Cancellation In Progress</h3>
+                  <p className="text-slate-400 text-sm px-2">
+                    {cancelSuccess.message || 'The airline is still issuing this ticket. It will be voided and refunded automatically once issuance completes — no further action is needed.'}
+                  </p>
+                </div>
+                <div className="px-5 pb-5">
+                  <button
+                    onClick={() => { setShowCancelDialog(false); setCancelStep('review'); setCancelSuccess(null); }}
+                    className="w-full flex items-center justify-center gap-2 py-3 rounded-xl bg-[#1ABC9C] hover:bg-[#16a085] text-white font-bold text-sm transition-all"
+                  >
+                    Done
+                  </button>
+                </div>
+              </>
+            )}
+
             {/* ── Success State ── */}
-            {cancelStep === 'success' && cancelSuccess && (
+            {cancelStep === 'success' && cancelSuccess && !cancelSuccess.queued && (
               <>
                 <div className="px-5 pt-6 pb-4 text-center">
                   <div className="w-16 h-16 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/30 flex items-center justify-center mx-auto mb-4">
@@ -803,14 +826,14 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                             <div className="flex justify-between text-xs text-slate-400">
                               <span>Original Fare</span>
                               <span className="text-white font-medium">
-                                {new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.originalAmount)}
+                                {new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency || 'USD' }).format(cancelQuote.originalAmount)}
                               </span>
                             </div>
                             {cancelQuote.airlinePenalty > 0 && (
                               <div className="flex justify-between text-xs text-slate-400">
                                 <span>Airline Penalty</span>
                                 <span className="text-red-400 font-medium">
-                                  −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.airlinePenalty)}
+                                  −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency || 'USD' }).format(cancelQuote.airlinePenalty)}
                                 </span>
                               </div>
                             )}
@@ -818,7 +841,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                               <div className="flex justify-between text-xs text-slate-400">
                                 <span>Supplier Fee</span>
                                 <span className="text-red-400 font-medium">
-                                  −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.supplierFee)}
+                                  −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency || 'USD' }).format(cancelQuote.supplierFee)}
                                 </span>
                               </div>
                             )}
@@ -826,7 +849,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                               <div className="flex justify-between text-xs text-slate-400">
                                 <span>FAREMIND Service Fee</span>
                                 <span className="text-red-400 font-medium">
-                                  −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency }).format(cancelQuote.fareMindFee)}
+                                  −{new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.currency || 'USD' }).format(cancelQuote.fareMindFee)}
                                 </span>
                               </div>
                             )}
@@ -834,7 +857,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                               <span className="text-white font-bold text-xs">Estimated Refund</span>
                               <span className={`font-black text-sm ${cancelQuote.estimatedRefund > 0 ? 'text-[#1ABC9C]' : 'text-red-400 italic'}`}>
                                 {cancelQuote.estimatedRefund > 0
-                                  ? new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.refundCurrency || cancelQuote.currency }).format(cancelQuote.estimatedRefund)
+                                  ? new Intl.NumberFormat('en-US', { style: 'currency', currency: cancelQuote.refundCurrency || cancelQuote.currency || 'USD' }).format(cancelQuote.estimatedRefund)
                                   : 'Non-refundable'}
                               </span>
                             </div>

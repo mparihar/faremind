@@ -514,22 +514,39 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // without a provider void. Return a "will auto-void once issued" quote; the
       // confirm step queues it and the reconciliation cron voids on issuance.
       if (pendingIssuance) {
-        const serviceFee = isRefundable ? await getCancelServiceFee(booking) : 0;
+        const serviceFee = await getCancelServiceFee(booking);
         const estRefund = Math.max(0, originalAmount - serviceFee);
+        const ccy = booking.currency || 'USD';
         return {
           success: true,
           pendingIssuance: true,
-          quoteId: `mystifly_cancel_pending_${providerPnr.providerOrderId}`,
-          method: 'VOID',
-          liveQuote: false,
+          cancellationAllowed: true,
+          cancelAnywayAllowed: false,
+          // Voidable fare in-window (VoidingFee 0) → full refund minus FareMind fee.
+          refundability: estRefund > 0 ? 'FULL_REFUND' : 'NON_REFUNDABLE',
+          cancellationType: 'VOID',
           originalAmount,
+          currency: ccy,
+          estimatedRefund: estRefund,
           refundAmount: estRefund,
-          refundCurrency: 'USD',
-          serviceFee,
-          netRefund: estRefund,
+          airlinePenalty: 0,
+          supplierFee: 0,
+          fareMindFee: serviceFee,
+          penaltyAmount: 0,
+          quoteId: `mystifly_cancel_pending_${providerPnr.providerOrderId}`,
+          bookingReference: booking.masterBookingReference,
+          airlinePnr: booking.masterPnr || primaryPnr?.pnrCode || null,
+          route: `${booking.originAirport} → ${booking.destinationAirport}`,
+          departureDate: booking.departureDate,
+          bookingStatus: booking.bookingStatus,
+          cancellationMethod: 'VOID',
+          refundCurrency: ccy,
+          refundTo: 'ORIGINAL_PAYMENT',
+          refundMethod: 'ORIGINAL_PAYMENT',
+          refundTimeline: 'Refunded once the airline issues the ticket and it is voided (usually shortly)',
+          warningMessage: 'This ticket is still being issued by the airline, so it can\'t be voided this instant. If you confirm, we\'ll void it and refund you automatically as soon as issuance completes. Amounts are estimates until the void is executed.',
           pnrs,
-          notice: 'This ticket is still being issued by the airline, so it can\'t be voided this instant. If you confirm, we\'ll void it and refund you automatically as soon as issuance completes (usually within a short while). The amount below is an estimate; the exact void/refund is confirmed at that point.',
-          message: 'Cancellation in progress — you\'ll be refunded once the void completes.',
+          expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
         };
       }
 
