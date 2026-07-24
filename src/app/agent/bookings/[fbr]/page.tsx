@@ -39,6 +39,9 @@ const STATUS_COLORS: Record<string, string> = {
 };
 
 const EDITABLE_FIELDS = [
+  { key: 'firstName', label: 'First Name', type: 'text' },
+  { key: 'middleName', label: 'Middle Name', type: 'text' },
+  { key: 'lastName', label: 'Last Name', type: 'text' },
   { key: 'email', label: 'Email', type: 'email' },
   { key: 'phone', label: 'Phone', type: 'tel' },
   { key: 'nationality', label: 'Nationality', type: 'text' },
@@ -546,7 +549,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
           <div className="flex items-start gap-2 p-3 rounded-xl bg-amber-500/10 border border-amber-500/20 mb-4">
             <Info className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
             <p className="text-xs text-amber-400">
-              <strong>Identity fields</strong> (Name, DOB, Gender) cannot be edited directly after booking. Contact Admin for identity changes.
+              <strong>Name corrections</strong> are submitted to the airline via the provider (NameCorrectionRequest) — the carrier decides eligibility and any fee. DOB &amp; Gender still require Admin.
             </p>
           </div>
 
@@ -576,6 +579,9 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                     onClick={() => {
                       setEditingPassenger(pax.id);
                       setEditValues({
+                        firstName: pax.firstName || '',
+                        middleName: pax.middleName || '',
+                        lastName: pax.lastName || '',
                         email: pax.email || '',
                         phone: pax.phone || '',
                         nationality: pax.nationality || '',

@@ -1120,52 +1120,70 @@ export class MystiflyAdapter implements IBookingProvider {
     updates: Record<string, string>,
     ctx?: PassengerUpdateContext
   ): Promise<PassengerUpdateResult> {
-    // Live provider call: POST /api/UpdatePassenger. Requires Mystifly's paxId
-    // (= BookingPassenger.providerPassengerId). Mystifly's UpdatePassenger accepts
-    // contact/name/DOB/gender/FFN/KTN/redress — but NOT passport number/expiry/
-    // nationality, which therefore stay FareMind-local (still persisted in our DB).
+    // Live provider integration. Requires Mystifly's paxId (= providerPassengerId).
+    // Name/title changes are a NAME CORRECTION → POST /api/NameCorrectionRequest.
+    // Contact/DOB/gender changes → POST /api/UpdatePassenger. Passport number/
+    // expiry/nationality aren't accepted by either endpoint → stay FareMind-local.
     const paxId = parseInt(String(ctx?.providerPassengerId ?? ''), 10);
     if (!ctx?.providerPassengerId || Number.isNaN(paxId)) {
-      throw new Error('Mystifly UpdatePassenger requires the provider paxId (providerPassengerId) — not available for this passenger.');
+      throw new Error('Mystifly passenger update requires the provider paxId (providerPassengerId) — not available for this passenger.');
     }
 
-    // Map FareMind editable fields → Mystifly UpdatePassenger fields.
-    const body: mystiflyClient.MystiflyUpdatePassengerRQ = {
-      paxId,
-      eTicket: ctx.eTicket || undefined,
-      firstName: ctx.firstName || undefined,
-      lastName: ctx.lastName || undefined,
-      title: ctx.title || undefined,
-      passengerType: ctx.passengerType || undefined,
+    const checkSuccess = (result: any, label: string) => {
+      const data = result?.Data ?? result;
+      if ((data?.Success ?? result?.Success) === false) {
+        const errMsg = data?.Errors?.[0]?.Message || data?.Message || result?.Message || `${label} failed`;
+        throw new Error(`Mystifly ${label} failed: ${errMsg}`);
+      }
     };
-    if (updates.email) body.email = updates.email;
-    if (updates.phone) body.phone = updates.phone;
-    if (updates.dateOfBirth || ctx.dateOfBirth) body.DOB = updates.dateOfBirth || ctx.dateOfBirth || undefined;
-    if (updates.gender || ctx.gender) body.gender = updates.gender || ctx.gender || undefined;
 
-    const result = await mystiflyClient.updatePassenger(mfRef, body);
-    const data = result?.Data ?? result;
-    const success = (data?.Success ?? result?.Success) !== false;
-    if (!success) {
-      const errMsg = data?.Errors?.[0]?.Message || data?.Message || result?.Message || 'UpdatePassenger failed';
-      throw new Error(`Mystifly UpdatePassenger failed: ${errMsg}`);
-    }
-    return { success: true, passengerId, updatedFields: updates, raw: result };
-  }
+    const raw: Record<string, unknown> = {};
+    const nameChanged = !!(updates.firstName || updates.lastName || updates.title || updates.middleName);
+    const contactChanged = !!(updates.email || updates.phone || updates.dateOfBirth || updates.gender);
 
-  /** Name correction (POST /api/NameCorrectionRequest). */
-  async correctPassengerName(
-    mfRef: string,
-    passengers: mystiflyClient.MystiflyNameCorrectionPassenger[],
-  ): Promise<{ success: boolean; raw: unknown }> {
-    const result = await mystiflyClient.nameCorrection(mfRef, passengers);
-    const data = result?.Data ?? result;
-    const success = (data?.Success ?? result?.Success) !== false;
-    if (!success) {
-      const errMsg = data?.Errors?.[0]?.Message || data?.Message || result?.Message || 'NameCorrection failed';
-      throw new Error(`Mystifly NameCorrectionRequest failed: ${errMsg}`);
+    // ── Name correction (real /api/NameCorrectionRequest) ──
+    if (nameChanged) {
+      const first = (updates.firstName ?? ctx.firstName ?? '').trim();
+      const last = (updates.lastName ?? ctx.lastName ?? '').trim();
+      const ncRes = await mystiflyClient.nameCorrection(mfRef, [{
+        PaxId: paxId,
+        firstName: (updates.firstName ?? ctx.firstName ?? '').toUpperCase(),
+        lastName: (updates.lastName ?? ctx.lastName ?? '').toUpperCase(),
+        title: updates.title ?? ctx.title ?? undefined,
+        eTicket: ctx.eTicket ?? undefined,
+        passengerType: ctx.passengerType ?? undefined,
+      }]);
+      checkSuccess(ncRes, 'NameCorrectionRequest');
+      raw.nameCorrection = ncRes;
+      void first; void last;
     }
-    return { success: true, raw: result };
+
+    // ── Contact / DOB / gender (real /api/UpdatePassenger) ──
+    if (contactChanged) {
+      const body: mystiflyClient.MystiflyUpdatePassengerRQ = {
+        paxId,
+        eTicket: ctx.eTicket || undefined,
+        firstName: (updates.firstName ?? ctx.firstName) || undefined,
+        lastName: (updates.lastName ?? ctx.lastName) || undefined,
+        title: (updates.title ?? ctx.title) || undefined,
+        passengerType: ctx.passengerType || undefined,
+      };
+      if (updates.email) body.email = updates.email;
+      if (updates.phone) body.phone = updates.phone;
+      if (updates.dateOfBirth || ctx.dateOfBirth) body.DOB = updates.dateOfBirth || ctx.dateOfBirth || undefined;
+      if (updates.gender || ctx.gender) body.gender = updates.gender || ctx.gender || undefined;
+      const upRes = await mystiflyClient.updatePassenger(mfRef, body);
+      checkSuccess(upRes, 'UpdatePassenger');
+      raw.updatePassenger = upRes;
+    }
+
+    if (!nameChanged && !contactChanged) {
+      // Only passport/nationality changed — no provider endpoint accepts these.
+      raw.note = 'No provider-syncable fields changed (passport/nationality stay FareMind-local).';
+      return { success: true, passengerId, updatedFields: updates, raw };
+    }
+
+    return { success: true, passengerId, updatedFields: updates, raw };
   }
 
   // ── Capability checks ─────────────────────────

@@ -4,11 +4,18 @@ import { withAgent } from '@/lib/agent-auth';
 import { prisma } from '@/lib/db';
 import { agentNotifyAll } from '@/lib/agent-notify';
 
-// Only these fields can be updated by agents
-const EDITABLE_FIELDS = ['email', 'phone', 'nationality', 'passportNumber', 'passportExpiry', 'issuingCountry'];
-const IDENTITY_FIELDS = ['firstName', 'middleName', 'lastName', 'dateOfBirth', 'gender'];
+const BACKEND_URL = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
+
+// Agent-editable fields. Names now route to the provider's live NameCorrection
+// (via the backend). DOB/gender remain Admin-only (no agent self-service).
+const EDITABLE_FIELDS = ['firstName', 'middleName', 'lastName', 'email', 'phone', 'nationality', 'passportNumber', 'passportExpiry', 'issuingCountry'];
+const IDENTITY_FIELDS = ['dateOfBirth', 'gender'];
+const NAME_FIELDS = ['firstName', 'middleName', 'lastName'];
 
 const FIELD_LABELS: Record<string, string> = {
+  firstName: 'First Name',
+  middleName: 'Middle Name',
+  lastName: 'Last Name',
   email: 'Email Address',
   phone: 'Phone Number',
   nationality: 'Nationality',
@@ -85,37 +92,42 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
     before[key] = (passenger as any)[key] ?? null;
   }
 
-  // Apply the updates — convert DateTime fields & map field names
-  const prismaData: Record<string, any> = {};
-  // Frontend uses 'issuingCountry' but BookingPassenger model uses 'passportCountry'
+  // Send ONLY the fields that actually changed (so a contact edit doesn't fire a
+  // name correction, and vice-versa). Map issuingCountry → the backend's field.
   const FIELD_MAP: Record<string, string> = { issuingCountry: 'passportCountry' };
-
+  const changed: Record<string, string> = {};
   for (const [key, value] of Object.entries(safeUpdates)) {
-    const dbKey = FIELD_MAP[key] || key;
+    const oldVal = (passenger as any)[FIELD_MAP[key] || key];
     if (key === 'passportExpiry') {
-      if (!value || value.trim() === '') {
-        continue;
-      }
-      const parsed = new Date(value);
-      prismaData[dbKey] = isNaN(parsed.getTime()) ? undefined : parsed;
-    } else {
-      prismaData[dbKey] = value;
+      const oldDate = oldVal ? new Date(oldVal).toISOString().split('T')[0] : '';
+      if ((value || '') !== oldDate) changed[FIELD_MAP[key] || key] = value;
+    } else if (String(oldVal ?? '') !== String(value ?? '')) {
+      changed[FIELD_MAP[key] || key] = value;
     }
   }
 
-  if (Object.keys(prismaData).length === 0) {
-    return NextResponse.json({ success: true, updatedFields: [], note: 'No changes to save.' });
+  if (Object.keys(changed).length === 0) {
+    return NextResponse.json({ success: true, updatedFields: [], message: 'No changes detected.' });
   }
 
+  // Delegate DB + live provider sync to the backend. Name fields trigger the
+  // provider's NameCorrectionRequest; contact fields UpdatePassenger; passport
+  // stays local — all handled in one place (manage-booking/passenger/update).
+  let providerSynced = false;
   try {
-    await prisma.bookingPassenger.update({
-      where: { id: passengerId },
-      data: prismaData,
+    const res = await fetch(`${BACKEND_URL}/api/manage-booking/${booking.id}/passenger/update`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ passengerId, updates: changed, suppressNotify: true }),
     });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok) {
+      return NextResponse.json({ error: data?.error || 'Update failed at provider/booking service.' }, { status: res.status || 502 });
+    }
+    providerSynced = !!data?.providerSynced;
   } catch (err: any) {
-    const msg = err?.message ?? String(err);
-    console.error('[passenger-update] Prisma update failed:', msg);
-    return NextResponse.json({ error: `Update failed: ${msg.slice(0, 800)}` }, { status: 500 });
+    console.error('[passenger-update] backend delegation failed:', err?.message ?? err);
+    return NextResponse.json({ error: 'Could not reach the booking service. Please try again.' }, { status: 502 });
   }
 
   // ── Success — only report fields that actually changed ──
@@ -143,15 +155,16 @@ export const POST = withAgent(async (req: NextRequest, { agent }) => {
           bookingId: booking.id,
           eventType: 'PASSENGER_UPDATED',
           eventTitle: 'Passenger details updated by agent',
-          eventDescription: `Agent ${agent.name} updated: ${updatedFields.join(', ')}`,
+          eventDescription: `Agent ${agent.name} updated: ${changedFields.join(', ')}${providerSynced ? ' (synced with airline)' : ''}`,
           actorType: 'agent',
           actorId: agent.id,
           actorName: agent.name,
           payloadJson: {
             passengerId,
-            fields: updatedFields,
+            fields: changedFields,
             before,
             after: safeUpdates,
+            providerSynced,
           },
         },
       });

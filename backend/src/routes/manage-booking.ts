@@ -1247,9 +1247,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   fastify.post('/:bookingId/passenger/update', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
-      const { passengerId, updates } = request.body as { passengerId: string; updates: Record<string, string> };
+      const { passengerId, updates, suppressNotify } = request.body as { passengerId: string; updates: Record<string, string>; suppressNotify?: boolean };
       if (!passengerId || !updates) return reply.code(400).send({ error: 'passengerId and updates required' });
-      const EDITABLE = ['phone', 'email', 'passportExpiry', 'passportNumber', 'nationality', 'passportCountry'];
+      // Name fields (firstName/middleName/lastName) route to the provider's live
+      // NameCorrectionRequest; contact/passport to UpdatePassenger / local.
+      const EDITABLE = ['phone', 'email', 'passportExpiry', 'passportNumber', 'nationality', 'passportCountry', 'firstName', 'middleName', 'lastName'];
       const invalid = Object.keys(updates).filter(k => !EDITABLE.includes(k));
       if (invalid.length) return reply.code(400).send({ error: `Cannot update: ${invalid.join(', ')}. Restricted fields require airline approval.` });
       const booking = await mbq.getMasterBookingFull(bookingId);
@@ -1289,15 +1291,19 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
       // Update in DB
       await prisma.bookingPassenger.update({ where: { id: passengerId }, data: updates as any });
-      await mbq.createBookingEvent({
-        bookingId, eventType: 'PASSENGER_UPDATED',
-        eventTitle: 'Passenger details updated',
-        eventDescription: `Fields: ${Object.keys(updates).join(', ')}${providerSynced ? ' (synced with airline)' : ''}`,
-        actorType: 'customer',
-      });
+      // When called via delegation (e.g. the agent route), the caller owns the
+      // timeline event + notifications — skip ours to avoid duplicates.
+      if (!suppressNotify) {
+        await mbq.createBookingEvent({
+          bookingId, eventType: 'PASSENGER_UPDATED',
+          eventTitle: 'Passenger details updated',
+          eventDescription: `Fields: ${Object.keys(updates).join(', ')}${providerSynced ? ' (synced with airline)' : ''}`,
+          actorType: 'customer',
+        });
+      }
 
       // Email notification for passenger update
-      if (booking.customerEmail) {
+      if (!suppressNotify && booking.customerEmail) {
         fireNotification({
           event_type: 'PASSENGER_INFO_UPDATED',
           booking_id: bookingId,
