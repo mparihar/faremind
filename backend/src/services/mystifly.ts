@@ -1033,16 +1033,23 @@ export async function postTicketingRequest(
 }
 
 /**
- * Search for Post-Ticketing Requests by UniqueID.
+ * Broad Search PTR lookup for a booking (all categories). Used by the manual
+ * "check status" console button; the automated reconciliation cron polls a
+ * specific PTR via searchPtr(ptrType, mfRef, ptrId) instead.
+ *
+ * Documented contract: POST /api/Search/PostTicketingRequest with MFRef +
+ * PTRCategory. (The old UniqueID/Target body is not part of this contract.)
  */
-export async function searchPtrStatus(uniqueId: string): Promise<any> {
+export async function searchPtrStatus(mfRef: string): Promise<any> {
 
   const result = await mystiflyRequest<any>({
     method: 'POST',
     path: `/api/Search/PostTicketingRequest`,
     body: {
-      UniqueID: uniqueId,
-      Target: MYSTIFLY_TARGET,
+      MFRef: mfRef,
+      PTRId: 0,
+      Page: 1,
+      PTRCategory: 'All',
     } as unknown as Record<string, unknown>,
     retries: 1,
   });

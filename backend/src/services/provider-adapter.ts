@@ -1304,22 +1304,32 @@ export class MystiflyAdapter implements IBookingProvider {
     refundRequestId: string,
     orderId: string,
   ): Promise<NormalizedProviderRefundStatus> {
-    // Mystifly: use searchPtrStatus to check void/refund PTR settlement
-    // refundRequestId is our quoteId format: mystifly_void_{mfRef}_{ptrId} or mystifly_refund_{mfRef}_{ptrId}
-    const mfRef = orderId || refundRequestId.replace(/^mystifly_(void|refund)_/, '').replace(/_\d+$/, '');
+    // Poll the async Void/Refund PTR via the documented Search PTR contract
+    // (POST /api/Search/PostTicketingRequest → Data.PTRDetail[] with PTRStatus + Resolution).
+    // refundRequestId is our quoteId, one of:
+    //   mystifly_void_{mfRef}_{ptrId}          mystifly_refund_{mfRef}_{ptrId}
+    //   mystifly_void_unticketed_{mfRef}       mystifly_cancel_norefund_{mfRef}
+    const ptrType: 'Void' | 'Refund' = refundRequestId.includes('_refund_') ? 'Refund' : 'Void';
+    const ptrId = parseInt(refundRequestId.match(/_(\d+)$/)?.[1] || '0', 10);
+    const mfRef = orderId
+      || refundRequestId
+          .replace(/^mystifly_(void|refund|cancel)_/, '')
+          .replace(/^(unticketed|norefund)_/, '')
+          .replace(/_\d+$/, '');
 
     try {
-      const ptrResult = await mystiflyClient.searchPtrStatus(mfRef);
+      const ptrResult = await mystiflyClient.searchPtr(ptrType, mfRef, ptrId);
       const data = ptrResult?.Data || ptrResult;
-      const ptrRecords = data?.PostTicketingRequests || data?.Records || [];
+      // Documented shape is Data.PTRDetail[]; keep legacy keys as defensive fallbacks.
+      const rawList = data?.PTRDetail || data?.PostTicketingRequests || data?.Records || [];
+      const list: any[] = Array.isArray(rawList) ? rawList : rawList ? [rawList] : [];
 
-      // Find the relevant PTR record (void or refund)
-      const relevantPtr = Array.isArray(ptrRecords)
-        ? ptrRecords.find((r: any) =>
-            r.PtrType === 'Void' || r.PtrType === 'Refund' ||
-            r.ptrType === 'void' || r.ptrType === 'refund'
-          )
-        : null;
+      // Prefer the record whose PTRId matches the quote; otherwise the first of the right type.
+      const relevantPtr =
+        (ptrId ? list.find((r) => Number(r?.PTRId ?? r?.PtrId) === ptrId) : null) ||
+        list.find((r) => String(r?.PTRType ?? r?.PtrType ?? '').toLowerCase().includes(ptrType.toLowerCase())) ||
+        list[0] ||
+        null;
 
       if (!relevantPtr) {
         return {
@@ -1329,32 +1339,42 @@ export class MystiflyAdapter implements IBookingProvider {
         };
       }
 
-      // Map Mystifly PTR statuses to normalized statuses
-      const ptrStatus = (relevantPtr.Status || relevantPtr.status || '').toLowerCase();
+      // PTRStatus (Completed/InProcess/…) + Resolution (Voided/Refunded/Rejected/…).
+      const ptrStatus = String(relevantPtr.PTRStatus ?? relevantPtr.Status ?? '').toLowerCase();
+      const resolution = String(relevantPtr.Resolution ?? '').toLowerCase();
       let normalizedStatus: NormalizedProviderRefundStatus['status'] = 'UNKNOWN';
 
-      if (['settled', 'completed', 'processed', 'approved', 'refunded', 'voided'].includes(ptrStatus)) {
+      if (['voided', 'refunded', 'void', 'refund', 'reissued', 'settled', 'processed', 'approved'].includes(resolution)) {
+        // Resolution is the authoritative fulfilment signal.
         normalizedStatus = 'SETTLED';
-      } else if (['processing', 'in_progress', 'inprogress'].includes(ptrStatus)) {
+      } else if (['rejected', 'denied', 'declined', 'failed', 'cancelled', 'canceled'].includes(resolution)) {
+        normalizedStatus = 'REJECTED';
+      } else if (ptrStatus.includes('complet')) {
+        // PTRStatus=Completed with no negative resolution → fulfilled.
+        normalizedStatus = 'SETTLED';
+      } else if (ptrStatus.includes('process') || ptrStatus.includes('progress')) {
+        // InProcess — provider ops working within SLA; keep polling.
         normalizedStatus = 'PROCESSING';
       } else if (['pending', 'submitted', 'open', 'new'].includes(ptrStatus)) {
         normalizedStatus = 'PENDING';
       } else if (['rejected', 'denied', 'declined'].includes(ptrStatus)) {
         normalizedStatus = 'REJECTED';
-      } else if (['failed', 'error', 'cancelled'].includes(ptrStatus)) {
+      } else if (['failed', 'error'].includes(ptrStatus)) {
         normalizedStatus = 'FAILED';
       }
 
+      const amount =
+        relevantPtr.TotalRefundAmount ??
+        relevantPtr.RefundAmount ??
+        relevantPtr.Amount ??
+        null;
+
       return {
         status: normalizedStatus,
-        rawStatus: ptrStatus,
-        providerRefundId: relevantPtr.PtrId?.toString() || relevantPtr.UniqueId || null,
+        rawStatus: resolution || ptrStatus || 'unknown',
+        providerRefundId: (relevantPtr.PTRId ?? relevantPtr.PtrId)?.toString() || relevantPtr.UniqueId || null,
         settlementReference: relevantPtr.SettlementReference || relevantPtr.TransactionId || null,
-        reimbursedAmount: relevantPtr.RefundAmount != null
-          ? parseFloat(String(relevantPtr.RefundAmount))
-          : relevantPtr.Amount != null
-            ? parseFloat(String(relevantPtr.Amount))
-            : undefined,
+        reimbursedAmount: amount != null ? parseFloat(String(amount)) : undefined,
         currency: relevantPtr.Currency || 'USD',
         settledAt: relevantPtr.SettledAt || relevantPtr.ProcessedAt || relevantPtr.CompletedAt || null,
         rawResponse: ptrResult,
