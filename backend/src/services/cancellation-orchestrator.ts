@@ -13,6 +13,7 @@ import { prisma } from '../lib/db';
 import * as mbq from '../lib/manage-booking-queries';
 import { getProvider, type CancelResult } from './provider-adapter';
 import { buildPtrPassengers } from '../lib/ptr-passengers';
+import { backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
 import { fireNotification } from '../lib/notify';
 import Stripe from 'stripe';
 import { randomBytes } from 'crypto';
@@ -935,4 +936,86 @@ export async function getAdminServiceFee(booking: any): Promise<number> {
   } catch {
     return 0;
   }
+}
+
+// ═══════════════════════════════════════════════════════════════════════
+// Queued cancellation (cancel-before-issuance → auto-void once ticketed)
+// ═══════════════════════════════════════════════════════════════════════
+
+/**
+ * Queue a cancellation for a booking whose ticket is still being issued
+ * (Mystifly TktInProcess). We cannot void a ticket that has no e-ticket yet,
+ * and we must NOT refund on Stripe without a provider void (that would leave the
+ * ticket live and expose FareMind). Instead we record the intent; the ticketing
+ * reconciliation cron calls executeQueuedCancellation() the moment the ticket is
+ * issued, which performs the real void + refund (within the void window).
+ */
+export async function queueCancellationForIssuance(
+  bookingId: string,
+  opts: { requestedBy: string; refundMethod?: string; originalAmount: number; currency?: string; note?: string },
+): Promise<void> {
+  const existing = await prisma.cancellationRecord.findUnique({ where: { bookingId } });
+  const data = {
+    status: 'CANCEL_AWAITING_TICKETING' as any,
+    requestedBy: opts.requestedBy,
+    originalAmount: opts.originalAmount,
+    currency: opts.currency || 'USD',
+    refundMethod: (opts.refundMethod as any) || 'ORIGINAL_PAYMENT',
+    notes: opts.note || 'Cancellation requested before ticket issuance completed — queued to auto-void once the ticket is issued.',
+  };
+  if (existing) {
+    await prisma.cancellationRecord.update({ where: { bookingId }, data });
+  } else {
+    await prisma.cancellationRecord.create({ data: { bookingId, ...data } });
+  }
+  await mbq.createBookingEvent({
+    bookingId,
+    eventType: 'CANCEL_QUEUED',
+    eventTitle: 'Cancellation queued — awaiting ticket issuance',
+    eventDescription: `Requested by ${opts.requestedBy}. The airline is still issuing the ticket; it will be voided and refunded automatically once issuance completes.`,
+    actorType: 'system',
+  });
+  console.log(`[Cancel][Queued] bookingId=${bookingId} requestedBy=${opts.requestedBy} — awaiting ticket issuance to void.`);
+}
+
+/**
+ * Execute a previously-queued cancellation once the ticket is issued. Called by
+ * the ticketing reconciliation cron when a booking resolves to TICKETED. Fetches
+ * a fresh (now-live) void/refund quote and runs the normal cancellation flow.
+ */
+export async function executeQueuedCancellation(bookingId: string): Promise<void> {
+  const rec = await prisma.cancellationRecord.findUnique({ where: { bookingId } });
+  if (!rec || rec.status !== 'CANCEL_AWAITING_TICKETING') return;
+
+  let booking = await mbq.getMasterBookingFull(bookingId);
+  if (!booking) return;
+  const providerPnr = booking.pnrs.find((p: any) => p.providerOrderId);
+  if (!providerPnr?.providerOrderId) return;
+
+  // Make sure the e-ticket is persisted, then reload so buildPtrPassengers sees it.
+  try {
+    const r = await backfillEticketsFromTripDetails(bookingId, providerPnr.providerOrderId);
+    if (r.updated > 0) booking = (await mbq.getMasterBookingFull(bookingId)) || booking;
+  } catch (e) {
+    console.warn(`[Cancel][Queued] eTicket backfill failed for ${bookingId}:`, (e as Error).message);
+  }
+
+  const provider = getProvider(booking.primaryProvider);
+  const quote = await provider.getCancellationQuote(providerPnr.providerOrderId, {
+    ticketingStatus: booking.ticketingStatus,
+    bookingAmount: Number(booking.totalAmount) || 0,
+    passengers: buildPtrPassengers(booking),
+  });
+
+  // initiateCancellation re-creates the CancellationRecord (unique bookingId), so
+  // remove the queued marker first. Preserve the original requester/refund method.
+  const requestedBy = rec.requestedBy;
+  const refundMethod = (rec.refundMethod as string) || 'ORIGINAL_PAYMENT';
+  await prisma.cancellationRecord.delete({ where: { bookingId } }).catch(() => {});
+
+  console.log(`[Cancel][Queued] Executing queued cancellation for ${bookingId} — quoteId=${quote.quoteId} method=${quote.method}`);
+  await initiateCancellation(
+    { bookingId, quoteId: quote.quoteId, refundMethod, forcedBy: `QUEUED:${requestedBy}` },
+    booking,
+  );
 }

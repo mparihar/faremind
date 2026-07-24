@@ -5,7 +5,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { getProvider } from '../services/provider-adapter';
-import { initiateCancellation, getAdminServiceFee as getCancelServiceFee } from '../services/cancellation-orchestrator';
+import { initiateCancellation, getAdminServiceFee as getCancelServiceFee, queueCancellationForIssuance } from '../services/cancellation-orchestrator';
 import { getReissueQuote, initiateReissue } from '../services/reissue-orchestrator';
 import { toUsd } from '../services/fx';
 import { chargeOriginalCard, refundCollection } from '../services/customer-collect';
@@ -500,11 +500,37 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Mystifly async ticketing leaves booking_tickets without an e-ticket
       // number; the PTR passenger array then sends a blank eTicket and Mystifly
       // rejects the void/refund quote. Fetch + persist the numbers first.
+      let pendingIssuance = false;
       if ((booking.primaryProvider || '').toLowerCase() === 'mystifly') {
         try {
-          const n = await backfillEticketsFromTripDetails(bookingId, providerPnr.providerOrderId);
-          if (n > 0) booking = (await mbq.getMasterBookingFull(bookingId)) || booking;
+          const r = await backfillEticketsFromTripDetails(bookingId, providerPnr.providerOrderId);
+          if (r.updated > 0) booking = (await mbq.getMasterBookingFull(bookingId)) || booking;
+          pendingIssuance = r.pendingIssuance;
         } catch (e) { fastify.log.warn({ e }, '[manage-booking/cancel/quote] eTicket backfill failed'); }
+      }
+
+      // ——— Ticket still being issued (TktInProcess) —————————————————————
+      // Can't void a ticket with no e-ticket yet — and we must not Stripe-refund
+      // without a provider void. Return a "will auto-void once issued" quote; the
+      // confirm step queues it and the reconciliation cron voids on issuance.
+      if (pendingIssuance) {
+        const serviceFee = isRefundable ? await getCancelServiceFee(booking) : 0;
+        const estRefund = Math.max(0, originalAmount - serviceFee);
+        return {
+          success: true,
+          pendingIssuance: true,
+          quoteId: `mystifly_cancel_pending_${providerPnr.providerOrderId}`,
+          method: 'VOID',
+          liveQuote: false,
+          originalAmount,
+          refundAmount: estRefund,
+          refundCurrency: 'USD',
+          serviceFee,
+          netRefund: estRefund,
+          pnrs,
+          notice: 'This ticket is still being issued by the airline, so it can\'t be voided this instant. If you confirm, we\'ll void it and refund you automatically as soon as issuance completes (usually within a short while). The amount below is an estimate; the exact void/refund is confirmed at that point.',
+          message: 'Cancellation in progress — you\'ll be refunded once the void completes.',
+        };
       }
 
       // ——— Fetch live cancellation quote from provider —————————————————
@@ -740,6 +766,26 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // â”€â”€ Ticket still issuing â†’ queue the cancellation (auto-void on issuance) â”€
+      // The quote step returned pendingIssuance; there is no e-ticket to void yet.
+      // Record the intent — the reconciliation cron voids + refunds once the
+      // carrier issues the ticket. Never Stripe-refund here (no provider void).
+      if (quoteId.startsWith('mystifly_cancel_pending_')) {
+        await queueCancellationForIssuance(bookingId, {
+          requestedBy: booking.customerEmail || booking.userId || 'CUSTOMER',
+          refundMethod,
+          originalAmount: Number(booking.totalAmount) || 0,
+          currency: 'USD',
+        });
+        releaseCancelLock(bookingId);
+        return {
+          success: true,
+          queued: true,
+          status: 'CANCEL_AWAITING_TICKETING',
+          message: 'Cancellation in progress — the airline is still issuing your ticket. We\'ll void it and refund you (minus the service fee) automatically once issuance completes. No further action is needed.',
+        };
+      }
+
       // â”€â”€ Quote expiry check â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
       const storedQuote = await prisma.bookingProviderPayload.findFirst({
         where: { bookingId, payloadType: 'cancellation_quote', providerReference: quoteId },
@@ -834,11 +880,41 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // Backfill e-ticket numbers (Mystifly async ticketing) so the PTR passenger
       // array carries a real eTicket — otherwise void/refund quotes are rejected.
+      let fcPendingIssuance = false;
       if ((booking.primaryProvider || '').toLowerCase() === 'mystifly') {
         try {
-          const n = await backfillEticketsFromTripDetails(bookingId, providerPnr.providerOrderId);
-          if (n > 0) booking = (await mbq.getMasterBookingFull(bookingId)) || booking;
+          const r = await backfillEticketsFromTripDetails(bookingId, providerPnr.providerOrderId);
+          if (r.updated > 0) booking = (await mbq.getMasterBookingFull(bookingId)) || booking;
+          fcPendingIssuance = r.pendingIssuance;
         } catch (e) { fastify.log.warn({ e }, '[manage-booking/force-cancel] eTicket backfill failed'); }
+      }
+
+      // Ticket still issuing (TktInProcess) — can't void yet. Quote mode returns a
+      // "will auto-void once issued" preview; execute mode queues the cancellation
+      // (the reconciliation cron voids + refunds on issuance). Never Stripe-refund
+      // here without a provider void.
+      if (fcPendingIssuance) {
+        const originalAmount = Number(booking.totalAmount) || 0;
+        const serviceFee = await getCancelServiceFee(booking);
+        const estRefund = Math.max(0, originalAmount - serviceFee);
+        if (isQuoteOnly) {
+          return {
+            success: true, mode: 'quote', pendingIssuance: true,
+            quoteId: `mystifly_cancel_pending_${providerPnr.providerOrderId}`,
+            method: 'VOID', liveQuote: false, ptrNumber: 'N/A',
+            originalAmount, providerRefund: 0, airlinePenalty: 0,
+            serviceFee, effectiveRefund: estRefund, netRefund: estRefund, refundCurrency: 'USD',
+            notice: 'The airline is still issuing this ticket, so it can\'t be voided right now. Confirming will queue the cancellation — it will be voided and refunded automatically once the ticket is issued (typically within the void window). Amounts are estimates until the void is executed.',
+          };
+        }
+        await queueCancellationForIssuance(bookingId, {
+          requestedBy: forcedBy, refundMethod, originalAmount, currency: 'USD',
+        });
+        releaseCancelLock(bookingId);
+        return {
+          success: true, queued: true, status: 'CANCEL_AWAITING_TICKETING',
+          message: 'Cancellation queued — the airline is still issuing the ticket. It will be voided and the customer refunded automatically once issuance completes.',
+        };
       }
 
       try {

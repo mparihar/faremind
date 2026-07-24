@@ -71,16 +71,35 @@ export function extractEticketNumbers(tripResult: any, statusResult?: any): stri
 }
 
 /**
+/** Whether a provider ticket status means the ticket is still being issued. */
+export function isPendingIssuanceStatus(status: string | null | undefined): boolean {
+  const s = (status || '').toLowerCase();
+  if (!s) return false;
+  if (/ticketed|issued/.test(s)) return false;
+  return /process|book|pend|hold/.test(s); // TktInProcess / Booked / TicketingPending / Hold
+}
+
+export interface EticketBackfillResult {
+  updated: number;        // ticket rows written with a number this run
+  ticketStatus: string;   // provider TicketStatus from TripDetails ("" if unknown)
+  hasEticket: boolean;    // booking now has at least one e-ticket number
+  pendingIssuance: boolean; // no e-ticket yet AND provider says not-yet-issued
+}
+
+/**
  * Ensure the booking's ticket rows carry e-ticket numbers, fetching them from
- * Mystifly TripDetails when missing. Returns the count of rows updated.
+ * Mystifly TripDetails when missing. Returns backfill outcome + issuance state.
  */
-export async function backfillEticketsFromTripDetails(bookingId: string, mfRef: string): Promise<number> {
+export async function backfillEticketsFromTripDetails(bookingId: string, mfRef: string): Promise<EticketBackfillResult> {
   const tickets = await prisma.bookingTicket.findMany({
     where: { bookingId },
     orderBy: { createdAt: 'asc' },
   });
+  const alreadyHad = tickets.some((t) => t.eTicketNumber || t.ticketNumber);
   const missing = tickets.filter((t) => !t.eTicketNumber && !t.ticketNumber);
-  if (tickets.length === 0 || missing.length === 0) return 0; // nothing to do
+  if (tickets.length === 0 || missing.length === 0) {
+    return { updated: 0, ticketStatus: '', hasEticket: alreadyHad, pendingIssuance: false };
+  }
 
   let tripResult: any = null;
   let statusResult: any = null;
@@ -96,10 +115,11 @@ export async function backfillEticketsFromTripDetails(bookingId: string, mfRef: 
   const nums = extractEticketNumbers(tripResult, statusResult);
   console.log(`[TICKETS][DEBUG] ${mfRef}: provider TicketStatus="${status}" extracted eTickets=[${nums.join(', ')}] | ticketRows=${tickets.length} missing=${missing.length}`);
   if (nums.length === 0) {
-    if (status && !/ticketed|issued/i.test(status)) {
-      console.warn(`[TICKETS][DEBUG] ${mfRef}: ticket NOT issued (status="${status}") — no e-ticket exists yet; void/refund is not applicable until ticketing completes.`);
+    const pendingIssuance = isPendingIssuanceStatus(status);
+    if (pendingIssuance) {
+      console.warn(`[TICKETS][DEBUG] ${mfRef}: ticket NOT issued (status="${status}") — no e-ticket yet; void/refund not applicable until ticketing completes.`);
     }
-    return 0;
+    return { updated: 0, ticketStatus: status, hasEticket: alreadyHad, pendingIssuance };
   }
 
   // Best-effort 1:1 assignment to the rows still missing a number.
@@ -112,5 +132,5 @@ export async function backfillEticketsFromTripDetails(bookingId: string, mfRef: 
     updated++;
   }
   console.log(`[TICKETS][DEBUG] ${mfRef}: backfilled ${updated} ticket row(s) with e-ticket numbers.`);
-  return updated;
+  return { updated, ticketStatus: status, hasEticket: true, pendingIssuance: false };
 }

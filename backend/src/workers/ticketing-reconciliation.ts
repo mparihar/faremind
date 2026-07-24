@@ -21,6 +21,7 @@
 import { prisma } from '../lib/db';
 import * as mystifly from '../services/mystifly';
 import { extractEticketNumbers, backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
+import { executeQueuedCancellation } from '../services/cancellation-orchestrator';
 import {
   mapProviderBookingStatus,
   mapProviderTicketingStatus,
@@ -188,6 +189,11 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     // reconciliation on a backfill error.
     try { await backfillEticketsFromTripDetails(record.bookingId, mfRef); }
     catch (err) { console.warn(`[TicketRecon] eTicket persist failed for ${mfRef}:`, (err as Error).message); }
+
+    // If a cancellation was queued while the ticket was still issuing, execute it
+    // now (void within the window + refund). Best-effort — never fail reconciliation.
+    try { await executeQueuedCancellation(record.bookingId); }
+    catch (err) { console.warn(`[TicketRecon] queued cancellation failed for ${mfRef}:`, (err as Error).message); }
 
     // Log timeline event
     await prisma.bookingEvent.create({
