@@ -244,6 +244,13 @@ export interface IBookingProvider {
     newTotalCurrency: string;
     confirmedAt: string;
     raw: unknown;
+    // Async settlement hint. 'CONFIRMED' = fulfilled synchronously (Duffel);
+    // 'PROCESSING' = accepted but the provider ops team fulfils within SLA
+    // (Mystifly ReIssue PTR) — the caller must persist providerPtrId/providerRef
+    // and poll getProviderReissueStatus until the PTR resolves.
+    settlement?: 'CONFIRMED' | 'PROCESSING';
+    providerPtrId?: string;
+    providerRef?: string;
   }>;
 
   // ── Reimbursement monitoring ────────────────────
@@ -251,6 +258,12 @@ export interface IBookingProvider {
   /** Check provider refund/settlement status for reimbursement tracking */
   getProviderRefundStatus(
     refundRequestId: string,
+    orderId: string,
+  ): Promise<NormalizedProviderRefundStatus>;
+
+  /** Check async reissue (flight change) settlement status */
+  getProviderReissueStatus(
+    providerPtrId: string,
     orderId: string,
   ): Promise<NormalizedProviderRefundStatus>;
 }
@@ -470,10 +483,20 @@ export class DuffelAdapter implements IBookingProvider {
       newTotalCurrency: confirmed.new_total_currency,
       confirmedAt: confirmed.confirmed_at || new Date().toISOString(),
       raw: confirmed,
+      // Duffel executes the change synchronously — no async PTR to poll.
+      settlement: 'CONFIRMED' as const,
     };
   }
 
   // ── Reimbursement monitoring ─────────────────────────────────────────
+
+  async getProviderReissueStatus(
+    _providerPtrId: string,
+    _orderId: string,
+  ): Promise<NormalizedProviderRefundStatus> {
+    // Duffel changes settle synchronously at confirm time; nothing to poll.
+    return { status: 'SETTLED', rawStatus: 'duffel_synchronous', rawResponse: null };
+  }
 
   async getProviderRefundStatus(
     refundRequestId: string,
@@ -1267,7 +1290,7 @@ export class MystiflyAdapter implements IBookingProvider {
     changeOfferId: string,
     _paymentAmount?: number,
     _paymentCurrency?: string
-  ): Promise<{ changeId: string; orderId: string; newTotalAmount: number; newTotalCurrency: string; confirmedAt: string; raw: unknown }> {
+  ): Promise<{ changeId: string; orderId: string; newTotalAmount: number; newTotalCurrency: string; confirmedAt: string; raw: unknown; settlement?: 'CONFIRMED' | 'PROCESSING'; providerPtrId?: string; providerRef?: string }> {
     // Parse the change offer ID: "mystifly_reissue_MF35335226_12345_1"
     const parts = changeOfferId.split('_');
     // Format: mystifly_reissue_{mfRef}_{ptrId}_{preferenceOption}
@@ -1288,6 +1311,15 @@ export class MystiflyAdapter implements IBookingProvider {
       throw new Error(`Mystifly ReIssue confirm failed: ${errMsg}`);
     }
 
+    // Accepting the ReIssue Quote returns PTRStatus=InProcess; the provider ops
+    // team fulfils within the SLA (Resolution=Reissued). Only treat it as fully
+    // settled if the accept response already reports a completed reissue.
+    const ptrStatus = String(data?.PTRStatus ?? '').toLowerCase();
+    const resolution = String(data?.Resolution ?? '').toLowerCase();
+    const alreadyFulfilled =
+      ['reissued', 'completed', 'settled'].includes(resolution) ||
+      (ptrStatus.includes('complet') && !resolution);
+
     return {
       changeId: `mystifly_reissue_confirmed_${mfRef}_${ptrId}`,
       orderId: mfRef,
@@ -1295,10 +1327,76 @@ export class MystiflyAdapter implements IBookingProvider {
       newTotalCurrency: data?.Currency || 'USD',
       confirmedAt: new Date().toISOString(),
       raw: result,
+      settlement: alreadyFulfilled ? 'CONFIRMED' : 'PROCESSING',
+      providerPtrId: String(ptrId),
+      providerRef: mfRef,
     };
   }
 
   // ── Reimbursement monitoring ─────────────────────────────────────────
+
+  async getProviderReissueStatus(
+    providerPtrId: string,
+    orderId: string,
+  ): Promise<NormalizedProviderRefundStatus> {
+    // Poll the async ReIssue PTR via the documented Search PTR contract
+    // (POST /api/Search/PostTicketingRequest → Data.PTRDetail[] with
+    // PTRStatus + Resolution). Resolution=Reissued => settled.
+    const ptrId = parseInt(providerPtrId || '0', 10);
+    const mfRef = orderId;
+
+    try {
+      const ptrResult = await mystiflyClient.searchPtr('Reissue', mfRef, ptrId);
+      const data = ptrResult?.Data || ptrResult;
+      const rawList = data?.PTRDetail || data?.PostTicketingRequests || data?.Records || [];
+      const list: any[] = Array.isArray(rawList) ? rawList : rawList ? [rawList] : [];
+
+      const rec =
+        (ptrId ? list.find((r) => Number(r?.PTRId ?? r?.PtrId) === ptrId) : null) ||
+        list.find((r) => String(r?.PTRType ?? r?.PtrType ?? '').toLowerCase().includes('reissue')) ||
+        list[0] ||
+        null;
+
+      if (!rec) {
+        return { status: 'UNKNOWN', rawStatus: 'no_ptr_found', rawResponse: ptrResult };
+      }
+
+      const ptrStatus = String(rec.PTRStatus ?? rec.Status ?? '').toLowerCase();
+      const resolution = String(rec.Resolution ?? '').toLowerCase();
+      let status: NormalizedProviderRefundStatus['status'] = 'UNKNOWN';
+
+      if (['reissued', 'reissue', 'settled', 'processed', 'approved', 'completed'].includes(resolution)) {
+        status = 'SETTLED';
+      } else if (['rejected', 'denied', 'declined', 'failed', 'cancelled', 'canceled'].includes(resolution)) {
+        status = 'REJECTED';
+      } else if (ptrStatus.includes('complet')) {
+        status = 'SETTLED';
+      } else if (ptrStatus.includes('process') || ptrStatus.includes('progress')) {
+        status = 'PROCESSING';
+      } else if (['pending', 'submitted', 'open', 'new'].includes(ptrStatus)) {
+        status = 'PENDING';
+      } else if (['rejected', 'denied', 'declined'].includes(ptrStatus)) {
+        status = 'REJECTED';
+      } else if (['failed', 'error'].includes(ptrStatus)) {
+        status = 'FAILED';
+      }
+
+      return {
+        status,
+        rawStatus: resolution || ptrStatus || 'unknown',
+        providerRefundId: (rec.PTRId ?? rec.PtrId)?.toString() || null,
+        currency: rec.Currency || 'USD',
+        settledAt: rec.SettledAt || rec.ProcessedAt || rec.CompletedAt || null,
+        rawResponse: ptrResult,
+      };
+    } catch (err) {
+      return {
+        status: 'UNKNOWN',
+        rawStatus: 'error',
+        rawResponse: { error: err instanceof Error ? err.message : String(err) },
+      };
+    }
+  }
 
   async getProviderRefundStatus(
     refundRequestId: string,

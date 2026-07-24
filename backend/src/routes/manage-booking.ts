@@ -1546,6 +1546,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
       releaseCancelLock(bookingId);
 
+      // Accepting a Mystifly ReIssue Quote returns InProcess — the provider ops
+      // team fulfils within SLA. Only Duffel (and an already-fulfilled Mystifly
+      // accept) settle synchronously. When still processing, persist the PTR +
+      // collected charge so the reissue-reconciliation cron can confirm the
+      // change (or refund the collected difference if the provider rejects it).
+      const settlement = (result as any).settlement || 'CONFIRMED';
+      const isProcessing = settlement === 'PROCESSING';
+
       // Record change request in DB
       const changeReq = await mbq.createChangeRequest({
         bookingId, type: 'DATE_CHANGE',
@@ -1556,14 +1564,20 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         currency: paymentCurrency || booking.currency,
       });
 
-      // Update change request with provider confirmation
+      // Update change request with provider result + async settlement tracking.
       await prisma.changeRequest.update({
         where: { id: changeReq.id },
         data: {
-          status: 'CONFIRMED',
+          status: isProcessing ? 'PROVIDER_PROCESSING' : 'CONFIRMED',
           providerChangeId: result.changeId,
           providerResponse: result.raw as any,
-          confirmedAt: new Date(),
+          confirmedAt: isProcessing ? null : new Date(),
+          providerPtrId: (result as any).providerPtrId ?? null,
+          providerMfRef: (result as any).providerRef ?? confirmProviderOrderId,
+          collectedChargeId: chargeId,
+          collectedAmount: totalCollect > 0 ? totalCollect : null,
+          // First poll ~30 min after accept; the cron widens the back-off.
+          nextCheckAt: isProcessing ? new Date(Date.now() + 30 * 60 * 1000) : null,
         },
       });
 
@@ -1579,9 +1593,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       // Create timeline event
       await mbq.createBookingEvent({
-        bookingId, eventType: 'CHANGE_CONFIRMED',
-        eventTitle: 'Flight change confirmed',
-        eventDescription: `Change confirmed. New total: ${fmtCurrency(result.newTotalAmount, result.newTotalCurrency)}. Collected $${totalCollect.toFixed(2)} (fare diff $${Math.max(0, fareDiffUsd).toFixed(2)} + service fee $${changeServiceFee.toFixed(2)}).`,
+        bookingId, eventType: isProcessing ? 'CHANGE_SUBMITTED' : 'CHANGE_CONFIRMED',
+        eventTitle: isProcessing ? 'Flight change submitted' : 'Flight change confirmed',
+        eventDescription: `${isProcessing ? 'Change accepted by provider — awaiting fulfilment.' : 'Change confirmed.'} New total: ${fmtCurrency(result.newTotalAmount, result.newTotalCurrency)}. Collected $${totalCollect.toFixed(2)} (fare diff $${Math.max(0, fareDiffUsd).toFixed(2)} + service fee $${changeServiceFee.toFixed(2)}).`,
         actorType: 'system',
       });
 
@@ -1602,8 +1616,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         }).catch(() => {});
       }
 
-      // Email notification for confirmed flight change
-      if (booking.customerEmail) {
+      // Email notification for confirmed flight change. When the reissue is
+      // still processing, the reissue-reconciliation cron sends the confirmation
+      // once the provider fulfils it — don't tell the customer it's done yet.
+      if (booking.customerEmail && !isProcessing) {
         const paxNames = booking.passengers.map(p => `${p.firstName} ${p.lastName}`).join(', ');
         const oldSeg = (booking.pnrs[0] as any)?.segments?.[0];
         const newSeg = (result.raw as any)?.slices?.[0]?.segments?.[0] || (result.raw as any)?.slices?.add?.[0]?.segments?.[0];
@@ -1655,7 +1671,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         fareDifference: Math.round(Math.max(0, fareDiffUsd) * 100) / 100,
         serviceFee: Math.round(changeServiceFee * 100) / 100,
         chargeId,
-        message: 'Your flight has been successfully changed.',
+        // 'CONFIRMED' = done now; 'PROCESSING' = accepted, provider fulfils within SLA.
+        settlement,
+        status: isProcessing ? 'PROVIDER_PROCESSING' : 'CONFIRMED',
+        message: isProcessing
+          ? 'Your flight change has been accepted and is being processed by the airline. We\'ll email you as soon as it\'s confirmed (usually within a few hours). If it can\'t be completed, the amount charged will be refunded automatically.'
+          : 'Your flight has been successfully changed.',
       };
     } catch (e: any) {
       fastify.log.error(e, '[manage-booking/change/confirm]');

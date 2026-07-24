@@ -1340,11 +1340,24 @@ model ChangeRequest {
   createdAt        DateTime            @default(now()) @map("created_at")
   updatedAt        DateTime            @updatedAt @map("updated_at")
 
+  // ── Async reissue (Mystifly ReIssue PTR) settlement tracking ──
+  // The Accept ReIssue Quote step returns InProcess; the provider ops team
+  // fulfils within SLA. The reissue-reconciliation cron polls the PTR's
+  // Resolution and, on failure, refunds the collected difference below.
+  providerPtrId     String?   @map("provider_ptr_id")
+  providerMfRef     String?   @map("provider_mf_ref")
+  collectedChargeId String?   @map("collected_charge_id")
+  collectedAmount   Decimal?  @map("collected_amount") @db.Decimal(10, 2)
+  nextCheckAt       DateTime? @map("next_check_at")
+  lastCheckedAt     DateTime? @map("last_checked_at")
+  statusCheckCount  Int       @default(0) @map("status_check_count")
+
   booking          MasterBooking       @relation(fields: [bookingId], references: [id], onDelete: Cascade)
 
   @@index([bookingId])
   @@index([status])
   @@index([assignedTo])
+  @@index([nextCheckAt])
   @@map("change_requests")
 }
 
@@ -1804,6 +1817,7 @@ enum ChangeRequestStatus {
   NEW
   QUOTED
   CUSTOMER_PAYMENT_PENDING
+  PROVIDER_PROCESSING
   CONFIRMED
   REJECTED
   CANCELLED

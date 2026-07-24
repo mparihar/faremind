@@ -44,6 +44,7 @@ import adminCancellationQueuePlugin from './routes/admin-cancellation-queue';
 import { startLimitOrderScheduler, stopLimitOrderScheduler } from './workers/limit-order-cron';
 import { startRefundReconciliationScheduler, stopRefundReconciliationScheduler } from './workers/refund-reconciliation-cron';
 import { startTicketingReconciliationScheduler, stopTicketingReconciliationScheduler } from './workers/ticketing-reconciliation-cron';
+import { startReissueReconciliationScheduler, stopReissueReconciliationScheduler } from './workers/reissue-reconciliation-cron';
 
 const PORT = parseInt(process.env.PORT || process.env.BACKEND_PORT || '3001');
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -180,10 +181,11 @@ async function main() {
       startLimitOrderScheduler();
       startRefundReconciliationScheduler();
       startTicketingReconciliationScheduler();
+      startReissueReconciliationScheduler();
     }
 
     // Graceful shutdown
-    const shutdown = () => { stopLimitOrderScheduler(); stopRefundReconciliationScheduler(); stopTicketingReconciliationScheduler(); fastify.close(); };
+    const shutdown = () => { stopLimitOrderScheduler(); stopRefundReconciliationScheduler(); stopTicketingReconciliationScheduler(); stopReissueReconciliationScheduler(); fastify.close(); };
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
   } catch (err) {
