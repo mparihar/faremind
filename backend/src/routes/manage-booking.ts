@@ -10,6 +10,7 @@ import { getReissueQuote, initiateReissue } from '../services/reissue-orchestrat
 import { toUsd } from '../services/fx';
 import { chargeOriginalCard, refundCollection } from '../services/customer-collect';
 import { buildPtrPassengers } from '../lib/ptr-passengers';
+import { backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
 import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
 import * as mbq from '../lib/manage-booking-queries';
 import * as emails from '../lib/manage-booking-emails';
@@ -472,7 +473,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   fastify.post('/:bookingId/cancel/quote', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };
-      const booking = await mbq.getMasterBookingFull(bookingId);
+      let booking = await mbq.getMasterBookingFull(bookingId);
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
       if (booking.bookingStatus === 'CANCELLED') return reply.code(400).send({ error: 'Booking is already cancelled', code: 'ALREADY_CANCELLED' });
       if (['FAILED', 'COMPLETED'].includes(booking.bookingStatus)) return reply.code(400).send({ error: 'This booking cannot be cancelled', code: 'NOT_CANCELLABLE' });
@@ -493,6 +494,17 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           code: 'PROVIDER_QUOTE_UNAVAILABLE',
           supportTicketCreated: true,
         });
+      }
+
+      // ——— Backfill e-ticket numbers before quoting —————————————————————
+      // Mystifly async ticketing leaves booking_tickets without an e-ticket
+      // number; the PTR passenger array then sends a blank eTicket and Mystifly
+      // rejects the void/refund quote. Fetch + persist the numbers first.
+      if ((booking.primaryProvider || '').toLowerCase() === 'mystifly') {
+        try {
+          const n = await backfillEticketsFromTripDetails(bookingId, providerPnr.providerOrderId);
+          if (n > 0) booking = (await mbq.getMasterBookingFull(bookingId)) || booking;
+        } catch (e) { fastify.log.warn({ e }, '[manage-booking/cancel/quote] eTicket backfill failed'); }
       }
 
       // ——— Fetch live cancellation quote from provider —————————————————
@@ -808,7 +820,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const forcedBy = `${role || 'STAFF'}${requestedBy ? `:${requestedBy}` : ''}`;
       const isQuoteOnly = mode === 'quote';
 
-      const booking = await mbq.getMasterBookingFull(bookingId);
+      let booking = await mbq.getMasterBookingFull(bookingId);
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
       if (booking.bookingStatus === 'CANCELLED') return reply.code(400).send({ error: 'Booking is already cancelled', code: 'ALREADY_CANCELLED' });
       const providerPnr = booking.pnrs.find((p: any) => p.providerOrderId);
@@ -818,6 +830,15 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       if (!isQuoteOnly && !acquireCancelLock(bookingId)) {
         return reply.code(409).send({ error: 'A cancellation is already in progress for this booking.', code: 'CANCEL_IN_PROGRESS' });
+      }
+
+      // Backfill e-ticket numbers (Mystifly async ticketing) so the PTR passenger
+      // array carries a real eTicket — otherwise void/refund quotes are rejected.
+      if ((booking.primaryProvider || '').toLowerCase() === 'mystifly') {
+        try {
+          const n = await backfillEticketsFromTripDetails(bookingId, providerPnr.providerOrderId);
+          if (n > 0) booking = (await mbq.getMasterBookingFull(bookingId)) || booking;
+        } catch (e) { fastify.log.warn({ e }, '[manage-booking/force-cancel] eTicket backfill failed'); }
       }
 
       try {
