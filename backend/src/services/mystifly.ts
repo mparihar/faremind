@@ -1465,12 +1465,19 @@ export interface MystiflyScheduleFlightOption {
  * whether a booking has a pending airline schedule change and what options apply.
  */
 export async function getScheduleChangePolicy(mfRef: string, actionType: MystiflyScheduleActionType = 'None'): Promise<any> {
-  return mystiflyRequest<any>({
+  const body = { ActionType: actionType, MFRef: mfRef };
+  console.log(`[SCHEDULE][DEBUG] GetPolicyInfoForScheduleChange REQUEST →`, JSON.stringify(body));
+  const res = await mystiflyRequest<any>({
     method: 'POST',
     path: '/api/GetPolicyInfoForScheduleChange',
-    body: { ActionType: actionType, MFRef: mfRef } as unknown as Record<string, unknown>,
+    body: body as unknown as Record<string, unknown>,
     retries: 1,
   });
+  const topKeys = res && typeof res === 'object' ? Object.keys(res) : [];
+  const dataKeys = res?.Data && typeof res.Data === 'object' ? Object.keys(res.Data) : [];
+  console.log(`[SCHEDULE][DEBUG] GetPolicyInfoForScheduleChange RESPONSE ← topKeys=[${topKeys.join(',')}] dataKeys=[${dataKeys.join(',')}]`);
+  console.log(`[SCHEDULE][DEBUG] GetPolicyInfoForScheduleChange RAW ←`, JSON.stringify(res)?.slice(0, 6000));
+  return res;
 }
 
 /**
@@ -1489,21 +1496,25 @@ export async function applyScheduleChange(
     isOverridden?: boolean;
   } = {},
 ): Promise<any> {
-  return mystiflyRequest<any>({
+  const body = {
+    ActionType: actionType,
+    MFRef: mfRef,
+    RejectOption: opts.rejectOption || 'None',
+    FlightOptions: opts.flightOptions || [],
+    Comments: opts.comments || null,
+    AllowRevalidation: opts.allowRevalidation ?? false,
+    AllowReissue: opts.allowReissue ?? false,
+    IsOverridden: opts.isOverridden ?? false,
+  };
+  console.log(`[SCHEDULE][DEBUG] ScheduleChange (${actionType}) REQUEST →`, JSON.stringify(body));
+  const res = await mystiflyRequest<any>({
     method: 'POST',
     path: '/api/ScheduleChange',
-    body: {
-      ActionType: actionType,
-      MFRef: mfRef,
-      RejectOption: opts.rejectOption || 'None',
-      FlightOptions: opts.flightOptions || [],
-      Comments: opts.comments || null,
-      AllowRevalidation: opts.allowRevalidation ?? false,
-      AllowReissue: opts.allowReissue ?? false,
-      IsOverridden: opts.isOverridden ?? false,
-    } as unknown as Record<string, unknown>,
+    body: body as unknown as Record<string, unknown>,
     retries: 0,
   });
+  console.log(`[SCHEDULE][DEBUG] ScheduleChange (${actionType}) RESPONSE ←`, JSON.stringify(res)?.slice(0, 4000));
+  return res;
 }
 
 /**
@@ -1511,11 +1522,14 @@ export async function applyScheduleChange(
  * GET /api/ScheduleChangeAccept/{MFRef}/{FlightId}. Billable action — no retry.
  */
 export async function acceptScheduleChangeByFlight(mfRef: string, flightId: string | number): Promise<any> {
-  return mystiflyRequest<any>({
+  console.log(`[SCHEDULE][DEBUG] ScheduleChangeAccept REQUEST → mfRef=${mfRef} flightId=${flightId}`);
+  const res = await mystiflyRequest<any>({
     method: 'GET',
     path: `/api/ScheduleChangeAccept/${encodeURIComponent(mfRef)}/${encodeURIComponent(String(flightId))}`,
     retries: 0,
   });
+  console.log(`[SCHEDULE][DEBUG] ScheduleChangeAccept RESPONSE ←`, JSON.stringify(res)?.slice(0, 4000));
+  return res;
 }
 
 export default {

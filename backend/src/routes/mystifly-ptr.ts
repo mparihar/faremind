@@ -449,6 +449,22 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       return reply.code(502).send({ error: `MarkAsRead failed: ${error.message}` });
     }
   });
+
+  // ── Schedule Change: probe (capture live response shape) ───────────────
+  // Temporary probe to capture the real GetPolicyInfoForScheduleChange response
+  // for a booking, so we can build the detection cron against the verified shape.
+  // Logs under [SCHEDULE][DEBUG] and returns the raw payload.
+  fastify.post('/schedule-change/probe', async (request, reply) => {
+    try {
+      const { uniqueId, actionType } = request.body as { uniqueId: string; actionType?: string };
+      if (!uniqueId) return reply.code(400).send({ error: 'uniqueId (MFRef) is required' });
+      const result = await mystifly.getScheduleChangePolicy(uniqueId, (actionType as any) || 'None');
+      return { success: true, mfRef: uniqueId, raw: result };
+    } catch (error: any) {
+      console.error('[PTR] ScheduleChange probe error:', error.message);
+      return reply.code(502).send({ error: `Schedule-change probe failed: ${error.message}` });
+    }
+  });
 };
 
 export default ptrPlugin;
