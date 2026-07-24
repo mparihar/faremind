@@ -45,6 +45,7 @@ import { startLimitOrderScheduler, stopLimitOrderScheduler } from './workers/lim
 import { startRefundReconciliationScheduler, stopRefundReconciliationScheduler } from './workers/refund-reconciliation-cron';
 import { startTicketingReconciliationScheduler, stopTicketingReconciliationScheduler } from './workers/ticketing-reconciliation-cron';
 import { startReissueReconciliationScheduler, stopReissueReconciliationScheduler } from './workers/reissue-reconciliation-cron';
+import { startScheduleChangeScheduler, stopScheduleChangeScheduler } from './workers/schedule-change-cron';
 
 const PORT = parseInt(process.env.PORT || process.env.BACKEND_PORT || '3001');
 const FRONTEND_URL = process.env.FRONTEND_URL || 'http://localhost:3000';
@@ -182,10 +183,11 @@ async function main() {
       startRefundReconciliationScheduler();
       startTicketingReconciliationScheduler();
       startReissueReconciliationScheduler();
+      startScheduleChangeScheduler();
     }
 
     // Graceful shutdown
-    const shutdown = () => { stopLimitOrderScheduler(); stopRefundReconciliationScheduler(); stopTicketingReconciliationScheduler(); stopReissueReconciliationScheduler(); fastify.close(); };
+    const shutdown = () => { stopLimitOrderScheduler(); stopRefundReconciliationScheduler(); stopTicketingReconciliationScheduler(); stopReissueReconciliationScheduler(); stopScheduleChangeScheduler(); fastify.close(); };
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
   } catch (err) {

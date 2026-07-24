@@ -1460,6 +1460,24 @@ export interface MystiflyScheduleFlightOption {
 }
 
 /**
+ * Poll the provider queue — the detection source for airline-initiated schedule
+ * changes (and other ops messages). POST /api/Search/GetQueue → paginated
+ * { Data: [...items], Page, TotalPages }. Empty → { Data: [], "No Records Found" }.
+ */
+export async function searchQueue(page: number = 1): Promise<any> {
+  const res = await mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/Search/GetQueue',
+    body: { Page: page } as unknown as Record<string, unknown>,
+    retries: 1,
+  });
+  const items = Array.isArray(res?.Data) ? res.Data : [];
+  console.log(`[SCHEDULE][DEBUG] GetQueue page=${page} → ${items.length} item(s), totalPages=${res?.TotalPages ?? '?'}`);
+  if (items.length) console.log(`[SCHEDULE][DEBUG] GetQueue RAW ←`, JSON.stringify(res)?.slice(0, 6000));
+  return res;
+}
+
+/**
  * Get the schedule-change policy/details for a booking.
  * POST /api/GetPolicyInfoForScheduleChange { ActionType, MFRef }. Used to detect
  * whether a booking has a pending airline schedule change and what options apply.
@@ -1561,6 +1579,7 @@ export default {
   updatePassenger,
   nameCorrection,
   // Schedule change (IROPS)
+  searchQueue,
   getScheduleChangePolicy,
   applyScheduleChange,
   acceptScheduleChangeByFlight,

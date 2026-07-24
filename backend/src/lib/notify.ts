@@ -31,6 +31,8 @@ export type NotifyEventType =
   | 'CHECKIN_REMINDER'
   | 'UPCOMING_TRIP'
   | 'LIMIT_ORDER_MATCHED'
+  | 'SCHEDULE_CHANGE'
+  | 'SCHEDULE_CHANGE_ACCEPTED'
   | 'SUPPORT_MANUAL';
 
 interface NotifyPayload {

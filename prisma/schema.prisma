@@ -632,6 +632,7 @@ model MasterBooking {
   ticketingReconciliations     TicketingReconciliation[]
   postTicketingRequests        PostTicketingRequest[]
   limitOrderMatches            LimitOrderMatch[]
+  scheduleChange               ScheduleChange?
 
   @@index([masterBookingReference])
   @@index([masterPnr])
@@ -1395,6 +1396,31 @@ model CancellationRecord {
   @@index([status])
   @@index([assignedTo])
   @@map("cancellations")
+}
+
+// Airline-initiated schedule change (IROPS). Detected by polling Mystifly's
+// queue (/api/Search/GetQueue); handled via /api/ScheduleChange (Accept/Refund/
+// ReIssue) or /api/ScheduleChangeAccept. One active record per booking.
+model ScheduleChange {
+  id            String    @id @default(cuid())
+  bookingId     String    @unique @map("booking_id")
+  providerRef   String    @map("provider_ref")
+  status        String    @default("DETECTED") // DETECTED, NOTIFIED, ACCEPTED, REFUND_REQUESTED, REISSUE_REQUESTED, RESOLVED, REJECTED, FAILED
+  actionTaken   String?   @map("action_taken")
+  queueItemJson Json?     @map("queue_item_json")
+  policyJson    Json?     @map("policy_json")
+  summary       String?   @db.Text
+  detectedAt    DateTime  @default(now()) @map("detected_at")
+  notifiedAt    DateTime? @map("notified_at")
+  resolvedAt    DateTime? @map("resolved_at")
+  lastCheckedAt DateTime? @map("last_checked_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  updatedAt     DateTime  @updatedAt @map("updated_at")
+
+  booking       MasterBooking @relation(fields: [bookingId], references: [id], onDelete: Cascade)
+
+  @@index([status])
+  @@map("schedule_changes")
 }
 
 model BookingRefund {

@@ -11,6 +11,7 @@ import { toUsd } from '../services/fx';
 import { chargeOriginalCard, refundCollection } from '../services/customer-collect';
 import { buildPtrPassengers } from '../lib/ptr-passengers';
 import { backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
+import { acceptScheduleChange, refundScheduleChange, reissueScheduleChange } from '../services/schedule-change';
 import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
 import * as mbq from '../lib/manage-booking-queries';
 import * as emails from '../lib/manage-booking-emails';
@@ -1313,6 +1314,35 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       return { success: true, updatedFields: Object.keys(updates), providerSynced };
     } catch (e) { fastify.log.error(e, '[manage-booking/passenger/update]'); reply.code(500).send({ error: 'Server error' }); }
   });
+
+  // â”€â”€ Schedule Change (airline-initiated / IROPS) â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // Read the pending schedule change for a booking (drives the UI banner).
+  fastify.get('/:bookingId/schedule-change', async (request, reply) => {
+    try {
+      const { bookingId } = request.params as { bookingId: string };
+      const sc = await prisma.scheduleChange.findUnique({ where: { bookingId } });
+      return { scheduleChange: sc ?? null };
+    } catch (e) { fastify.log.error(e, '[manage-booking/schedule-change]'); reply.code(500).send({ error: 'Server error' }); }
+  });
+
+  // Accept the revised schedule / request refund / request reissue.
+  const scAction = (fn: (bookingId: string, actor: string) => Promise<any>, label: string) =>
+    async (request: any, reply: any) => {
+      try {
+        const { bookingId } = request.params as { bookingId: string };
+        const { requestedBy, role } = (request.body || {}) as { requestedBy?: string; role?: string };
+        const actor = `${role || 'CUSTOMER'}${requestedBy ? `:${requestedBy}` : ''}`;
+        const result = await fn(bookingId, actor);
+        if (!result.success) return reply.code(502).send({ error: `Provider ${label} failed. Please try again or contact support.`, raw: result.raw });
+        return { success: true, ...result };
+      } catch (e: any) {
+        fastify.log.error(e, `[manage-booking/schedule-change/${label}]`);
+        return reply.code(400).send({ error: e?.message || 'Server error' });
+      }
+    };
+  fastify.post('/:bookingId/schedule-change/accept', scAction(acceptScheduleChange, 'accept'));
+  fastify.post('/:bookingId/schedule-change/refund', scAction(refundScheduleChange, 'refund'));
+  fastify.post('/:bookingId/schedule-change/reissue', scAction(reissueScheduleChange, 'reissue'));
 
   // â”€â”€ Provider Capabilities â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
   fastify.get('/:bookingId/capabilities', async (request, reply) => {

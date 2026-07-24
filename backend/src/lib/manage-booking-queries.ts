@@ -93,6 +93,7 @@ export async function getMasterBookingFull(bookingId: string) {
       events: { orderBy: { createdAt: 'desc' }, take: 50 },
       notes: { orderBy: { createdAt: 'desc' } },
       providerPayloads: { orderBy: { createdAt: 'desc' }, take: 20 },
+      scheduleChange: true,
     },
   });
 }
