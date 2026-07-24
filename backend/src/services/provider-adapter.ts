@@ -214,7 +214,7 @@ export interface IBookingProvider {
     orderId: string,
     slicesToRemove: { slice_id: string }[],
     slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[],
-    bookingPassengers?: { firstName: string; lastName: string; type?: string; eTicket?: string }[]
+    bookingPassengers?: { firstName: string; lastName: string; type?: string; eTicket?: string; title?: string }[]
   ): Promise<{
     requestId: string;
     offers: {
@@ -1120,7 +1120,7 @@ export class MystiflyAdapter implements IBookingProvider {
     mfRef: string,
     _slicesToRemove: { slice_id: string }[],
     slicesToAdd: { origin: string; destination: string; departure_date: string; cabin_class?: string }[],
-    bookingPassengers?: { firstName: string; lastName: string; type?: string; eTicket?: string }[]
+    bookingPassengers?: { firstName: string; lastName: string; type?: string; eTicket?: string; title?: string }[]
   ): Promise<{ requestId: string; offers: any[]; raw: unknown }> {
     // Step 1: Get current booking details (original fare) for the ReIssueQuote
     const order = await this.getOrder(mfRef);
@@ -1138,7 +1138,7 @@ export class MystiflyAdapter implements IBookingProvider {
     // Build passenger list: prefer DB passengers (always available), fall back to order
     const rawPax = (bookingPassengers && bookingPassengers.length > 0)
       ? bookingPassengers
-      : order.passengers.map(p => ({ firstName: p.givenName || '', lastName: p.familyName || '', type: p.type || 'ADT', eTicket: '' }));
+      : order.passengers.map(p => ({ firstName: p.givenName || '', lastName: p.familyName || '', type: p.type || 'ADT', eTicket: '', title: '' }));
 
     if (rawPax.length === 0) {
       throw new Error('Mystifly ReIssueQuote failed: No passenger data available for this booking');
@@ -1149,6 +1149,9 @@ export class MystiflyAdapter implements IBookingProvider {
       lastName: p.lastName,
       passengerType: p.type || 'ADT',
       eTicket: p.eTicket || '',
+      // Carry the gender-derived title (parity with cancellation's buildPtrPassengers);
+      // reissueQuote falls back to 'Mr' only when none is supplied.
+      title: (p as any).title || undefined,
     }));
 
     // Step 2: Call Mystifly ReIssueQuote

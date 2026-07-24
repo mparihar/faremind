@@ -1326,19 +1326,18 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         };
       }
 
-      // Search for change options via the provider adapter
-      // Pass DB passengers so Mystifly can use them (getTripDetails may not return passengers)
-      const dbPassengers = (booking.passengers || []).map((p: any) => {
-        // Map DB passenger types to Mystifly codes
-        const raw = (p.passengerType || 'adult').toLowerCase();
-        const type = raw === 'child' || raw === 'chd' ? 'CHD'
-          : raw === 'infant' || raw === 'inf' ? 'INF'
-          : 'ADT';
-        // Find e-ticket for this passenger
-        const ticket = (booking.tickets || []).find((t: any) => t.passengerId === p.id);
-        const eTicket = ticket?.eTicketNumber || ticket?.ticketNumber || '';
-        return { firstName: p.firstName || '', lastName: p.lastName || '', type, eTicket };
-      });
+      // Search for change options via the provider adapter.
+      // Reuse buildPtrPassengers so the reissue PTR passenger array (name, title,
+      // eTicket, passengerType) is byte-identical to the cancellation PTR array —
+      // same gender-derived title, same e-ticket matching. Map passengerType →
+      // the adapter's `type` field.
+      const dbPassengers = buildPtrPassengers(booking).map((p) => ({
+        firstName: p.firstName,
+        lastName: p.lastName,
+        type: p.passengerType,
+        eTicket: p.eTicket,
+        title: p.title,
+      }));
 
       const result = await provider.searchChangeOptions(
         resolvedProviderOrderId,
