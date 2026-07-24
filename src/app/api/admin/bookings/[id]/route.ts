@@ -48,6 +48,7 @@ const FULL_INCLUDE = {
     orderBy: { createdAt: 'desc' as const },
   },
   providerPayloads: { orderBy: { createdAt: 'desc' as const } },
+  scheduleChange: true,
 } as const;
 
 async function resolve(idOrRef: string) {

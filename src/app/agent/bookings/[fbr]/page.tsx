@@ -62,6 +62,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
   const [cancelReason, setCancelReason] = useState('');
   const [showCancelDialog, setShowCancelDialog] = useState(false);
   const [eventsExpanded, setEventsExpanded] = useState(false);
+  const [scBusy, setScBusy] = useState<string | null>(null);
   const [cancelQuote, setCancelQuote] = useState<any>(null);
   const [loadingQuote, setLoadingQuote] = useState(false);
   const [cancelQuoteError, setCancelQuoteError] = useState<string | null>(null);
@@ -169,6 +170,29 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
     } finally {
       setSaving(false);
     }
+  }
+
+  async function handleScheduleChangeAction(action: 'accept' | 'refund' | 'reissue') {
+    if (!booking?.id) return;
+    setScBusy(action);
+    setActionMsg(null);
+    try {
+      const res = await fetch(apiUrl(`/api/manage-booking/${booking.id}/schedule-change/${action}`), {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ requestedBy: 'agent', role: 'AGENT' }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setActionMsg({ type: 'success', text: `Schedule change — ${action} submitted. The customer will be notified.` });
+        fetchBooking();
+      } else {
+        setActionMsg({ type: 'error', text: data.error || `Could not ${action} the schedule change. Please try again or contact support.` });
+      }
+    } catch {
+      setActionMsg({ type: 'error', text: 'Network error. Please try again.' });
+    }
+    setScBusy(null);
   }
 
   async function handleResendItinerary() {
@@ -292,6 +316,36 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
         )}>
           {actionMsg.type === 'success' ? <Check className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" /> : <AlertCircle className="w-4 h-4 text-red-400 shrink-0 mt-0.5" />}
           <p className={cn('text-xs', actionMsg.type === 'success' ? 'text-emerald-400' : 'text-red-400')}>{actionMsg.text}</p>
+        </div>
+      )}
+
+      {/* Schedule-change banner (airline-initiated / IROPS) */}
+      {booking.scheduleChange && !['RESOLVED', 'REJECTED'].includes(booking.scheduleChange.status) && (
+        <div className="mb-6 rounded-2xl border border-amber-500/25 bg-amber-500/[0.06] p-4">
+          <div className="flex items-start gap-2.5">
+            <AlertCircle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+            <div className="flex-1 min-w-0">
+              <p className="text-sm font-bold text-amber-300">Airline schedule change</p>
+              <p className="text-xs text-amber-200/80 mt-0.5">{booking.scheduleChange.summary || 'The airline has revised this booking. Review and choose an action.'}</p>
+              <p className="text-[10px] text-amber-200/50 mt-1 uppercase tracking-wider">Status: {String(booking.scheduleChange.status).replace(/_/g, ' ')}</p>
+              {['DETECTED', 'NOTIFIED'].includes(booking.scheduleChange.status) && (
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <button onClick={() => handleScheduleChangeAction('accept')} disabled={!!scBusy}
+                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-white bg-[#1ABC9C] hover:bg-[#16A085] disabled:opacity-50 transition-all">
+                    {scBusy === 'accept' ? 'Accepting…' : 'Accept New Schedule'}
+                  </button>
+                  <button onClick={() => handleScheduleChangeAction('reissue')} disabled={!!scBusy}
+                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-purple-300 bg-purple-500/[0.08] hover:bg-purple-500/[0.16] border border-purple-500/25 disabled:opacity-50 transition-all">
+                    {scBusy === 'reissue' ? 'Requesting…' : 'Request Reissue'}
+                  </button>
+                  <button onClick={() => handleScheduleChangeAction('refund')} disabled={!!scBusy}
+                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-red-300 bg-red-500/[0.08] hover:bg-red-500/[0.16] border border-red-500/25 disabled:opacity-50 transition-all">
+                    {scBusy === 'refund' ? 'Requesting…' : 'Request Refund'}
+                  </button>
+                </div>
+              )}
+            </div>
+          </div>
         </div>
       )}
 

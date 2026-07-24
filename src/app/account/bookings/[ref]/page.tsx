@@ -57,6 +57,30 @@ export default function BookingDetailPage() {
   const [emailSending, setEmailSending] = useState(false);
   const [emailDone, setEmailDone] = useState(false);
   const [emailError, setEmailError] = useState('');
+  const [scBusy, setScBusy] = useState<string | null>(null);
+  const [scMsg, setScMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  async function handleSchedule(action: 'accept' | 'refund' | 'reissue') {
+    if (!booking?.id) return;
+    setScBusy(action);
+    setScMsg(null);
+    try {
+      const res = await apiFetch(`/api/manage-booking/${booking.id}/schedule-change/${action}`, {
+        method: 'POST',
+        body: JSON.stringify({ requestedBy: (booking as any).customerEmail || 'customer', role: 'CUSTOMER' }),
+      });
+      const data = await res.json();
+      if (res.ok && data.success) {
+        setScMsg({ type: 'success', text: "Your request has been submitted — we'll email you an update shortly." });
+        loadBookingDetail(ref);
+      } else {
+        setScMsg({ type: 'error', text: data.error || 'We could not process this right now. Please contact support.' });
+      }
+    } catch {
+      setScMsg({ type: 'error', text: 'Network error. Please try again.' });
+    }
+    setScBusy(null);
+  }
 
   useEffect(() => { loadSession(); }, []);
   useEffect(() => { if (ref) { loadBookingDetail(ref); loadActions(ref); loadTimeline(ref); } }, [ref]);
@@ -182,6 +206,38 @@ export default function BookingDetailPage() {
               </div>
             </div>
           </div>
+
+          {/* Airline schedule-change banner (IROPS) */}
+          {b.scheduleChange && !['RESOLVED', 'REJECTED'].includes(b.scheduleChange.status) && (
+            <div className="mt-4 rounded-xl border border-amber-500/25 bg-amber-500/[0.06] p-4">
+              <p className="text-sm font-bold text-amber-300">✈️ Airline schedule change</p>
+              <p className="text-xs text-amber-200/80 mt-0.5">
+                {b.scheduleChange.summary || 'The airline has changed this flight. Please review and choose how to proceed.'}
+              </p>
+              {scMsg && (
+                <p className={`text-xs mt-2 ${scMsg.type === 'success' ? 'text-emerald-400' : 'text-red-400'}`}>{scMsg.text}</p>
+              )}
+              {['DETECTED', 'NOTIFIED'].includes(b.scheduleChange.status) ? (
+                <div className="flex flex-wrap items-center gap-2 mt-3">
+                  <button onClick={() => handleSchedule('accept')} disabled={!!scBusy}
+                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-white bg-[#1ABC9C] hover:bg-[#16a085] disabled:opacity-50 transition-all">
+                    {scBusy === 'accept' ? 'Accepting…' : 'Accept new times'}
+                  </button>
+                  <button onClick={() => handleSchedule('reissue')} disabled={!!scBusy}
+                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-purple-300 bg-purple-500/[0.08] hover:bg-purple-500/[0.16] border border-purple-500/25 disabled:opacity-50 transition-all">
+                    {scBusy === 'reissue' ? 'Requesting…' : 'Request different flight'}
+                  </button>
+                  <button onClick={() => handleSchedule('refund')} disabled={!!scBusy}
+                    className="px-3 py-1.5 rounded-lg text-[11px] font-bold text-red-300 bg-red-500/[0.08] hover:bg-red-500/[0.16] border border-red-500/25 disabled:opacity-50 transition-all">
+                    {scBusy === 'refund' ? 'Requesting…' : 'Request refund'}
+                  </button>
+                </div>
+              ) : (
+                <p className="text-[10px] text-amber-200/50 mt-2 uppercase tracking-wider">Status: {String(b.scheduleChange.status).replace(/_/g, ' ')}</p>
+              )}
+            </div>
+          )}
+
           {/* Journey legs */}
           {(b.journeys || []).length > 0 ? (
             <div className="space-y-3 mt-4 pt-4 border-t border-white/[0.06]">
