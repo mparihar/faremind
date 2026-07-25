@@ -14,6 +14,8 @@ import type {
   SeatElementType,
 } from '@/lib/seat-map-types';
 
+const BACKEND_URL = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
+
 // ── In-memory cache (5-min TTL) ───────────────────────────────────────────────
 
 interface CachedSeatData {
@@ -138,6 +140,47 @@ export function transformSeatMap(sm: DuffelSeatMap): SegmentSeatMap {
   };
 }
 
+// ── Mystifly → frontend model (DEFENSIVE) ─────────────────────────────────────
+// The populated Data.SeatMaps[] item shape is not yet known (sandbox returns []),
+// so this maps common field names best-effort. The raw sample is surfaced via
+// `mystiflyDebug` so the mapping can be finalized against a real response.
+function transformMystiflySeatMaps(seatMaps: any[]): SegmentSeatMap[] {
+  const out: SegmentSeatMap[] = [];
+  for (const sm of seatMaps || []) {
+    const segmentId = sm?.SegmentId || sm?.segmentId || sm?.FlightSegmentId || '';
+    const cabinsRaw = sm?.Cabins || sm?.cabins || [sm];
+    const cabins: SeatCabin[] = [];
+    for (const cab of Array.isArray(cabinsRaw) ? cabinsRaw : [cabinsRaw]) {
+      const rowsRaw = cab?.Rows || cab?.rows || cab?.SeatRows || [];
+      const rows: SeatRow[] = [];
+      for (const r of Array.isArray(rowsRaw) ? rowsRaw : []) {
+        const seatsRaw = r?.Seats || r?.seats || r?.SeatColumns || r?.Columns || [];
+        const elements: SeatElement[] = (Array.isArray(seatsRaw) ? seatsRaw : []).map((s: any) => {
+          const designator = s?.SeatNumber || s?.seatNumber || s?.Designator || s?.Number || null;
+          const key = s?.SeatSelectionKey || s?.seatSelectionKey || s?.SeatKey || null;
+          const priceVal = parseFloat(String(s?.Price ?? s?.price ?? s?.Amount ?? s?.SeatCharge ?? '0'));
+          const available = (s?.IsAvailable ?? s?.isAvailable ?? s?.Available ?? (String(s?.SeatStatus ?? '').toLowerCase() === 'available')) && !!designator;
+          return {
+            type: 'seat' as SeatElementType,
+            designator,
+            available: !!available,
+            price: Number.isFinite(priceVal) ? priceVal : 0,
+            currency: s?.Currency || s?.currency || 'USD',
+            serviceId: key,
+            serviceIds: key ? [key] : [],
+            disclosures: [],
+          };
+        });
+        const rowNumber = String(r?.RowNumber || r?.rowNumber || elements.find(e => e.designator)?.designator?.match(/\d+/)?.[0] || '');
+        if (elements.length) rows.push({ rowNumber, sections: [{ elements }], isExitRow: !!(r?.IsExitRow ?? r?.isExitRow) });
+      }
+      if (rows.length) cabins.push({ cabinClass: cab?.CabinClass || cab?.cabinClass || 'economy', rows, columnHeaders: deriveColumnHeaders(rows) });
+    }
+    if (cabins.length) out.push({ seatMapId: sm?.SeatMapId || sm?.id || segmentId || `mf-${out.length}`, segmentId, sliceId: sm?.SliceId || sm?.sliceId || segmentId, cabins });
+  }
+  return out;
+}
+
 // ── Check if the airline actually supports seat selection ─────────────────────
 // Returns true when the seat map contains real seat elements (i.e. the airline
 // provided seat layout data). This does NOT check whether any seats are
@@ -195,7 +238,48 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'offer_id or order_id required' }, { status: 400 });
   }
 
-  // Seat maps are only available via Duffel — other providers don't support it
+  // ── Mystifly: call the live seat-map API (fires backend [SEATMAP][DEBUG] +
+  // [Mystifly][SeatMapDiag]) and surface the raw response for shape capture. ──
+  if (provider === 'mystifly') {
+    const fsc = offerId || orderId;
+    if (!fsc) {
+      return NextResponse.json({ seatMaps: [], seatSelectionSupported: false, wheelchairSupported: false, cached: false });
+    }
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/mystifly/seat-map`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ fareSourceCode: fsc }),
+      });
+      const data = await res.json().catch(() => ({}));
+      const mfData = data?.Data ?? data;
+      const rawSeatMaps: any[] = Array.isArray(mfData?.SeatMaps) ? mfData.SeatMaps : [];
+      const seatMaps = transformMystiflySeatMaps(rawSeatMaps);
+      const seatSelectionSupported = seatMaps.length > 0 && checkSeatSelectionFromMaps(seatMaps);
+      console.log(`[SEATMAP][DEBUG] mystifly seat-map for fsc(len=${fsc.length}) → SeatMaps=${rawSeatMaps.length} msg="${mfData?.Message ?? ''}"`);
+      return NextResponse.json({
+        seatMaps,
+        seatSelectionSupported,
+        wheelchairSupported: false,
+        cached: false,
+        // Temporary capture aid — copy this from the network tab to share the shape.
+        mystiflyDebug: {
+          ok: res.ok,
+          message: mfData?.Message ?? null,
+          errors: mfData?.Errors ?? null,
+          seatMapsCount: rawSeatMaps.length,
+          sample: rawSeatMaps.length ? JSON.stringify(rawSeatMaps[0]).slice(0, 4000) : JSON.stringify(mfData).slice(0, 2000),
+        },
+      });
+    } catch (err) {
+      return NextResponse.json({
+        seatMaps: [], seatSelectionSupported: false, wheelchairSupported: false, cached: false,
+        mystiflyDebug: { ok: false, error: (err as Error).message },
+      });
+    }
+  }
+
+  // Seat maps for other non-Duffel providers aren't supported.
   if (provider !== 'duffel') {
     return NextResponse.json({
       seatMaps: [],

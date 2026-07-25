@@ -1074,8 +1074,10 @@ export class MystiflyAdapter implements IBookingProvider {
     // Mystifly seat map response normalization
     const seatMaps: SeatMapData[] = [];
     const data = result?.Data || result;
-    const cabins = data?.SeatMapResponses || data?.seatMapResponses || [];
-    console.log(`[SEATMAP][DEBUG] normalizer: cabins found under Data.SeatMapResponses = ${Array.isArray(cabins) ? cabins.length : 'not-an-array'} (if 0 but RAW above has seats, our field names are wrong)`);
+    // Real response field is Data.SeatMaps[] (verified live). Keep the old guessed
+    // keys as fallbacks in case a different fare/version nests it elsewhere.
+    const cabins = data?.SeatMaps || data?.SeatMapResponses || data?.seatMapResponses || [];
+    console.log(`[SEATMAP][DEBUG] normalizer: cabins found under Data.SeatMaps = ${Array.isArray(cabins) ? cabins.length : 'not-an-array'}`);
 
     for (const cabin of cabins) {
       const rows: SeatMapRow[] = [];
