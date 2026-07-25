@@ -13,6 +13,7 @@ import { Elements, CardNumberElement, CardExpiryElement, CardCvcElement, useStri
 import { useAuthStore } from '@/store/useAuthStore';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 import { motion, AnimatePresence } from 'framer-motion';
+import OtherPaymentPanel from '@/components/payments/OtherPaymentPanel';
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
@@ -213,6 +214,9 @@ export default function MakePaymentPage() {
   const router = useRouter();
   const { user, sessionToken } = useAuthStore();
 
+  // Generic "Make a Payment For" category. Regular customers see Booking + Other
+  // Payment only (Wallet Recharge is agent-only, enforced on the agent surface).
+  const [category, setCategory] = useState<null | 'BOOKING' | 'OTHER'>(null);
   const [step, setStep] = useState(1);
   const { bookings, loadUserBookings, setBookingsFilter } = useManageBookingStore();
 
@@ -315,9 +319,50 @@ export default function MakePaymentPage() {
 
   const iCls = 'w-full px-4 py-3 bg-white/[0.04] border border-white/[0.08] rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C]/40 transition-all placeholder:text-slate-600';
 
+  // ── "Make a Payment For" category selector ──
+  if (category === null) {
+    const cats = [
+      { key: 'BOOKING' as const, title: 'Booking Payment', desc: 'Pay for services or extras on one of your bookings.', icon: Ticket },
+      { key: 'OTHER' as const, title: 'Other Payment', desc: 'Make a general payment (e.g. against a support case or payment request).', icon: HelpCircle },
+    ];
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-black text-white flex items-center gap-2"><Wallet size={22} className="text-[#1ABC9C]" /> Make a Payment</h1>
+          <p className="text-slate-500 text-sm mt-0.5">What would you like to pay for?</p>
+        </div>
+        <div className="grid sm:grid-cols-2 gap-4">
+          {cats.map((c) => {
+            const Icon = c.icon;
+            return (
+              <button key={c.key} onClick={() => setCategory(c.key)} className="text-left p-5 rounded-2xl border border-white/[0.08] bg-white/[0.04] hover:bg-white/[0.06] hover:border-[#1ABC9C]/30 transition-all">
+                <div className="w-11 h-11 rounded-xl bg-[#1ABC9C]/15 border border-[#1ABC9C]/25 flex items-center justify-center mb-3"><Icon size={20} className="text-[#1ABC9C]" /></div>
+                <p className="text-white font-bold text-sm">{c.title}</p>
+                <p className="text-slate-500 text-xs mt-1">{c.desc}</p>
+              </button>
+            );
+          })}
+        </div>
+      </div>
+    );
+  }
+
+  if (category === 'OTHER') {
+    return (
+      <div className="max-w-2xl mx-auto">
+        <div className="mb-6">
+          <h1 className="text-2xl font-black text-white flex items-center gap-2"><Wallet size={22} className="text-[#1ABC9C]" /> Other Payment</h1>
+          <p className="text-slate-500 text-sm mt-0.5">Make a general payment</p>
+        </div>
+        <OtherPaymentPanel sessionToken={sessionToken || ''} onBack={() => setCategory(null)} />
+      </div>
+    );
+  }
+
   return (
     <div className="max-w-2xl mx-auto">
       <div className="mb-6">
+        <button onClick={() => setCategory(null)} className="flex items-center gap-1 text-slate-400 hover:text-white text-xs font-medium mb-2 transition-colors"><ArrowLeft size={12} /> Payment options</button>
         <h1 className="text-2xl font-black text-white flex items-center gap-2">
           <Wallet size={22} className="text-[#1ABC9C]" /> Make a Payment
         </h1>

@@ -11,6 +11,7 @@ export interface AgentContext {
   email: string;
   name: string;
   role: 'FAREMIND_AGENT';
+  isActive?: boolean; // false = wallet-disabled (recharge-only access)
 }
 
 export type AgentHandler = (
@@ -75,8 +76,54 @@ export function withAgent(handler: AgentHandler) {
       email: session.user.email,
       name: `${session.user.firstName} ${session.user.lastName}`.trim(),
       role: 'FAREMIND_AGENT',
+      isActive: session.user.isActive,
     };
 
+    const params = await context.params;
+    return handler(req, { agent, params });
+  };
+}
+
+/**
+ * Like withAgent, but ALLOWS a wallet-disabled agent (isActive=false) through.
+ * Use ONLY for wallet-recharge / payment-method / wallet-summary endpoints so a
+ * disabled agent can restore their wallet. Every other agent surface must keep
+ * using withAgent (which blocks disabled accounts).
+ */
+export function withAgentWalletAccess(handler: AgentHandler) {
+  return async (
+    req: NextRequest,
+    context: { params: Promise<Record<string, string>> }
+  ) => {
+    const authHeader = req.headers.get('authorization');
+    const token = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : null;
+    if (!token) return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
+
+    const session = await prisma.session.findFirst({
+      where: { token, expiresAt: { gt: new Date() } },
+      include: { user: true },
+    });
+    if (!session) return NextResponse.json({ error: 'Invalid or expired session' }, { status: 401 });
+
+    const lastActivity = session.lastActivityAt?.getTime() ?? session.createdAt.getTime();
+    if (Date.now() - lastActivity > INACTIVITY_TIMEOUT_MS) {
+      await prisma.session.delete({ where: { id: session.id } }).catch(() => {});
+      return NextResponse.json({ error: 'Session expired due to inactivity' }, { status: 401 });
+    }
+    await prisma.session.update({ where: { id: session.id }, data: { lastActivityAt: new Date() } }).catch(() => {});
+
+    if (session.user.role !== 'FAREMIND_AGENT') {
+      return NextResponse.json({ error: 'Forbidden — agent role required' }, { status: 403 });
+    }
+    // NOTE: intentionally NOT enforcing isActive here — recharge must work while disabled.
+
+    const agent: AgentContext = {
+      id: session.user.id,
+      email: session.user.email,
+      name: `${session.user.firstName} ${session.user.lastName}`.trim(),
+      role: 'FAREMIND_AGENT',
+      isActive: session.user.isActive,
+    };
     const params = await context.params;
     return handler(req, { agent, params });
   };

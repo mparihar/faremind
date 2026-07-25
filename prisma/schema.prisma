@@ -90,6 +90,20 @@ model AgentWallet {
   disableNotified   Boolean  @default(false) @map("disable_notified")
   lastRechargeAt    DateTime? @map("last_recharge_at")
   lastNotificationAt DateTime? @map("last_notification_at")
+
+  // ── Stripe self-recharge + auto-recharge (all amounts are policy/DB-driven, never hard-coded) ──
+  stripeCustomerId       String?   @map("stripe_customer_id")             // Stripe customer for saved-card / off-session charges
+  defaultPaymentMethodId String?   @map("default_payment_method_id")      // Stripe payment_method id (reference only, never raw card data)
+  saveCardConsentAt      DateTime? @map("save_card_consent_at")           // explicit consent to store the card for reuse
+  autoRechargeEnabled    Boolean   @default(false) @map("auto_recharge_enabled")
+  autoRechargeAmount     Decimal?  @map("auto_recharge_amount") @db.Decimal(12, 2)   // per-wallet override of policy default
+  autoRechargeTarget     Decimal?  @map("auto_recharge_target") @db.Decimal(12, 2)   // top-up target balance override
+  autoRechargeThreshold  Decimal?  @map("auto_recharge_threshold") @db.Decimal(12, 2) // trigger threshold override (else policy low)
+  autoRechargeConsentAt  DateTime? @map("auto_recharge_consent_at")       // explicit, separate consent + timestamp
+  autoRechargeTermsVersion String? @map("auto_recharge_terms_version")    // terms version accepted at consent time
+  lastAutoRechargeAt     DateTime? @map("last_auto_recharge_at")
+  autoRechargeInProgress Boolean   @default(false) @map("auto_recharge_in_progress") // lock to prevent concurrent auto-recharge
+
   createdAt         DateTime @default(now()) @map("created_at")
   updatedAt         DateTime @updatedAt @map("updated_at")
 
@@ -2890,17 +2904,29 @@ model ServicePayment {
   bookingId             String?              @map("booking_id")
   userId                String?              @map("user_id")
   serviceType           ServicePaymentType   @map("service_type")
+  // Generic payment discriminator. Existing rows default to BOOKING_PAYMENT (BAU, no regression).
+  paymentPurpose        String               @default("BOOKING_PAYMENT") @map("payment_purpose") // BOOKING_PAYMENT | AGENT_WALLET_RECHARGE | OTHER_PAYMENT
   description           String               @db.Text
   amount                Decimal              @db.Decimal(10, 2)
   currency              String               @default("USD")
   status                MbPaymentTxStatus    @default(PENDING)
   stripePaymentIntentId String?              @unique @map("stripe_payment_intent_id")
+  // Webhook-authoritative fulfillment bookkeeping (never trust the browser redirect).
+  idempotencyKey        String?              @unique @map("idempotency_key")     // Stripe idempotency key used at PI create
+  stripeEventId         String?              @map("stripe_event_id")             // the webhook event id that fulfilled this
+  fulfilledAt           DateTime?            @map("fulfilled_at")                // purpose-specific fulfillment completed
+  // Purpose-specific references
+  agentId               String?              @map("agent_id")                    // FAREMIND_AGENT user id (wallet recharge / agent-initiated)
+  walletId              String?              @map("wallet_id")                   // AgentWallet id credited (recharge)
+  supportCaseId         String?              @map("support_case_id")             // SupportTicket id (other payment)
+  paymentRequestId      String?              @map("payment_request_id")          // PaymentRequest id (other payment)
+  autoRecharge          Boolean              @default(false) @map("auto_recharge") // true if triggered by auto-recharge (off-session)
   pnrCode               String?              @map("pnr_code")
   ticketNumber          String?              @map("ticket_number")
   customerEmail         String               @map("customer_email")
   customerName          String               @map("customer_name")
   customerPhone         String?              @map("customer_phone")
-  requestedBy           String               @default("USER") @map("requested_by") // USER, AGENT, ADMIN
+  requestedBy           String               @default("USER") @map("requested_by") // USER, AGENT, ADMIN, SYSTEM
   processedBy           String?              @map("processed_by")
   notes                 String?              @db.Text
   paidAt                DateTime?            @map("paid_at")
@@ -2916,7 +2942,9 @@ model ServicePayment {
   @@index([userId])
   @@index([status])
   @@index([serviceType])
+  @@index([paymentPurpose])
   @@index([customerEmail])
+  @@index([paymentRequestId])
   @@map("service_payments")
 }
 
@@ -2929,6 +2957,55 @@ enum ServicePaymentType {
   BAGGAGE_CHANGE
   UPGRADE
   OTHER
+}
+
+// ═══════════════════════════════════════════════
+// PAYMENT REQUESTS (structured "Other Payment" asks created by admin/support)
+// ═══════════════════════════════════════════════
+
+model PaymentRequest {
+  id                String    @id @default(cuid())
+  reference         String    @unique @map("reference")                 // FM-PR-0001
+  purpose           String    @default("OTHER_PAYMENT") @map("purpose") // OTHER_PAYMENT (reserved for future purposes)
+  amount            Decimal   @map("amount") @db.Decimal(12, 2)
+  currency          String    @default("USD")
+  note              String    @db.Text                                  // sanitized reason shown to the payer
+  payerUserId       String?   @map("payer_user_id")                     // if targeted to a known user/agent
+  payerEmail        String?   @map("payer_email")
+  payerName         String?   @map("payer_name")
+  bookingId         String?   @map("booking_id")
+  supportCaseId     String?   @map("support_case_id")
+  status            String    @default("OPEN") // DRAFT | OPEN | PAID | EXPIRED | CANCELLED
+  createdByType     String    @default("ADMIN") @map("created_by_type") // ADMIN | SUPPORT | AGENT | SYSTEM
+  createdById       String?   @map("created_by_id")
+  createdByEmail    String?   @map("created_by_email")
+  expiresAt         DateTime? @map("expires_at")
+  paidTransactionId String?   @map("paid_transaction_id")               // ServicePayment id that settled this
+  paidAt            DateTime? @map("paid_at")
+  createdAt         DateTime  @default(now()) @map("created_at")
+  updatedAt         DateTime  @updatedAt @map("updated_at")
+
+  @@index([status])
+  @@index([payerUserId])
+  @@index([payerEmail])
+  @@map("payment_requests")
+}
+
+// ═══════════════════════════════════════════════
+// STRIPE WEBHOOK EVENTS (idempotency / dedupe ledger — never stores raw card data)
+// ═══════════════════════════════════════════════
+
+model StripeWebhookEvent {
+  id          String   @id @default(cuid())
+  eventId     String   @unique @map("event_id")   // Stripe event id (evt_…) — dedupe key
+  eventType   String   @map("event_type")
+  status      String   @default("PROCESSED")      // PROCESSED | ERROR | IGNORED
+  objectRef   String?  @map("object_ref")         // PaymentIntent id / object id (reference only)
+  error       String?  @db.Text
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  @@index([eventType])
+  @@map("stripe_webhook_events")
 }
 
 // ═══════════════════════════════════════════════

@@ -75,6 +75,10 @@ Conventions, folder rules, error handling, logging, and a **review checklist**: 
 
 Single instant order (`POST /air/orders`, `type:'instant'`, paid from Duffel balance); **Stripe capture after** the order. Three divergent clients exist; production checkout uses an inline client. Detail: [docs/DUFFEL_INTEGRATION.md](./docs/DUFFEL_INTEGRATION.md).
 
+## Generic "Make a Payment" (payment_purpose)
+
+One `ServicePayment` table, discriminated by `paymentPurpose` (BOOKING_PAYMENT | AGENT_WALLET_RECHARGE | OTHER_PAYMENT), drives all three categories via one shared create path (`src/lib/payments/orchestrator.ts`) and one authoritative fulfiller — the **Stripe webhook** (`src/app/api/stripe/webhook/route.ts`, signature-verified + `StripeWebhookEvent` dedupe). `src/lib/payments/fulfill.ts` dispatches per purpose (booking→ticket/event, wallet→backend `/api/agent-wallet/action` recharge, other→PaymentRequest settle) with a single-claim idempotency guard; the legacy `/api/service-payments/confirm` is now a **server-verified idempotent fallback** (re-fetches the PI, never trusts the browser). Money is always minor-units/Decimal (`money.ts`), never floats. UI: `account/make-payment` (Booking + Other) and `agent/make-payment` (all three) show a "Make a Payment For" selector; shared panels in `src/components/payments/`. Admin: `/admin/payments` (all purposes + PaymentRequest mgmt). Requires **`STRIPE_WEBHOOK_SECRET`**. Agent wallet self-recharge (`/api/agent/wallet/recharge`) + auto-recharge (`auto-recharge.ts`, off-session, consent-gated, locked, config-driven via SystemConfig — never hard-coded). Wallet-disabled agents get a recharge-only session (`withAgentWalletAccess`).
+
 ## Booking flow
 
 Offer → Stripe auth (manual capture) → provider book → capture → persist `MasterBooking` + children → async ticketing reconciliation (Mystifly). States and orchestration: [docs/BOOKING_LIFECYCLE.md](./docs/BOOKING_LIFECYCLE.md), [docs/PAYMENT_FLOW.md](./docs/PAYMENT_FLOW.md), [docs/TICKETING_FLOW.md](./docs/TICKETING_FLOW.md).

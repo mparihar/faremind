@@ -191,15 +191,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: `Invalid OTP. ${left} attempt${left !== 1 ? 's' : ''} remaining.` });
       }
 
-      // Block disabled accounts BEFORE issuing a session (e.g. an agent whose
-      // wallet fell below the disable threshold, or an admin-suspended user).
+      // Block disabled accounts BEFORE issuing a session — EXCEPT wallet-disabled
+      // agents, who are allowed a RECHARGE-ONLY session so they can restore their
+      // wallet and reactivate. All other disabled users stay fully locked out.
       const existing = await prisma.user.findUnique({ where: { email: norm }, select: { isActive: true, role: true } });
-      if (existing && !existing.isActive) {
-        const isAgent = existing.role === 'FAREMIND_AGENT';
+      const walletDisabledAgent = !!existing && !existing.isActive && existing.role === 'FAREMIND_AGENT';
+      if (existing && !existing.isActive && !walletDisabledAgent) {
         return reply.code(403).send({
-          error: isAgent
-            ? 'Your agent account is disabled because your wallet balance is below the minimum threshold. Please recharge your wallet to reactivate, or contact the administrator.'
-            : 'Your account has been disabled. Please contact support.',
+          error: 'Your account has been disabled. Please contact support.',
           code: 'ACCOUNT_DISABLED',
         });
       }
@@ -235,7 +234,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       return reply.send({
         success: true,
         sessionToken: token,
-        user: { id: user.id, email: user.email, name: `${user.firstName} ${user.lastName}`, avatar: user.avatar || null, isAdminViewer, role: user.role },
+        walletDisabled: walletDisabledAgent, // recharge-only restricted session
+        user: { id: user.id, email: user.email, name: `${user.firstName} ${user.lastName}`, avatar: user.avatar || null, isAdminViewer, role: user.role, walletDisabled: walletDisabledAgent },
       });
     } catch (e) {
       fastify.log.error(e, '[auth/verify-otp]');
@@ -275,11 +275,16 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       if (!session) return reply.send({ valid: false });
 
-      // ── Disabled mid-session (e.g. wallet auto-disable) → log out ────
+      // ── Disabled mid-session → log out, EXCEPT wallet-disabled agents who
+      //    keep a recharge-only session so they can restore their wallet. ────
       if (!session.user.isActive) {
-        await prisma.session.delete({ where: { id: session.id } }).catch(() => {});
-        return reply.send({ valid: false, reason: 'disabled' });
+        if (session.user.role !== 'FAREMIND_AGENT') {
+          await prisma.session.delete({ where: { id: session.id } }).catch(() => {});
+          return reply.send({ valid: false, reason: 'disabled' });
+        }
+        // keep the session alive but flag it as wallet-restricted (handled below)
       }
+      const walletRestricted = !session.user.isActive && session.user.role === 'FAREMIND_AGENT';
 
       // ── Server-side inactivity check (15 minutes) ────────────────────
       const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
@@ -310,6 +315,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       return reply.send({
         valid: true,
+        walletDisabled: walletRestricted,
         user: {
           id: session.user.id,
           email: session.user.email,
@@ -317,6 +323,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           avatar: session.user.avatar || null,
           isAdminViewer,
           role: session.user.role,
+          walletDisabled: walletRestricted,
         },
       });
     } catch (e) {

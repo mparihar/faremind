@@ -2222,6 +2222,10 @@ export async function POST(req: NextRequest) {
             method: 'POST', headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({ userId: agentUserId, amount: totalAmount, bookingId: masterBooking.id }),
           });
+          // After debiting, top the wallet back up automatically if the agent has
+          // consented and a saved card is on file (server-only, off-session).
+          const { maybeAutoRecharge } = await import('@/lib/payments/auto-recharge');
+          await maybeAutoRecharge(agentUserId).catch(() => {});
         } catch (e: any) {
           console.error('[Checkout] Agent wallet utilization update failed:', e?.message ?? e);
         }
