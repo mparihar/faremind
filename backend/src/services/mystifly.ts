@@ -841,10 +841,9 @@ export async function getTripDetailsResilient(mfRef: string): Promise<any> {
         res?.Success === false ||
         (typeof res?.Data === 'string' && /error/i.test(res.Data)) ||
         !res?.Data;
-      console.log(`[TICKETS][DEBUG] TripDetails ${base}${mfRef} → ${failed ? 'ERROR' : 'OK'}${failed ? ` (${JSON.stringify(res?.Data)?.slice(0, 120)})` : ''}`);
       if (!failed && res?.Data && typeof res.Data === 'object') return res;
-    } catch (e) {
-      console.warn(`[TICKETS][DEBUG] TripDetails ${base}${mfRef} threw:`, (e as Error).message);
+    } catch {
+      /* try next version */
     }
   }
   return last;
@@ -950,27 +949,16 @@ export async function getAncillaryServices(
     ...(options.seatMapKey ? { SeatMapKey: options.seatMapKey } : {}),
   };
 
-  // Tag the operation (LIST / CONFIRM / CANCEL) and which service(s) are requested
-  // so baggage calls can be filtered from meal/seat on the same AncillaryServiceRequest.
-  const op = options.isConfirmed ? 'CONFIRM' : options.isCancel ? 'CANCEL' : 'LIST';
-  const svc = [rq.isBaggage && 'baggage', rq.isMeal && 'meal', rq.isSeatMap && 'seat'].filter(Boolean).join('+') || 'none';
-  console.log(`[BAGGAGE][DEBUG] Ancillary ${op} (${svc}) REQUEST →`, JSON.stringify(rq));
-
   try {
-    const res = await mystiflyRequest<any>({
+    return await mystiflyRequest<any>({
       method: 'POST',
       path: '/api/AncillaryServiceRequest',
       body: rq as unknown as Record<string, unknown>,
       // Never retry a confirm/cancel — it mutates the booking (billable).
       retries: isMutation ? 0 : 1,
     });
-    const topKeys = res && typeof res === 'object' ? Object.keys(res) : [];
-    const dataKeys = res?.Data && typeof res.Data === 'object' ? Object.keys(res.Data) : [];
-    console.log(`[BAGGAGE][DEBUG] Ancillary ${op} (${svc}) RESPONSE ← topKeys=[${topKeys.join(',')}] dataKeys=[${dataKeys.join(',')}]`);
-    console.log(`[BAGGAGE][DEBUG] Ancillary ${op} (${svc}) RAW ←`, JSON.stringify(res)?.slice(0, 4000));
-    return res;
   } catch (error) {
-    console.warn(`[BAGGAGE][DEBUG] Ancillary ${op} (${svc}) FAILED:`, (error as Error).message);
+    console.warn('[Mystifly] Ancillary services request failed:', (error as Error).message);
     return { error: (error as Error).message };
   }
 }
@@ -1291,16 +1279,12 @@ export async function confirmReissue(
 export async function voidQuote(mfRef: string, passengers: PtrPassenger[] = []): Promise<any> {
   // Mystifly requires the passengers array (firstName/lastName/title/eTicket/passengerType).
   // VoidQuote returns synchronously with PTRStatus=Completed + Data.VoidQuotes[].
-  const body = { ptrType: 'VoidQuote', mFRef: mfRef, passengers };
-  console.log(`[CANCEL][DEBUG] VoidQuote REQUEST →`, JSON.stringify(body));
-  const res = await mystiflyRequest<any>({
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
-    body: body as unknown as Record<string, unknown>,
+    body: { ptrType: 'VoidQuote', mFRef: mfRef, passengers } as unknown as Record<string, unknown>,
     retries: 0,
   });
-  console.log(`[CANCEL][DEBUG] VoidQuote RESPONSE ←`, JSON.stringify(res));
-  return res;
 }
 
 /**
@@ -1316,16 +1300,12 @@ export async function executeVoid(
   // Direct Void (per Mystifly "Void Steps"): create a Void PTR with the passengers
   // array. Returns PTRStatus=InProcess + PTRId; fulfilment is async — poll searchPtr
   // until PTRStatus=Completed & Resolution=Voided.
-  const body = { ptrType: 'Void', mFRef: mfRef, passengers };
-  console.log(`[CANCEL][DEBUG] Void EXECUTE REQUEST →`, JSON.stringify(body));
-  const res = await mystiflyRequest<any>({
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
-    body: body as unknown as Record<string, unknown>,
+    body: { ptrType: 'Void', mFRef: mfRef, passengers } as unknown as Record<string, unknown>,
     retries: 0, // Never retry void executions
   });
-  console.log(`[CANCEL][DEBUG] Void EXECUTE RESPONSE ←`, JSON.stringify(res));
-  return res;
 }
 
 /**
@@ -1339,16 +1319,12 @@ export async function executeVoid(
 export async function refundQuote(mfRef: string, passengers: PtrPassenger[] = []): Promise<any> {
   // RefundQuote returns synchronously with PTRStatus=Completed + Data.RefundQuotes[]
   // (TotalRefundAmount / TotalRefundCharges / CancellationCharge / Currency) + PTRId.
-  const body = { ptrType: 'RefundQuote', mFRef: mfRef, passengers };
-  console.log(`[CANCEL][DEBUG] RefundQuote REQUEST →`, JSON.stringify(body));
-  const res = await mystiflyRequest<any>({
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
-    body: body as unknown as Record<string, unknown>,
+    body: { ptrType: 'RefundQuote', mFRef: mfRef, passengers } as unknown as Record<string, unknown>,
     retries: 0,
   });
-  console.log(`[CANCEL][DEBUG] RefundQuote RESPONSE ←`, JSON.stringify(res));
-  return res;
 }
 
 /**
@@ -1366,16 +1342,12 @@ export async function executeRefund(
   // Accept Refund (per Mystifly): ptrType stays "RefundQuote" with AcceptQuote=yes and the
   // RefundQuote PtrId. Returns PTRType=Refund, PTRStatus=InProcess; poll searchPtr('Refund')
   // until PTRStatus=Completed & Resolution=Refunded.
-  const body = { ptrType: 'RefundQuote', mFRef: mfRef, PtrId: ptrId, AcceptQuote: 'yes', AdditionalNote: note, passengers };
-  console.log(`[CANCEL][DEBUG] Refund EXECUTE (accept) REQUEST →`, JSON.stringify(body));
-  const res = await mystiflyRequest<any>({
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
-    body: body as unknown as Record<string, unknown>,
+    body: { ptrType: 'RefundQuote', mFRef: mfRef, PtrId: ptrId, AcceptQuote: 'yes', AdditionalNote: note, passengers } as unknown as Record<string, unknown>,
     retries: 0, // Never retry refund executions
   });
-  console.log(`[CANCEL][DEBUG] Refund EXECUTE (accept) RESPONSE ←`, JSON.stringify(res));
-  return res;
 }
 
 // ═══════════════════════════════════════════════
@@ -1465,16 +1437,12 @@ export interface MystiflyScheduleFlightOption {
  * { Data: [...items], Page, TotalPages }. Empty → { Data: [], "No Records Found" }.
  */
 export async function searchQueue(page: number = 1): Promise<any> {
-  const res = await mystiflyRequest<any>({
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/Search/GetQueue',
     body: { Page: page } as unknown as Record<string, unknown>,
     retries: 1,
   });
-  const items = Array.isArray(res?.Data) ? res.Data : [];
-  console.log(`[SCHEDULE][DEBUG] GetQueue page=${page} → ${items.length} item(s), totalPages=${res?.TotalPages ?? '?'}`);
-  if (items.length) console.log(`[SCHEDULE][DEBUG] GetQueue RAW ←`, JSON.stringify(res)?.slice(0, 6000));
-  return res;
 }
 
 /**
@@ -1483,19 +1451,12 @@ export async function searchQueue(page: number = 1): Promise<any> {
  * whether a booking has a pending airline schedule change and what options apply.
  */
 export async function getScheduleChangePolicy(mfRef: string, actionType: MystiflyScheduleActionType = 'None'): Promise<any> {
-  const body = { ActionType: actionType, MFRef: mfRef };
-  console.log(`[SCHEDULE][DEBUG] GetPolicyInfoForScheduleChange REQUEST →`, JSON.stringify(body));
-  const res = await mystiflyRequest<any>({
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/GetPolicyInfoForScheduleChange',
-    body: body as unknown as Record<string, unknown>,
+    body: { ActionType: actionType, MFRef: mfRef } as unknown as Record<string, unknown>,
     retries: 1,
   });
-  const topKeys = res && typeof res === 'object' ? Object.keys(res) : [];
-  const dataKeys = res?.Data && typeof res.Data === 'object' ? Object.keys(res.Data) : [];
-  console.log(`[SCHEDULE][DEBUG] GetPolicyInfoForScheduleChange RESPONSE ← topKeys=[${topKeys.join(',')}] dataKeys=[${dataKeys.join(',')}]`);
-  console.log(`[SCHEDULE][DEBUG] GetPolicyInfoForScheduleChange RAW ←`, JSON.stringify(res)?.slice(0, 6000));
-  return res;
 }
 
 /**
@@ -1514,25 +1475,21 @@ export async function applyScheduleChange(
     isOverridden?: boolean;
   } = {},
 ): Promise<any> {
-  const body = {
-    ActionType: actionType,
-    MFRef: mfRef,
-    RejectOption: opts.rejectOption || 'None',
-    FlightOptions: opts.flightOptions || [],
-    Comments: opts.comments || null,
-    AllowRevalidation: opts.allowRevalidation ?? false,
-    AllowReissue: opts.allowReissue ?? false,
-    IsOverridden: opts.isOverridden ?? false,
-  };
-  console.log(`[SCHEDULE][DEBUG] ScheduleChange (${actionType}) REQUEST →`, JSON.stringify(body));
-  const res = await mystiflyRequest<any>({
+  return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/ScheduleChange',
-    body: body as unknown as Record<string, unknown>,
+    body: {
+      ActionType: actionType,
+      MFRef: mfRef,
+      RejectOption: opts.rejectOption || 'None',
+      FlightOptions: opts.flightOptions || [],
+      Comments: opts.comments || null,
+      AllowRevalidation: opts.allowRevalidation ?? false,
+      AllowReissue: opts.allowReissue ?? false,
+      IsOverridden: opts.isOverridden ?? false,
+    } as unknown as Record<string, unknown>,
     retries: 0,
   });
-  console.log(`[SCHEDULE][DEBUG] ScheduleChange (${actionType}) RESPONSE ←`, JSON.stringify(res)?.slice(0, 4000));
-  return res;
 }
 
 /**
@@ -1540,14 +1497,11 @@ export async function applyScheduleChange(
  * GET /api/ScheduleChangeAccept/{MFRef}/{FlightId}. Billable action — no retry.
  */
 export async function acceptScheduleChangeByFlight(mfRef: string, flightId: string | number): Promise<any> {
-  console.log(`[SCHEDULE][DEBUG] ScheduleChangeAccept REQUEST → mfRef=${mfRef} flightId=${flightId}`);
-  const res = await mystiflyRequest<any>({
+  return mystiflyRequest<any>({
     method: 'GET',
     path: `/api/ScheduleChangeAccept/${encodeURIComponent(mfRef)}/${encodeURIComponent(String(flightId))}`,
     retries: 0,
   });
-  console.log(`[SCHEDULE][DEBUG] ScheduleChangeAccept RESPONSE ←`, JSON.stringify(res)?.slice(0, 4000));
-  return res;
 }
 
 export default {

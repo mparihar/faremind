@@ -104,20 +104,15 @@ export async function backfillEticketsFromTripDetails(bookingId: string, mfRef: 
   let tripResult: any = null;
   let statusResult: any = null;
   // Version-fallback TripDetails (v3 errors on some bookings — see getTripDetailsResilient).
-  try { tripResult = await mystifly.getTripDetailsResilient(mfRef); } catch (e) { console.warn(`[TICKETS][DEBUG] TripDetails failed for ${mfRef}:`, (e as Error).message); }
+  try { tripResult = await mystifly.getTripDetailsResilient(mfRef); } catch (e) { console.warn(`[eticket-backfill] TripDetails failed for ${mfRef}:`, (e as Error).message); }
   try { statusResult = await mystifly.getTicketOrderStatus(mfRef); } catch { /* best-effort */ }
-
-  // Raw shape capture — so if extraction finds nothing we can see where the
-  // e-ticket actually lives and fix the field mapping.
-  console.log(`[TICKETS][DEBUG] TripDetails RAW for ${mfRef} ←`, JSON.stringify(tripResult)?.slice(0, 4000));
 
   const status = tripTicketStatus(tripResult);
   const nums = extractEticketNumbers(tripResult, statusResult);
-  console.log(`[TICKETS][DEBUG] ${mfRef}: provider TicketStatus="${status}" extracted eTickets=[${nums.join(', ')}] | ticketRows=${tickets.length} missing=${missing.length}`);
   if (nums.length === 0) {
     const pendingIssuance = isPendingIssuanceStatus(status);
     if (pendingIssuance) {
-      console.warn(`[TICKETS][DEBUG] ${mfRef}: ticket NOT issued (status="${status}") — no e-ticket yet; void/refund not applicable until ticketing completes.`);
+      console.warn(`[eticket-backfill] ${mfRef}: ticket not issued yet (status="${status}") — no e-ticket to persist.`);
     }
     return { updated: 0, ticketStatus: status, hasEticket: alreadyHad, pendingIssuance };
   }
@@ -131,6 +126,6 @@ export async function backfillEticketsFromTripDetails(bookingId: string, mfRef: 
     });
     updated++;
   }
-  console.log(`[TICKETS][DEBUG] ${mfRef}: backfilled ${updated} ticket row(s) with e-ticket numbers.`);
+  console.log(`[eticket-backfill] ${mfRef}: persisted ${updated} e-ticket number(s).`);
   return { updated, ticketStatus: status, hasEticket: true, pendingIssuance: false };
 }

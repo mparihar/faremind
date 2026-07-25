@@ -8,9 +8,9 @@
  *   - handling: Accept / Refund / ReIssue via /api/ScheduleChange, then refreshes
  *     TripDetails.
  *
- * The queue-item field names are parsed DEFENSIVELY (the sandbox queue was empty
- * when this was built) — every raw item is logged under [SCHEDULE][DEBUG] and
- * stored on ScheduleChange.queueItemJson so the parser can be tightened against
+ * Only items with ScheduleChangeType != 0 are real changes (GetQueue is a general
+ * worklist listing every ticketed booking with type 0). Each real item's raw JSON
+ * is stored on ScheduleChange.queueItemJson so the parser can be tightened against
  * the first real change. Detection never dequeues (read-only), and persistence is
  * idempotent per booking, so items re-appearing on the queue don't duplicate.
  */

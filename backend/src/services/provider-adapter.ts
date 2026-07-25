@@ -621,12 +621,6 @@ export class MystiflyAdapter implements IBookingProvider {
   }
 
   async getCancellationQuote(mfRef: string, options?: CancelQuoteOptions): Promise<CancelQuote> {
-    // ── DEBUG: surface the PTR passenger array (esp. eTicket presence) ──
-    const dbgPax = options?.passengers || [];
-    console.log(`[CANCEL][DEBUG] getCancellationQuote mfRef=${mfRef} ticketingStatus=${options?.ticketingStatus} bookingAmount=${options?.bookingAmount} passengers(${dbgPax.length})=`, JSON.stringify(dbgPax));
-    if (dbgPax.length && dbgPax.every((p: any) => !p.eTicket)) {
-      console.warn(`[CANCEL][DEBUG] ⚠️ NO eTicket on any passenger for ${mfRef} — Mystifly VoidQuote/RefundQuote will likely be rejected and fall back to non-live cancel.`);
-    }
     // ── Step 1: Get order details for original amount ──
     const order = await this.getOrder(mfRef);
     // Mystifly returns the order total AND all PTR penalties in the fare's NATIVE
