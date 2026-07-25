@@ -667,7 +667,24 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'fareSourceCode is required' });
       }
 
-      const result = await mystifly.getSeatMap(fareSourceCode);
+      // SeatMap requires a REVALIDATED FareSourceCode. A raw search FSC returns
+      // ERSEM014 "API version mismatch - Invalid FareSourceCode" / ERBUK018. So
+      // revalidate first and use the revalidated FSC.
+      let seatFsc = fareSourceCode;
+      try {
+        const reval = await mystifly.revalidateFlight(fareSourceCode);
+        const rd = reval?.Data || {};
+        const rf = rd?.PricedItineraries?.[0]?.FareSourceCode
+          || rd?.PricedItinerary?.AirItineraryPricingInfo?.FareSourceCode
+          || rd?.PricedItinerary?.FareSourceCode
+          || rd?.FareSourceCode;
+        if (rf) seatFsc = rf;
+        console.log(`[SEATMAP][DEBUG] pre-revalidate ok=${reval?.Success !== false} fscChanged=${seatFsc !== fareSourceCode}`);
+      } catch (e) {
+        console.warn('[SEATMAP][DEBUG] pre-revalidate failed:', (e as Error).message);
+      }
+
+      const result = await mystifly.getSeatMap(seatFsc);
 
       const error = result?.Data?.Error || result?.Error;
       if (error?.ErrorCode && error.ErrorCode !== '0') {
