@@ -99,7 +99,9 @@ export async function POST(request: NextRequest) {
     // ── Group seat request ───────────────────────────────────────────────────
     if (isGroupRequest(body)) {
       const { offerId, provider: prov, segmentIndex, passengerCount, areaPreference, seatTypePreference } = body as GroupSeatRequest;
-      const provider = prov || 'duffel';
+      // Route by offer-id shape (Duffel ids are prefixed off_/ord_); don't trust
+      // a possibly-defaulted 'duffel' for a Mystifly FareSourceCode.
+      const provider = /^(off_|ord_)/i.test(offerId || '') ? 'duffel' : (prov && prov !== 'duffel' ? prov : 'mystifly');
       const segIdx = segmentIndex ?? 0;
 
       if (!offerId || !passengerCount) {
@@ -155,7 +157,7 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    const provider = reqBody.provider || 'duffel';
+    const provider = /^(off_|ord_)/i.test(reqBody.offerId || '') ? 'duffel' : (reqBody.provider && reqBody.provider !== 'duffel' ? reqBody.provider : 'mystifly');
     const preference: SeatPreferenceInput = reqBody.preference;
     const segmentIndex = reqBody.segmentIndex ?? 0;
     const excludeSeats: string[] = reqBody.excludeSeats ?? [];

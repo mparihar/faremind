@@ -31,7 +31,7 @@ export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
 
   const offerId = searchParams.get('offer_id');
-  const provider = searchParams.get('provider') ?? 'duffel';
+  const providerParam = searchParams.get('provider') ?? 'duffel';
 
   // Without an offer ID, we can't check the provider — return empty
   if (!offerId) {
@@ -42,6 +42,12 @@ export async function GET(request: NextRequest) {
       error: 'No offer ID provided — meal availability cannot be determined.',
     });
   }
+
+  // Route by offer-id shape, not the (unreliable) provider param — the checkout
+  // defaults it to 'duffel' when the flight's provider is missing, which sent
+  // Mystifly FareSourceCodes to Duffel (404). Duffel ids are prefixed off_/ord_.
+  const isDuffelId = /^(off_|ord_)/i.test(offerId);
+  const provider = isDuffelId ? 'duffel' : (providerParam === 'duffel' ? 'mystifly' : providerParam);
 
   const cacheKey = `meals:${provider}:${offerId}`;
   const cached = getCached(cacheKey);
