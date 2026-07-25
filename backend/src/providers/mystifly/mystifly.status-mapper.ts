@@ -64,6 +64,9 @@ export function mapProviderBookingStatus(rawStatus: string | null | undefined): 
     case 'tkt-in process':
     case 'tkt in process':
     case 'in process':
+    case 'placed':
+    case 'ticket placed':
+    case 'order placed':
       return 'TICKETING_PENDING';
 
     // Booked but not ticketed
@@ -118,6 +121,9 @@ export function mapProviderTicketingStatus(rawStatus: string | null | undefined)
     case 'tkt-in process':
     case 'tkt in process':
     case 'in process':
+    case 'placed':
+    case 'ticket placed':
+    case 'order placed':
       return 'TICKETING_PENDING';
 
     case 'not booked':

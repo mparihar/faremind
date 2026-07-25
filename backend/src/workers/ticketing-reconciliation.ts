@@ -125,11 +125,21 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     const statusResult = await mystifly.getTicketOrderStatus(mfRef);
     rawStatusResponse = statusResult;
 
-    ticketStatus = statusResult?.Data?.TktStatus || 
-                   statusResult?.Data?.Status || 
+    // Real AirTicketOrderStatus shape:
+    //   Data.TicketOrderStatuses: [{ StatusCode, StatusMessage, StatusDateTime }]
+    // StatusMessage is "Placed" (order placed, not ticketed) → "Ticketed" once issued.
+    // Take the LATEST status entry. Keep legacy fields as fallbacks.
+    const orderStatuses = statusResult?.Data?.TicketOrderStatuses;
+    const latest = Array.isArray(orderStatuses) && orderStatuses.length
+      ? orderStatuses[orderStatuses.length - 1]
+      : null;
+    ticketStatus = latest?.StatusMessage ||
+                   statusResult?.Data?.TktStatus ||
+                   statusResult?.Data?.Status ||
                    statusResult?.Status || null;
-    ticketNumbers = statusResult?.Data?.TicketNumbers || 
+    ticketNumbers = statusResult?.Data?.TicketNumbers ||
                     statusResult?.Data?.ETicketNumbers || [];
+    console.log(`[TicketRecon] ${mfRef} AirTicketOrderStatus → "${ticketStatus ?? 'unknown'}"`);
   } catch (err) {
     console.warn(`[TicketRecon] AirTicketOrderStatus failed for ${mfRef}:`, (err as Error).message);
   }
