@@ -36,11 +36,27 @@ function extractMfRef(item: any): string | null {
   return null;
 }
 
-/** Best-effort human summary from a queue item. */
+/**
+ * Whether a queue item is an ACTUAL airline schedule change. Mystifly's GetQueue
+ * is a general post-ticketing worklist — it lists every ticketed booking with
+ * ScheduleChangeType=0 (no change). Only ScheduleChangeType != 0 is a real change.
+ */
+function isRealScheduleChange(item: any): boolean {
+  if (!item || typeof item !== 'object') return false;
+  const t = Number(item.ScheduleChangeType ?? item.scheduleChangeType);
+  return Number.isFinite(t) && t !== 0;
+}
+
+/** Best-effort human summary from a real schedule-change queue item. */
 function summarize(item: any): string {
   if (!item || typeof item !== 'object') return 'Airline schedule change — review required.';
-  const s = item.Subject || item.Message || item.Description || item.QueueName || item.Category || item.Type || item.MessageType;
-  return (typeof s === 'string' && s.trim()) ? s.trim() : 'Airline schedule change — review required.';
+  const explicit = item.Subject || item.Message || item.Description;
+  if (typeof explicit === 'string' && explicit.trim()) return explicit.trim();
+  const airline = item.airlineCode || item.AirlineCode || '';
+  const route = (item.origin && item.destination) ? `${item.origin} → ${item.destination}` : '';
+  const date = item.travelDate ? new Date(item.travelDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' }) : '';
+  const bits = [airline && `${airline}`, route, date && `(${date})`].filter(Boolean).join(' ');
+  return bits ? `Airline schedule change — ${bits}. Please review.` : 'Airline schedule change — review required.';
 }
 
 async function resolveBooking(mfRef: string) {
@@ -80,6 +96,10 @@ export async function runScheduleChangeDetection(): Promise<{ items: number; ups
       const mfRef = extractMfRef(item);
       if (!mfRef || seen.has(mfRef)) continue;
       seen.add(mfRef);
+
+      // Skip general queue entries that aren't real schedule changes
+      // (GetQueue lists every ticketed booking with ScheduleChangeType=0).
+      if (!isRealScheduleChange(item)) continue;
 
       const booking = await resolveBooking(mfRef);
       if (!booking) {
