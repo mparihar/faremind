@@ -427,6 +427,33 @@ export async function POST(req: NextRequest) {
     const frontendBaggageFees = pricing?.baggageFees ?? 0;
     const frontendTotal = pricing?.total ?? selectedFare?.totalPrice ?? 0;
 
+    // ── Agent wallet pre-gate ──────────────────────────────────────────
+    // For agent bookings, block BEFORE any revalidate/provider-book/capture if
+    // the wallet is disabled or has insufficient remaining balance. Prepaid
+    // credit control — never create a booking the wallet can't cover.
+    if (createdByRole === 'AGENT' && agentUserId) {
+      try {
+        const BACKEND = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
+        const res = await fetch(`${BACKEND}/api/agent-wallet/check`, {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ userId: agentUserId, amount: frontendTotal }),
+        });
+        const gate = await res.json().catch(() => ({ allowed: false }));
+        if (!gate.allowed) {
+          return NextResponse.json(
+            { error: gate.reason || 'Insufficient wallet balance.', errorCode: gate.code || 'WALLET_BLOCKED', remaining: gate.remaining },
+            { status: 402 },
+          );
+        }
+      } catch (e: any) {
+        console.error('[Checkout] Agent wallet gate error:', e?.message ?? e);
+        return NextResponse.json(
+          { error: 'Unable to verify agent wallet. Please try again or contact support.', errorCode: 'WALLET_CHECK_FAILED' },
+          { status: 502 },
+        );
+      }
+    }
+
     // ── Compute base fare from frontend pricing breakdown ──────────────
     // Prefer pricing.fareTotal which uses the exact all-passenger total
     // from the provider API (selectedFare.totalPrice). Avoid summing
@@ -2183,6 +2210,23 @@ export async function POST(req: NextRequest) {
 
     const { mb: masterBooking, pnrResult } = txResult;
     const confirmedAt = new Date().toISOString();
+
+    // ── Agent wallet: debit utilized amount now that the booking exists ──
+    // Increments utilized + counters and re-evaluates thresholds (low email /
+    // auto-disable). Fire-and-forget — must not fail a confirmed booking.
+    if (createdByRole === 'AGENT' && agentUserId) {
+      (async () => {
+        try {
+          const BACKEND = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
+          await fetch(`${BACKEND}/api/agent-wallet/record`, {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ userId: agentUserId, amount: totalAmount, bookingId: masterBooking.id }),
+          });
+        } catch (e: any) {
+          console.error('[Checkout] Agent wallet utilization update failed:', e?.message ?? e);
+        }
+      })();
+    }
 
     // Queue Mystifly ticketing reconciliation now that the booking row exists,
     // so the background worker can update this exact booking once the airline

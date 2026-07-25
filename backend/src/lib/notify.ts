@@ -33,6 +33,11 @@ export type NotifyEventType =
   | 'LIMIT_ORDER_MATCHED'
   | 'SCHEDULE_CHANGE'
   | 'SCHEDULE_CHANGE_ACCEPTED'
+  | 'WALLET_LOW'
+  | 'WALLET_DISABLED'
+  | 'WALLET_RECHARGED'
+  | 'WALLET_REACTIVATED'
+  | 'WALLET_ADJUSTED'
   | 'SUPPORT_MANUAL';
 
 interface NotifyPayload {

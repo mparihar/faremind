@@ -38,6 +38,7 @@ import voiceCommandPlugin   from './routes/voice-command';
 import adminNotificationsPlugin from './routes/admin-notifications';
 import mystiflyBookingPlugin from './routes/mystifly-booking';
 import mystiflyPtrPlugin     from './routes/mystifly-ptr';
+import agentWalletPlugin     from './routes/agent-wallet';
 import rankingPlugin         from './ranking/route';
 import limitOrdersPlugin     from './routes/limit-orders';
 import adminCancellationQueuePlugin from './routes/admin-cancellation-queue';
@@ -155,6 +156,7 @@ async function main() {
   fastify.register(adminNotificationsPlugin, { prefix: '/api/admin/notification-recipients' });
   fastify.register(mystiflyBookingPlugin,    { prefix: '/api/mystifly' });
   fastify.register(mystiflyPtrPlugin,         { prefix: '/api/mystifly-ptr' });
+  fastify.register(agentWalletPlugin,         { prefix: '/api/agent-wallet' });
   fastify.register(rankingPlugin,             { prefix: '/api/ranking' });
   fastify.register(limitOrdersPlugin,          { prefix: '/api/limit-orders' });
   fastify.register(adminCancellationQueuePlugin, { prefix: '/api/admin/cancellation-queue' });

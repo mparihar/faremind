@@ -61,10 +61,15 @@ export default function AgentDashboardPage() {
   const [stats, setStats] = useState<DashStats | null>(null);
   const [bookings, setBookings] = useState<AgentBooking[]>([]);
   const [loading, setLoading] = useState(true);
+  const [wallet, setWallet] = useState<{ walletAmount: number; utilized: number; remaining: number; currency: string; status: string } | null>(null);
 
   useEffect(() => {
     if (!sessionToken) return;
     fetchDashboard();
+    fetch('/api/agent/wallet', { headers: { Authorization: `Bearer ${sessionToken}` } })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => d && setWallet(d))
+      .catch(() => {});
   }, [sessionToken]);
 
   async function fetchDashboard() {
@@ -120,6 +125,32 @@ export default function AgentDashboardPage() {
           </button>
         </div>
       </div>
+
+      {/* Agent Wallet */}
+      {wallet && (
+        <div className={cn(
+          'mb-8 rounded-2xl border p-5 flex flex-wrap items-center justify-between gap-4',
+          wallet.status === 'DISABLED' ? 'border-red-500/30 bg-red-500/[0.05]'
+            : wallet.status === 'LOW' ? 'border-amber-500/30 bg-amber-500/[0.05]'
+            : 'border-[#1ABC9C]/25 bg-[#1ABC9C]/[0.05]',
+        )}>
+          <div>
+            <p className="text-[10px] uppercase tracking-widest text-slate-400 font-bold">Agent Wallet</p>
+            <p className={cn('text-3xl font-black mt-1',
+              wallet.status === 'DISABLED' ? 'text-red-400' : wallet.status === 'LOW' ? 'text-amber-400' : 'text-[#1ABC9C]')}>
+              {new Intl.NumberFormat('en-US', { style: 'currency', currency: wallet.currency || 'USD', maximumFractionDigits: 0 }).format(wallet.remaining)}
+            </p>
+            <p className="text-xs text-slate-500 mt-0.5">remaining of {new Intl.NumberFormat('en-US', { style: 'currency', currency: wallet.currency || 'USD', maximumFractionDigits: 0 }).format(wallet.walletAmount)} · utilized {new Intl.NumberFormat('en-US', { style: 'currency', currency: wallet.currency || 'USD', maximumFractionDigits: 0 }).format(wallet.utilized)}</p>
+          </div>
+          {wallet.status !== 'HEALTHY' && (
+            <p className={cn('text-xs font-semibold max-w-xs', wallet.status === 'DISABLED' ? 'text-red-400' : 'text-amber-400')}>
+              {wallet.status === 'DISABLED'
+                ? 'Your wallet is below the minimum threshold. Please recharge to continue booking.'
+                : 'Low wallet balance — please recharge soon to avoid interruption.'}
+            </p>
+          )}
+        </div>
+      )}
 
       {/* Stats */}
       {loading ? (

@@ -42,6 +42,7 @@ model User {
   paymentMethods  PaymentMethod[]
   servicePayments ServicePayment[]
   limitOrders     LimitOrder[]
+  agentWallet     AgentWallet?
 
   @@map("users")
 }
@@ -68,6 +69,56 @@ model Session {
   @@index([token])
   @@index([expiresAt])
   @@map("sessions")
+}
+
+// ── Agent Wallet (prepaid credit control) ─────────────────────────────────────
+// One wallet per FAREMIND_AGENT. remaining = walletAmount - utilizedAmount.
+// Auto-disable flips the owning User.isActive (the single access gate enforced at
+// login, withAgent, and booking). Policy scalars live in SystemConfig
+// (wallet_default_balance / wallet_low_threshold / wallet_disable_threshold /
+// wallet_currency). Every balance change is recorded in AgentWalletHistory.
+model AgentWallet {
+  id                String   @id @default(cuid())
+  userId            String   @unique @map("user_id")
+  walletAmount      Decimal  @default(0) @map("wallet_amount") @db.Decimal(12, 2)
+  utilizedAmount    Decimal  @default(0) @map("utilized_amount") @db.Decimal(12, 2)
+  currency          String   @default("USD")
+  totalBookings     Int      @default(0) @map("total_bookings")
+  totalBookingValue Decimal  @default(0) @map("total_booking_value") @db.Decimal(12, 2)
+  status            String   @default("HEALTHY") // HEALTHY | LOW | DISABLED
+  lowNotified       Boolean  @default(false) @map("low_notified")
+  disableNotified   Boolean  @default(false) @map("disable_notified")
+  lastRechargeAt    DateTime? @map("last_recharge_at")
+  lastNotificationAt DateTime? @map("last_notification_at")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  user    User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  history AgentWalletHistory[]
+
+  @@index([status])
+  @@map("agent_wallets")
+}
+
+model AgentWalletHistory {
+  id             String   @id @default(cuid())
+  walletId       String   @map("wallet_id")
+  userId         String   @map("user_id")
+  eventType      String   @map("event_type") // RECHARGE | MANUAL_ADJUST | BOOKING | REFUND | CANCELLATION | ADMIN_UPDATE | AUTO_DISABLE | AUTO_ENABLE | RESET_UTILIZED
+  amount         Decimal  @db.Decimal(12, 2)
+  remainingBefore Decimal @map("remaining_before") @db.Decimal(12, 2)
+  remainingAfter  Decimal @map("remaining_after") @db.Decimal(12, 2)
+  reason         String?  @db.Text
+  actor          String?  // admin email, agent email, or "SYSTEM"
+  bookingId      String?  @map("booking_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  wallet AgentWallet @relation(fields: [walletId], references: [id], onDelete: Cascade)
+
+  @@index([walletId])
+  @@index([userId])
+  @@index([eventType])
+  @@map("agent_wallet_history")
 }
 
 model OtpCode {

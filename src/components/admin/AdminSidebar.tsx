@@ -7,7 +7,7 @@ import {
   LayoutDashboard, BookOpen, Users2, DollarSign,
   ScrollText, Bell, Settings, LogOut, Shield, ChevronRight,
   Brain, UserRoundSearch, AlertTriangle, Headset, Mail, MessageCircle,
-  Activity, Plug2, Tag, BarChart3, ToggleRight, CreditCard, BookMarked, Target, RotateCcw,
+  Activity, Plug2, Tag, BarChart3, ToggleRight, CreditCard, BookMarked, Target, RotateCcw, Wallet,
 } from 'lucide-react';
 import type { AdminRole } from '@/store/useAdminStore';
 
@@ -31,6 +31,7 @@ const NAV: NavItem[] = [
   { href: '/admin/finance',              label: 'Finance',              icon: DollarSign, minRole: 'FINANCE' },
   { href: '/admin/finance/payments',     label: 'Payments',             icon: CreditCard, minRole: 'FINANCE' },
   { href: '/admin/finance/service-payments', label: 'Service Payments', icon: CreditCard, minRole: 'SUPPORT' },
+  { href: '/admin/wallets',              label: 'Agent Wallets',        icon: Wallet, minRole: 'SUPPORT' },
   { href: '/admin/finance/ledger',       label: 'Ledger',               icon: BookMarked, minRole: 'FINANCE' },
   { href: '/admin/reports',              label: 'Reports',              icon: BarChart3, minRole: 'FINANCE' },
   { href: '/admin/commercial-settings',  label: 'Commercial Settings',  icon: DollarSign, minRole: 'OPS_ADMIN' },

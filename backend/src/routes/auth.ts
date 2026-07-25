@@ -191,6 +191,19 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: `Invalid OTP. ${left} attempt${left !== 1 ? 's' : ''} remaining.` });
       }
 
+      // Block disabled accounts BEFORE issuing a session (e.g. an agent whose
+      // wallet fell below the disable threshold, or an admin-suspended user).
+      const existing = await prisma.user.findUnique({ where: { email: norm }, select: { isActive: true, role: true } });
+      if (existing && !existing.isActive) {
+        const isAgent = existing.role === 'FAREMIND_AGENT';
+        return reply.code(403).send({
+          error: isAgent
+            ? 'Your agent account is disabled because your wallet balance is below the minimum threshold. Please recharge your wallet to reactivate, or contact the administrator.'
+            : 'Your account has been disabled. Please contact support.',
+          code: 'ACCOUNT_DISABLED',
+        });
+      }
+
       // Mark used
       await prisma.otpCode.update({ where: { id: record.id }, data: { isUsed: true } });
 
@@ -261,6 +274,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       });
 
       if (!session) return reply.send({ valid: false });
+
+      // ── Disabled mid-session (e.g. wallet auto-disable) → log out ────
+      if (!session.user.isActive) {
+        await prisma.session.delete({ where: { id: session.id } }).catch(() => {});
+        return reply.send({ valid: false, reason: 'disabled' });
+      }
 
       // ── Server-side inactivity check (15 minutes) ────────────────────
       const INACTIVITY_TIMEOUT_MS = 15 * 60 * 1000;
