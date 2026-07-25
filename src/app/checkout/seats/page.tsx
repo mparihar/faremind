@@ -640,7 +640,11 @@ export default function SeatsPage() {
     if (!selectedFare?.offerId) { setLoadingMap(false); return; }
 
     setLoadingMap(true);
-    fetch(`/api/seats/seat-map?offer_id=${encodeURIComponent(selectedFare.offerId)}&provider=${encodeURIComponent(sourceFlight?.provider ?? 'duffel')}`)
+    // Derive provider from the offer-id shape when the flight's provider field is
+    // missing — Duffel ids are prefixed off_/ord_; a Mystifly FSC is unprefixed.
+    const seatProvider = sourceFlight?.provider
+      || (/^(off_|ord_)/i.test(selectedFare.offerId) ? 'duffel' : 'mystifly');
+    fetch(`/api/seats/seat-map?offer_id=${encodeURIComponent(selectedFare.offerId)}&provider=${encodeURIComponent(seatProvider)}`)
       .then(r => r.json())
       .then((data: { seatMaps: SegmentSeatMap[]; seatSelectionSupported?: boolean; wheelchairSupported?: boolean; error?: string }) => {
         setSeatMaps(data.seatMaps ?? []);

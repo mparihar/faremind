@@ -238,9 +238,17 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: 'offer_id or order_id required' }, { status: 400 });
   }
 
+  // Route by offer-id SHAPE, not the (unreliable) provider param — the checkout
+  // defaults provider to 'duffel' when the flight's provider field is missing,
+  // which sent Mystifly FareSourceCodes to Duffel (404). Duffel ids are always
+  // prefixed off_/ord_; a Mystifly FSC / MFRef is a long unprefixed token.
+  const rawId = offerId || orderId || '';
+  const isDuffelId = /^(off_|ord_)/i.test(rawId);
+  const useMystifly = provider === 'mystifly' || (!isDuffelId && rawId.length > 20);
+
   // ── Mystifly: call the live seat-map API (fires backend [SEATMAP][DEBUG] +
   // [Mystifly][SeatMapDiag]) and surface the raw response for shape capture. ──
-  if (provider === 'mystifly') {
+  if (useMystifly) {
     const fsc = offerId || orderId;
     if (!fsc) {
       return NextResponse.json({ seatMaps: [], seatSelectionSupported: false, wheelchairSupported: false, cached: false });
@@ -279,8 +287,9 @@ export async function GET(request: NextRequest) {
     }
   }
 
-  // Seat maps for other non-Duffel providers aren't supported.
-  if (provider !== 'duffel') {
+  // Only genuine Duffel ids (off_/ord_) reach the Duffel seat-map — never send a
+  // Mystifly FareSourceCode to Duffel (that caused the 404s).
+  if (!isDuffelId) {
     return NextResponse.json({
       seatMaps: [],
       seatSelectionSupported: false,
