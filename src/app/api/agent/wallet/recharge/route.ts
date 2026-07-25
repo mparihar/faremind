@@ -8,7 +8,7 @@
  * restore their wallet (the only surface they can reach while disabled).
  *
  * Money is credited to the wallet ONLY after the Stripe webhook confirms the
- * charge (see lib/payments/fulfill.ts). This route never credits the wallet.
+ * charge (backend: services/payment-fulfill.ts). This route never credits the wallet.
  * Save-card and enable-auto-recharge are SEPARATE, explicit consents.
  */
 import { NextResponse } from 'next/server';

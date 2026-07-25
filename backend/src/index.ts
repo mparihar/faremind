@@ -39,6 +39,8 @@ import adminNotificationsPlugin from './routes/admin-notifications';
 import mystiflyBookingPlugin from './routes/mystifly-booking';
 import mystiflyPtrPlugin     from './routes/mystifly-ptr';
 import agentWalletPlugin     from './routes/agent-wallet';
+import stripeWebhookPlugin   from './routes/stripe-webhook';
+import paymentsPlugin        from './routes/payments';
 import rankingPlugin         from './ranking/route';
 import limitOrdersPlugin     from './routes/limit-orders';
 import adminCancellationQueuePlugin from './routes/admin-cancellation-queue';
@@ -157,6 +159,8 @@ async function main() {
   fastify.register(mystiflyBookingPlugin,    { prefix: '/api/mystifly' });
   fastify.register(mystiflyPtrPlugin,         { prefix: '/api/mystifly-ptr' });
   fastify.register(agentWalletPlugin,         { prefix: '/api/agent-wallet' });
+  fastify.register(stripeWebhookPlugin,       { prefix: '/api/stripe/webhook' });
+  fastify.register(paymentsPlugin,            { prefix: '/api/payments' });
   fastify.register(rankingPlugin,             { prefix: '/api/ranking' });
   fastify.register(limitOrdersPlugin,          { prefix: '/api/limit-orders' });
   fastify.register(adminCancellationQueuePlugin, { prefix: '/api/admin/cancellation-queue' });
