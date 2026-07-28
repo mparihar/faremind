@@ -2236,18 +2236,20 @@ export async function POST(req: NextRequest) {
     // so the background worker can update this exact booking once the airline
     // finishes issuing the ticket. (Only when the ticket wasn't confirmed inline.)
     if ((mystiflyBookingResult as any)?.ticketingStatus === 'TICKETING_PENDING') {
-      try {
-        const { queueForReconciliation } = await import('@/../../backend/src/workers/ticketing-reconciliation');
-        queueForReconciliation({
+      // Enqueue over HTTP — a Next route cannot import backend worker code across
+      // the bundle boundary (that silent failure is why reconciliation records
+      // were never being created). Fire-and-forget; must not fail a confirmed booking.
+      const BACKEND = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
+      fetch(`${BACKEND}/api/ticketing/queue`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
           bookingId: masterBooking.id,
           providerUniqueId: mystiflyBookingResult!.uniqueId,
           fareSourceCode: (mystiflyBookingResult as any)?.reconcileFsc,
-        }).catch((err: any) => {
-          console.error(`[Mystifly] Failed to queue reconciliation: ${err.message}`);
-        });
-      } catch (importErr: any) {
-        console.error(`[Mystifly] Failed to import reconciliation worker: ${importErr.message}`);
-      }
+        }),
+      })
+        .then(async (r) => { if (!r.ok) console.error(`[Mystifly] queue-reconciliation HTTP ${r.status}: ${await r.text().catch(() => '')}`); })
+        .catch((err: any) => console.error(`[Mystifly] Failed to queue reconciliation: ${err.message}`));
     }
 
     // ── ERBUK082 support-queue tracking ──────────────────────────────────────
