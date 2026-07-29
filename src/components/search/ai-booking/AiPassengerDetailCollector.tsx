@@ -208,11 +208,19 @@ export default function AiPassengerDetailCollector({
 
   const currentField = fields[currentFieldIdx] as keyof AiPassengerData | undefined;
   const isAllDone = currentFieldIdx >= fields.length;
+  // Nationality & Passport Country are picked from a dropdown (not free text).
+  const isCountryField = currentField === 'nationality' || currentField === 'passportCountry';
 
   useEffect(() => {
     if (inputRef.current && !isAllDone) {
       inputRef.current.focus();
     }
+    // Convenience: default Passport Country to the Nationality already chosen.
+    if (currentField === 'passportCountry' && !inputValue) {
+      const nat = completedFields.get('nationality');
+      if (nat) setInputValue(nat);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFieldIdx, isAllDone]);
 
   const handleSubmitField = () => {
@@ -351,7 +359,7 @@ export default function AiPassengerDetailCollector({
         )}
         {(currentField === 'nationality' || currentField === 'passportCountry') && (
           <p className="text-[13px] text-white/50 mt-0.5">
-            e.g. India, United States, Germany…
+            Choose from the list
           </p>
         )}
         {(currentField === 'dateOfBirth' || currentField === 'passportExpiry') && (
@@ -373,20 +381,34 @@ export default function AiPassengerDetailCollector({
             <ChevronLeft className="w-4 h-4" />
           </button>
         )}
-        <input
-          ref={inputRef}
-          type={
-            currentField === 'email' ? 'email' :
-            currentField === 'phone' ? 'tel' :
-            (currentField === 'dateOfBirth' || currentField === 'passportExpiry') ? 'date' :
-            'text'
-          }
-          value={inputValue}
-          onChange={e => { setInputValue(e.target.value); setError(null); }}
-          onKeyDown={handleKeyDown}
-          placeholder={PASSENGER_FIELD_LABELS[currentField!]}
-          className="flex-1 px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 text-[15px] placeholder-slate-400 focus:outline-none focus:border-[#1ABC9C]/50 transition-colors min-w-0"
-        />
+        {isCountryField ? (
+          <select
+            value={inputValue}
+            onChange={e => { setInputValue(e.target.value); setError(null); }}
+            onKeyDown={handleKeyDown}
+            className="flex-1 px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 text-[15px] focus:outline-none focus:border-[#1ABC9C]/50 transition-colors min-w-0"
+          >
+            <option value="">Select {PASSENGER_FIELD_LABELS[currentField!].split(' (')[0]}…</option>
+            {COUNTRIES.map(c => (
+              <option key={c} value={c}>{c}</option>
+            ))}
+          </select>
+        ) : (
+          <input
+            ref={inputRef}
+            type={
+              currentField === 'email' ? 'email' :
+              currentField === 'phone' ? 'tel' :
+              (currentField === 'dateOfBirth' || currentField === 'passportExpiry') ? 'date' :
+              'text'
+            }
+            value={inputValue}
+            onChange={e => { setInputValue(e.target.value); setError(null); }}
+            onKeyDown={handleKeyDown}
+            placeholder={PASSENGER_FIELD_LABELS[currentField!]}
+            className="flex-1 px-3 py-2 rounded-xl bg-white border border-slate-200 text-slate-900 text-[15px] placeholder-slate-400 focus:outline-none focus:border-[#1ABC9C]/50 transition-colors min-w-0"
+          />
+        )}
         <button
           onClick={handleSubmitField}
           disabled={!inputValue.trim() && currentField !== 'middleName'}
@@ -403,8 +425,8 @@ export default function AiPassengerDetailCollector({
             Skip
           </button>
         )}
-        {/* Animated voice button */}
-        {voiceSupported && (
+        {/* Animated voice button (not for dropdown/country fields) */}
+        {voiceSupported && !isCountryField && (
           <button
             onClick={async () => {
               if (isRecording) {
