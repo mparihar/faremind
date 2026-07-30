@@ -2230,6 +2230,36 @@ export async function POST(req: NextRequest) {
           console.error('[Checkout] Agent wallet utilization update failed:', e?.message ?? e);
         }
       })();
+    } else {
+      // Not an explicit agent-console booking — but if the BOOKER is a FAREMIND_AGENT
+      // (booked via the public/AI-bot flow with their own identity/email), still
+      // attribute it to that agent and count it toward their wallet usage + totals.
+      // No blocking pre-gate here, so public checkout is never blocked.
+      (async () => {
+        try {
+          let resolvedAgentId: string | null = null;
+          if (masterBooking.userId) {
+            const u = await prisma.user.findUnique({ where: { id: masterBooking.userId }, select: { role: true } });
+            if (u?.role === 'FAREMIND_AGENT') resolvedAgentId = masterBooking.userId;
+          }
+          if (!resolvedAgentId && customerEmail) {
+            const u = await prisma.user.findFirst({ where: { email: { equals: customerEmail, mode: 'insensitive' }, role: 'FAREMIND_AGENT' }, select: { id: true } });
+            if (u) resolvedAgentId = u.id;
+          }
+          if (resolvedAgentId) {
+            await prisma.masterBooking.update({ where: { id: masterBooking.id }, data: { agentUserId: resolvedAgentId } }).catch(() => {});
+            const BACKEND = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
+            await fetch(`${BACKEND}/api/agent-wallet/record`, {
+              method: 'POST', headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({ userId: resolvedAgentId, amount: totalAmount, bookingId: masterBooking.id }),
+            });
+            const { maybeAutoRecharge } = await import('@/lib/payments/auto-recharge');
+            await maybeAutoRecharge(resolvedAgentId).catch(() => {});
+          }
+        } catch (e: any) {
+          console.error('[Checkout] Agent-owned public booking wallet attribution failed:', e?.message ?? e);
+        }
+      })();
     }
 
     // Queue Mystifly ticketing reconciliation now that the booking row exists,
