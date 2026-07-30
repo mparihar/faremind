@@ -11,8 +11,24 @@
  */
 import { FastifyPluginAsync } from 'fastify';
 import { queueForReconciliation } from '../workers/ticketing-reconciliation';
+import * as mystifly from '../services/mystifly';
 
 const ticketingPlugin: FastifyPluginAsync = async (fastify) => {
+  // Diagnostic: live AirTicketOrderStatus + TripDetails for an MFRef (staff/ops).
+  fastify.post('/trip-details', async (request, reply) => {
+    const { mfRef } = (request.body || {}) as { mfRef?: string };
+    if (!mfRef) return reply.code(400).send({ error: 'mfRef is required' });
+    try {
+      const [ticketOrderStatus, tripDetails] = await Promise.all([
+        mystifly.getTicketOrderStatus(mfRef).catch((e: any) => ({ error: e?.message || 'AirTicketOrderStatus failed' })),
+        mystifly.getTripDetailsResilient(mfRef).catch((e: any) => ({ error: e?.message || 'TripDetails failed' })),
+      ]);
+      return { mfRef, ticketOrderStatus, tripDetails };
+    } catch (e: any) {
+      return reply.code(502).send({ error: e?.message || 'Provider lookup failed' });
+    }
+  });
+
   fastify.post('/queue', async (request, reply) => {
     const { bookingId, providerUniqueId, fareSourceCode } = (request.body || {}) as {
       bookingId?: string; providerUniqueId?: string; fareSourceCode?: string;

@@ -22,6 +22,7 @@ export {
   getNextPollIntervalMs,
   MAX_AUTO_POLLS,
   SLOW_ALERT_POLLS,
+  SLOW_ALERT_AGE_MS,
   MAX_POLL_AGE_MS,
   type NormalizedBookingStatus,
   type NormalizedTicketingStatus,

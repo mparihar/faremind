@@ -16,7 +16,7 @@
 import { runTicketingReconciliation } from './ticketing-reconciliation';
 
 let schedulerInterval: ReturnType<typeof setInterval> | null = null;
-const DEFAULT_INTERVAL_MS = 30 * 1000; // 30 seconds
+const DEFAULT_INTERVAL_MS = 20 * 1000; // 20 seconds — poll TripDetails every 20s
 
 export function startTicketingReconciliationScheduler(intervalMs: number = DEFAULT_INTERVAL_MS): void {
   if (schedulerInterval) {

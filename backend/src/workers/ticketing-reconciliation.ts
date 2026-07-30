@@ -25,10 +25,9 @@ import { executeQueuedCancellation } from '../services/cancellation-orchestrator
 import {
   mapProviderBookingStatus,
   mapProviderTicketingStatus,
-  isTerminalStatus,
   shouldPollStatus,
   getNextPollIntervalMs,
-  SLOW_ALERT_POLLS,
+  SLOW_ALERT_AGE_MS,
   MAX_POLL_AGE_MS,
 } from '../providers/mystifly';
 
@@ -170,21 +169,18 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     console.warn(`[TicketRecon] AirTicketOrderStatus failed for ${mfRef}:`, (err as Error).message);
   }
 
-  // ── Step 2: If ticketed or failed, confirm with TripDetails ──
+  // ── Step 2: Fetch TripDetails on EVERY poll (persisted below) ──
+  // Version-fallback TripDetails (v3 errors on some bookings) + the corrected
+  // extraction path (Data.TripDetailsResult.TravelItinerary.PassengerInfos[]).
   let tripDetailsResponse: any = null;
-
-  if (ticketStatus && isTerminalStatus(ticketStatus)) {
-    try {
-      // Version-fallback TripDetails (v3 errors on some bookings) + the corrected
-      // extraction path (Data.TripDetailsResult.TravelItinerary.PassengerInfos[]).
-      const tripResult = await mystifly.getTripDetailsResilient(mfRef);
-      tripDetailsResponse = tripResult;
-      for (const num of extractEticketNumbers(tripResult, rawStatusResponse)) {
-        if (!ticketNumbers.includes(num)) ticketNumbers.push(num);
-      }
-    } catch (err) {
-      console.warn(`[TicketRecon] TripDetails failed for ${mfRef}:`, (err as Error).message);
+  try {
+    const tripResult = await mystifly.getTripDetailsResilient(mfRef);
+    tripDetailsResponse = tripResult;
+    for (const num of extractEticketNumbers(tripResult, rawStatusResponse)) {
+      if (!ticketNumbers.includes(num)) ticketNumbers.push(num);
     }
+  } catch (err) {
+    console.warn(`[TicketRecon] TripDetails failed for ${mfRef}:`, (err as Error).message);
   }
 
   // ── Step 3: Determine outcome ──
@@ -330,6 +326,7 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
         lastProviderStatus: ticketStatus,
         lastProviderResponse: rawStatusResponse,
         escalatedAt: record.escalatedAt ?? now,
+        tripDetailsResponse: tripDetailsResponse,
         resolutionNotes: `Auto-polling exhausted after ~${Math.round(bookingAgeMs / 3_600_000)}h (${newPollCount} polls). Provider still returning: ${ticketStatus}. Manual review required.`,
       },
     });
@@ -352,7 +349,7 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
   }
 
   // ── Case C2: Slow alert (once) — flag ops it's taking a while, but KEEP polling ──
-  const flagSlowNow = newPollCount >= SLOW_ALERT_POLLS && !record.escalatedAt;
+  const flagSlowNow = bookingAgeMs >= SLOW_ALERT_AGE_MS && !record.escalatedAt;
   if (flagSlowNow) {
     await prisma.bookingEvent.create({
       data: {
@@ -371,7 +368,7 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     }).catch(() => {});
   }
 
-  // ── Case D: Schedule next poll (extended backoff); keep the record active ──
+  // ── Case D: Schedule next poll (fixed 20s); keep the record active ──
   const nextInterval = getNextPollIntervalMs(newPollCount);
   const nextPollAt = new Date(now.getTime() + nextInterval);
 
@@ -384,6 +381,7 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
       nextPollAt: nextPollAt,
       lastProviderStatus: ticketStatus,
       lastProviderResponse: rawStatusResponse,
+      tripDetailsResponse: tripDetailsResponse, // persist every poll for visibility
       ...(flagSlowNow ? { escalatedAt: now } : {}), // one-time slow flag (dedupes the alert)
     },
   });
