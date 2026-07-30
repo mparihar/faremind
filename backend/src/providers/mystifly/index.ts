@@ -21,6 +21,8 @@ export {
   shouldPollStatus,
   getNextPollIntervalMs,
   MAX_AUTO_POLLS,
+  SLOW_ALERT_POLLS,
+  MAX_POLL_AGE_MS,
   type NormalizedBookingStatus,
   type NormalizedTicketingStatus,
 } from './mystifly.status-mapper';

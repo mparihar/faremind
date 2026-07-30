@@ -158,8 +158,10 @@ export function shouldPollStatus(rawStatus: string | null | undefined): boolean 
 }
 
 /**
- * Gets the recommended next poll interval based on poll count.
- * Follows escalating backoff: 0s, 15s, 30s, 60s, 2m, 5m, 10m
+ * Recommended next poll interval based on poll count. Escalating backoff, then a
+ * long tail — airline ticketing can take hours, so instead of giving up we keep
+ * polling every 30 minutes until the max poll age (see MAX_POLL_AGE_MS).
+ * Ramp: 0s, 15s, 30s, 60s, 2m, 5m, 10m, 15m, 30m, then 30m thereafter.
  */
 export function getNextPollIntervalMs(pollCount: number): number {
   const intervals = [
@@ -170,16 +172,24 @@ export function getNextPollIntervalMs(pollCount: number): number {
     120_000,      // 2 minutes
     300_000,      // 5 minutes
     600_000,      // 10 minutes
+    900_000,      // 15 minutes
+    1_800_000,    // 30 minutes
   ];
-
-  if (pollCount >= intervals.length) {
-    return -1; // Signal to escalate to manual review
-  }
-
-  return intervals[pollCount];
+  return pollCount < intervals.length ? intervals[pollCount] : 1_800_000; // long tail: every 30 min
 }
 
 /**
- * Maximum number of automatic polls before escalating to manual review.
+ * Poll count at which we flag ops that ticketing is taking longer than usual —
+ * we fire a "still pending" notice ONCE but KEEP polling (no stop).
  */
+export const SLOW_ALERT_POLLS = 7;
+
+/**
+ * Stop auto-polling only after a booking has been pending this long. Until then
+ * the cron keeps polling (and auto-re-queues any record that was escalated under
+ * the old short-window logic). 24h covers slow carrier ticketing.
+ */
+export const MAX_POLL_AGE_MS = 24 * 60 * 60 * 1000;
+
+/** @deprecated Superseded by SLOW_ALERT_POLLS + MAX_POLL_AGE_MS. Kept for compatibility. */
 export const MAX_AUTO_POLLS = 7;

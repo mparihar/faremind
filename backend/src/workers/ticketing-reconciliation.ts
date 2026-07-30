@@ -28,7 +28,8 @@ import {
   isTerminalStatus,
   shouldPollStatus,
   getNextPollIntervalMs,
-  MAX_AUTO_POLLS,
+  SLOW_ALERT_POLLS,
+  MAX_POLL_AGE_MS,
 } from '../providers/mystifly';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
@@ -53,6 +54,31 @@ interface ReconciliationResult {
 export async function runTicketingReconciliation(): Promise<ReconciliationResult[]> {
   const now = new Date();
   const results: ReconciliationResult[] = [];
+
+  // ── Auto-re-queue escalated records that can still ticket ──
+  // Any record ESCALATED (including under the old ~18-min window) whose booking
+  // is still awaiting ticketing and is within MAX_POLL_AGE_MS resumes polling.
+  // Bounded by age (createdAt >= threshold) so it can never loop forever.
+  try {
+    const requeueThreshold = new Date(now.getTime() - MAX_POLL_AGE_MS);
+    const escalated = await prisma.ticketingReconciliation.findMany({
+      where: { status: 'ESCALATED', createdAt: { gte: requeueThreshold } },
+      select: { id: true, booking: { select: { ticketingStatus: true } } },
+      take: 50,
+    });
+    const requeueIds = escalated
+      .filter((r) => r.booking && r.booking.ticketingStatus === 'TICKETING_PENDING')
+      .map((r) => r.id);
+    if (requeueIds.length) {
+      await prisma.ticketingReconciliation.updateMany({
+        where: { id: { in: requeueIds } },
+        data: { status: 'PENDING', nextPollAt: now },
+      });
+      console.log(`[TicketRecon] Re-queued ${requeueIds.length} escalated record(s) still awaiting ticketing.`);
+    }
+  } catch (err) {
+    console.error('[TicketRecon] Re-queue step failed:', (err as Error).message);
+  }
 
   // Find records that are due for polling
   const pendingRecords = await prisma.ticketingReconciliation.findMany({
@@ -287,8 +313,14 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     };
   }
 
-  // ── Case C: Still pending — check if we should escalate ──
-  if (newPollCount >= MAX_AUTO_POLLS) {
+  // ── Case C: Still pending ──
+  // We keep polling on an extended backoff (minutes → 30-min tail) for up to
+  // MAX_POLL_AGE_MS, because carrier ticketing can take hours. We only give up
+  // (final escalation → stop) once the booking has been pending that long.
+  const bookingAgeMs = now.getTime() - new Date(record.createdAt).getTime();
+
+  // ── Case C1: Final give-up — stop auto-polling after the max window ──
+  if (bookingAgeMs >= MAX_POLL_AGE_MS) {
     await prisma.ticketingReconciliation.update({
       where: { id: record.id },
       data: {
@@ -297,39 +329,49 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
         lastPollAt: now,
         lastProviderStatus: ticketStatus,
         lastProviderResponse: rawStatusResponse,
-        escalatedAt: now,
-        resolutionNotes: `Auto-escalated after ${newPollCount} polls. Provider still returning: ${ticketStatus}`,
+        escalatedAt: record.escalatedAt ?? now,
+        resolutionNotes: `Auto-polling exhausted after ~${Math.round(bookingAgeMs / 3_600_000)}h (${newPollCount} polls). Provider still returning: ${ticketStatus}. Manual review required.`,
       },
     });
-
     await prisma.bookingEvent.create({
       data: {
         bookingId: record.bookingId,
         eventType: 'TICKETING_ESCALATED',
         eventTitle: 'Ticketing Escalated',
-        eventDescription: `Ticketing still pending after ${newPollCount} automated polls. Escalated for manual review. Last provider status: ${ticketStatus}`,
+        eventDescription: `Ticketing still pending after ~${Math.round(bookingAgeMs / 3_600_000)}h of automated polling (${newPollCount} polls). Escalated for manual review. Last provider status: ${ticketStatus}`,
+        actorType: 'system',
+        actorName: 'Ticketing Reconciliation',
+        payloadJson: { providerStatus: ticketStatus, pollCount: newPollCount, ageHours: Math.round(bookingAgeMs / 3_600_000) },
+      },
+    }).catch(() => {});
+    await updateErbukTicket(record.bookingId, {
+      status: 'ESCALATED',
+      note: `Ticketing still pending after ~${Math.round(bookingAgeMs / 3_600_000)}h of automated polling (last provider status: ${ticketStatus}). Escalated for manual review.`,
+    });
+    return { id: record.id, bookingId: record.bookingId, mfRef, previousStatus: record.status, newStatus: 'ESCALATED', action: 'ESCALATED' };
+  }
+
+  // ── Case C2: Slow alert (once) — flag ops it's taking a while, but KEEP polling ──
+  const flagSlowNow = newPollCount >= SLOW_ALERT_POLLS && !record.escalatedAt;
+  if (flagSlowNow) {
+    await prisma.bookingEvent.create({
+      data: {
+        bookingId: record.bookingId,
+        eventType: 'TICKETING_SLOW',
+        eventTitle: 'Ticketing taking longer than usual',
+        eventDescription: `Ticket not yet issued after ${newPollCount} polls (provider status: ${ticketStatus}). Still auto-polling — no action needed unless it persists.`,
         actorType: 'system',
         actorName: 'Ticketing Reconciliation',
         payloadJson: { providerStatus: ticketStatus, pollCount: newPollCount },
       },
-    });
-
+    }).catch(() => {});
     await updateErbukTicket(record.bookingId, {
-      status: 'ESCALATED',
-      note: `Ticketing still pending after ${newPollCount} automated polls (last provider status: ${ticketStatus}). Escalated for manual review.`,
-    });
-
-    return {
-      id: record.id,
-      bookingId: record.bookingId,
-      mfRef,
-      previousStatus: record.status,
-      newStatus: 'ESCALATED',
-      action: 'ESCALATED',
-    };
+      status: 'IN_PROGRESS',
+      note: `Ticketing still pending after ${newPollCount} polls (last provider status: ${ticketStatus}). The system continues to auto-poll the airline; no manual action needed yet.`,
+    }).catch(() => {});
   }
 
-  // ── Case D: Schedule next poll ──
+  // ── Case D: Schedule next poll (extended backoff); keep the record active ──
   const nextInterval = getNextPollIntervalMs(newPollCount);
   const nextPollAt = new Date(now.getTime() + nextInterval);
 
@@ -342,17 +384,11 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
       nextPollAt: nextPollAt,
       lastProviderStatus: ticketStatus,
       lastProviderResponse: rawStatusResponse,
+      ...(flagSlowNow ? { escalatedAt: now } : {}), // one-time slow flag (dedupes the alert)
     },
   });
 
-  return {
-    id: record.id,
-    bookingId: record.bookingId,
-    mfRef,
-    previousStatus: record.status,
-    newStatus: 'STILL_PENDING',
-    action: 'STILL_PENDING',
-  };
+  return { id: record.id, bookingId: record.bookingId, mfRef, previousStatus: record.status, newStatus: 'STILL_PENDING', action: 'STILL_PENDING' };
 }
 
 // ─── ERBUK082 Support-Ticket Tracking ─────────────────────────────────────────
