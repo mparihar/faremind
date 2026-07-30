@@ -15,10 +15,13 @@
  */
 
 import { FastifyPluginAsync } from 'fastify';
+import Stripe from 'stripe';
 import * as mystifly from '../services/mystifly';
 import type { PtrType } from '../services/mystifly';
 import { prisma } from '../lib/db';
 import { buildPtrPassengers, type PtrPassenger } from '../lib/ptr-passengers';
+
+const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
 // ═══════════════════════════════════════════════
 // Helpers
@@ -264,6 +267,36 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
               payloadJson: { providerPtrId, ptrStatus, uniqueId },
             },
           });
+          // Refund the booker to their original card — a void within the window
+          // returns the FULL amount the customer paid. Idempotent via the Stripe
+          // idempotency key + a paymentStatus guard. Best-effort.
+          try {
+            const cur = await prisma.masterBooking.findUnique({ where: { id: bk.id }, select: { paymentStatus: true } });
+            if (cur?.paymentStatus !== 'REFUNDED') {
+              const payment = await prisma.bookingPayment.findFirst({ where: { bookingId: bk.id, status: 'SUCCEEDED' }, orderBy: { paidAt: 'desc' } });
+              if (payment?.stripePaymentIntentId) {
+                const paid = Number(payment.amount);
+                const stripeRefund = await stripe.refunds.create(
+                  { payment_intent: payment.stripePaymentIntentId, amount: Math.round(paid * 100), reason: 'requested_by_customer', metadata: { booking_ref: bk.masterBookingReference, action: 'ptr_void' } },
+                  { idempotencyKey: `ptrvoid-refund-${bk.id}` },
+                );
+                await prisma.masterBooking.update({ where: { id: bk.id }, data: { paymentStatus: 'REFUNDED' } });
+                await prisma.bookingRefund.create({
+                  data: { bookingId: bk.id, amount: paid, currency: payment.currency || 'USD', method: 'ORIGINAL_PAYMENT', status: 'COMPLETED', provider: 'MYSTIFLY' },
+                }).catch((be: any) => console.error('[PTR] bookingRefund record failed:', be?.message));
+                await prisma.bookingEvent.create({
+                  data: {
+                    bookingId: bk.id, eventType: 'CUSTOMER_REFUNDED', eventTitle: 'Refund Issued',
+                    eventDescription: `Full refund of ${paid.toFixed(2)} ${payment.currency || 'USD'} issued to the original card on void. Stripe refund ${stripeRefund.id}.`,
+                    actorType: 'system', actorName: 'PTR Void', payloadJson: { stripeRefundId: stripeRefund.id, amount: paid },
+                  },
+                }).catch(() => {});
+              }
+            }
+          } catch (re: any) {
+            console.error('[PTR] void customer refund failed:', re?.message);
+          }
+
           // Release the agent wallet hold for agent-owned bookings.
           if (bk.agentUserId) {
             try {
