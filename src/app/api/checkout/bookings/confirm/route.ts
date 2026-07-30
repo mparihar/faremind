@@ -1577,6 +1577,37 @@ export async function POST(req: NextRequest) {
     const customerEmail = primaryPax.email ?? '';
     const customerName = `${primaryPax.firstName ?? ''} ${primaryPax.lastName ?? ''}`.trim();
 
+    // ── Reconcile FareMind markup as the residual of the customer total ──────────
+    // The customer grand total is fixed & validated; the provider fare may have been
+    // revalidated DOWN from the displayed fare base. Any leftover beyond the known
+    // fees is FareMind fare margin (markup). Recomputing it here guarantees
+    //   providerPayableTotal + fareMindRevenueTotal + thirdParty + meal + bag == total
+    // even when the source offer didn't carry a markup amount (e.g. AI-bot bookings,
+    // where fareMindMarkupAmount was 0). No-op for bookings whose markup was already
+    // captured (the residual equals the existing markup).
+    {
+      const reconciledMarkup = Math.round((
+        financials.customerGrandTotal
+        - financials.providerPayableTotal
+        - financials.serviceFeeAmount
+        - financials.thirdPartyPayableTotal
+        - financials.mealServiceTotal
+        - financials.baggageServiceTotal
+      ) * 100) / 100;
+      if (Math.abs(reconciledMarkup - financials.markupAmount) > 0.01) {
+        console.log(`[Checkout] Markup reconciled ${financials.markupAmount} → ${reconciledMarkup} (provider $${financials.providerPayableTotal}, total $${financials.customerGrandTotal})`);
+      }
+      if (reconciledMarkup < -0.01) {
+        console.warn(`[Checkout] ⚠️ Negative reconciled markup ($${reconciledMarkup}) — provider cost + fees exceed the customer total. Clamping to 0.`);
+      }
+      const markupAmount = Math.max(0, reconciledMarkup);
+      financials = {
+        ...financials,
+        markupAmount,
+        fareMindRevenueTotal: Math.round((markupAmount + financials.serviceFeeAmount) * 100) / 100,
+      };
+    }
+
     // ══════════════════════════════════════════════════════════════════════════
     // AUTO-REGISTER: Primary Contact → Platform User
     // ══════════════════════════════════════════════════════════════════════════
