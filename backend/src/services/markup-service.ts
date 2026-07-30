@@ -42,6 +42,13 @@ const CACHE_TTL_MS = 60_000; // 1 minute
  * Returns null if no active rule exists.
  */
 export async function getActiveMarkupRule(ctx?: MarkupContext): Promise<MarkupRule | null> {
+  // ── Markup removed platform-wide ──────────────────────────────────────────
+  // FareMind no longer adds any markup to fares (public/agent/AI-bot). This is
+  // the single chokepoint: returning null guarantees no markup is ever applied,
+  // regardless of any MARKUP_FEE rows that may exist in the DB.
+  return null;
+
+  // eslint-disable-next-line no-unreachable
   // Check cache first
   if (cachedRule && Date.now() - cachedRule.fetchedAt < CACHE_TTL_MS) {
     return cachedRule.rule;

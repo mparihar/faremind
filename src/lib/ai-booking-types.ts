@@ -245,10 +245,11 @@ export const FARE_CLASS_NAMES: Record<AiFareClass, string> = {
   flex: 'Economy Flex',
 };
 
+// Markup removed platform-wide — all fare tiers charge the raw provider fare.
 export const FALLBACK_FARE_CLASS_MULTIPLIERS: Record<AiFareClass, number> = {
-  basic: 0.9,
+  basic: 1.0,
   standard: 1.0,
-  flex: 1.25,
+  flex: 1.0,
 };
 
 // FALLBACK_EXTRA_BAG_PRICE removed — live pricing only, no dummy fallback

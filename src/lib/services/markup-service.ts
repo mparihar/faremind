@@ -32,6 +32,12 @@ let cachedRule: { rule: MarkupRule | null; fetchedAt: number } | null = null;
 const CACHE_TTL_MS = 60_000; // 1 minute
 
 export async function getActiveMarkupRule(): Promise<MarkupRule | null> {
+  // ── Markup removed platform-wide ──────────────────────────────────────────
+  // FareMind no longer adds any markup to fares. This chokepoint returns null so
+  // no markup is ever applied, regardless of any MARKUP_FEE rows in the DB.
+  return null;
+
+  // eslint-disable-next-line no-unreachable
   if (cachedRule && Date.now() - cachedRule.fetchedAt < CACHE_TTL_MS) {
     return cachedRule.rule;
   }
