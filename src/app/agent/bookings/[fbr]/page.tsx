@@ -643,8 +643,42 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
         </div>
       )}
 
-      {activeTab === 'payments' && (
-        <div className="bg-slate-900/80 border border-white/[0.06] rounded-2xl overflow-hidden">
+      {activeTab === 'payments' && (() => {
+        const total = Number(booking.totalAmount) || 0;
+        const providerFare = booking.providerPayableTotal != null ? Number(booking.providerPayableTotal) : null;
+        const feesAndService = providerFare != null ? Math.max(0, Math.round((total - providerFare) * 100) / 100) : null;
+        const money = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: booking.currency || 'USD' }).format(n);
+        return (
+        <div className="space-y-4">
+          {/* Price Breakdown (customer-facing; reconciles to the total charged) */}
+          <div className="bg-slate-900/80 border border-white/[0.06] rounded-2xl overflow-hidden">
+            <div className="px-5 py-4 border-b border-white/[0.06]"><h3 className="text-white font-bold text-sm">Price Breakdown</h3></div>
+            <table className="w-full text-sm">
+              <tbody className="divide-y divide-white/[0.04]">
+                <tr>
+                  <td className="px-5 py-3 text-white font-bold">Airfare &amp; Taxes</td>
+                  <td className="px-5 py-3 text-slate-400 font-semibold">{booking.passengers?.length ?? 0} passenger{(booking.passengers?.length ?? 0) !== 1 ? 's' : ''}{booking.cabinClass ? ` · ${booking.cabinClass}` : ''}</td>
+                  <td className="px-5 py-3 text-white font-bold text-right">{providerFare != null ? money(providerFare) : '—'}</td>
+                </tr>
+                {feesAndService != null && feesAndService > 0 && (
+                  <tr>
+                    <td className="px-5 py-3 text-white font-bold">Service &amp; Fees</td>
+                    <td className="px-5 py-3 text-slate-400 font-semibold">FAREMIND platform fee</td>
+                    <td className="px-5 py-3 text-white font-bold text-right">{money(feesAndService)}</td>
+                  </tr>
+                )}
+              </tbody>
+              <tfoot>
+                <tr className="border-t-2 border-white/10 bg-slate-900/40">
+                  <td colSpan={2} className="px-5 py-3.5 text-slate-200 font-black text-xs uppercase tracking-wider">Total Charged</td>
+                  <td className="px-5 py-3.5 text-[#1ABC9C] font-black text-sm text-right">{money(total)}</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+
+          {/* Payment records */}
+          <div className="bg-slate-900/80 border border-white/[0.06] rounded-2xl overflow-hidden">
           <div className="divide-y divide-white/[0.04]">
             {booking.payments?.length ? booking.payments.map((p: any) => (
               <div key={p.id} className="flex items-center gap-4 px-6 py-4">
@@ -661,8 +695,10 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
               <div className="p-8 text-center text-sm text-slate-500">No payment records</div>
             )}
           </div>
+          </div>
         </div>
-      )}
+        );
+      })()}
 
       {activeTab === 'timeline' && (
         <div className="bg-slate-900/80 border border-white/[0.06] rounded-2xl p-6">

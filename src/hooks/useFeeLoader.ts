@@ -159,22 +159,29 @@ export async function fetchComputedFeesForContext(ctx: {
       baseFare: Math.round(ctx.fareTotal / ctx.passengerCount),
     }));
 
-    const resp = await fetch('/api/fees/compute', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        provider: 'duffel',
-        tripType: ctx.tripType || 'ROUND_TRIP',
-        cabin: ctx.cabin.toLowerCase(),
-        fareClass: ctx.fareClass ?? '',
-        passengers,
-        supplierFareTotal: ctx.fareTotal,
-        bookingTotalBeforeFees: ctx.fareTotal,
-        currency: ctx.currency || 'USD',
-      }),
+    const body = JSON.stringify({
+      provider: 'duffel',
+      tripType: ctx.tripType || 'ROUND_TRIP',
+      cabin: ctx.cabin.toLowerCase(),
+      fareClass: ctx.fareClass ?? '',
+      passengers,
+      supplierFareTotal: ctx.fareTotal,
+      bookingTotalBeforeFees: ctx.fareTotal,
+      currency: ctx.currency || 'USD',
     });
 
-    if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
+    // Retry transient failures — a dropped fee fetch must NOT silently fall back
+    // to a different fee model (e.g. the 1.5% fallback) and mis-charge the customer.
+    let resp: Response | null = null;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        resp = await fetch('/api/fees/compute', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body });
+        if (resp.ok) break;
+      } catch { /* network error — retry */ }
+      resp = null;
+      await new Promise(r => setTimeout(r, 300 * (attempt + 1)));
+    }
+    if (!resp || !resp.ok) throw new Error('fees/compute failed after retries');
     const result = await resp.json();
 
     // Extract product metadata from charges ruleSnapshot
