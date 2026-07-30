@@ -50,6 +50,22 @@ async function loadPtrPassengers(uniqueId: string, bookingId?: string): Promise<
   }
 }
 
+/** Resolve the MasterBooking (id + status) for a PTR by MFRef or FareMind id/ref. */
+async function resolvePtrBooking(uniqueId: string, bookingId?: string) {
+  return prisma.masterBooking.findFirst({
+    where: {
+      OR: [
+        { mystiflyMfRef: uniqueId },
+        { providerOrderId: uniqueId },
+        { masterPnr: uniqueId },
+        { pnrs: { some: { providerOrderId: uniqueId } } },
+        ...(bookingId ? [{ id: bookingId }, { masterBookingReference: bookingId }] : []),
+      ],
+    },
+    select: { id: true, masterBookingReference: true, agentUserId: true, ticketingStatus: true, bookingStatus: true },
+  });
+}
+
 function extractPtrError(result: any): { hasError: boolean; message: string; code: string } {
   // 1. Structured Mystifly error object (Data.Error / Error with ErrorCode).
   const err = result?.Data?.Error || result?.Error;
@@ -224,6 +240,42 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       const ptrStatus = data?.PTRStatus || 'InProcess';
       // COMPLETED only if the provider already reports it; otherwise EXECUTING (async).
       if (ptrId) await updatePtrRecord(ptrId, { status: /completed/i.test(ptrStatus) ? 'COMPLETED' : 'EXECUTING', executedAt: new Date(), providerExecResponse: result });
+
+      // Reflect the void on the booking + timeline (provider void submitted OK).
+      // The void is the refund mechanism within the void window (full amount
+      // returned), so mark the ticket VOIDED and the booking CANCELLED, and
+      // release the agent wallet hold. Best-effort — never fail the void response.
+      try {
+        const bk = await resolvePtrBooking(uniqueId, bookingId);
+        if (bk) {
+          await prisma.masterBooking.update({
+            where: { id: bk.id },
+            data: { bookingStatus: 'CANCELLED', ticketingStatus: 'VOIDED', providerBookingStatus: ptrStatus },
+          });
+          await prisma.bookingTicket.updateMany({ where: { bookingId: bk.id }, data: { ticketStatus: 'VOIDED' } }).catch(() => {});
+          await prisma.bookingEvent.create({
+            data: {
+              bookingId: bk.id,
+              eventType: 'BOOKING_VOIDED',
+              eventTitle: 'Ticket Voided',
+              eventDescription: `Ticket voided via provider${providerPtrId ? ` (PTR ${providerPtrId})` : ''}. Provider status: ${ptrStatus}. The void returns the full amount within the void window. Requested by ${requestedBy || 'staff'}.`,
+              actorType: 'agent',
+              actorName: requestedBy || 'staff',
+              payloadJson: { providerPtrId, ptrStatus, uniqueId },
+            },
+          });
+          // Release the agent wallet hold for agent-owned bookings.
+          if (bk.agentUserId) {
+            try {
+              const walletSvc = await import('../services/agent-wallet');
+              const amt = await prisma.masterBooking.findUnique({ where: { id: bk.id }, select: { totalAmount: true } });
+              if (amt?.totalAmount) await walletSvc.releaseUtilization(bk.agentUserId, Number(amt.totalAmount), 'CANCELLATION', requestedBy || 'PTR_VOID', bk.id);
+            } catch (we: any) { console.error('[PTR] void wallet release failed:', we?.message); }
+          }
+        }
+      } catch (e: any) {
+        console.error('[PTR] void booking-status update failed:', e?.message);
+      }
 
       return { success: true, ptrId, providerPtrId, ptrStatus, raw: result };
     } catch (error: any) {

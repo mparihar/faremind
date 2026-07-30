@@ -671,8 +671,8 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
               <div key={i} className="flex gap-3">
                 <div className="w-2 h-2 rounded-full bg-[#1ABC9C] mt-1.5 shrink-0" />
                 <div>
-                  <p className="text-sm text-white font-medium">{evt.title}</p>
-                  {evt.description && <p className="text-xs text-slate-500 mt-0.5">{evt.description}</p>}
+                  <p className="text-sm text-white font-medium">{evt.eventTitle || evt.title || evt.eventType?.replace(/_/g, ' ')}</p>
+                  {(evt.eventDescription || evt.description) && <p className="text-xs text-slate-500 mt-0.5">{evt.eventDescription || evt.description}</p>}
                   <p className="text-[10px] text-slate-600 mt-1">{new Date(evt.createdAt).toLocaleString()}</p>
                 </div>
               </div>
