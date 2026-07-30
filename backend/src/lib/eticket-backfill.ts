@@ -49,6 +49,13 @@ export function extractEticketNumbers(tripResult: any, statusResult?: any): stri
   // Primary shape: TravelItinerary.PassengerInfos[].Passenger.{TicketNumber,...}
   const paxInfos = ti?.PassengerInfos || [];
   for (const wrap of Array.isArray(paxInfos) ? paxInfos : [paxInfos]) {
+    // ACTUAL Mystifly shape: PassengerInfos[].ETickets[].ETicketNumber
+    // (the e-ticket array sits on the PassengerInfo wrapper, NOT under Passenger).
+    const eTickets = wrap?.ETickets || [];
+    for (const tk of Array.isArray(eTickets) ? eTickets : [eTickets]) {
+      push(tk?.ETicketNumber || tk?.eTicketNumber || tk?.TicketNumber || tk?.Number);
+    }
+
     const p = wrap?.Passenger || wrap;
     push(p?.TicketNumber || p?.ETicketNumber || p?.eTicketNumber || p?.TicketDocumentNumber || p?.Ticket);
     // Some responses attach a list of ticket docs per passenger.
