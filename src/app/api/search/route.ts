@@ -10,6 +10,7 @@ import { prisma } from '@/lib/db';
 import { getTravelDnaForRecommendation } from '@/lib/services/travel-dna-service';
 import type { TravelDnaRecommendationContext } from '@/lib/services/travel-dna-service';
 import { flexCacheKey, flexCacheGet, flexCacheSet, flexCacheClearRoute } from '@/lib/flex-search-cache';
+import { rankingInputCorrectionEnabled, legacyCheckedBags } from '@/lib/feature-flags';
 
 export const maxDuration = 120; // Allow up to 2 minutes for search
 
@@ -113,6 +114,12 @@ export async function GET(request: NextRequest) {
       let rankingMetadata: any = null;
 
       try {
+        // Gate on the corrected ranker inputs. OFF (default) reproduces today's
+        // inputs exactly, so search rankings and badges do not move; the
+        // airline fare-family names still display, because display never reads
+        // this flag. See src/lib/feature-flags.ts.
+        const correctRankingInputs = rankingInputCorrectionEnabled();
+
         // Convert RoundTripOption[] → RankingOffer[] for the new engine
         const rankingOffers = rtResult.options.map((rt) => {
           const allSegments = [
@@ -149,9 +156,14 @@ export async function GET(request: NextRequest) {
             currency: rt.currency,
             durationMinutes: rt.totalDurationMinutes,
             segments: allSegments,
+            // Ranking inputs only. Display always uses the corrected values —
+            // this branch exists so the corrected ranker inputs can be enabled
+            // separately from the airline-name display change.
             baggage: {
               carryOn: rt.baggage?.carryOn ?? 0,
-              checked: rt.baggage?.checked ?? 0,
+              checked: correctRankingInputs
+                ? (rt.baggage?.checked ?? 0)
+                : legacyCheckedBags(rt.checkedBaggageAllowance),
             },
             fareRules: {
               refundable: rt.fareRules?.refundable ?? false,
@@ -163,8 +175,9 @@ export async function GET(request: NextRequest) {
               cabinClass: (rt.cabinClass || 'economy').toLowerCase(),
               // The airline's fare family. scoreComfort() keys off brand words
               // (basic|light|saver → 40, flex → 68, classic → 62); passing
-              // undefined made every offer score as undifferentiated economy.
-              fareClassName: rt.airlineFareFamily || undefined,
+              // undefined made every offer score a flat 60. Behind the flag
+              // until the ranking shift is signed off — see feature-flags.ts.
+              fareClassName: correctRankingInputs ? (rt.airlineFareFamily || undefined) : undefined,
             },
             ancillaries: {
               mealService: allSegments.some(s => (s as any).amenities?.meal),
