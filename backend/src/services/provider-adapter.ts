@@ -572,8 +572,26 @@ function mystiflyFareConditions(data: any): {
   refundable: boolean; changeable: boolean;
   refundPenalty?: number; changePenalty?: number; penaltyCurrency?: string;
 } {
-  const breakdowns: any[] = Array.isArray(data?.TripDetailsPTC_FareBreakdowns)
-    ? data.TripDetailsPTC_FareBreakdowns : [];
+  // TripDetails nests differently across its versions, and callers pass varying depths —
+  // getOrder hands us `tripDetails.Data`, not the itinerary. Locate the fare breakdowns
+  // wherever they actually are rather than assuming one shape: reading the wrong level
+  // yields an empty array, which would silently report every fare as neither refundable
+  // nor changeable.
+  const itinerary = data?.TripDetailsResult?.TravelItinerary
+    || data?.TravelItinerary
+    || data?.Data?.TripDetailsResult?.TravelItinerary
+    || data;
+  const breakdowns: any[] = Array.isArray(itinerary?.TripDetailsPTC_FareBreakdowns)
+    ? itinerary.TripDetailsPTC_FareBreakdowns : [];
+
+  // No breakdowns means the payload could not be read, NOT that the fare is restricted.
+  // Both answers below would be false, which is indistinguishable from a genuine "No" —
+  // so say so, otherwise a lookup failure quietly becomes "non-refundable, non-changeable"
+  // and gets persisted as if it were the airline's answer.
+  if (breakdowns.length === 0) {
+    console.warn('[MystiflyAdapter] no TripDetailsPTC_FareBreakdowns in the payload — fare rules unavailable, reporting restricted');
+  }
+
   const isYes = (v: any) => /^yes$/i.test(String(v ?? '').trim());
 
   // Permitted only when every priced passenger type permits it.
@@ -607,7 +625,10 @@ export class MystiflyAdapter implements IBookingProvider {
   readonly name = 'mystifly';
 
   async getOrder(mfRef: string): Promise<OrderDetails> {
-    const tripDetails = await mystiflyClient.getTripDetails(mfRef);
+    // Version-fallback: v3 TripDetails answers Success:false on some bookings, and this
+    // is the call fare rules and post-booking decisions are read from — an empty payload
+    // here reads as "no rules found" rather than as a failure.
+    const tripDetails = await mystiflyClient.getTripDetailsResilient(mfRef);
     const data = tripDetails?.Data || tripDetails;
 
     // Normalize Mystifly trip details to OrderDetails
