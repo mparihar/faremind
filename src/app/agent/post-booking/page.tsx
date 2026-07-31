@@ -95,6 +95,14 @@ export default function AgentPostBookingPage() {
     if (bookingId) loadPtrRecords();
   }, [bookingId]);
 
+  // A quote belongs to the MFRef/booking it was taken against, and handleExecute reuses
+  // its providerPtrId. Drop it when the target changes so a quote taken for one booking
+  // can never be executed against another.
+  useEffect(() => {
+    setQuoteResult(null);
+    setExecResult(null);
+  }, [uniqueId, bookingId]);
+
   async function loadPtrRecords() {
     setRecordsLoading(true);
     try {
