@@ -290,6 +290,40 @@ async function sendBookingOtpEmail(toEmail: string, toName: string, otp: string)
   try { await prisma.emailLog.create({ data: { recipient: toEmail, recipientName: toName, subject: emailSubject, template: 'Booking OTP', status: 'SENT', provider: 'Brevo' } }); } catch {}
 }
 
+/**
+ * Block a flight change while a cancellation or refund is still in flight.
+ *
+ * The previous guard tested `ticketingStatus === 'REFUND_PENDING'`, which is not a member
+ * of MbTicketingStatus and so could never be true — the check never fired, and a booking
+ * mid-refund could still be reissued. REFUND_PENDING *is* a CancellationStatus, so the
+ * real signals are an open CancellationRecord, an unfinished BookingRefund, or a
+ * void/refund PTR still executing at the provider. Returns the reason, or null to allow.
+ */
+async function pendingRefundBlock(bookingId: string): Promise<string | null> {
+  const cancel = await prisma.cancellationRecord.findUnique({
+    where: { bookingId },
+    select: { status: true },
+  }).catch(() => null);
+  const blockingCancel = ['CANCEL_REQUESTED', 'CANCEL_INITIATED', 'CANCEL_PROVIDER_PENDING', 'CANCEL_AWAITING_TICKETING', 'IN_PROGRESS', 'REFUND_PENDING'];
+  if (cancel && blockingCancel.includes(cancel.status)) {
+    return `Cannot change a booking with a cancellation in progress (${cancel.status}).`;
+  }
+
+  const refund = await prisma.bookingRefund.findFirst({
+    where: { bookingId, status: { in: ['INITIATED', 'PROCESSING', 'CUSTOMER_REFUND_PENDING'] } },
+    select: { status: true },
+  }).catch(() => null);
+  if (refund) return `Cannot change a booking with a pending refund (${refund.status}).`;
+
+  const ptr = await prisma.postTicketingRequest.findFirst({
+    where: { bookingId, requestType: { in: ['VOID', 'REFUND'] }, status: { in: ['EXECUTING', 'AWAITING_APPROVAL', 'APPROVED'] } },
+    select: { requestType: true, status: true },
+  }).catch(() => null);
+  if (ptr) return `Cannot change a booking with a ${ptr.requestType.toLowerCase()} in progress (${ptr.status}).`;
+
+  return null;
+}
+
 const plugin: FastifyPluginAsync = async (fastify) => {
 
   // â”€â”€ Guest Lookup â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
@@ -1398,9 +1432,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if ((booking as any).ticketingStatus === 'VOIDED') {
         return reply.code(400).send({ error: 'Cannot change a voided booking. The ticket has already been cancelled.' });
       }
-      if ((booking as any).ticketingStatus === 'REFUND_PENDING') {
-        return reply.code(400).send({ error: 'Cannot change a booking with a pending refund.' });
-      }
+      const searchRefundBlock = await pendingRefundBlock(bookingId);
+      if (searchRefundBlock) return reply.code(400).send({ error: searchRefundBlock });
       // Check departure hasn't passed
       if (new Date(booking.departureDate) < new Date()) {
         return reply.code(400).send({ error: 'Cannot change a booking for a flight that has already departed.' });
@@ -1628,7 +1661,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
       if (booking.bookingStatus === 'CANCELLED') return reply.code(400).send({ error: 'Cannot change a cancelled booking' });
       if ((booking as any).ticketingStatus === 'VOIDED') return reply.code(400).send({ error: 'Cannot change a voided booking' });
-      if ((booking as any).ticketingStatus === 'REFUND_PENDING') return reply.code(400).send({ error: 'Cannot change a booking with a pending refund' });
+      const confirmRefundBlock = await pendingRefundBlock(bookingId);
+      if (confirmRefundBlock) return reply.code(400).send({ error: confirmRefundBlock });
       if (new Date(booking.departureDate) < new Date()) return reply.code(400).send({ error: 'Cannot change a booking for a past departure' });
 
       const confirmProviderPnr = booking.pnrs.find((p: any) => p.providerOrderId);

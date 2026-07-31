@@ -21,6 +21,7 @@ import type { PtrType } from '../services/mystifly';
 import { prisma } from '../lib/db';
 import { buildPtrPassengers, type PtrPassenger } from '../lib/ptr-passengers';
 import { backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
+import { getAdminServiceFee } from '../services/cancellation-orchestrator';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -225,6 +226,155 @@ async function updatePtrRecord(id: string, data: Record<string, any>) {
 }
 
 /**
+ * Apply a submitted provider VOID or REFUND to the booking.
+ *
+ * Void and refund are two routes to the same outcome and differ only in eligibility and
+ * amount, so they must leave the booking in the same shape:
+ *   VOID   — only inside the airline's void window (~24h after ticketing); the full
+ *            captured amount comes back, no airline penalty.
+ *   REFUND — the path once the void window has closed; the airline's *quoted* refund
+ *            comes back, less the FareMind service fee.
+ * Both cancel the booking, mark the tickets, refund the customer's card, record a
+ * BookingRefund, release any agent wallet hold, and escalate loudly if the card refund
+ * fails (a silent failure leaves the ticket dead and the customer charged).
+ */
+async function applyCancellationToBooking(params: {
+  kind: 'VOID' | 'REFUND';
+  uniqueId: string;
+  bookingId?: string;
+  providerPtrId?: number | null;
+  ptrStatus: string;
+  quotedRefundAmount?: number | null;
+  requestedBy?: string;
+}): Promise<Record<string, unknown>> {
+  const { kind, uniqueId, bookingId, providerPtrId, ptrStatus, requestedBy } = params;
+  const isVoid = kind === 'VOID';
+  let customerRefund: Record<string, unknown> = { issued: false, reason: 'not attempted' };
+
+  try {
+    const bk = await resolvePtrBooking(uniqueId, bookingId);
+    if (!bk) return { issued: false, reason: 'Booking not found for this reference.' };
+
+    const full = await prisma.masterBooking.findUnique({
+      where: { id: bk.id },
+      select: { serviceFeeAmount: true, totalAmount: true, currency: true, paymentStatus: true, agentUserId: true, masterBookingReference: true, passengers: { select: { id: true } } },
+    });
+
+    // Only a void changes ticketingStatus — MbTicketingStatus has no refund member, so a
+    // refund leaves the ticket issued and is tracked on the ticket rows + BookingRefund.
+    await prisma.masterBooking.update({
+      where: { id: bk.id },
+      data: {
+        bookingStatus: 'CANCELLED',
+        providerBookingStatus: ptrStatus,
+        ...(isVoid ? { ticketingStatus: 'VOIDED' as const } : {}),
+      },
+    });
+    await prisma.bookingTicket.updateMany({ where: { bookingId: bk.id }, data: { ticketStatus: isVoid ? 'VOIDED' : 'REFUNDED' } }).catch(() => {});
+    await prisma.bookingPnr.updateMany({ where: { bookingId: bk.id }, data: { status: 'CANCELLED' } }).catch(() => {});
+    await prisma.bookingJourney.updateMany({ where: { bookingId: bk.id }, data: { journeyStatus: 'cancelled' } }).catch(() => {});
+    await prisma.bookingSegment.updateMany({ where: { bookingId: bk.id }, data: { segmentStatus: 'cancelled' } }).catch(() => {});
+
+    // Amount owed back to the customer.
+    const payment = await prisma.bookingPayment.findFirst({ where: { bookingId: bk.id, status: 'SUCCEEDED' }, orderBy: { paidAt: 'desc' } });
+    const paid = payment ? Number(payment.amount) : 0;
+    let adminFee = 0;
+    let owed = paid;
+    if (!isVoid) {
+      const quoted = params.quotedRefundAmount != null ? Number(params.quotedRefundAmount) : 0;
+      adminFee = await getAdminServiceFee(full);
+      owed = Math.max(0, Math.round((quoted - adminFee) * 100) / 100);
+    }
+
+    await prisma.bookingEvent.create({
+      data: {
+        bookingId: bk.id,
+        eventType: isVoid ? 'BOOKING_VOIDED' : 'BOOKING_REFUNDED',
+        eventTitle: isVoid ? 'Ticket Voided' : 'Ticket Refunded',
+        eventDescription: isVoid
+          ? `Ticket voided via provider${providerPtrId ? ` (PTR ${providerPtrId})` : ''}. Provider status: ${ptrStatus}. The void returns the full amount within the void window. Requested by ${requestedBy || 'staff'}.`
+          : `Refund submitted to the provider${providerPtrId ? ` (PTR ${providerPtrId})` : ''}. Provider status: ${ptrStatus}. Airline refund ${Number(params.quotedRefundAmount ?? 0).toFixed(2)} less service fee ${adminFee.toFixed(2)} = ${owed.toFixed(2)} to the customer. Requested by ${requestedBy || 'staff'}.`,
+        actorType: 'agent',
+        actorName: requestedBy || 'staff',
+        payloadJson: { providerPtrId, ptrStatus, uniqueId, kind, quoted: params.quotedRefundAmount ?? null, adminFee, owed },
+      },
+    }).catch(() => {});
+
+    // Refund the card. Idempotent via the Stripe key + the already-REFUNDED guard.
+    try {
+      if (full?.paymentStatus === 'REFUNDED') {
+        customerRefund = { issued: false, reason: 'Booking is already marked REFUNDED.', alreadyRefunded: true };
+      } else if (!payment?.stripePaymentIntentId) {
+        customerRefund = { issued: false, reason: 'No captured payment with a Stripe PaymentIntent was found for this booking.' };
+      } else if (owed <= 0) {
+        customerRefund = { issued: false, reason: `Nothing refundable after the airline penalty and service fee (${adminFee.toFixed(2)}).`, adminFee };
+      } else {
+        const stripeRefund = await stripe.refunds.create(
+          { payment_intent: payment.stripePaymentIntentId, amount: Math.round(owed * 100), reason: 'requested_by_customer', metadata: { booking_ref: bk.masterBookingReference, action: isVoid ? 'ptr_void' : 'ptr_refund' } },
+          { idempotencyKey: `ptr${isVoid ? 'void' : 'refund'}-refund-${bk.id}` },
+        );
+        await prisma.masterBooking.update({
+          where: { id: bk.id },
+          data: { paymentStatus: owed >= paid - 0.01 ? 'REFUNDED' : 'PARTIALLY_REFUNDED' },
+        });
+        await prisma.bookingRefund.create({
+          data: { bookingId: bk.id, amount: owed, currency: payment.currency || 'USD', method: 'ORIGINAL_PAYMENT', status: 'COMPLETED', provider: 'MYSTIFLY' },
+        }).catch((be: any) => console.error('[PTR] bookingRefund record failed:', be?.message));
+        await prisma.bookingEvent.create({
+          data: {
+            bookingId: bk.id, eventType: 'CUSTOMER_REFUNDED', eventTitle: 'Refund Issued',
+            eventDescription: `Refund of ${owed.toFixed(2)} ${payment.currency || 'USD'} issued to the original card on ${isVoid ? 'void' : 'refund'}. Stripe refund ${stripeRefund.id}.`,
+            actorType: 'system', actorName: isVoid ? 'PTR Void' : 'PTR Refund', payloadJson: { stripeRefundId: stripeRefund.id, amount: owed },
+          },
+        }).catch(() => {});
+        customerRefund = { issued: true, amount: owed, currency: payment.currency || 'USD', stripeRefundId: stripeRefund.id, adminFee };
+      }
+    } catch (re: any) {
+      // A swallowed failure leaves the ticket dead and the customer charged with nothing
+      // surfacing it. Escalate as cancellation-orchestrator.processCustomerRefund does.
+      customerRefund = { issued: false, failed: true, reason: re?.message || 'Stripe refund failed' };
+      console.error(`[PTR] CRITICAL: ${kind} customer refund FAILED for ${bk.masterBookingReference}:`, re?.message);
+      await prisma.bookingEvent.create({
+        data: {
+          bookingId: bk.id, eventType: 'REFUND_FAILED', eventTitle: 'Refund Failed',
+          eventDescription: `Ticket was ${isVoid ? 'voided' : 'refunded'} at the provider but the customer refund did NOT go through: ${re?.message || 'unknown error'}. The customer is still charged — a manual refund is required.`,
+          actorType: 'system', actorName: isVoid ? 'PTR Void' : 'PTR Refund',
+        },
+      }).catch(() => {});
+      await prisma.supportTicket.create({
+        data: {
+          subject: `${kind} refund FAILED: ${bk.masterBookingReference} — customer still charged`,
+          description: [
+            `The ticket for ${bk.masterBookingReference} was ${isVoid ? 'voided' : 'refunded'} at the provider, but the customer refund failed.`,
+            '', `Error: ${re?.message || 'unknown'}`,
+            `Provider PTR: ${providerPtrId ?? 'n/a'} (${uniqueId})`,
+            `Amount owed: ${owed.toFixed(2)}`,
+            'A manual refund to the original card is required.',
+          ].join('\n'),
+          priority: 'HIGH', status: 'OPEN', category: 'Refund', channel: 'SYSTEM',
+          bookingRef: bk.masterBookingReference,
+          ticketType: 'REFUND', queue: 'CANCELLATION_SUPPORT',
+          providerPnr: uniqueId, providerBookingRef: uniqueId,
+        } as any,
+      }).catch(() => {});
+    }
+
+    // Release the agent wallet hold for agent-owned bookings.
+    if (bk.agentUserId) {
+      try {
+        const walletSvc = await import('../services/agent-wallet');
+        if (full?.totalAmount) await walletSvc.releaseUtilization(bk.agentUserId, Number(full.totalAmount), 'CANCELLATION', requestedBy || `PTR_${kind}`, bk.id);
+      } catch (we: any) { console.error(`[PTR] ${kind} wallet release failed:`, we?.message); }
+    }
+  } catch (e: any) {
+    console.error(`[PTR] ${kind} booking-status update failed:`, e?.message);
+    customerRefund = { issued: false, failed: true, reason: e?.message || 'booking update failed' };
+  }
+
+  return customerRefund;
+}
+
+/**
  * Hand an accepted-but-unfulfilled reissue to the settlement cron.
  *
  * Accepting a ReIssueQuote returns PTRStatus=InProcess with a 60-minute SLA — the
@@ -352,10 +502,6 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
 
-      // Reported back to the agent so a void that did NOT refund the customer is never
-      // presented as a plain success.
-      let customerRefund: Record<string, unknown> = { issued: false, reason: 'not attempted' };
-
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 
       // Direct Void — submit with the passengers array. Returns PTRStatus=InProcess;
@@ -375,103 +521,10 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       // COMPLETED only if the provider already reports it; otherwise EXECUTING (async).
       if (ptrId) await updatePtrRecord(ptrId, { status: /completed/i.test(ptrStatus) ? 'COMPLETED' : 'EXECUTING', executedAt: new Date(), providerExecResponse: result });
 
-      // Reflect the void on the booking + timeline (provider void submitted OK).
-      // The void is the refund mechanism within the void window (full amount
-      // returned), so mark the ticket VOIDED and the booking CANCELLED, and
-      // release the agent wallet hold. Best-effort — never fail the void response.
-      try {
-        const bk = await resolvePtrBooking(uniqueId, bookingId);
-        if (bk) {
-          await prisma.masterBooking.update({
-            where: { id: bk.id },
-            data: { bookingStatus: 'CANCELLED', ticketingStatus: 'VOIDED', providerBookingStatus: ptrStatus },
-          });
-          await prisma.bookingTicket.updateMany({ where: { bookingId: bk.id }, data: { ticketStatus: 'VOIDED' } }).catch(() => {});
-          await prisma.bookingEvent.create({
-            data: {
-              bookingId: bk.id,
-              eventType: 'BOOKING_VOIDED',
-              eventTitle: 'Ticket Voided',
-              eventDescription: `Ticket voided via provider${providerPtrId ? ` (PTR ${providerPtrId})` : ''}. Provider status: ${ptrStatus}. The void returns the full amount within the void window. Requested by ${requestedBy || 'staff'}.`,
-              actorType: 'agent',
-              actorName: requestedBy || 'staff',
-              payloadJson: { providerPtrId, ptrStatus, uniqueId },
-            },
-          });
-          // Refund the booker to their original card — a void within the window
-          // returns the FULL amount the customer paid. Idempotent via the Stripe
-          // idempotency key + a paymentStatus guard. Best-effort.
-          try {
-            const cur = await prisma.masterBooking.findUnique({ where: { id: bk.id }, select: { paymentStatus: true } });
-            if (cur?.paymentStatus !== 'REFUNDED') {
-              const payment = await prisma.bookingPayment.findFirst({ where: { bookingId: bk.id, status: 'SUCCEEDED' }, orderBy: { paidAt: 'desc' } });
-              if (payment?.stripePaymentIntentId) {
-                const paid = Number(payment.amount);
-                const stripeRefund = await stripe.refunds.create(
-                  { payment_intent: payment.stripePaymentIntentId, amount: Math.round(paid * 100), reason: 'requested_by_customer', metadata: { booking_ref: bk.masterBookingReference, action: 'ptr_void' } },
-                  { idempotencyKey: `ptrvoid-refund-${bk.id}` },
-                );
-                await prisma.masterBooking.update({ where: { id: bk.id }, data: { paymentStatus: 'REFUNDED' } });
-                await prisma.bookingRefund.create({
-                  data: { bookingId: bk.id, amount: paid, currency: payment.currency || 'USD', method: 'ORIGINAL_PAYMENT', status: 'COMPLETED', provider: 'MYSTIFLY' },
-                }).catch((be: any) => console.error('[PTR] bookingRefund record failed:', be?.message));
-                await prisma.bookingEvent.create({
-                  data: {
-                    bookingId: bk.id, eventType: 'CUSTOMER_REFUNDED', eventTitle: 'Refund Issued',
-                    eventDescription: `Full refund of ${paid.toFixed(2)} ${payment.currency || 'USD'} issued to the original card on void. Stripe refund ${stripeRefund.id}.`,
-                    actorType: 'system', actorName: 'PTR Void', payloadJson: { stripeRefundId: stripeRefund.id, amount: paid },
-                  },
-                }).catch(() => {});
-                customerRefund = { issued: true, amount: paid, currency: payment.currency || 'USD', stripeRefundId: stripeRefund.id };
-              } else {
-                customerRefund = { issued: false, reason: 'No captured payment with a Stripe PaymentIntent was found for this booking.' };
-              }
-            } else {
-              customerRefund = { issued: false, reason: 'Booking is already marked REFUNDED.', alreadyRefunded: true };
-            }
-          } catch (re: any) {
-            // A swallowed refund failure means the ticket is void and the customer is
-            // still charged, with nothing surfacing it. Escalate exactly as
-            // cancellation-orchestrator.processCustomerRefund does.
-            customerRefund = { issued: false, failed: true, reason: re?.message || 'Stripe refund failed' };
-            console.error(`[PTR] CRITICAL: void customer refund FAILED for ${bk.masterBookingReference}:`, re?.message);
-            await prisma.bookingEvent.create({
-              data: {
-                bookingId: bk.id, eventType: 'REFUND_FAILED', eventTitle: 'Refund Failed',
-                eventDescription: `Ticket was voided but the customer refund did NOT go through: ${re?.message || 'unknown error'}. The customer is still charged — a manual refund is required.`,
-                actorType: 'system', actorName: 'PTR Void',
-              },
-            }).catch(() => {});
-            await prisma.supportTicket.create({
-              data: {
-                subject: `Void refund FAILED: ${bk.masterBookingReference} — customer still charged`,
-                description: [
-                  `The ticket for ${bk.masterBookingReference} was voided at the provider, but the customer refund failed.`,
-                  '',
-                  `Error: ${re?.message || 'unknown'}`,
-                  `Provider PTR: ${providerPtrId ?? 'n/a'} (${uniqueId})`,
-                  'A manual refund to the original card is required.',
-                ].join('\n'),
-                priority: 'HIGH', status: 'OPEN', category: 'Refund', channel: 'SYSTEM',
-                bookingRef: bk.masterBookingReference,
-                ticketType: 'REFUND', queue: 'CANCELLATION_SUPPORT',
-                providerPnr: uniqueId, providerBookingRef: uniqueId,
-              } as any,
-            }).catch(() => {});
-          }
-
-          // Release the agent wallet hold for agent-owned bookings.
-          if (bk.agentUserId) {
-            try {
-              const walletSvc = await import('../services/agent-wallet');
-              const amt = await prisma.masterBooking.findUnique({ where: { id: bk.id }, select: { totalAmount: true } });
-              if (amt?.totalAmount) await walletSvc.releaseUtilization(bk.agentUserId, Number(amt.totalAmount), 'CANCELLATION', requestedBy || 'PTR_VOID', bk.id);
-            } catch (we: any) { console.error('[PTR] void wallet release failed:', we?.message); }
-          }
-        }
-      } catch (e: any) {
-        console.error('[PTR] void booking-status update failed:', e?.message);
-      }
+      // Void and refund must leave the booking in the same shape — one shared path.
+      const customerRefund = await applyCancellationToBooking({
+        kind: 'VOID', uniqueId, bookingId, providerPtrId, ptrStatus, requestedBy,
+      });
 
       return {
         success: true,
@@ -563,8 +616,9 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/refund', async (request, reply) => {
     try {
-      const { uniqueId, ptrId, providerPtrId, bookingId, requestedBy } = request.body as {
-        uniqueId: string; ptrId?: string; providerPtrId?: number; bookingId?: string; requestedBy?: string;
+      const { uniqueId, ptrId, providerPtrId, bookingId, refundAmount, requestedBy } = request.body as {
+        uniqueId: string; ptrId?: string; providerPtrId?: number; bookingId?: string;
+        refundAmount?: number; requestedBy?: string;
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
       if (!providerPtrId) return reply.code(400).send({ error: 'providerPtrId (the RefundQuote PTR id) is required — run Get Refund Quote first.', errorCode: 'MISSING_PTR_ID' });
@@ -586,7 +640,32 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       const ptrStatus = data?.PTRStatus || 'InProcess';
       if (ptrId) await updatePtrRecord(ptrId, { status: /completed/i.test(ptrStatus) ? 'COMPLETED' : 'EXECUTING', executedAt: new Date(), providerExecResponse: result });
 
-      return { success: true, ptrId, providerPtrId, ptrStatus, raw: result };
+      // Refund is the path once the void window has closed, so it must settle the booking
+      // exactly as a void does — previously this returned without touching the booking at
+      // all, leaving it TICKETED/ISSUED with the customer unrefunded. The amount is the
+      // airline's quoted refund (captured by /refund-quote) less the FareMind service fee,
+      // where a void returns the full captured amount.
+      const quoteRec = ptrId
+        ? await prisma.postTicketingRequest.findUnique({ where: { id: ptrId }, select: { quoteRefundAmount: true } }).catch(() => null)
+        : null;
+      const quotedRefundAmount = refundAmount ?? (quoteRec?.quoteRefundAmount != null ? Number(quoteRec.quoteRefundAmount) : null);
+
+      const customerRefund = await applyCancellationToBooking({
+        kind: 'REFUND', uniqueId, bookingId, providerPtrId, ptrStatus, quotedRefundAmount, requestedBy,
+      });
+
+      return {
+        success: true,
+        ptrId, providerPtrId, ptrStatus,
+        quotedRefundAmount,
+        customerRefund,
+        warning: customerRefund.failed
+          ? 'Refund submitted at the provider, but the customer refund FAILED. A support ticket has been raised; a manual refund is required.'
+          : (!customerRefund.issued && !customerRefund.alreadyRefunded)
+            ? `Refund submitted at the provider, but no customer refund was issued (${customerRefund.reason}).`
+            : undefined,
+        raw: result,
+      };
     } catch (error: any) {
       console.error('[PTR] Refund error:', error.message);
       return reply.code(502).send({ error: `Refund failed: ${error.message}` });

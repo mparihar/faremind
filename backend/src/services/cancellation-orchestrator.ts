@@ -930,10 +930,14 @@ async function onProviderReimbursementFailed(bookingRefundId: string): Promise<v
 
 export async function getAdminServiceFee(booking: any): Promise<number> {
   try {
-    // Use the booking's stored platform fee as the cancellation service fee.
-    // This is the fee FareMind charged on booking, retained on cancellation.
-    const platformFee = Number(booking.platformFee || 0);
-    if (platformFee > 0) return platformFee;
+    // Use the booking's stored service fee as the cancellation service fee — the fee
+    // FareMind charged at booking, retained on cancellation. MasterBooking stores it as
+    // serviceFeeAmount; `platformFee` only exists on the legacy Booking/BookingPnr models,
+    // so reading it alone always yielded 0 here and silently fell through to the rule
+    // lookup. Markup is no longer charged platform-wide, so the service fee is the whole
+    // of FareMind's retained revenue.
+    const storedFee = Number(booking.serviceFeeAmount ?? booking.platformFee ?? 0);
+    if (storedFee > 0) return storedFee;
 
     // Fallback: look for a SERVICE_FEE rule with per-traveler model
     const feeRule = await prisma.platformFeeRule.findFirst({
