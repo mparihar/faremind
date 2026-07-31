@@ -300,19 +300,37 @@ export async function initiateCancellation(
   const totalPenalty = Math.max(0, originalAmount - netRefundAmount);
   const cancellationMethod = isVoid ? 'VOID' : isCancelAnyway ? 'CANCEL_NO_REFUND' : 'REFUND';
   const isFullRefund = netRefundAmount >= originalAmount - 1;
-  const newPaymentStatus = netRefundAmount <= 0 ? 'NO_REFUND' : isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
-  const newTicketingStatus = isVoid ? 'VOIDED' : isCancelAnyway ? 'CANCELLED' : 'REFUND_PENDING';
+  // These MUST be members of MbPaymentStatus / MbTicketingStatus. 'NO_REFUND',
+  // 'CANCELLED' and 'REFUND_PENDING' are not, and the `as any` casts below hid that
+  // from the compiler: Postgres rejected the write, so every cancellation except a
+  // void-with-refund threw here — AFTER the provider had already cancelled the ticket,
+  // leaving the booking active and the customer unrefunded.
+  // Nothing is refundable → the capture stands, so paymentStatus stays SUCCEEDED.
+  const newPaymentStatus: 'SUCCEEDED' | 'REFUNDED' | 'PARTIALLY_REFUNDED' =
+    netRefundAmount <= 0 ? 'SUCCEEDED' : isFullRefund ? 'REFUNDED' : 'PARTIALLY_REFUNDED';
+  // Only a void changes the ticketing state. A refund/cancel-anyway leaves the ticket as
+  // issued; its progress is tracked on BookingTicket.ticketStatus, CancellationRecord and
+  // BookingRefund, and the booking itself is already CANCELLED.
+  const newTicketingStatus: 'VOIDED' | null = isVoid ? 'VOIDED' : null;
+  const newTicketStatus: 'VOIDED' | 'REFUNDED' = isVoid ? 'VOIDED' : 'REFUNDED';
 
   console.log(`[CANCEL_CONFIRM] Step 4: financials`, JSON.stringify({ bookingId, originalAmount, providerRefundAmount: providerResult.refundAmount, effectiveRefundAmount, adminFee, netRefundAmount, fareMindFee, cancellationMethod, newPaymentStatus, newTicketingStatus }));
 
   // ── Step 5: Update booking status ──────────────────────────────────
   await prisma.masterBooking.update({
     where: { id: bookingId },
-    data: { bookingStatus: 'CANCELLED', paymentStatus: newPaymentStatus as any, ticketingStatus: newTicketingStatus as any },
+    data: {
+      bookingStatus: 'CANCELLED',
+      paymentStatus: newPaymentStatus,
+      ...(newTicketingStatus ? { ticketingStatus: newTicketingStatus } : {}),
+    },
   });
   await prisma.bookingPnr.updateMany({ where: { bookingId }, data: { status: 'CANCELLED' } });
   await prisma.bookingJourney.updateMany({ where: { bookingId }, data: { journeyStatus: 'cancelled' } });
   await prisma.bookingSegment.updateMany({ where: { bookingId }, data: { segmentStatus: 'cancelled' } });
+  // Per-ticket outcome — VOIDED or REFUNDED — so the refund is visible on the ticket
+  // even though MbTicketingStatus has no refund member. Parity with the PTR void path.
+  await prisma.bookingTicket.updateMany({ where: { bookingId }, data: { ticketStatus: newTicketStatus } }).catch(() => {});
 
   // ── Step 6: Create CancellationRecord ──────────────────────────────
   const cancel = await mbq.createCancellationRecord({

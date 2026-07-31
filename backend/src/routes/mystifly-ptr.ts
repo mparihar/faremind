@@ -352,6 +352,10 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
 
+      // Reported back to the agent so a void that did NOT refund the customer is never
+      // presented as a plain success.
+      let customerRefund: Record<string, unknown> = { issued: false, reason: 'not attempted' };
+
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 
       // Direct Void — submit with the passengers array. Returns PTRStatus=InProcess;
@@ -418,10 +422,42 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
                     actorType: 'system', actorName: 'PTR Void', payloadJson: { stripeRefundId: stripeRefund.id, amount: paid },
                   },
                 }).catch(() => {});
+                customerRefund = { issued: true, amount: paid, currency: payment.currency || 'USD', stripeRefundId: stripeRefund.id };
+              } else {
+                customerRefund = { issued: false, reason: 'No captured payment with a Stripe PaymentIntent was found for this booking.' };
               }
+            } else {
+              customerRefund = { issued: false, reason: 'Booking is already marked REFUNDED.', alreadyRefunded: true };
             }
           } catch (re: any) {
-            console.error('[PTR] void customer refund failed:', re?.message);
+            // A swallowed refund failure means the ticket is void and the customer is
+            // still charged, with nothing surfacing it. Escalate exactly as
+            // cancellation-orchestrator.processCustomerRefund does.
+            customerRefund = { issued: false, failed: true, reason: re?.message || 'Stripe refund failed' };
+            console.error(`[PTR] CRITICAL: void customer refund FAILED for ${bk.masterBookingReference}:`, re?.message);
+            await prisma.bookingEvent.create({
+              data: {
+                bookingId: bk.id, eventType: 'REFUND_FAILED', eventTitle: 'Refund Failed',
+                eventDescription: `Ticket was voided but the customer refund did NOT go through: ${re?.message || 'unknown error'}. The customer is still charged — a manual refund is required.`,
+                actorType: 'system', actorName: 'PTR Void',
+              },
+            }).catch(() => {});
+            await prisma.supportTicket.create({
+              data: {
+                subject: `Void refund FAILED: ${bk.masterBookingReference} — customer still charged`,
+                description: [
+                  `The ticket for ${bk.masterBookingReference} was voided at the provider, but the customer refund failed.`,
+                  '',
+                  `Error: ${re?.message || 'unknown'}`,
+                  `Provider PTR: ${providerPtrId ?? 'n/a'} (${uniqueId})`,
+                  'A manual refund to the original card is required.',
+                ].join('\n'),
+                priority: 'HIGH', status: 'OPEN', category: 'Refund', channel: 'SYSTEM',
+                bookingRef: bk.masterBookingReference,
+                ticketType: 'REFUND', queue: 'CANCELLATION_SUPPORT',
+                providerPnr: uniqueId, providerBookingRef: uniqueId,
+              } as any,
+            }).catch(() => {});
           }
 
           // Release the agent wallet hold for agent-owned bookings.
@@ -437,7 +473,19 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         console.error('[PTR] void booking-status update failed:', e?.message);
       }
 
-      return { success: true, ptrId, providerPtrId, ptrStatus, raw: result };
+      return {
+        success: true,
+        ptrId, providerPtrId, ptrStatus,
+        customerRefund,
+        // The void succeeded at the provider but the customer may still be charged —
+        // the agent must see that rather than a bare success.
+        warning: customerRefund.failed
+          ? 'Ticket voided, but the customer refund FAILED. A support ticket has been raised; a manual refund is required.'
+          : (!customerRefund.issued && !customerRefund.alreadyRefunded)
+            ? `Ticket voided, but no customer refund was issued (${customerRefund.reason}). Verify the payment record.`
+            : undefined,
+        raw: result,
+      };
     } catch (error: any) {
       console.error('[PTR] Void error:', error.message);
       return reply.code(502).send({ error: `Void failed: ${error.message}` });
