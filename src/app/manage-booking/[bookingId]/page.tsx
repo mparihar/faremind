@@ -10,6 +10,7 @@ import { DateChangeModal } from '@/components/manage-booking/BookingModals';
 import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
 import { apiFetch } from '@/lib/api-client';
 import { canAddBaggage } from '@/lib/booking-capabilities';
+import CouponStatusPanel from '@/components/booking/CouponStatusPanel';
 function StatusBadge({ status }: { status: string }) {
   const m: Record<string, [string, string]> = { CONFIRMED: ['bg-emerald-500/10 text-emerald-400', 'Confirmed'], TICKETED: ['bg-emerald-500/10 text-emerald-400', 'Ticketed'], CANCELLED: ['bg-red-500/10 text-red-400', 'Cancelled'], CREATED: ['bg-amber-500/10 text-amber-400', 'Processing'], COMPLETED: ['bg-blue-500/10 text-blue-400', 'Completed'] };
   const [cls, label] = m[status] || ['bg-slate-500/10 text-slate-400', status];
@@ -626,6 +627,14 @@ export default function BookingDetailPage() {
                 Contact Support
               </a>
             </div>
+
+            {/* Per-segment ticket state straight from the airline. Same component and
+                same endpoint the agent console uses, so both show identical status.
+                Credit notes are back-office detail and stay on the agent side. */}
+            <Card>
+              <SectionTitle>Ticket Status</SectionTitle>
+              <CouponStatusPanel bookingId={bookingId} />
+            </Card>
           </div>
 
           {/* Right Column: Actions + Documents */}

@@ -13,6 +13,7 @@ import { buildPtrPassengers } from '../lib/ptr-passengers';
 import { backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
 import { acceptScheduleChange, refundScheduleChange, reissueScheduleChange } from '../services/schedule-change';
 import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
+import * as mystifly from '../services/mystifly';
 import * as mbq from '../lib/manage-booking-queries';
 import * as emails from '../lib/manage-booking-emails';
 import { prisma } from '../lib/db';
@@ -2016,6 +2017,86 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // â”€â”€ Timeline â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€â”€
+  // ── Coupon status (per-segment ticket state) ──────────────────────────────
+  // Mystifly only. Serves the customer's manage-booking view and the agent console
+  // from one place so both see the same thing. Each coupon carries the provider's own
+  // verdict on whether it is still eligible for refund / void / reissue.
+  fastify.get('/:bookingId/coupon-status', async (request, reply) => {
+    try {
+      const { bookingId } = request.params as { bookingId: string };
+      const booking = await mbq.getMasterBookingFull(bookingId);
+      if (!booking) return reply.code(404).send({ error: 'Booking not found' });
+
+      const provider = (booking.primaryProvider || '').toLowerCase();
+      if (provider !== 'mystifly') {
+        return { supported: false, provider, tickets: [], reason: 'Coupon status is only available for Mystifly bookings.' };
+      }
+      const mfRef = booking.pnrs.find((p: any) => p.providerOrderId)?.providerOrderId
+        || (booking as any).mystiflyMfRef || booking.masterPnr;
+      if (!mfRef) return reply.code(422).send({ error: 'No provider reference on this booking.', code: 'NO_PROVIDER_ORDER' });
+
+      const { tickets, raw } = await mystifly.getCouponStatus(mfRef);
+
+      // A coupon that is not OPEN cannot be refunded, voided or reissued — surface that
+      // as one flag rather than making every caller parse the provider's warning text.
+      const allSegments = tickets.flatMap((t) => t.segments);
+      const openSegments = allSegments.filter((sg) => /open/i.test(sg.couponStatus));
+      const blockingWarnings = Array.from(new Set(
+        allSegments.map((sg) => sg.warning).filter((w): w is string => !!w),
+      ));
+
+      await prisma.bookingProviderPayload.create({
+        data: {
+          bookingId: booking.id, provider: 'mystifly', payloadType: 'COUPON_STATUS',
+          providerReference: mfRef, payloadJson: raw as any,
+        },
+      }).catch(() => null);
+
+      return {
+        supported: true, provider: 'mystifly', mfRef, tickets,
+        segmentCount: allSegments.length,
+        openSegmentCount: openSegments.length,
+        eligibleForServicing: allSegments.length > 0 && openSegments.length === allSegments.length,
+        warnings: blockingWarnings,
+      };
+    } catch (e) {
+      fastify.log.error(e, '[manage-booking/coupon-status]');
+      reply.code(502).send({ error: 'Could not fetch coupon status from the provider.' });
+    }
+  });
+
+  // ── Credit notes for this booking ─────────────────────────────────────────
+  // How a void / refund / reissue settles back from the provider. Search/CreditNote is
+  // a paged global feed, so it is filtered to this booking's MFRef.
+  fastify.get('/:bookingId/credit-notes', async (request, reply) => {
+    try {
+      const { bookingId } = request.params as { bookingId: string };
+      const { page } = request.query as { page?: string };
+      const booking = await mbq.getMasterBookingFull(bookingId);
+      if (!booking) return reply.code(404).send({ error: 'Booking not found' });
+
+      const provider = (booking.primaryProvider || '').toLowerCase();
+      if (provider !== 'mystifly') {
+        return { supported: false, provider, creditNotes: [], reason: 'Credit notes are only available for Mystifly bookings.' };
+      }
+      const mfRef = booking.pnrs.find((p: any) => p.providerOrderId)?.providerOrderId
+        || (booking as any).mystiflyMfRef || booking.masterPnr;
+      if (!mfRef) return reply.code(422).send({ error: 'No provider reference on this booking.', code: 'NO_PROVIDER_ORDER' });
+
+      const { creditNotes } = await mystifly.searchCreditNotes({ page: page ? parseInt(page, 10) : 1, mfRef });
+      const total = creditNotes.reduce((s, c) => s + (c.amount || 0), 0);
+
+      return {
+        supported: true, provider: 'mystifly', mfRef, creditNotes,
+        totalAmount: Math.round(total * 100) / 100,
+        currency: creditNotes[0]?.currency || booking.currency || 'USD',
+      };
+    } catch (e) {
+      fastify.log.error(e, '[manage-booking/credit-notes]');
+      reply.code(502).send({ error: 'Could not fetch credit notes from the provider.' });
+    }
+  });
+
   fastify.get('/:bookingId/timeline', async (request, reply) => {
     try {
       const { bookingId } = request.params as { bookingId: string };

@@ -147,6 +147,12 @@ interface ManageBookingStore {
   timeline: TimelineEvent[];
   timelineLoading: boolean;
 
+  // Provider coupon state + credit notes (Mystifly)
+  couponStatus: any | null;
+  couponStatusLoading: boolean;
+  creditNotes: any | null;
+  creditNotesLoading: boolean;
+
   // E-ticket
   eticket: any | null;
   eticketLoading: boolean;
@@ -189,6 +195,8 @@ interface ManageBookingStore {
   selectSeat: (bookingId: string, data: any) => Promise<boolean>;
   updatePassenger: (bookingId: string, passengerId: string, updates: Record<string, string>) => Promise<boolean>;
   loadTimeline: (bookingId: string) => Promise<void>;
+  loadCouponStatus: (bookingId: string) => Promise<void>;
+  loadCreditNotes: (bookingId: string) => Promise<void>;
   loadETicket: (bookingId: string) => Promise<void>;
   requestDateChange: (bookingId: string, newDepartureDate: string, newReturnDate?: string, reason?: string) => Promise<boolean>;
   searchChangeOptions: (bookingId: string, newDepartureDate: string, sliceIndex?: number) => Promise<boolean>;
@@ -225,6 +233,8 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
   cancelQuote: null, cancelSuccess: null, cancelLoading: false, cancelError: null, cancelErrorCode: null, cancelRetryable: false, cancelSupportTicketCreated: false,
   seatMaps: [], seatMapLoading: false,
   timeline: [], timelineLoading: false,
+  couponStatus: null, couponStatusLoading: false,
+  creditNotes: null, creditNotesLoading: false,
   eticket: null, eticketLoading: false, eticketError: null,
   dateChangeLoading: false, dateChangeError: null,
   changeOffers: [], changeSearchLoading: false, changeSearchError: null,
@@ -392,6 +402,25 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
       const data = await api<any>(`/api/manage-booking/${bookingId}/timeline`);
       set({ timeline: data.events, timelineLoading: false });
     } catch { set({ timelineLoading: false }); }
+  },
+
+  // Per-segment coupon state from the airline. Also tells us whether the ticket is
+  // still eligible for refund / void / reissue, so the UI can say so before the
+  // customer starts a cancellation that the coupon state would reject.
+  loadCouponStatus: async (bookingId) => {
+    set({ couponStatusLoading: true });
+    try {
+      const data = await api<any>(`/api/manage-booking/${bookingId}/coupon-status`);
+      set({ couponStatus: data, couponStatusLoading: false });
+    } catch { set({ couponStatusLoading: false }); }
+  },
+
+  loadCreditNotes: async (bookingId) => {
+    set({ creditNotesLoading: true });
+    try {
+      const data = await api<any>(`/api/manage-booking/${bookingId}/credit-notes`);
+      set({ creditNotes: data, creditNotesLoading: false });
+    } catch { set({ creditNotesLoading: false }); }
   },
 
   loadETicket: async (bookingId) => {

@@ -856,6 +856,107 @@ export async function getTripDetailsResilient(mfRef: string): Promise<any> {
  * unconfirmed state (e.g. ERBUK082 "Awaiting carrier response") without an
  * inline UniqueID. Returns null if no MFRef can be resolved.
  */
+export interface MystiflyCouponSegment {
+  origin: string;
+  destination: string;
+  flightNumber: string;
+  travelDate: string | null;
+  couponStatus: string;      // 'OPEN' | 'N/A' | 'USED' | …  (provider text)
+  statusCode: number | null; // provider numeric Status
+  /** Provider warning, e.g. "not in OPEN status; NOT valid for REFUND/VOID and REISSUE". */
+  warning: string | null;
+  fareBasisCode: string | null;
+  rbdClass: string | null;
+  baggage: string | null;
+}
+
+export interface MystiflyCouponTicket {
+  eTicketNumber: string;
+  ticketIssueDate: string | null;
+  segments: MystiflyCouponSegment[];
+}
+
+/**
+ * Per-coupon (per-segment) status for a ticketed booking.
+ *
+ * GET /api/CouponStatus/{MFRef} → Data.CouponDetailsResult.CouponStatus.lstEticket[]
+ * with an lstSegment[] per e-ticket. Each segment carries a CouponStatus plus a
+ * Warning that states outright whether the coupon is eligible for REFUND/VOID/REISSUE,
+ * so this is the cheapest pre-check before quoting any of them.
+ */
+export async function getCouponStatus(mfRef: string): Promise<{
+  tickets: MystiflyCouponTicket[];
+  raw: any;
+}> {
+  const res = await mystiflyRequest<any>({
+    method: 'GET',
+    path: `/api/CouponStatus/${encodeURIComponent(mfRef)}`,
+    retries: 1,
+  });
+
+  const list = res?.Data?.CouponDetailsResult?.CouponStatus?.lstEticket;
+  const tickets: MystiflyCouponTicket[] = (Array.isArray(list) ? list : []).map((t: any) => ({
+    eTicketNumber: String(t?.ETicketNo ?? ''),
+    ticketIssueDate: t?.TicketIssueDate || null,
+    segments: (Array.isArray(t?.lstSegment) ? t.lstSegment : []).map((sg: any) => ({
+      origin: String(sg?.Origin ?? ''),
+      destination: String(sg?.Destination ?? ''),
+      flightNumber: String(sg?.FlightNumber ?? ''),
+      travelDate: sg?.TravelDate || null,
+      couponStatus: String(sg?.CouponStatus ?? ''),
+      statusCode: sg?.Status != null ? Number(sg.Status) : null,
+      warning: sg?.Warning || null,
+      fareBasisCode: sg?.FareBasisCode || null,
+      rbdClass: sg?.RBDClass || null,
+      baggage: sg?.Baggage || null,
+    })),
+  }));
+
+  return { tickets, raw: res };
+}
+
+export interface MystiflyCreditNote {
+  number: number | null;
+  mfRef: string | null;
+  amount: number | null;
+  currency: string | null;
+  status: string | null;
+}
+
+/**
+ * Credit notes raised by the provider — how a void/refund/reissue settles back to the
+ * agency. POST /api/Search/CreditNote is a paged global feed (its only documented input
+ * is Page), so a booking-scoped view is filtered here on the MFRef each transaction
+ * carries.
+ */
+export async function searchCreditNotes(opts: { page?: number; mfRef?: string } = {}): Promise<{
+  creditNotes: MystiflyCreditNote[];
+  raw: any;
+}> {
+  const res = await mystiflyRequest<any>({
+    method: 'POST',
+    path: '/api/Search/CreditNote',
+    body: { Page: opts.page ?? 1 } as unknown as Record<string, unknown>,
+    retries: 1,
+  });
+
+  const txns = res?.Data?.Transactions;
+  let creditNotes: MystiflyCreditNote[] = (Array.isArray(txns) ? txns : []).map((t: any) => ({
+    number: t?.Number != null ? Number(t.Number) : null,
+    mfRef: t?.MFRef ?? null,
+    amount: t?.Amount != null ? Number(t.Amount) : null,
+    currency: t?.Currency ?? null,
+    status: t?.Status ?? null,
+  }));
+
+  if (opts.mfRef) {
+    const want = opts.mfRef.toUpperCase();
+    creditNotes = creditNotes.filter((c) => (c.mfRef || '').toUpperCase() === want);
+  }
+
+  return { creditNotes, raw: res };
+}
+
 export async function getMfRefFromFsc(fareSourceCode: string): Promise<string | null> {
   try {
     const result = await mystiflyRequest<any>({
@@ -1528,6 +1629,8 @@ export default {
   getFareRules,
   getTicketOrderStatus,
   getTripDetails,
+  getCouponStatus,
+  searchCreditNotes,
   getSeatMap,
   getAncillaryServices,
   addBookingNotes,

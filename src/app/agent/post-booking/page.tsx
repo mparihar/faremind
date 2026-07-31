@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
+import CouponStatusPanel from '@/components/booking/CouponStatusPanel';
 
 /**
  * Agent Post-Booking Servicing Page — MYSTIFLY ONLY
@@ -441,6 +442,21 @@ export default function AgentPostBookingPage() {
                 className="flex items-center gap-2 px-5 py-3 bg-[#1ABC9C]/15 border border-[#1ABC9C]/20 rounded-xl text-[#1ABC9C] text-sm font-bold hover:bg-[#1ABC9C]/25 disabled:opacity-50 mb-4">
                 {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Search PTR Status
               </button>
+
+              {/* Same panel and same endpoints the customer sees, plus provider credit
+                  notes. Coupon state is the airline's own verdict on whether a
+                  refund / void / reissue is still possible, so it is worth checking
+                  before quoting one. Needs a FareMind booking id/reference. */}
+              {bookingId.trim() ? (
+                <div className="mt-2 border-t border-slate-700/50 pt-4">
+                  <h4 className="text-white font-bold text-sm mb-3">Ticket &amp; Coupon Status</h4>
+                  <CouponStatusPanel bookingId={bookingId.trim()} showCreditNotes />
+                </div>
+              ) : (
+                <p className="text-slate-500 text-xs mt-2 border-t border-slate-700/50 pt-4">
+                  Enter a Booking ID above to see per-segment coupon status and provider credit notes.
+                </p>
+              )}
             </div>
           )}
 
