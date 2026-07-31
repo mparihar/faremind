@@ -493,7 +493,16 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       let resolvedCancellationFee = primaryPnr?.cancellationFee != null ? Number(primaryPnr.cancellationFee) : null;
       let resolvedChangeFee = primaryPnr?.changeFee != null ? Number(primaryPnr.changeFee) : null;
 
-      if (primaryPnr && !resolvedRefundable && !resolvedChangeable && primaryPnr.providerOrderId) {
+      // Refresh from the provider whenever the snapshot looks unset rather than only when
+      // BOTH flags are false. A booking stored as non-refundable-but-changeable never met
+      // the old condition, so a wrong refundable flag could never be corrected. Missing
+      // fees count as unset too — the airline publishes them and we were showing none.
+      const snapshotLooksUnset = !primaryPnr?.refundable
+        || !primaryPnr?.changeable
+        || primaryPnr?.cancellationFee == null
+        || primaryPnr?.changeFee == null;
+
+      if (primaryPnr && snapshotLooksUnset && primaryPnr.providerOrderId) {
         try {
           const providerName = (primaryPnr.provider || booking.primaryProvider || '').toLowerCase();
           const provider = getProvider(providerName);

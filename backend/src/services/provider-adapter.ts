@@ -553,6 +553,56 @@ import * as mystiflyClient from './mystifly';
 import type { MystiflyReissueOriginDestination, MystiflyReissuePassenger } from './mystifly';
 import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
 
+/**
+ * Read a Mystifly booking's real fare rules out of TripDetails.
+ *
+ * They live per passenger type under TripDetailsPTC_FareBreakdowns[]:
+ *   AirRefundCharges.IsRefundableBeforeDeparture     "Yes" | "No" | "InformationNotAvailable"
+ *   AirRefundCharges.RefundCharges[].ChargesBeforeDeparture[].Charges
+ *   AirExchangeCharges.IsExchangeableBeforeDeparture  same tri-state
+ *   AirExchangeCharges.ExchangeCharges[].ChargeBeforeDeparture
+ *
+ * "InformationNotAvailable" is a real third answer and is treated as not-permitted for
+ * the boolean, since claiming a fare is refundable on the strength of the airline
+ * declining to say so is the more damaging error. The penalties are returned alongside,
+ * so callers can show what a cancellation or change would actually cost — previously
+ * neither was surfaced and both fees stayed null on every booking.
+ */
+function mystiflyFareConditions(data: any): {
+  refundable: boolean; changeable: boolean;
+  refundPenalty?: number; changePenalty?: number; penaltyCurrency?: string;
+} {
+  const breakdowns: any[] = Array.isArray(data?.TripDetailsPTC_FareBreakdowns)
+    ? data.TripDetailsPTC_FareBreakdowns : [];
+  const isYes = (v: any) => /^yes$/i.test(String(v ?? '').trim());
+
+  // Permitted only when every priced passenger type permits it.
+  const refundable = breakdowns.length > 0
+    && breakdowns.every((b) => isYes(b?.AirRefundCharges?.IsRefundableBeforeDeparture));
+  const changeable = breakdowns.length > 0
+    && breakdowns.every((b) => isYes(b?.AirExchangeCharges?.IsExchangeableBeforeDeparture));
+
+  // Worst-case penalty across passenger types — quoting the cheapest would understate it.
+  const refundFees = breakdowns.flatMap((b) =>
+    (b?.AirRefundCharges?.RefundCharges || []).flatMap((c: any) =>
+      (c?.ChargesBeforeDeparture || []).map((x: any) => parseFloat(x?.Charges)).filter((n: number) => Number.isFinite(n))));
+  const changeFees = breakdowns.flatMap((b) =>
+    (b?.AirExchangeCharges?.ExchangeCharges || [])
+      .map((c: any) => parseFloat(c?.ChargeBeforeDeparture)).filter((n: number) => Number.isFinite(n)));
+
+  const currency = breakdowns[0]?.AirRefundCharges?.RefundCharges?.[0]?.Currency
+    || breakdowns[0]?.TripDetailsPassengerFare?.TotalFare?.CurrencyCode
+    || undefined;
+
+  return {
+    refundable,
+    changeable,
+    ...(refundFees.length ? { refundPenalty: Math.max(...refundFees) } : {}),
+    ...(changeFees.length ? { changePenalty: Math.max(...changeFees) } : {}),
+    ...(currency ? { penaltyCurrency: currency } : {}),
+  };
+}
+
 export class MystiflyAdapter implements IBookingProvider {
   readonly name = 'mystifly';
 
@@ -608,10 +658,13 @@ export class MystiflyAdapter implements IBookingProvider {
         familyName: p.LastName || p.lastName || undefined,
       })),
       slices,
-      conditions: {
-        refundable: data?.IsRefundable ?? false,
-        changeable: true,
-      },
+      // Fare rules come from the per-passenger-type fare breakdown, which is where
+      // Mystifly actually publishes them. This previously read `data.IsRefundable` — a
+      // field TripDetails does not return at all, so it was always undefined and every
+      // Mystifly booking was reported non-refundable — and hardcoded `changeable: true`,
+      // so a genuinely non-changeable fare was reported changeable. Both were wrong by
+      // construction rather than by data.
+      conditions: mystiflyFareConditions(data),
       capabilities: {
         addBaggageAllowed: false, // Mystifly Post-booking baggage addition not currently supported in adapter
       },

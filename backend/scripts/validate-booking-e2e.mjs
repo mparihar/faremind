@@ -230,8 +230,13 @@ async function validate(b) {
   check('ITINERARY', 'segment count', ps.length === ourSegs.length, `airline ${ps.length} vs stored ${ourSegs.length}`);
   let matched = 0;
   const mismatches = [];
+  // We store the flight number carrier-prefixed ("6E6328"); the provider returns it bare
+  // ("6328"). Strip any leading carrier code — IATA codes are alphanumeric (6E, 9W), so
+  // matching only [A-Z]{2} silently fails for numeric-leading carriers like IndiGo.
+  const bareFlight = (v) => String(v ?? '').replace(/^[0-9A-Z]{2}(?=\d)/i, '').replace(/^0+/, '');
   for (const seg of ps) {
-    const hit = ourSegs.find((o) => o.o === seg.origin && o.d === seg.destination && String(o.f).replace(/^[A-Z]{2}/, '') === seg.flightNumber);
+    const hit = ourSegs.find((o) => o.o === seg.origin && o.d === seg.destination
+      && bareFlight(o.f) === bareFlight(seg.flightNumber));
     if (hit) {
       matched++;
       // Both sides are compared as wall-clock text — no Date parsing, no zone shift.
