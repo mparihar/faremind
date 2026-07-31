@@ -1,9 +1,9 @@
 // FILE: src/app/api/agent/dashboard/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { withAgent } from '@/lib/agent-auth';
+import { withAgentServicing } from '@/lib/agent-auth';
 import { prisma } from '@/lib/db';
 
-export const GET = withAgent(async (_req: NextRequest, { agent }) => {
+export const GET = withAgentServicing(async (_req: NextRequest, { agent }) => {
   const now = new Date();
 
   // All counts in parallel
@@ -16,12 +16,12 @@ export const GET = withAgent(async (_req: NextRequest, { agent }) => {
     recentBookings,
   ] = await Promise.all([
     // Total bookings by this agent (including self-bookings)
-    prisma.masterBooking.count({ where: { OR: [{ agentUserId: agent.id }, { userId: agent.id }] } }),
+    prisma.masterBooking.count({ where: { walletOverLimit: false, OR: [{ agentUserId: agent.id }, { userId: agent.id }] } }),
 
     // Upcoming trips (departure in the future)
     prisma.masterBooking.count({
       where: {
-        OR: [{ agentUserId: agent.id }, { userId: agent.id }],
+        walletOverLimit: false, OR: [{ agentUserId: agent.id }, { userId: agent.id }],
         departureDate: { gte: now },
         bookingStatus: { in: ['CONFIRMED', 'TICKETED', 'CREATED'] },
       },
@@ -33,7 +33,7 @@ export const GET = withAgent(async (_req: NextRequest, { agent }) => {
     // Cancelled bookings
     prisma.masterBooking.count({
       where: {
-        OR: [{ agentUserId: agent.id }, { userId: agent.id }],
+        walletOverLimit: false, OR: [{ agentUserId: agent.id }, { userId: agent.id }],
         bookingStatus: 'CANCELLED',
       },
     }).catch(() => 0),
@@ -41,14 +41,14 @@ export const GET = withAgent(async (_req: NextRequest, { agent }) => {
     // Failed bookings
     prisma.masterBooking.count({
       where: {
-        OR: [{ agentUserId: agent.id }, { userId: agent.id }],
+        walletOverLimit: false, OR: [{ agentUserId: agent.id }, { userId: agent.id }],
         bookingStatus: 'FAILED',
       },
     }).catch(() => 0),
 
     // Recent bookings (last 10)
     prisma.masterBooking.findMany({
-      where: { OR: [{ agentUserId: agent.id }, { userId: agent.id }] },
+      where: { walletOverLimit: false, OR: [{ agentUserId: agent.id }, { userId: agent.id }] },
       select: {
         id: true,
         masterBookingReference: true,

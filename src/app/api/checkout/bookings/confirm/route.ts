@@ -2247,14 +2247,41 @@ export async function POST(req: NextRequest) {
             if (u) resolvedAgentId = u.id;
           }
           if (resolvedAgentId) {
-            await prisma.masterBooking.update({ where: { id: masterBooking.id }, data: { agentUserId: resolvedAgentId } }).catch(() => {});
             const BACKEND = (process.env.BACKEND_URL || process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001').replace(/\/$/, '');
-            await fetch(`${BACKEND}/api/agent-wallet/record`, {
+            // Does this booking fit within the agent's remaining wallet?
+            const chk = await fetch(`${BACKEND}/api/agent-wallet/check`, {
               method: 'POST', headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({ userId: resolvedAgentId, amount: totalAmount, bookingId: masterBooking.id }),
-            });
-            const { maybeAutoRecharge } = await import('@/lib/payments/auto-recharge');
-            await maybeAutoRecharge(resolvedAgentId).catch(() => {});
+              body: JSON.stringify({ userId: resolvedAgentId, amount: totalAmount }),
+            }).then((r) => r.json()).catch(() => ({ allowed: false, code: 'WALLET_CHECK_FAILED' }));
+
+            if (chk.allowed) {
+              // ── Fits within the wallet → attribute to the agent + record utilization ──
+              await prisma.masterBooking.update({ where: { id: masterBooking.id }, data: { agentUserId: resolvedAgentId } }).catch(() => {});
+              await fetch(`${BACKEND}/api/agent-wallet/record`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: resolvedAgentId, amount: totalAmount, bookingId: masterBooking.id }),
+              });
+              const { maybeAutoRecharge } = await import('@/lib/payments/auto-recharge');
+              await maybeAutoRecharge(resolvedAgentId).catch(() => {});
+            } else {
+              // ── Over the wallet limit → do NOT attribute to the agent. Flag the
+              //    booking admin/support-only, and disable the agent for attempting
+              //    an over-limit booking. Utilization is NOT charged for this one. ──
+              await prisma.masterBooking.update({ where: { id: masterBooking.id }, data: { walletOverLimit: true, agentUserId: null } }).catch(() => {});
+              await prisma.bookingEvent.create({
+                data: {
+                  bookingId: masterBooking.id, eventType: 'WALLET_OVER_LIMIT',
+                  eventTitle: 'Over agent wallet limit — not attributed to agent',
+                  eventDescription: `Booking ${masterBookingReference} ($${totalAmount}) would exceed the agent's wallet (remaining ${chk.remaining ?? 'n/a'}). Not attributed to the agent; visible to Admin/Support only. Agent disabled.`,
+                  actorType: 'system', actorName: 'Wallet Guard',
+                  payloadJson: { agentUserId: resolvedAgentId, amount: totalAmount, remaining: chk.remaining ?? null },
+                },
+              }).catch(() => {});
+              await fetch(`${BACKEND}/api/agent-wallet/action`, {
+                method: 'POST', headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ userId: resolvedAgentId, action: 'disable', reason: `Attempted over-limit booking ${masterBookingReference} ($${totalAmount})`, actor: 'SYSTEM (wallet guard)' }),
+              }).catch(() => {});
+            }
           }
         } catch (e: any) {
           console.error('[Checkout] Agent-owned public booking wallet attribution failed:', e?.message ?? e);

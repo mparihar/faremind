@@ -1,9 +1,9 @@
-// Agent: own wallet history. GET /api/agent/wallet/history (withAgent → own id).
+// Agent: own wallet history. GET /api/agent/wallet/history (withAgentServicing → own id).
 import { NextResponse } from 'next/server';
-import { withAgent } from '@/lib/agent-auth';
+import { withAgentServicing } from '@/lib/agent-auth';
 import { prisma } from '@/lib/db';
 
-export const GET = withAgent(async (_req, { agent }) => {
+export const GET = withAgentServicing(async (_req, { agent }) => {
   const history = await prisma.agentWalletHistory.findMany({
     where: { userId: agent.id },
     orderBy: { createdAt: 'desc' },

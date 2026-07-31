@@ -1,14 +1,15 @@
 // FILE: src/app/api/agent/bookings/[fbr]/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { withAgent } from '@/lib/agent-auth';
+import { withAgentServicing } from '@/lib/agent-auth';
 import { prisma } from '@/lib/db';
 
-export const GET = withAgent(async (_req: NextRequest, { agent, params }) => {
+export const GET = withAgentServicing(async (_req: NextRequest, { agent, params }) => {
   const fbr = params.fbr;
 
   const booking = await prisma.masterBooking.findFirst({
     where: {
       masterBookingReference: fbr,
+      walletOverLimit: false, // over-limit bookings are Admin/Support-only
       OR: [
         { agentUserId: agent.id },
         { userId: agent.id },

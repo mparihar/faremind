@@ -86,11 +86,13 @@ export function withAgent(handler: AgentHandler) {
 
 /**
  * Like withAgent, but ALLOWS a wallet-disabled agent (isActive=false) through.
- * Use ONLY for wallet-recharge / payment-method / wallet-summary endpoints so a
- * disabled agent can restore their wallet. Every other agent surface must keep
- * using withAgent (which blocks disabled accounts).
+ * Use for READ / SERVICING surfaces a disabled agent must still reach — viewing
+ * their bookings & dashboard, wallet recharge, post-booking servicing. Being over
+ * the prepaid wallet limit should never hide existing bookings; only NEW booking
+ * creation is gated (by the wallet check at checkout). Booking-CREATION endpoints
+ * must keep using withAgent (which blocks disabled accounts).
  */
-export function withAgentWalletAccess(handler: AgentHandler) {
+export function withAgentServicing(handler: AgentHandler) {
   return async (
     req: NextRequest,
     context: { params: Promise<Record<string, string>> }
@@ -128,3 +130,6 @@ export function withAgentWalletAccess(handler: AgentHandler) {
     return handler(req, { agent, params });
   };
 }
+
+/** @deprecated Alias of withAgentServicing (kept for existing recharge routes). */
+export const withAgentWalletAccess = withAgentServicing;

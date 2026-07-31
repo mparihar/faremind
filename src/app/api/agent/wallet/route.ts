@@ -1,9 +1,9 @@
-// Agent: own wallet summary. GET /api/agent/wallet (withAgent → own id only).
+// Agent: own wallet summary. GET /api/agent/wallet (withAgentServicing → own id only).
 import { NextResponse } from 'next/server';
-import { withAgent } from '@/lib/agent-auth';
+import { withAgentServicing } from '@/lib/agent-auth';
 import { prisma } from '@/lib/db';
 
-export const GET = withAgent(async (_req, { agent }) => {
+export const GET = withAgentServicing(async (_req, { agent }) => {
   const cfgRows = await prisma.systemConfig.findMany({ where: { key: { in: ['wallet_default_balance', 'wallet_low_threshold', 'wallet_disable_threshold', 'wallet_currency'] } } });
   const cfg = new Map(cfgRows.map((r) => [r.key, r.value]));
   const defaultBalance = parseFloat(cfg.get('wallet_default_balance') || '3000');

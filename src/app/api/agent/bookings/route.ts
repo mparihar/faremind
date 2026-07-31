@@ -1,9 +1,9 @@
 // FILE: src/app/api/agent/bookings/route.ts
 import { NextRequest, NextResponse } from 'next/server';
-import { withAgent } from '@/lib/agent-auth';
+import { withAgentServicing } from '@/lib/agent-auth';
 import { prisma } from '@/lib/db';
 
-export const GET = withAgent(async (req: NextRequest, { agent }) => {
+export const GET = withAgentServicing(async (req: NextRequest, { agent }) => {
   const url = new URL(req.url);
   const page = parseInt(url.searchParams.get('page') || '1', 10);
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10), 50);
@@ -19,7 +19,9 @@ export const GET = withAgent(async (req: NextRequest, { agent }) => {
     ],
   };
 
-  const where: any = { ...ownershipFilter };
+  // Exclude over-limit bookings — those are de-attributed from the agent and
+  // visible to Admin/Support only.
+  const where: any = { ...ownershipFilter, walletOverLimit: false };
 
   if (search) {
     where.AND = [
