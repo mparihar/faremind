@@ -354,7 +354,7 @@ export default function BookingDetailPage() {
   const params = useParams();
   const router = useRouter();
   const bookingId = params.bookingId as string;
-  const { booking, bookingLoading, loadBookingDetail, actions, loadActions, fareRules, timeline, loadTimeline, activeModal, setActiveModal, guestToken, pendingChange } = useManageBookingStore();
+  const { booking, bookingLoading, loadBookingDetail, actions, loadActions, fareRules, timeline, loadTimeline, activeModal, setActiveModal, guestToken, pendingChange, paymentDue } = useManageBookingStore();
   const { user, loadSession } = useAuthStore();
 
   useEffect(() => { loadSession(); }, [loadSession]);
@@ -422,6 +422,32 @@ export default function BookingDetailPage() {
         <button onClick={() => router.push('/manage-booking')} className="flex items-center gap-2 text-slate-500 hover:text-white text-sm mb-5 transition-colors">
           <ArrowLeft size={16} /> Back to bookings
         </button>
+
+        {/* A change the airline has priced but the customer has not paid for. Nothing is
+            charged and the ticket is untouched, so without this the request is invisible
+            and the change simply never happens. */}
+        {paymentDue && (
+          <div className="mb-5 rounded-2xl border border-[#1ABC9C]/30 bg-[#1ABC9C]/10 p-4 flex items-start gap-3">
+            <CreditCard size={18} className="text-[#1ABC9C] mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-[#1ABC9C] font-bold text-sm">Payment needed to complete your flight change</p>
+              <p className="text-slate-300 text-[13px] mt-1">
+                The airline has priced your change at{' '}
+                <span className="text-white font-bold">{paymentDue.currency} {paymentDue.amount.toFixed(2)}</span>.
+                {' '}<span className="text-white font-semibold">Nothing has been charged yet</span> and your current ticket below stays valid — the change is only sent to the airline once this is paid.
+              </p>
+              {paymentDue.description && (
+                <p className="text-slate-400 text-[12px] mt-1.5">{paymentDue.description}</p>
+              )}
+              <a href="/account/make-payment" className="inline-block mt-3 px-4 py-2 rounded-lg bg-[#1ABC9C] text-slate-900 text-xs font-bold hover:bg-[#1ABC9C]/90 transition-all">
+                Pay {paymentDue.currency} {paymentDue.amount.toFixed(2)} and confirm
+              </a>
+              <p className="text-slate-500 text-[11px] mt-2">
+                Airline pricing can move, so this amount is held only briefly. If you would rather not proceed, do nothing — your booking is unaffected.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* A change accepted by the airline but not yet fulfilled. The booking below
             still shows the ticket the customer currently holds — which is correct, and

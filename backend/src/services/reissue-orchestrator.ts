@@ -166,25 +166,211 @@ export async function getReissueQuote(
   };
 }
 
-async function recordPendingCollect(booking: any, quote: ReissueQuote, forcedBy: string | undefined, reason: string) {
+/** Everything the webhook needs to finish a reissue once the customer has paid. */
+export interface ReissueCollectionContext {
+  kind: 'REISSUE_COLLECTION';
+  mfRef: string;
+  providerPtrId: number;
+  preferenceOption: number;
+  newFareSourceCode: string | null;
+  quote: { fareDifference: number; penalty: number; serviceFee: number; totalCollect: number; currency: string };
+  requestedBy: string | null;
+  reason: string;
+}
+
+/**
+ * Ask the customer to pay the reissue difference, instead of silently charging a card
+ * that may not be mandated for off-session use.
+ *
+ * Creates a PENDING ServicePayment carrying the execution context, so the Stripe webhook
+ * can send the change to the airline the moment the money clears — the airline is never
+ * contacted before the customer has actually paid. Nothing is charged here and the
+ * existing ticket is untouched; the customer can simply not pay and keep their booking.
+ *
+ * paymentPurpose is a plain string column and `notes` is Text, so this needs no schema
+ * change — the context rides in notes as JSON.
+ */
+async function requestReissuePayment(
+  booking: any,
+  quote: ReissueQuote,
+  opts: { mfRef: string; newFareSourceCode?: string; requestedBy?: string; reason: string },
+): Promise<{ servicePaymentId: string | null }> {
+  const context: ReissueCollectionContext = {
+    kind: 'REISSUE_COLLECTION',
+    mfRef: opts.mfRef,
+    providerPtrId: quote.providerPtrId,
+    preferenceOption: quote.preferenceOption,
+    newFareSourceCode: opts.newFareSourceCode || null,
+    quote: {
+      fareDifference: quote.fareDifference, penalty: quote.penalty,
+      serviceFee: quote.serviceFee, totalCollect: quote.totalCollect, currency: quote.currency,
+    },
+    requestedBy: opts.requestedBy ?? null,
+    reason: opts.reason,
+  };
+
+  let servicePaymentId: string | null = null;
   try {
-    await prisma.servicePayment.create({
+    const sp = await prisma.servicePayment.create({
       data: {
         bookingId: booking.id,
         userId: booking.userId ?? null,
         serviceType: 'DATE_CHANGE',
-        description: `Reissue difference to collect: fare diff $${quote.fareDifference} + service fee $${quote.serviceFee} = $${quote.totalCollect}. ${reason}`,
+        paymentPurpose: 'REISSUE_COLLECTION',
+        description: `Flight change: fare difference ${quote.currency} ${quote.fareDifference.toFixed(2)} (incl. airline penalty ${quote.penalty.toFixed(2)}) + service fee ${quote.serviceFee.toFixed(2)} = ${quote.totalCollect.toFixed(2)}`,
         amount: quote.totalCollect,
-        currency: 'USD',
+        currency: quote.currency,
         status: 'PENDING',
         customerEmail: booking.customerEmail ?? 'unknown@unknown.com',
         customerName: booking.customerName ?? 'Customer',
         customerPhone: booking.pnrs?.[0]?.phone ?? null,
-        requestedBy: forcedBy?.startsWith('ADMIN') ? 'ADMIN' : 'AGENT',
-        notes: reason,
+        requestedBy: opts.requestedBy?.startsWith('ADMIN') ? 'ADMIN' : 'AGENT',
+        notes: JSON.stringify(context),
       },
     });
-  } catch { /* best-effort */ }
+    servicePaymentId = sp.id;
+  } catch (e) {
+    console.error(`[Reissue][Collect] could not record the payment request for ${booking.masterBookingReference}: ${(e as Error).message}`);
+  }
+
+  await mbq.createBookingEvent({
+    bookingId: booking.id,
+    eventType: 'REISSUE_PAYMENT_REQUESTED',
+    eventTitle: 'Payment requested for flight change',
+    eventDescription: `The airline quoted ${quote.currency} ${quote.totalCollect.toFixed(2)} for this change (fare difference ${quote.fareDifference.toFixed(2)} incl. penalty ${quote.penalty.toFixed(2)}, service fee ${quote.serviceFee.toFixed(2)}). Automatic charge was not possible: ${opts.reason}. Nothing has been charged and the ticket is unchanged; the reissue is sent to the airline once the customer pays.`,
+    actorType: 'system',
+  }).catch(() => {});
+
+  // Customer and staff both hear about it — a quoted reissue waiting on money is where
+  // a change stalls silently.
+  if (booking.customerEmail) {
+    fireNotification({
+      event_type: 'REISSUE_PAYMENT_REQUIRED',
+      booking_id: booking.id,
+      customer_email: booking.customerEmail,
+      data: {
+        booking_reference: booking.masterBookingReference,
+        customer_name: booking.customerName ?? '',
+        fare_difference: quote.fareDifference.toFixed(2),
+        penalty: quote.penalty.toFixed(2),
+        service_fee: quote.serviceFee.toFixed(2),
+        total_due: quote.totalCollect.toFixed(2),
+        currency: quote.currency,
+        requested_by: opts.requestedBy ?? 'staff',
+      },
+    });
+  }
+
+  return { servicePaymentId };
+}
+
+/**
+ * Send a paid-for reissue to the airline. Called by the Stripe webhook fulfiller once a
+ * REISSUE_COLLECTION ServicePayment has actually cleared.
+ *
+ * By this point the customer's money is ours, so there are only two acceptable endings:
+ * the airline accepts and the change is queued for fulfilment, or it refuses and the
+ * customer is refunded with a ticket raised. It must never fail quietly, which is why
+ * every failure path here refunds and escalates rather than throwing.
+ */
+export async function executePaidReissue(payment: any): Promise<void> {
+  const bookingId: string | null = payment?.bookingId ?? null;
+  const chargeId: string | null = payment?.stripePaymentIntentId ?? null;
+
+  let ctx: ReissueCollectionContext | null = null;
+  try { ctx = JSON.parse(String(payment?.notes || '')) as ReissueCollectionContext; } catch { /* handled below */ }
+
+  const bail = async (reason: string) => {
+    console.error(`[Reissue][Paid] ${payment?.id}: ${reason}`);
+    if (bookingId && chargeId) {
+      await refundCollectionWithAudit({
+        bookingId, chargeId,
+        amount: payment?.amount != null ? Number(payment.amount) : null,
+        currency: payment?.currency || 'USD',
+        reason: `the reissue could not be completed after payment (${reason})`,
+        eventType: 'REISSUE_REFUNDED',
+      });
+    }
+    await prisma.servicePayment.update({
+      where: { id: payment.id },
+      data: { failureReason: `Reissue not completed: ${reason}`.slice(0, 500) },
+    }).catch(() => {});
+  };
+
+  if (!ctx || ctx.kind !== 'REISSUE_COLLECTION' || !ctx.providerPtrId || !ctx.mfRef) {
+    await bail('the stored execution context is missing or unreadable');
+    return;
+  }
+  if (!bookingId) { await bail('the payment is not linked to a booking'); return; }
+
+  const booking = await mbq.getMasterBookingFull(bookingId);
+  if (!booking) { await bail('the booking could not be loaded'); return; }
+
+  // Accept the quoted option with the airline.
+  let result: any;
+  try {
+    result = await mystifly.confirmReissue(ctx.mfRef, ctx.providerPtrId, ctx.preferenceOption || 1);
+  } catch (e) {
+    await bail(`provider error: ${(e as Error).message}`);
+    return;
+  }
+  const err = result?.Data?.Errors?.[0] || result?.Error;
+  if ((err && (err.Code || err.code)) || result?.Success === false) {
+    await bail(err?.Message || err?.message || result?.Message || 'the airline rejected the reissue');
+    return;
+  }
+
+  const data = result?.Data || result || {};
+  const ptrNumber = String(data?.PTRId ?? data?.PtrId ?? ctx.providerPtrId);
+  const ptrStatus = data?.PTRStatus || 'InProcess';
+  const settled = /completed/i.test(ptrStatus);
+  console.log(`[Reissue][Paid] bookingRef=${booking.masterBookingReference} ptr=${ptrNumber} status=${ptrStatus} settled=${settled} collected=${payment?.amount} ${payment?.currency}`);
+
+  // Not settled yet → hand to the settlement cron, with the collection attached so a
+  // later rejection refunds the customer automatically.
+  if (!settled) {
+    await prisma.changeRequest.create({
+      data: {
+        bookingId, type: 'DATE_CHANGE', status: 'PROVIDER_PROCESSING',
+        requestedBy: ctx.requestedBy || 'CUSTOMER_PAYMENT',
+        requestedData: { newFareSourceCode: ctx.newFareSourceCode, preferenceOption: ctx.preferenceOption } as any,
+        totalCost: ctx.quote.totalCollect, currency: ctx.quote.currency,
+        providerPtrId: String(ctx.providerPtrId), providerMfRef: ctx.mfRef,
+        providerResponse: result as any,
+        collectedChargeId: chargeId, collectedAmount: ctx.quote.totalCollect,
+        nextCheckAt: new Date(Date.now() + 30 * 60 * 1000),
+      } as any,
+    }).catch((e) => console.error(`[Reissue][Paid] CRITICAL: settlement not queued for ${bookingId}: ${(e as Error).message}`));
+  } else {
+    await prisma.masterBooking.update({
+      where: { id: bookingId },
+      data: { revalidatedFareSourceCode: ctx.newFareSourceCode ?? undefined },
+    }).catch(() => {});
+  }
+
+  await mbq.createBookingEvent({
+    bookingId,
+    eventType: settled ? 'REISSUE_COMPLETED' : 'REISSUE_SUBMITTED',
+    eventTitle: settled ? 'Ticket reissued after payment' : 'Reissue submitted after payment',
+    eventDescription: settled
+      ? `Payment of ${ctx.quote.currency} ${ctx.quote.totalCollect.toFixed(2)} received and the airline reissued the ticket (PTR ${ptrNumber}).`
+      : `Payment of ${ctx.quote.currency} ${ctx.quote.totalCollect.toFixed(2)} received and the change was sent to the airline (PTR ${ptrNumber}, status ${ptrStatus}). The ticket is NOT reissued yet — fulfilment is being polled, and the payment is refunded automatically if the airline rejects it.`,
+    actorType: 'system',
+  }).catch(() => {});
+
+  if (booking.customerEmail) {
+    fireNotification({
+      event_type: settled ? 'FLIGHT_CHANGE_CONFIRMED' : 'DATE_CHANGE_SUBMITTED',
+      booking_id: bookingId,
+      customer_email: booking.customerEmail,
+      data: {
+        booking_reference: booking.masterBookingReference,
+        customer_name: booking.customerName ?? '',
+        amount_collected: ctx.quote.totalCollect.toFixed(2),
+        currency: ctx.quote.currency,
+      },
+    });
+  }
 }
 
 export async function initiateReissue(
@@ -224,15 +410,28 @@ export async function initiateReissue(
       description: `Reissue difference — ${booking.masterBookingReference}`,
       kind: 'reissue_collect',
     });
-    if (collect.status === 'NO_SAVED_CARD') {
-      await recordPendingCollect(booking, quote, forcedBy, 'No saved card available for off-session charge — collect via payment link, then retry reissue.');
-      console.warn(`[Reissue][Collect] status=NO_SAVED_CARD bookingRef=${booking.masterBookingReference} amount=${quote.totalCollect}`);
-      throw Object.assign(new Error('Could not auto-charge the reissue difference (no saved card on file). A payment task was created — collect the payment, then execute the reissue.'), { code: 'COLLECT_REQUIRES_PAYMENT' });
-    }
-    if (collect.status === 'FAILED') {
-      await recordPendingCollect(booking, quote, forcedBy, `Off-session charge failed: ${collect.error}`);
-      console.error(`[Reissue][Collect] status=FAILED bookingRef=${booking.masterBookingReference} amount=${quote.totalCollect}: ${collect.error}`);
-      throw Object.assign(new Error(`Could not charge the reissue difference: ${collect.error}. A payment task was created — collect the payment, then retry.`), { code: 'COLLECT_FAILED' });
+    // Off-session only works when the customer mandated the card at checkout
+    // (setup_future_usage) AND the issuer does not demand SCA. Neither is guaranteed —
+    // on Indian cards additional-factor authentication is the norm and Stripe answers
+    // `authentication_required`. Rather than dead-ending, hand the customer a payment
+    // they can complete on-session with 3DS; the webhook then executes the reissue.
+    if (collect.status === 'NO_SAVED_CARD' || collect.status === 'FAILED') {
+      const reason = collect.status === 'NO_SAVED_CARD'
+        ? 'no saved card on file'
+        : `off-session charge failed (${collect.error})`;
+      const request = await requestReissuePayment(booking, quote, {
+        mfRef, newFareSourceCode, requestedBy: forcedBy, reason,
+      });
+      console.warn(`[Reissue][Collect] status=${collect.status} bookingRef=${booking.masterBookingReference} amount=${quote.totalCollect} — payment requested (${request.servicePaymentId ?? 'not recorded'})`);
+      throw Object.assign(
+        new Error(`The reissue difference could not be charged automatically (${reason}). The customer has been sent a payment request for ${quote.currency} ${quote.totalCollect.toFixed(2)}; the change is sent to the airline automatically once it is paid.`),
+        {
+          code: 'REISSUE_PAYMENT_REQUESTED',
+          servicePaymentId: request.servicePaymentId,
+          amountDue: quote.totalCollect,
+          currency: quote.currency,
+        },
+      );
     }
     chargeId = collect.chargeId;
     console.log(`[Reissue][Collect] status=CHARGED paymentIntent=${chargeId} amount=${quote.totalCollect} USD bookingRef=${booking.masterBookingReference}`);

@@ -44,6 +44,7 @@ export async function fulfillPayment(paymentId: string, opts: { stripeEventId?: 
   try {
     switch (payment.paymentPurpose) {
       case 'AGENT_WALLET_RECHARGE': await fulfillWalletRecharge(payment); break;
+      case 'REISSUE_COLLECTION': await fulfillReissueCollection(payment); break;
       case 'OTHER_PAYMENT': await fulfillOtherPayment(payment); break;
       case 'BOOKING_PAYMENT':
       default: await fulfillBookingPayment(payment); break;
@@ -66,6 +67,24 @@ export async function markPaymentFailed(paymentId: string, reason: string, strip
 }
 
 /* ─────────────── Wallet recharge (direct wallet-service call) ─────────────── */
+
+/**
+ * The customer has paid a reissue difference — now send the change to the airline.
+ *
+ * This is the whole point of the payment-first flow: the provider is only contacted once
+ * the money has actually cleared, rather than charging a card off-session and hoping.
+ * The execution context (PTR id, chosen fare option, MFRef) was stashed on the
+ * ServicePayment when the quote was raised.
+ *
+ * Runs inside fulfillPayment's single-claim guard, so a replayed webhook cannot reissue
+ * twice. A provider failure here must NOT throw past the caller's handler — the customer
+ * has paid, so this has to end in either a completed reissue or a refund plus a ticket
+ * someone will action, never a silent stop.
+ */
+async function fulfillReissueCollection(payment: any): Promise<void> {
+  const { executePaidReissue } = await import('./reissue-orchestrator');
+  await executePaidReissue(payment);
+}
 
 async function fulfillWalletRecharge(payment: any): Promise<void> {
   const agentId = payment.agentId || payment.userId;

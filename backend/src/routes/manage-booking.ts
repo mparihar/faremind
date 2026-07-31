@@ -442,6 +442,23 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         },
       }).catch(() => null);
 
+      // A reissue quoted but not yet paid. The change cannot proceed until this clears,
+      // and the customer has no other way to discover it — the booking itself is
+      // deliberately unchanged.
+      const duePayment = await prisma.servicePayment.findFirst({
+        where: { bookingId: booking.id, paymentPurpose: 'REISSUE_COLLECTION', status: 'PENDING' },
+        orderBy: { createdAt: 'desc' },
+        select: { id: true, amount: true, currency: true, description: true, createdAt: true },
+      }).catch(() => null);
+
+      const paymentDue = duePayment ? {
+        id: duePayment.id,
+        amount: Number(duePayment.amount),
+        currency: duePayment.currency,
+        description: duePayment.description,
+        requestedAt: duePayment.createdAt,
+      } : null;
+
       const pendingChange = pending ? {
         id: pending.id,
         type: pending.type,
@@ -452,7 +469,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         nextCheckAt: pending.nextCheckAt,
       } : null;
 
-      return { booking, pendingChange };
+      return { booking, pendingChange, paymentDue };
     } catch (e) { fastify.log.error(e, '[manage-booking/detail]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
