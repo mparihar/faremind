@@ -22,6 +22,9 @@ import { prisma } from '../lib/db';
 import { buildPtrPassengers, type PtrPassenger } from '../lib/ptr-passengers';
 import { backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
 import { getAdminServiceFee } from '../services/cancellation-orchestrator';
+import { initiateReissue } from '../services/reissue-orchestrator';
+import { toUsd } from '../services/fx';
+import * as mbq from '../lib/manage-booking-queries';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -676,10 +679,10 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/reissue-quote', async (request, reply) => {
     try {
-      const { uniqueId, bookingId, newFareSourceCode, originDestinations, requestedBy, notes } = request.body as {
+      const { uniqueId, bookingId, newFareSourceCode, originDestinations, preferenceOption, requestedBy, notes } = request.body as {
         uniqueId: string; bookingId?: string; newFareSourceCode?: string;
         originDestinations?: mystifly.MystiflyReissueOriginDestination[];
-        requestedBy?: string; notes?: string;
+        preferenceOption?: number; requestedBy?: string; notes?: string;
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
 
@@ -721,22 +724,84 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(422).send({ error: message, errorCode: 'MYSTIFLY_REISSUE_QUOTE_FAILED', raw: result });
       }
 
-      // ReIssueQuote returns the PTR id synchronously; the priced options are fetched
-      // separately via GetExchangeQuote (Search PTR).
+      // ReIssueQuote returns ONLY the PTR id — it carries no amounts. The priced options
+      // live in GetExchangeQuote (Search PTR), so fetch them and price the change the way
+      // refund-quote prices a refund: the operator must see fare difference, airline
+      // penalty and service fee BEFORE anything is charged or sent to the airline.
       const quoteData = result?.Data || result;
       const providerPtrId = quoteData?.PTRId ?? quoteData?.PtrId ?? null;
+
+      let priced: {
+        fareDifference: number; penalty: number; serviceFee: number; totalCollect: number;
+        currency: string; providerCurrency: string; preferenceOption: number;
+      } | null = null;
+      let options: any[] = [];
+      let pricingError: string | null = null;
+
+      if (providerPtrId) {
+        try {
+          const exchange = await mystifly.getExchangeQuote(uniqueId, Number(providerPtrId));
+          const exData = exchange?.Data || exchange;
+          options = Array.isArray(exData?.RequestedPreferences) ? exData.RequestedPreferences : [];
+          const chosen = options.find((p: any) => Number(p?.Option) === (preferenceOption ?? 1)) || options[0];
+          const fares: any[] = Array.isArray(chosen?.QuotedFares) ? chosen.QuotedFares : [];
+          if (fares.length > 0) {
+            const sum = (pick: (f: any) => any) => fares.reduce(
+              (s, f) => s + (parseFloat(pick(f)) || 0) * (parseInt(f?.PassengerCount, 10) || 1), 0);
+            const providerCurrency = String(fares[0]?.Currency || 'USD').toUpperCase();
+            // TotalFareDifference already includes Penalty — never add them together.
+            const rawFareDiff = sum((f) => f.TotalFareDifference);
+            const rawPenalty = sum((f) => f.Penalty);
+            const fareDifference = providerCurrency !== 'USD' ? await toUsd(rawFareDiff, providerCurrency) : rawFareDiff;
+            const penalty = providerCurrency !== 'USD' ? await toUsd(rawPenalty, providerCurrency) : rawPenalty;
+            const bk = await resolvePtrBooking(uniqueId, bookingId);
+            const full = bk ? await prisma.masterBooking.findUnique({
+              where: { id: bk.id },
+              select: { serviceFeeAmount: true, passengers: { select: { id: true } } },
+            }) : null;
+            const serviceFee = full ? await getAdminServiceFee(full) : 0;
+            const r2 = (x: number) => Math.round(x * 100) / 100;
+            priced = {
+              fareDifference: r2(fareDifference), penalty: r2(penalty), serviceFee: r2(serviceFee),
+              totalCollect: r2(Math.max(0, fareDifference) + Math.max(0, serviceFee)),
+              currency: 'USD', providerCurrency,
+              preferenceOption: Number(chosen?.Option) || (preferenceOption ?? 1),
+            };
+          } else {
+            pricingError = 'The airline returned no priced options for this reissue.';
+          }
+        } catch (e: any) {
+          pricingError = `Could not price the reissue: ${e?.message || 'exchange quote failed'}`;
+          console.error('[PTR] ReIssueQuote pricing failed:', e?.message);
+        }
+      }
+
       if (ptrRecord) {
         await updatePtrRecord(ptrRecord.id, {
           status: 'QUOTE_RECEIVED',
-          quoteTotalAmount: quoteData?.TotalAmount || null,
-          quotePenaltyAmount: quoteData?.PenaltyAmount || null,
-          quoteCurrency: quoteData?.Currency || 'USD',
+          quoteTotalAmount: priced?.totalCollect ?? null,
+          quotePenaltyAmount: priced?.penalty ?? null,
+          quoteCurrency: priced?.currency || 'USD',
           fareSourceCode: newFareSourceCode,
           providerQuoteResponse: result,
         });
       }
 
-      return { success: true, ptrId: ptrRecord?.id, providerPtrId, quote: quoteData, originDestinations: onds, raw: result };
+      return {
+        success: true,
+        ptrId: ptrRecord?.id,
+        providerPtrId,
+        // Same shape the Reissue + Collect modal renders, so the console can show the
+        // breakdown instead of a PTR id with no numbers.
+        quote: priced
+          ? { ...priced, TotalAmount: priced.totalCollect, PenaltyAmount: priced.penalty, Currency: priced.currency }
+          : quoteData,
+        priced,
+        pricingError,
+        optionCount: options.length,
+        originDestinations: onds,
+        raw: result,
+      };
     } catch (error: any) {
       console.error('[PTR] ReIssueQuote error:', error.message);
       return reply.code(502).send({ error: `ReIssueQuote failed: ${error.message}` });
@@ -747,17 +812,55 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/reissue', async (request, reply) => {
     try {
-      const { uniqueId, ptrId, providerPtrId, preferenceOption, bookingId, requestedBy } = request.body as {
+      const {
+        uniqueId, ptrId, providerPtrId, preferenceOption, bookingId, requestedBy,
+        newFareSourceCode, collectDifference, expectedTotalCollect,
+      } = request.body as {
         uniqueId: string; ptrId?: string; providerPtrId?: number; preferenceOption?: number;
-        bookingId?: string; requestedBy?: string;
+        bookingId?: string; requestedBy?: string; newFareSourceCode?: string;
+        collectDifference?: boolean; expectedTotalCollect?: number;
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
       if (!providerPtrId) return reply.code(400).send({ error: 'providerPtrId (the ReIssueQuote PTR id) is required — run Get Reissue Quote first.', errorCode: 'MISSING_PTR_ID' });
 
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 
-      // Accept the quote: re-post with AcceptQuote=yes + the ReIssueQuote PTR id and the
-      // chosen fare option. Same contract shape as the refund accept.
+      // A reissue costs the customer money — fare difference (which already includes the
+      // airline penalty) plus the FareMind service fee — so the card must be charged
+      // BEFORE the change is sent to the airline, and refunded if the airline then fails.
+      // That is what initiateReissue does, and it is the same collect-then-act ordering the
+      // refund flow uses. Executing without collecting reissued the ticket for free.
+      let collection: Record<string, unknown> | null = null;
+      if (collectDifference !== false) {
+        const bk = await resolvePtrBooking(uniqueId, bookingId);
+        if (!bk) {
+          return reply.code(422).send({ error: 'Cannot collect the reissue difference: no booking found for this reference. Pass collectDifference:false to reissue without charging.', errorCode: 'BOOKING_NOT_FOUND' });
+        }
+        const full = await mbq.getMasterBookingFull(bk.id);
+        try {
+          const out = await initiateReissue({
+            bookingId: bk.id,
+            newFareSourceCode: newFareSourceCode || '',
+            forcedBy: requestedBy ? `AGENT:${requestedBy}` : 'AGENT',
+            preferenceOption: preferenceOption ?? 1,
+            expectedTotalCollect,
+          }, full);
+          // initiateReissue quotes, charges, executes, enqueues settlement and refunds on
+          // provider failure — nothing further to do here.
+          return { success: true, collected: true, ...out };
+        } catch (e: any) {
+          const code = e?.code || 'REISSUE_FAILED';
+          const status = code === 'REISSUE_PRICE_CHANGED' ? 409 : 422;
+          if (ptrId) await updatePtrRecord(ptrId, { status: 'FAILED', failureReason: e?.message, failedAt: new Date() });
+          return reply.code(status).send({
+            error: e?.message || 'Reissue failed', errorCode: code,
+            quotedTotalCollect: e?.quotedTotalCollect, expectedTotalCollect: e?.expectedTotalCollect,
+          });
+        }
+      }
+
+      // collectDifference:false — provider-only reissue (nothing charged). Kept for
+      // airline-initiated/involuntary changes where the customer owes nothing.
       const result = await mystifly.confirmReissue(uniqueId, providerPtrId, preferenceOption ?? 1);
       const { hasError, message } = extractPtrError(result);
 

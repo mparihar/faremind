@@ -149,7 +149,15 @@ export default function AgentPostBookingPage() {
       if (quoteResult?.ptrId) body.ptrId = quoteResult.ptrId;
       if (quoteResult?.providerPtrId) body.providerPtrId = quoteResult.providerPtrId; // Mystifly PTR id (required to accept refund)
       if (bookingId) body.bookingId = bookingId;
-      if (type === 'reissue' && newFSC) body.newFareSourceCode = newFSC;
+      if (type === 'reissue') {
+        if (newFSC) body.newFareSourceCode = newFSC;
+        // Send back the option and the total the agent was shown, so the backend aborts
+        // rather than charging more if the airline has repriced since the quote.
+        if (quoteResult?.priced) {
+          body.preferenceOption = quoteResult.priced.preferenceOption;
+          body.expectedTotalCollect = quoteResult.priced.totalCollect;
+        }
+      }
 
       const res = await fetch(`${BACKEND_URL}/api/mystifly-ptr/${type}`, {
         method: 'POST',
@@ -400,9 +408,13 @@ export default function AgentPostBookingPage() {
                   className="flex items-center gap-2 px-5 py-3 bg-amber-500/15 border border-amber-400/20 rounded-xl text-amber-400 text-sm font-bold hover:bg-amber-500/25 disabled:opacity-50">
                   {loading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Get Reissue Quote
                 </button>
-                <button onClick={() => handleExecute('reissue')} disabled={execLoading || !uniqueId.trim() || !quoteResult?.success}
+                {/* Gated on a priced quote: the card is charged before the change is sent
+                    to the airline, so the agent must have seen the amount first. */}
+                <button onClick={() => handleExecute('reissue')} disabled={execLoading || !uniqueId.trim() || !quoteResult?.success || !quoteResult?.priced}
+                  title={!quoteResult?.priced ? 'Get a reissue quote first — the fare difference and service fee must be priced before charging.' : undefined}
                   className="flex items-center gap-2 px-5 py-3 bg-blue-500/15 border border-blue-400/20 rounded-xl text-blue-400 text-sm font-bold hover:bg-blue-500/25 disabled:opacity-50">
-                  {execLoading ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />} Execute Reissue
+                  {execLoading ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
+                  {quoteResult?.priced ? `Charge ${fmt(quoteResult.priced.totalCollect, quoteResult.priced.currency)} & Reissue` : 'Execute Reissue'}
                 </button>
               </div>
               <div className="mt-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
@@ -440,24 +452,50 @@ export default function AgentPostBookingPage() {
               ) : (
                 <div>
                   <p className="text-emerald-400 text-sm font-bold flex items-center gap-2 mb-2"><CheckCircle2 size={14} /> Quote received</p>
-                  {quoteResult.quote && (
+                  {/* Reissue: what the customer will be CHARGED. Priced from
+                      GetExchangeQuote — fare difference already includes the airline
+                      penalty, so the penalty is shown for information and never added. */}
+                  {quoteResult.priced && (
+                    <div className="mb-3 rounded-xl border border-slate-700/50 bg-slate-900/40 p-3">
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Amount to collect from customer</p>
+                      <div className="space-y-1 text-sm">
+                        <div className="flex justify-between"><span className="text-slate-400">Fare difference</span><span className="text-white">{fmt(quoteResult.priced.fareDifference, quoteResult.priced.currency)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-400">Airline penalty <span className="text-[10px] text-slate-600">(included above)</span></span><span className="text-amber-400">{fmt(quoteResult.priced.penalty, quoteResult.priced.currency)}</span></div>
+                        <div className="flex justify-between"><span className="text-slate-400">FareMind service fee</span><span className="text-white">{fmt(quoteResult.priced.serviceFee, quoteResult.priced.currency)}</span></div>
+                        <div className="flex justify-between border-t border-slate-700 pt-1 mt-1 font-black text-white"><span>Total to charge</span><span>{fmt(quoteResult.priced.totalCollect, quoteResult.priced.currency)}</span></div>
+                      </div>
+                      {quoteResult.priced.providerCurrency && quoteResult.priced.providerCurrency !== quoteResult.priced.currency && (
+                        <p className="text-[10px] text-slate-500 mt-2">Converted from {quoteResult.priced.providerCurrency}.</p>
+                      )}
+                      {quoteResult.optionCount > 1 && (
+                        <p className="text-[10px] text-slate-500 mt-1">{quoteResult.optionCount} fare options returned; showing option {quoteResult.priced.preferenceOption}.</p>
+                      )}
+                      <p className="text-[11px] text-emerald-300/80 mt-2">The card is charged when you execute, before the change is sent to the airline.</p>
+                    </div>
+                  )}
+                  {quoteResult.pricingError && (
+                    <p className="text-amber-400 text-xs font-semibold mb-2">{quoteResult.pricingError}</p>
+                  )}
+
+                  {/* Void / Refund quote figures */}
+                  {quoteResult.quote && !quoteResult.priced && (
                     <div className="grid grid-cols-3 gap-3 mb-2">
-                      {quoteResult.quote.TotalAmount != null && (
-                        <div>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase">Total</p>
-                          <p className="text-sm font-black text-white">{fmt(quoteResult.quote.TotalAmount, quoteResult.quote.Currency)}</p>
-                        </div>
-                      )}
-                      {quoteResult.quote.PenaltyAmount != null && (
-                        <div>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase">Penalty</p>
-                          <p className="text-sm font-black text-amber-400">{fmt(quoteResult.quote.PenaltyAmount, quoteResult.quote.Currency)}</p>
-                        </div>
-                      )}
-                      {quoteResult.quote.RefundAmount != null && (
+                      {quoteResult.quote.TotalRefundAmount != null && (
                         <div>
                           <p className="text-[10px] font-bold text-slate-500 uppercase">Refund Amount</p>
-                          <p className="text-sm font-black text-emerald-400">{fmt(quoteResult.quote.RefundAmount, quoteResult.quote.Currency)}</p>
+                          <p className="text-sm font-black text-emerald-400">{fmt(quoteResult.quote.TotalRefundAmount, quoteResult.quote.Currency)}</p>
+                        </div>
+                      )}
+                      {(quoteResult.quote.CancellationCharge ?? quoteResult.quote.TotalVoidingFee) != null && (
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase">{quoteResult.quote.TotalVoidingFee != null ? 'Voiding Fee' : 'Cancellation Charge'}</p>
+                          <p className="text-sm font-black text-amber-400">{fmt(quoteResult.quote.TotalVoidingFee ?? quoteResult.quote.CancellationCharge, quoteResult.quote.Currency)}</p>
+                        </div>
+                      )}
+                      {quoteResult.quote.TotalRefundCharges != null && (
+                        <div>
+                          <p className="text-[10px] font-bold text-slate-500 uppercase">Total Charges</p>
+                          <p className="text-sm font-black text-amber-400">{fmt(quoteResult.quote.TotalRefundCharges, quoteResult.quote.Currency)}</p>
                         </div>
                       )}
                     </div>

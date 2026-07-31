@@ -63,6 +63,7 @@ export async function getReissueQuote(
   booking: any,
   newFareSourceCode: string,
   preferenceOption: number = 1,
+  originDestinationsOverride?: mystifly.MystiflyReissueOriginDestination[],
 ): Promise<ReissueQuote> {
   const mfRef = mfRefOf(booking);
   if (!mfRef) throw Object.assign(new Error('No Mystifly reference on this booking.'), { code: 'NO_PROVIDER_ORDER' });
@@ -73,7 +74,11 @@ export async function getReissueQuote(
   // records (ServicePayment / BookingEvent / revalidatedFareSourceCode) but cannot be
   // sent to the provider. Calling this with 2 args passed the FSC string into the
   // originDestinations slot and omitted passengers, so every request 500'd.
-  const originDestinations = buildOriginDestinations(booking);
+  // A caller changing the flight supplies its own routing; otherwise re-quote the
+  // itinerary the booking already has.
+  const originDestinations = (Array.isArray(originDestinationsOverride) && originDestinationsOverride.length > 0)
+    ? originDestinationsOverride
+    : buildOriginDestinations(booking);
   const passengers = buildPtrPassengers(booking);
   if (originDestinations.length === 0 || passengers.length === 0) {
     throw Object.assign(
@@ -164,7 +169,15 @@ async function recordPendingCollect(booking: any, quote: ReissueQuote, forcedBy:
 }
 
 export async function initiateReissue(
-  params: { bookingId: string; newFareSourceCode: string; forcedBy?: string },
+  params: {
+    bookingId: string;
+    newFareSourceCode: string;
+    forcedBy?: string;
+    preferenceOption?: number;
+    originDestinations?: mystifly.MystiflyReissueOriginDestination[];
+    /** Total the operator was shown and approved; abort rather than charge more. */
+    expectedTotalCollect?: number;
+  },
   booking: any,
 ): Promise<any> {
   const { newFareSourceCode, forcedBy } = params;
@@ -173,7 +186,16 @@ export async function initiateReissue(
   if (!mfRef) throw Object.assign(new Error('No Mystifly reference on this booking.'), { code: 'NO_PROVIDER_ORDER' });
 
   // 1. Quote (fare difference + penalty + service fee → USD)
-  const quote = await getReissueQuote(booking, newFareSourceCode);
+  const quote = await getReissueQuote(booking, newFareSourceCode, params.preferenceOption ?? 1, params.originDestinations);
+
+  // Airline pricing is live, so the amount can move between the quote the operator
+  // approved and this one. Never silently charge more than was agreed.
+  if (params.expectedTotalCollect != null && quote.totalCollect > params.expectedTotalCollect + 1) {
+    throw Object.assign(
+      new Error(`The airline price changed: the quote is now $${quote.totalCollect.toFixed(2)} but $${Number(params.expectedTotalCollect).toFixed(2)} was approved. Re-quote and confirm the new amount.`),
+      { code: 'REISSUE_PRICE_CHANGED', quotedTotalCollect: quote.totalCollect, expectedTotalCollect: params.expectedTotalCollect },
+    );
+  }
   console.log(`[Reissue][Quote] forcedBy=${forcedBy || 'STAFF'} bookingRef=${booking.masterBookingReference} mfRef=${mfRef} ptrNumber=${quote.ptrNumber} fareDifference=${quote.fareDifference} penalty=${quote.penalty} serviceFee=${quote.serviceFee} totalCollect=${quote.totalCollect} USD (providerCcy=${quote.providerCurrency})`);
 
   // 2. Collect the difference from the customer (off-session on the original card)
