@@ -35,7 +35,12 @@ export function buildPtrPassengers(booking: any): PtrPassenger[] {
   const tickets = booking?.tickets || [];
   return passengers.map((p: any) => {
     const type = paxType(p.passengerType);
-    const ticket = tickets.find((t: any) => t.passengerId === p.id);
+    // A passenger can carry more than one BookingTicket row and only some of them hold
+    // a number, so pick the first row that actually has one rather than the first row
+    // outright — otherwise the e-ticket comes back empty and Mystifly rejects the PTR
+    // with "Please Specify ETicket Number for Passenger".
+    const mine = tickets.filter((t: any) => t.passengerId === p.id);
+    const ticket = mine.find((t: any) => t.eTicketNumber || t.ticketNumber) || mine[0];
     const eTicket = ticket?.eTicketNumber || ticket?.ticketNumber || '';
     return {
       firstName: p.firstName || '',

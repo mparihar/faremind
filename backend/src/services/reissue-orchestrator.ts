@@ -19,12 +19,29 @@ import * as mystifly from './mystifly';
 import { getAdminServiceFee } from './cancellation-orchestrator';
 import { toUsd } from './fx';
 import { chargeOriginalCard, refundCollection } from './customer-collect';
+import { buildPtrPassengers } from '../lib/ptr-passengers';
 
 function mfRefOf(booking: any): string | null {
   return booking?.pnrs?.find((p: any) => p.providerOrderId)?.providerOrderId
     || booking?.mystiflyMfRef
     || booking?.masterPnr
     || null;
+}
+
+/**
+ * Build the `originDestinations` array Mystifly requires on a ReIssueQuote — one entry
+ * per journey, from the booking loaded by getMasterBookingFull (journeys + segments).
+ * Journey-level origin/destination/departure are non-nullable; the first segment is
+ * read only for its cabin.
+ */
+function buildOriginDestinations(booking: any): mystifly.MystiflyReissueOriginDestination[] {
+  const journeys = booking?.journeys || [];
+  return journeys.map((j: any) => ({
+    originLocationCode: j.originAirport,
+    destinationLocationCode: j.destinationAirport,
+    departureDateTime: new Date(j.departureDateTime).toISOString().slice(0, 19),
+    cabinPreference: mystifly.toCabinType(j.segments?.[0]?.cabin || j.cabinSummary || 'economy'),
+  }));
 }
 
 export interface ReissueQuote {
@@ -35,23 +52,74 @@ export interface ReissueQuote {
   currency: string;         // always 'USD' for the collect
   providerCurrency: string; // provider's native currency
   ptrNumber: string;
+  providerPtrId: number;    // PTRId — required to execute the reissue
+  preferenceOption: number; // which quoted option these amounts belong to
   raw: any;
 }
 
-export async function getReissueQuote(booking: any, newFareSourceCode: string): Promise<ReissueQuote> {
+export async function getReissueQuote(
+  booking: any,
+  newFareSourceCode: string,
+  preferenceOption: number = 1,
+): Promise<ReissueQuote> {
   const mfRef = mfRefOf(booking);
   if (!mfRef) throw Object.assign(new Error('No Mystifly reference on this booking.'), { code: 'NO_PROVIDER_ORDER' });
 
-  const result = await mystifly.reissueQuote(mfRef, newFareSourceCode);
+  // Mystifly's ReIssueQuote is an OND request (reissueQuoteRequestType = None|OND|Segment)
+  // and requires both `originDestinations` and `passengers` — there is no reissue-by-
+  // FareSourceCode in the PTR contract. `newFareSourceCode` is retained for our own
+  // records (ServicePayment / BookingEvent / revalidatedFareSourceCode) but cannot be
+  // sent to the provider. Calling this with 2 args passed the FSC string into the
+  // originDestinations slot and omitted passengers, so every request 500'd.
+  const originDestinations = buildOriginDestinations(booking);
+  const passengers = buildPtrPassengers(booking);
+  if (originDestinations.length === 0 || passengers.length === 0) {
+    throw Object.assign(
+      new Error('Cannot quote a reissue: this booking has no journeys or no passengers on file.'),
+      { code: 'REISSUE_QUOTE_INCOMPLETE' },
+    );
+  }
+
+  const result = await mystifly.reissueQuote(mfRef, originDestinations, passengers);
   const data = result?.Data || result;
   const err = data?.Errors?.[0] || result?.Error;
   if (err && (err.Code || err.code)) {
     throw Object.assign(new Error(err.Message || err.message || 'Reissue quote failed'), { code: 'REISSUE_QUOTE_FAILED' });
   }
+  if (result?.Success === false) {
+    throw Object.assign(new Error(result.Message || 'Reissue quote failed'), { code: 'REISSUE_QUOTE_FAILED' });
+  }
 
-  const providerCurrency = (data?.Currency || data?.currency || 'USD').toUpperCase();
-  const rawFareDiff = parseFloat(data?.TotalAmount || data?.totalAmount || '0');
-  const rawPenalty = parseFloat(data?.PenaltyAmount || data?.penaltyAmount || '0');
+  // ReIssueQuote returns ONLY {PTRId, PTRType, MFRef, SLAInMinutes, PTRStatus} — it carries
+  // no amounts. The priced options live in GetExchangeQuote (Search PTR) under
+  // RequestedPreferences[].QuotedFares[]. Reading TotalAmount/PenaltyAmount off the quote
+  // response yields 0 and silently drops the fare difference from the amount collected.
+  const ptrId = Number(data?.PTRId ?? data?.PtrId ?? 0);
+  if (!ptrId) {
+    throw Object.assign(new Error('Reissue quote returned no PTR id.'), { code: 'REISSUE_QUOTE_FAILED' });
+  }
+
+  const exchange = await mystifly.getExchangeQuote(mfRef, ptrId);
+  const exData = exchange?.Data || exchange;
+  const preferences = Array.isArray(exData?.RequestedPreferences) ? exData.RequestedPreferences : [];
+  const chosen = preferences.find((p: any) => Number(p?.Option) === preferenceOption) || preferences[0];
+  const quotedFares: any[] = Array.isArray(chosen?.QuotedFares) ? chosen.QuotedFares : [];
+  if (quotedFares.length === 0) {
+    throw Object.assign(
+      new Error('The airline returned no priced options for this reissue.'),
+      { code: 'REISSUE_NO_OPTIONS' },
+    );
+  }
+
+  // QuotedFares is one row per passenger type, carrying its own PassengerCount.
+  // NOTE: verify against a multi-passenger booking before relying on this to charge —
+  // with a single ADT the per-pax and per-group readings are indistinguishable.
+  const sumFares = (pick: (f: any) => any) => quotedFares.reduce(
+    (s, f) => s + (parseFloat(pick(f)) || 0) * (parseInt(f?.PassengerCount, 10) || 1), 0);
+
+  const providerCurrency = (quotedFares[0]?.Currency || data?.Currency || 'USD').toUpperCase();
+  const rawFareDiff = sumFares((f) => f.TotalFareDifference);
+  const rawPenalty = sumFares((f) => f.Penalty);
   const fareDifference = providerCurrency !== 'USD' ? await toUsd(rawFareDiff, providerCurrency) : rawFareDiff;
   const penalty = providerCurrency !== 'USD' ? await toUsd(rawPenalty, providerCurrency) : rawPenalty;
 
@@ -65,8 +133,10 @@ export async function getReissueQuote(booking: any, newFareSourceCode: string): 
     totalCollect,
     currency: 'USD',
     providerCurrency,
-    ptrNumber: String(data?.PtrId || data?.ptrId || '') || 'N/A',
-    raw: result,
+    ptrNumber: String(ptrId),
+    providerPtrId: ptrId,
+    preferenceOption: Number(chosen?.Option) || preferenceOption,
+    raw: { quote: result, exchange },
   };
 }
 
@@ -128,9 +198,19 @@ export async function initiateReissue(
   // 3. Execute the provider reissue
   let reissueResult: any;
   try {
-    reissueResult = await mystifly.postTicketingRequest(mfRef, 'ReIssue', undefined, newFareSourceCode);
+    // Accept the quoted option: re-post with AcceptQuote=yes + the ReIssueQuote PTR id.
+    // The generic postTicketingRequest body (mFRef/ptrType/NewFareSourceCode) is not a
+    // valid PTR request — Mystifly 500s on it — and NewFareSourceCode is not part of the
+    // contract at all.
+    reissueResult = await mystifly.confirmReissue(mfRef, quote.providerPtrId, quote.preferenceOption);
     const err = reissueResult?.Data?.Errors?.[0] || reissueResult?.Error;
     if (err && (err.Code || err.code)) throw new Error(err.Message || err.message || 'Reissue failed');
+    // A provider failure also arrives as an HTTP-200 envelope with Success=false and no
+    // error code. Without this check the charge is kept and the booking is recorded as
+    // reissued even though nothing happened at the airline.
+    if (reissueResult?.Success === false) {
+      throw new Error(reissueResult.Message || 'Reissue rejected by the airline');
+    }
   } catch (reErr: any) {
     // Reissue failed after we charged → refund the collection
     if (chargeId) {
@@ -168,7 +248,9 @@ export async function initiateReissue(
       eventTitle: 'Ticket reissued (change) + difference collected',
       eventDescription: `Reissued to a new fare. Collected $${quote.totalCollect} (fare difference $${quote.fareDifference} + service fee $${quote.serviceFee}). Provider PTR ${ptrNumber}.`,
       actorType: forcedBy?.startsWith('ADMIN') ? 'admin' : 'agent',
-      payloadJson: { quote, chargeId, newFareSourceCode, ptrNumber },
+      // Cast: ReissueQuote is a declared interface, so it has no index signature and
+      // Prisma's InputJsonValue rejects it structurally.
+      payloadJson: { quote, chargeId, newFareSourceCode, ptrNumber } as any,
     },
   }).catch(() => {});
 

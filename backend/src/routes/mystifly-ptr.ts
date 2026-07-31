@@ -20,6 +20,7 @@ import * as mystifly from '../services/mystifly';
 import type { PtrType } from '../services/mystifly';
 import { prisma } from '../lib/db';
 import { buildPtrPassengers, type PtrPassenger } from '../lib/ptr-passengers';
+import { backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -44,10 +45,85 @@ async function loadPtrPassengers(uniqueId: string, bookingId?: string): Promise<
           ...(bookingId ? [{ id: bookingId }, { masterBookingReference: bookingId }] : []),
         ],
       },
-      include: { passengers: { orderBy: { passengerOrder: 'asc' } }, tickets: true },
+      include: {
+        passengers: { orderBy: { passengerOrder: 'asc' } },
+        // Ordered so ticket selection is deterministic across calls.
+        tickets: { orderBy: { createdAt: 'asc' } },
+      },
     });
     if (!booking) return [];
+
+    // Bookings can reach a PTR with no e-ticket persisted yet (ticketing resolved
+    // asynchronously). Mystifly rejects any PTR whose passengers lack an e-ticket, so
+    // pull the numbers from TripDetails first — same guard the cancellation path uses.
+    const mfRef = booking.mystiflyMfRef || booking.providerOrderId || booking.masterPnr;
+    const hasEticket = booking.tickets.some((t: any) => t.eTicketNumber || t.ticketNumber);
+    if (!hasEticket && mfRef) {
+      try {
+        const r = await backfillEticketsFromTripDetails(booking.id, mfRef);
+        if (r.updated > 0) {
+          const reloaded = await prisma.masterBooking.findUnique({
+            where: { id: booking.id },
+            include: {
+              passengers: { orderBy: { passengerOrder: 'asc' } },
+              tickets: { orderBy: { createdAt: 'asc' } },
+            },
+          });
+          if (reloaded) return buildPtrPassengers(reloaded);
+        }
+      } catch (e) {
+        console.warn(`[PTR] eTicket backfill failed for ${mfRef}:`, (e as Error).message);
+      }
+    }
+
     return buildPtrPassengers(booking);
+  } catch {
+    return [];
+  }
+}
+
+/**
+ * Build the `originDestinations` array required by a Mystifly ReIssueQuote.
+ *
+ * Mystifly's PostTicketingRequest contract has NO fare-source-code reissue —
+ * `reissueQuoteRequestType` is only None|OND|Segment — so a reissue is always
+ * expressed as origin/destination/date. Callers that want a genuine flight
+ * change pass their own array; when they don't, we re-quote the itinerary the
+ * booking already has (one OND per journey: first segment's origin → last
+ * segment's destination). Omitting the array makes Mystifly 500.
+ */
+async function loadPtrOriginDestinations(
+  uniqueId: string,
+  bookingId?: string,
+): Promise<mystifly.MystiflyReissueOriginDestination[]> {
+  try {
+    const booking = await prisma.masterBooking.findFirst({
+      where: {
+        OR: [
+          { mystiflyMfRef: uniqueId },
+          { providerOrderId: uniqueId },
+          { masterPnr: uniqueId },
+          { pnrs: { some: { providerOrderId: uniqueId } } },
+          ...(bookingId ? [{ id: bookingId }, { masterBookingReference: bookingId }] : []),
+        ],
+      },
+      include: {
+        journeys: {
+          orderBy: { journeyOrder: 'asc' },
+          include: { segments: { orderBy: { segmentOrder: 'asc' }, take: 1 } },
+        },
+      },
+    });
+    if (!booking) return [];
+
+    // Journey-level origin/destination/departure are non-nullable, so they are the
+    // reliable source; the first segment is read only for its cabin.
+    return booking.journeys.map((j: any) => ({
+      originLocationCode: j.originAirport,
+      destinationLocationCode: j.destinationAirport,
+      departureDateTime: new Date(j.departureDateTime).toISOString().slice(0, 19),
+      cabinPreference: mystifly.toCabinType(j.segments[0]?.cabin || j.cabinSummary || 'economy'),
+    }));
   } catch {
     return [];
   }
@@ -422,8 +498,10 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/reissue-quote', async (request, reply) => {
     try {
-      const { uniqueId, bookingId, newFareSourceCode, requestedBy, notes } = request.body as {
-        uniqueId: string; bookingId?: string; newFareSourceCode?: string; requestedBy?: string; notes?: string;
+      const { uniqueId, bookingId, newFareSourceCode, originDestinations, requestedBy, notes } = request.body as {
+        uniqueId: string; bookingId?: string; newFareSourceCode?: string;
+        originDestinations?: mystifly.MystiflyReissueOriginDestination[];
+        requestedBy?: string; notes?: string;
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
 
@@ -438,7 +516,26 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const result = await mystifly.postTicketingRequest(uniqueId, 'ReIssueQuote', undefined, newFareSourceCode);
+      // Mystifly's ReIssueQuote is an OND request and requires both `passengers` and
+      // `originDestinations`; it has no fare-source-code mode. Sending the bare
+      // {mFRef, ptrType} body makes their service 500. Caller-supplied ONDs express a
+      // real flight change; otherwise re-quote the booking's current itinerary.
+      const passengers = await loadPtrPassengers(uniqueId, bookingId);
+      const onds = (Array.isArray(originDestinations) && originDestinations.length > 0)
+        ? originDestinations
+        : await loadPtrOriginDestinations(uniqueId, bookingId);
+
+      if (passengers.length === 0 || onds.length === 0) {
+        const missing = [
+          passengers.length === 0 ? 'passengers' : null,
+          onds.length === 0 ? 'originDestinations' : null,
+        ].filter(Boolean).join(' and ');
+        const msg = `Cannot build the reissue quote: ${missing} could not be resolved for this booking. Mystifly rejects a ReIssueQuote without them.`;
+        if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: msg, failedAt: new Date() });
+        return reply.code(422).send({ error: msg, errorCode: 'REISSUE_QUOTE_INCOMPLETE' });
+      }
+
+      const result = await mystifly.reissueQuote(uniqueId, onds, passengers);
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
@@ -446,7 +543,10 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(422).send({ error: message, errorCode: 'MYSTIFLY_REISSUE_QUOTE_FAILED', raw: result });
       }
 
+      // ReIssueQuote returns the PTR id synchronously; the priced options are fetched
+      // separately via GetExchangeQuote (Search PTR).
       const quoteData = result?.Data || result;
+      const providerPtrId = quoteData?.PTRId ?? quoteData?.PtrId ?? null;
       if (ptrRecord) {
         await updatePtrRecord(ptrRecord.id, {
           status: 'QUOTE_RECEIVED',
@@ -458,7 +558,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      return { success: true, ptrId: ptrRecord?.id, quote: quoteData, raw: result };
+      return { success: true, ptrId: ptrRecord?.id, providerPtrId, quote: quoteData, originDestinations: onds, raw: result };
     } catch (error: any) {
       console.error('[PTR] ReIssueQuote error:', error.message);
       return reply.code(502).send({ error: `ReIssueQuote failed: ${error.message}` });
@@ -469,14 +569,17 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/reissue', async (request, reply) => {
     try {
-      const { uniqueId, ptrId, newFareSourceCode, requestedBy } = request.body as {
-        uniqueId: string; ptrId?: string; newFareSourceCode?: string; requestedBy?: string;
+      const { uniqueId, ptrId, providerPtrId, preferenceOption, requestedBy } = request.body as {
+        uniqueId: string; ptrId?: string; providerPtrId?: number; preferenceOption?: number; requestedBy?: string;
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
+      if (!providerPtrId) return reply.code(400).send({ error: 'providerPtrId (the ReIssueQuote PTR id) is required — run Get Reissue Quote first.', errorCode: 'MISSING_PTR_ID' });
 
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 
-      const result = await mystifly.postTicketingRequest(uniqueId, 'ReIssue', undefined, newFareSourceCode);
+      // Accept the quote: re-post with AcceptQuote=yes + the ReIssueQuote PTR id and the
+      // chosen fare option. Same contract shape as the refund accept.
+      const result = await mystifly.confirmReissue(uniqueId, providerPtrId, preferenceOption ?? 1);
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
