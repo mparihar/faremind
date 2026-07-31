@@ -95,6 +95,53 @@ function resolveBookingSource(input: {
   return 'CUSTOMER_WEB';
 }
 
+/**
+ * Fare rules as the airline states them, from a Mystifly TripDetails payload.
+ *
+ * BookingPnr is meant to freeze the terms the customer agreed to, but it was written
+ * from the frontend's selectedFare — which carries the fare-options layer's view, and
+ * that layer deliberately reports null when the provider did not supply a rule. A `??
+ * false` downstream then turned "unknown" into a definite "non-refundable", so bookings
+ * were persisted claiming restrictions the airline never stated.
+ *
+ * Returns null when the payload does not carry the breakdowns, so the caller keeps
+ * whatever it had rather than this asserting a restriction of its own. Never throws:
+ * nothing here is worth failing a paid booking over.
+ */
+function mystiflyFareRulesFromTripDetails(raw: any): {
+  refundable: boolean; changeable: boolean; cancellationFee: number | null; changeFee: number | null;
+} | null {
+  try {
+    const itinerary = raw?.Data?.TripDetailsResult?.TravelItinerary
+      || raw?.Data?.TravelItinerary
+      || raw?.TripDetailsResult?.TravelItinerary
+      || raw?.TravelItinerary;
+    const breakdowns: any[] = Array.isArray(itinerary?.TripDetailsPTC_FareBreakdowns)
+      ? itinerary.TripDetailsPTC_FareBreakdowns : [];
+    if (breakdowns.length === 0) return null;
+
+    const isYes = (v: any) => /^yes$/i.test(String(v ?? '').trim());
+    const nums = (xs: any[]) => xs.map((n) => parseFloat(n)).filter((n) => Number.isFinite(n));
+
+    // Permitted only when every priced passenger type permits it; the fee reported is the
+    // worst case across them, since quoting the cheapest understates the real cost.
+    const refundFees = nums(breakdowns.flatMap((b) =>
+      (b?.AirRefundCharges?.RefundCharges || []).flatMap((c: any) =>
+        (c?.ChargesBeforeDeparture || []).map((x: any) => x?.Charges))));
+    const changeFees = nums(breakdowns.flatMap((b) =>
+      (b?.AirExchangeCharges?.ExchangeCharges || []).map((c: any) => c?.ChargeBeforeDeparture)));
+
+    return {
+      refundable: breakdowns.every((b) => isYes(b?.AirRefundCharges?.IsRefundableBeforeDeparture)),
+      changeable: breakdowns.every((b) => isYes(b?.AirExchangeCharges?.IsExchangeableBeforeDeparture)),
+      cancellationFee: refundFees.length ? Math.max(...refundFees) : null,
+      changeFee: changeFees.length ? Math.max(...changeFees) : null,
+    };
+  } catch {
+    return null;
+  }
+}
+
 function generateRef() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   return 'FM' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -1496,6 +1543,15 @@ export async function POST(req: NextRequest) {
             if (tripData.bookingStatus) {
               (mystiflyBookingResult as any).confirmedStatus = tripData.bookingStatus;
             }
+
+            // Capture the airline's own fare rules so the BookingPnr snapshot records what
+            // was actually agreed, rather than the fare-options view — which reports null
+            // when the provider said nothing and was being written through as "restricted".
+            const providerRules = mystiflyFareRulesFromTripDetails(tripData.raw);
+            if (providerRules) {
+              (mystiflyBookingResult as any).fareRules = providerRules;
+              console.log(`[Mystifly] fare rules from TripDetails: refundable=${providerRules.refundable} (fee ${providerRules.cancellationFee ?? 'n/a'}) changeable=${providerRules.changeable} (fee ${providerRules.changeFee ?? 'n/a'})`);
+            }
           } else {
             console.warn(`[Mystifly] ⚠️ TripDetails returned error (non-blocking): ${tripData.error || 'unknown'}`);
           }
@@ -1847,6 +1903,10 @@ export async function POST(req: NextRequest) {
         },
       );
 
+      // What the airline stated at ticketing, captured from TripDetails above. Null when
+      // it did not say, in which case the selected fare stands.
+      const providerFareRules = (mystiflyBookingResult as any)?.fareRules ?? null;
+
       for (const entry of pnrResult.pnrs) {
         await tx.bookingPnr.create({
           data: {
@@ -1862,16 +1922,28 @@ export async function POST(req: NextRequest) {
             airlineCode: entry.airlineCode ?? null,
             airlineName: entry.airlineName ?? null,
             displayLabel: entry.displayLabel,
-            // Fare rules from selected fare — stored per-PNR for manage-booking
-            // UnifiedFlight uses `fareRules`, branded fares may use `policy` — check both
-            refundable:       selectedFare?.fareRules?.refundable ?? selectedFare?.policy?.refundable ?? false,
-            changeable:       selectedFare?.fareRules?.changeable ?? selectedFare?.policy?.changeable ?? false,
-            cancellationFee:  selectedFare?.fareRules?.cancellationFee ?? selectedFare?.policy?.refundFeeUsd ?? null,
-            changeFee:        selectedFare?.fareRules?.changeFee ?? selectedFare?.policy?.changeFeeUsd ?? null,
+            // Fare rules, in order of authority: what the airline stated at ticketing,
+            // then the selected fare. UnifiedFlight uses `fareRules`, branded fares use
+            // `policy` — check both. The trailing `?? false` is a last resort: the fare
+            // layer reports null for "the provider didn't say", and writing that through
+            // as a restriction is how bookings ended up claiming terms no airline set.
+            refundable:       providerFareRules?.refundable
+                                ?? selectedFare?.fareRules?.refundable ?? selectedFare?.policy?.refundable ?? false,
+            changeable:       providerFareRules?.changeable
+                                ?? selectedFare?.fareRules?.changeable ?? selectedFare?.policy?.changeable ?? false,
+            cancellationFee:  providerFareRules?.cancellationFee
+                                ?? selectedFare?.fareRules?.cancellationFee ?? selectedFare?.policy?.refundFeeUsd ?? null,
+            changeFee:        providerFareRules?.changeFee
+                                ?? selectedFare?.fareRules?.changeFee ?? selectedFare?.policy?.changeFeeUsd ?? null,
             seatSelection:    selectedFare?.policy?.seatSelection ?? null,
             seatSelectionFee: selectedFare?.policy?.seatSelectionFeeUsd ?? null,
             milesEarning:     selectedFare?.policy?.milesEarning ?? null,
-            fareRulesJson:    selectedFare?.fareRules ?? selectedFare?.policy ?? null,
+            // Keep both: what the airline said, and what the customer was shown when they
+            // chose. When those disagree, the disagreement is itself the useful record.
+            fareRulesJson:    ((selectedFare?.fareRules ?? selectedFare?.policy ?? providerFareRules)
+                                ? { selectedFare: selectedFare?.fareRules ?? selectedFare?.policy ?? null,
+                                    provider: providerFareRules }
+                                : null) as any,
           },
         });
       }
