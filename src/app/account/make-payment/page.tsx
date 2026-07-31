@@ -233,12 +233,64 @@ export default function MakePaymentPage() {
   const [error, setError] = useState('');
   const [supportTicketRef, setSupportTicketRef] = useState('');
 
+  // Payments already raised against this customer and still outstanding.
+  const [duePayments, setDuePayments] = useState<any[]>([]);
+  const [payingId, setPayingId] = useState<string | null>(null);
+  const [dueError, setDueError] = useState('');
+
   // Load user's bookings — always reset filter to 'all' so we show every booking
   useEffect(() => {
     if (!user?.id) return;
     setBookingsFilter('all');
     loadUserBookings(user.id);
   }, [user?.id]);
+
+  useEffect(() => {
+    if (!sessionToken) return;
+    (async () => {
+      try {
+        const res = await fetch('/api/service-payments', { headers: { Authorization: `Bearer ${sessionToken}` } });
+        if (!res.ok) return;
+        const data = await res.json();
+        const list = Array.isArray(data) ? data : (data.payments || []);
+        setDuePayments(list.filter((p: any) => p.status === 'PENDING' && Number(p.amount) > 0));
+      } catch { /* the rest of the page still works without this */ }
+    })();
+  }, [sessionToken]);
+
+  /**
+   * Pay a request that already exists, against its own record — never by creating a new
+   * one. The existing row carries the context the webhook needs to complete the action it
+   * was raised for, so a duplicate would collect the money and finish nothing.
+   */
+  async function payExisting(p: any) {
+    setPayingId(p.id);
+    setDueError('');
+    try {
+      const res = await fetch(`/api/service-payments/${p.id}/intent`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
+      });
+      const data = await res.json();
+      if (!res.ok || !data.clientSecret) {
+        setDueError(data.error || 'Could not start this payment. Please try again.');
+        setPayingId(null);
+        return;
+      }
+      // Hand off to the same card step the rest of the page uses.
+      setSelectedBookingId(p.bookingId || null);
+      setSelectedType(p.serviceType);
+      setAmount(String(Number(p.amount)));
+      setDescription(p.description);
+      setPaymentId(data.paymentId);
+      setClientSecret(data.clientSecret);
+      setCategory('BOOKING');
+      setStep(3);
+    } catch (e: any) {
+      setDueError(e?.message || 'Could not start this payment. Please try again.');
+    }
+    setPayingId(null);
+  }
 
   const selectedBooking = useMemo(() => bookings.find(b => b.id === selectedBookingId), [bookings, selectedBookingId]);
   const selectedService = SERVICE_TYPES.find(s => s.value === selectedType);
@@ -331,6 +383,45 @@ export default function MakePaymentPage() {
           <h1 className="text-2xl font-black text-white flex items-center gap-2"><Wallet size={22} className="text-[#1ABC9C]" /> Make a Payment</h1>
           <p className="text-slate-500 text-sm mt-0.5">What would you like to pay for?</p>
         </div>
+
+        {/* Payments FareMind raised on the customer's behalf — a reissue difference, say.
+            These must be paid against their existing record rather than by creating a new
+            one, because that record carries the context needed to finish the job. Shown
+            first: this is money already owed, not a payment the customer came to invent. */}
+        {duePayments.length > 0 && (
+          <div className="mb-6 rounded-2xl border border-[#1ABC9C]/30 bg-[#1ABC9C]/[0.07] p-5">
+            <p className="text-[#1ABC9C] font-bold text-sm mb-1">
+              {duePayments.length === 1 ? 'You have a payment to complete' : `You have ${duePayments.length} payments to complete`}
+            </p>
+            <p className="text-slate-400 text-xs mb-4">
+              Nothing has been charged yet. Your bookings are unaffected until these are paid.
+            </p>
+            <div className="space-y-3">
+              {duePayments.map((p: any) => (
+                <div key={p.id} className="flex items-start justify-between gap-4 rounded-xl border border-white/[0.08] bg-white/[0.03] p-4">
+                  <div className="min-w-0">
+                    <p className="text-white text-sm font-semibold">
+                      {p.booking?.masterBookingReference ? `Booking ${p.booking.masterBookingReference}` : 'Payment request'}
+                    </p>
+                    <p className="text-slate-400 text-xs mt-0.5">{p.description}</p>
+                  </div>
+                  <div className="text-right shrink-0">
+                    <p className="text-white font-black text-sm">{p.currency} {Number(p.amount).toFixed(2)}</p>
+                    <button
+                      onClick={() => payExisting(p)}
+                      disabled={payingId === p.id}
+                      className="mt-2 px-3 py-1.5 rounded-lg bg-[#1ABC9C] text-slate-900 text-xs font-bold hover:bg-[#1ABC9C]/90 disabled:opacity-50 transition-all"
+                    >
+                      {payingId === p.id ? 'Preparing…' : 'Pay now'}
+                    </button>
+                  </div>
+                </div>
+              ))}
+            </div>
+            {dueError && <p className="text-red-400 text-xs mt-3">{dueError}</p>}
+          </div>
+        )}
+
         <div className="grid sm:grid-cols-2 gap-4">
           {cats.map((c) => {
             const Icon = c.icon;

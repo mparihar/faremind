@@ -25,6 +25,27 @@ export interface PtrQuoteResultProps {
 export default function PtrQuoteResult({ quoteResult, fmt }: PtrQuoteResultProps) {
   if (!quoteResult) return null;
 
+  // A reissue that could not be auto-charged is parked, not failed: the customer has been
+  // asked to pay and the change goes to the airline by itself once they do. Showing this
+  // as a plain red error would have staff retrying something that is already in hand.
+  if (quoteResult.errorCode === 'REISSUE_PAYMENT_REQUESTED') {
+    return (
+      <div className="p-4 rounded-xl border mb-3 bg-amber-400/10 border-amber-400/25">
+        <p className="text-amber-300 text-sm font-bold mb-1">Awaiting customer payment</p>
+        <p className="text-slate-300 text-[13px]">
+          {quoteResult.amountDue != null
+            ? <>The customer has been asked for <span className="text-white font-bold">{fmt(quoteResult.amountDue, quoteResult.currency || 'USD')}</span>. </>
+            : <>The customer has been sent a payment request. </>}
+          Nothing has been charged and the ticket is unchanged. The change is sent to the airline automatically once they pay.
+        </p>
+        <p className="text-[11px] text-slate-400 mt-2">{quoteResult.error}</p>
+        {quoteResult.servicePaymentId && (
+          <p className="text-[11px] text-slate-500 mt-1 font-mono">Payment {quoteResult.servicePaymentId}</p>
+        )}
+      </div>
+    );
+  }
+
   if (quoteResult.error) {
     return (
       <div className="p-4 rounded-xl border mb-3 bg-red-400/10 border-red-400/20">

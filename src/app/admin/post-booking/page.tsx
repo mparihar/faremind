@@ -10,6 +10,7 @@ import { cn } from '@/lib/utils';
 import { adminFetch } from '@/store/useAdminStore';
 import CouponStatusPanel from '@/components/booking/CouponStatusPanel';
 import PtrQuoteResult from '@/components/post-booking/PtrQuoteResult';
+import PtrExecResult from '@/components/post-booking/PtrExecResult';
 
 /**
  * Admin Post-Booking Servicing Page — MYSTIFLY ONLY
@@ -456,18 +457,9 @@ export default function AdminPostBookingPage() {
           <PtrQuoteResult quoteResult={quoteResult} fmt={fmt} />
 
 
-          {/* Exec Result */}
-          {execResult && (
-            <div className={`p-4 rounded-xl border mb-3 ${execResult.error ? 'bg-red-400/10 border-red-400/20' : 'bg-emerald-400/10 border-emerald-400/20'}`}>
-              <p className={`text-sm font-bold flex items-center gap-2 ${execResult.error ? 'text-red-400' : 'text-emerald-400'}`}>
-                {execResult.error ? <><XCircle size={14} /> {execResult.error}</> : <><CheckCircle2 size={14} /> Operation completed successfully</>}
-              </p>
-              <details className="bg-slate-900/50 border border-slate-700/30 rounded-xl mt-2">
-                <summary className="px-3 py-2 text-xs font-bold text-slate-500 cursor-pointer hover:text-slate-300 uppercase tracking-wider">Raw Response</summary>
-                <pre className="px-3 pb-3 text-xs text-slate-400 font-mono overflow-x-auto max-h-48">{JSON.stringify(execResult, null, 2)}</pre>
-              </details>
-            </div>
-          )}
+          {/* Execution outcome — shared, so both consoles read it the same way. */}
+          <PtrExecResult execResult={execResult} fmt={fmt} />
+
 
           {/* Status Result */}
           {statusResult && (

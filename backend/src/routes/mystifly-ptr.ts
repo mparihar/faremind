@@ -944,6 +944,24 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
           return { success: true, collected: true, ...out };
         } catch (e: any) {
           const code = e?.code || 'REISSUE_FAILED';
+
+          // Awaiting the customer's payment is not a failure — the request is raised, the
+          // customer has been told, and the change goes to the airline by itself once they
+          // pay. Marking the PTR FAILED here would make staff retry something already in
+          // hand, so it stays AWAITING_APPROVAL and the response says 202, not 4xx.
+          if (code === 'REISSUE_PAYMENT_REQUESTED') {
+            if (ptrId) await updatePtrRecord(ptrId, { status: 'AWAITING_APPROVAL', failureReason: e?.message });
+            return reply.code(202).send({
+              success: false,
+              awaitingPayment: true,
+              errorCode: code,
+              error: e?.message,
+              amountDue: e?.amountDue ?? null,
+              currency: e?.currency ?? 'USD',
+              servicePaymentId: e?.servicePaymentId ?? null,
+            });
+          }
+
           const status = code === 'REISSUE_PRICE_CHANGED' ? 409 : 422;
           if (ptrId) await updatePtrRecord(ptrId, { status: 'FAILED', failureReason: e?.message, failedAt: new Date() });
           return reply.code(status).send({
