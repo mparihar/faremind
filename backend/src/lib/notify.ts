@@ -22,6 +22,7 @@ export type NotifyEventType =
   | 'DATE_CHANGE_SUBMITTED'
   | 'DATE_CHANGE_APPROVED'
   | 'DATE_CHANGE_REJECTED'
+  | 'REISSUE_PAYMENT_REQUIRED'
   | 'FLIGHT_CHANGE_CONFIRMED'
   | 'SEAT_SELECTION_UPDATED'
   | 'PAYMENT_SUCCESS'
@@ -444,6 +445,40 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
     }
 
     case 'BOOKING_UPDATED':
+    // The airline has quoted the change and we need the difference before it can be
+    // sent. Nothing has been charged at this point and the existing ticket is untouched,
+    // so the mail has to say both of those things plainly.
+    case 'REISSUE_PAYMENT_REQUIRED': {
+      const fareDiff = String(d.fare_difference ?? '');
+      const penalty = String(d.penalty ?? '');
+      const serviceFee = String(d.service_fee ?? '');
+      const total = String(d.total_due ?? '');
+      const cur = String(d.currency ?? 'USD');
+      const payUrl = String(d.pay_url ?? `${process.env.APP_URL || 'https://faremind.ai'}/account/make-payment`);
+      const row = (label: string, value: string, strong = false) => value
+        ? `<tr><td style="padding:6px 0;color:${strong ? '#0f172a' : '#64748b'};font-size:${strong ? '15px' : '14px'};font-weight:${strong ? '800' : '400'};">${label}</td><td align="right" style="padding:6px 0;color:${strong ? '#0f172a' : '#0f172a'};font-size:${strong ? '15px' : '14px'};font-weight:${strong ? '800' : '600'};">${cur} ${value}</td></tr>`
+        : '';
+      return {
+        subject: `Payment required to complete your flight change – ${ref}`,
+        html: wrap('Payment Required', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">One step left to change your flight</h2>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${name}, the airline has priced the change to booking <strong>${ref}</strong>. To go ahead we need the difference below. <strong>Nothing has been charged yet, and your current ticket stays valid until the change is confirmed.</strong></p>
+          <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:16px;margin-bottom:16px;">
+            <table style="width:100%;border-collapse:collapse;">
+              ${row('Fare difference', fareDiff)}
+              ${penalty ? `<tr><td style="padding:6px 0;color:#64748b;font-size:13px;">Airline penalty <span style="color:#94a3b8;">(included above)</span></td><td align="right" style="padding:6px 0;color:#64748b;font-size:13px;">${cur} ${penalty}</td></tr>` : ''}
+              ${row('Service fee', serviceFee)}
+              <tr><td colspan="2" style="border-top:1px solid #e2e8f0;padding-top:8px;"></td></tr>
+              ${row('Total due', total, true)}
+            </table>
+          </div>
+          <p style="margin:0 0 16px;"><a href="${payUrl}" style="display:inline-block;background:#0f172a;color:#fff;text-decoration:none;padding:12px 20px;border-radius:10px;font-size:14px;font-weight:700;">Pay ${cur} ${total} and confirm the change</a></p>
+          <p style="margin:0;color:#94a3b8;font-size:12px;">Airline pricing can move, so this amount is only held for a short time. If you would rather not proceed, simply ignore this email — your existing booking is unaffected.</p>
+        `),
+        text: `Hi ${name},\n\nThe airline has priced the change to booking ${ref}. To go ahead we need the difference below.\n\nNothing has been charged yet, and your current ticket stays valid until the change is confirmed.\n\nFare difference: ${cur} ${fareDiff}\n${penalty ? `Airline penalty (included above): ${cur} ${penalty}\n` : ''}Service fee: ${cur} ${serviceFee}\nTotal due: ${cur} ${total}\n\nPay here: ${payUrl}\n\nAirline pricing can move, so this amount is only held for a short time. If you would rather not proceed, ignore this email — your existing booking is unaffected.\n\nFAREMIND Team`,
+      };
+    }
+
     case 'DATE_CHANGE_SUBMITTED':
     case 'DATE_CHANGE_APPROVED':
     case 'DATE_CHANGE_REJECTED': {
@@ -694,6 +729,16 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
         text: `FLIGHT CHANGED: ${ref} by ${name}. ${String(d.old_flight_number ?? '')} → ${String(d.new_flight_number ?? '')}`,
       };
 
+    // Staff copy: a reissue is quoted and waiting on the customer's money. Worth seeing
+    // because it is the point where a change can stall silently — the airline holds the
+    // price only briefly, and nothing proceeds until this is paid.
+    case 'REISSUE_PAYMENT_REQUIRED':
+      return {
+        subject: `[FAREMIND] Reissue awaiting payment – ${ref}`,
+        html: wrap('[Admin] Reissue Awaiting Payment', `<h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Reissue Awaiting Payment</h2><p style="margin:0 0 8px;color:#64748b;font-size:14px;">Booking <strong>${ref}</strong> — ${name} (${email}) has been asked for ${String(d.currency ?? 'USD')} ${String(d.total_due ?? '')} to complete a flight change.</p><p style="margin:0;color:#64748b;font-size:13px;">Fare difference ${String(d.currency ?? 'USD')} ${String(d.fare_difference ?? '')} (incl. airline penalty ${String(d.penalty ?? '0.00')}) + service fee ${String(d.service_fee ?? '')}. Nothing charged yet; the ticket is unchanged until paid. Requested by ${String(d.requested_by ?? 'staff')}.</p>`),
+        text: `REISSUE AWAITING PAYMENT: ${ref} — ${name} (${email}) asked for ${String(d.currency ?? 'USD')} ${String(d.total_due ?? '')}. Fare diff ${String(d.fare_difference ?? '')} (incl. penalty ${String(d.penalty ?? '0.00')}) + service fee ${String(d.service_fee ?? '')}. Nothing charged yet. Requested by ${String(d.requested_by ?? 'staff')}.`,
+      };
+
     case 'SEAT_SELECTION_UPDATED':
       return {
         subject: `[FAREMIND] Seat Change – ${ref}`,
@@ -911,6 +956,7 @@ const CUSTOMER_EVENTS = new Set<string>([
   'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
   'PASSENGER_INFO_UPDATED',
   'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
+  'REISSUE_PAYMENT_REQUIRED',
   'FLIGHT_CHANGE_CONFIRMED',
   'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
   'PRICE_DROP_ALERT', 'PRICE_DROP_REFUND',
@@ -923,6 +969,7 @@ const SUPPORT_EVENTS = new Set<string>([
   'BOOKING_UPDATED', 'PASSENGER_INFO_UPDATED',
   'FLIGHT_CHANGE_CONFIRMED', 'SEAT_SELECTION_UPDATED',
   'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
+  'REISSUE_PAYMENT_REQUIRED',
   'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
   'PRICE_DROP_REFUND', 'SUPPORT_MANUAL',
   'LIMIT_ORDER_MATCHED',
@@ -977,6 +1024,7 @@ export async function fireNotification(payload: NotifyPayload): Promise<void> {
       DATE_CHANGE_SUBMITTED: 'Date Change Requested',
       DATE_CHANGE_APPROVED: 'Date Change Approved',
       DATE_CHANGE_REJECTED: 'Date Change Rejected',
+      REISSUE_PAYMENT_REQUIRED: 'Reissue Payment Required',
       FLIGHT_CHANGE_CONFIRMED: 'Flight Changed',
       SEAT_SELECTION_UPDATED: 'Seat Updated',
       PAYMENT_SUCCESS: 'Payment Receipt',
@@ -1014,6 +1062,7 @@ export async function fireNotification(payload: NotifyPayload): Promise<void> {
       'PASSENGER_INFO_UPDATED', 'FLIGHT_CHANGE_CONFIRMED', 'SEAT_SELECTION_UPDATED',
       'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
       'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
+  'REISSUE_PAYMENT_REQUIRED',
     ]);
     const agentEmail = data.agent_email ? String(data.agent_email) : null;
     const agentName = data.agent_name ? String(data.agent_name) : 'Agent';
