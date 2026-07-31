@@ -232,6 +232,34 @@ async function withEticketRetry<T>(
   return { result: await run(refreshed), retried: true };
 }
 
+/**
+ * Ask the provider whether this booking's coupons still permit servicing.
+ *
+ * CouponStatus tags each segment with the airline's own verdict — a coupon that is not
+ * OPEN is "NOT valid for REFUND/VOID and REISSUE". This is returned as advice, not
+ * enforcement: the Mystifly demo environment reports every coupon as N/A, so blocking on
+ * it there would stop all servicing. Set PTR_ENFORCE_COUPON_STATUS=true to make it a
+ * hard gate once the environment reports real coupon states.
+ */
+async function couponServicingAdvice(uniqueId: string): Promise<{
+  checked: boolean; eligible: boolean; warnings: string[]; openSegments: number; totalSegments: number;
+}> {
+  try {
+    const { tickets } = await mystifly.getCouponStatus(uniqueId);
+    const segs = tickets.flatMap((t) => t.segments);
+    if (segs.length === 0) return { checked: false, eligible: true, warnings: [], openSegments: 0, totalSegments: 0 };
+    const open = segs.filter((s) => /open/i.test(s.couponStatus)).length;
+    const warnings = Array.from(new Set(segs.map((s) => s.warning).filter((w): w is string => !!w)));
+    return { checked: true, eligible: open === segs.length, warnings, openSegments: open, totalSegments: segs.length };
+  } catch (e) {
+    // Never let an advisory check block a servicing request.
+    console.warn(`[PTR] coupon-status advice failed for ${uniqueId}:`, (e as Error).message);
+    return { checked: false, eligible: true, warnings: [], openSegments: 0, totalSegments: 0 };
+  }
+}
+
+const ENFORCE_COUPON_STATUS = process.env.PTR_ENFORCE_COUPON_STATUS === 'true';
+
 /** Resolve a MasterBooking id from either its cuid `id` or its `masterBookingReference`. */
 async function resolveMasterBookingId(input?: string): Promise<string | null> {
   if (!input) return null;
@@ -535,10 +563,12 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      const voidAdvice = await couponServicingAdvice(uniqueId);
       return {
         success: true, ptrId: ptrRecord?.id, providerPtrId,
         ptrStatus: quoteData?.PTRStatus, voidingWindow: quoteData?.VoidingWindow,
         quote: { TotalRefundAmount: totalRefund, TotalVoidingFee: totalVoidingFee, Currency: currency, VoidQuotes: vq },
+        couponAdvice: voidAdvice,
         raw: result,
       };
     } catch (error: any) {
@@ -652,10 +682,12 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      const refundAdvice = await couponServicingAdvice(uniqueId);
       return {
         success: true, ptrId: ptrRecord?.id, providerPtrId,
         ptrStatus: quoteData?.PTRStatus,
         quote: { TotalRefundAmount: totalRefund, TotalRefundCharges: totalCharges, CancellationCharge: cancellationCharge, Currency: currency, RefundQuotes: rq },
+        couponAdvice: refundAdvice,
         raw: result,
       };
     } catch (error: any) {
@@ -765,12 +797,21 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(422).send({ error: msg, errorCode: 'REISSUE_QUOTE_INCOMPLETE' });
       }
 
+      // Ask the airline whether the coupons still permit a reissue before quoting one.
+      // Advisory by default — see couponServicingAdvice.
+      const couponAdvice = await couponServicingAdvice(uniqueId);
+      if (ENFORCE_COUPON_STATUS && couponAdvice.checked && !couponAdvice.eligible) {
+        const msg = `The airline reports this ticket is not eligible for reissue: ${couponAdvice.warnings.join(' ') || 'coupons are not in OPEN status'}`;
+        if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: msg, failedAt: new Date() });
+        return reply.code(422).send({ error: msg, errorCode: 'COUPONS_NOT_SERVICEABLE', couponAdvice });
+      }
+
       const { result } = await withEticketRetry(uniqueId, bookingId, (pax) => mystifly.reissueQuote(uniqueId, onds, pax));
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
         if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date() });
-        return reply.code(422).send({ error: message, errorCode: 'MYSTIFLY_REISSUE_QUOTE_FAILED', raw: result });
+        return reply.code(422).send({ error: message, errorCode: 'MYSTIFLY_REISSUE_QUOTE_FAILED', raw: result, couponAdvice });
       }
 
       // ReIssueQuote returns ONLY the PTR id — it carries no amounts. The priced options
@@ -850,6 +891,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
           : quoteData,
         priced,
         pricingError,
+        couponAdvice,
         optionCount: options.length,
         originDestinations: onds,
         raw: result,

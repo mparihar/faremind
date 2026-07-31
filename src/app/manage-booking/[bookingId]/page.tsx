@@ -2,7 +2,7 @@
 import { useState, useEffect } from 'react';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Plane, ArrowLeft, Loader2, AlertCircle, User, MapPin, Calendar, ChevronDown, ChevronUp, X, Check, XCircle, Luggage, CreditCard, Ticket, Mail, Download, Printer, Shield, RefreshCw } from 'lucide-react';
+import { Plane, ArrowLeft, Loader2, AlertCircle, User, MapPin, Calendar, ChevronDown, ChevronUp, X, Check, XCircle, Luggage, CreditCard, Ticket, Mail, Download, Printer, Shield, RefreshCw, Clock } from 'lucide-react';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import CancelBookingModal from '@/components/manage-booking/CancelBookingModal';
@@ -354,7 +354,7 @@ export default function BookingDetailPage() {
   const params = useParams();
   const router = useRouter();
   const bookingId = params.bookingId as string;
-  const { booking, bookingLoading, loadBookingDetail, actions, loadActions, fareRules, timeline, loadTimeline, activeModal, setActiveModal, guestToken } = useManageBookingStore();
+  const { booking, bookingLoading, loadBookingDetail, actions, loadActions, fareRules, timeline, loadTimeline, activeModal, setActiveModal, guestToken, pendingChange } = useManageBookingStore();
   const { user, loadSession } = useAuthStore();
 
   useEffect(() => { loadSession(); }, [loadSession]);
@@ -422,6 +422,32 @@ export default function BookingDetailPage() {
         <button onClick={() => router.push('/manage-booking')} className="flex items-center gap-2 text-slate-500 hover:text-white text-sm mb-5 transition-colors">
           <ArrowLeft size={16} /> Back to bookings
         </button>
+
+        {/* A change accepted by the airline but not yet fulfilled. The booking below
+            still shows the ticket the customer currently holds — which is correct, and
+            is exactly why this needs saying: they have been charged and nothing else on
+            the page would explain it. */}
+        {pendingChange && (
+          <div className="mb-5 rounded-2xl border border-amber-400/25 bg-amber-400/10 p-4 flex items-start gap-3">
+            <Clock size={18} className="text-amber-400 mt-0.5 shrink-0" />
+            <div className="flex-1 min-w-0">
+              <p className="text-amber-300 font-bold text-sm">Flight change in progress</p>
+              <p className="text-slate-300 text-[13px] mt-1">
+                We sent your change to the airline
+                {pendingChange.submittedAt ? ` on ${new Date(pendingChange.submittedAt).toLocaleString()}` : ''}
+                {' '}and are waiting for them to confirm it. <span className="text-white font-semibold">Your current ticket below stays valid until then</span> — nothing has changed yet.
+              </p>
+              {pendingChange.collectedAmount != null && pendingChange.collectedAmount > 0 && (
+                <p className="text-slate-400 text-[12px] mt-1.5">
+                  {pendingChange.collectedAmount.toFixed(2)} {pendingChange.currency} has been charged for this change. If the airline cannot complete it, we refund that automatically.
+                </p>
+              )}
+              <p className="text-slate-500 text-[11px] mt-1.5">
+                This page updates on its own once the airline confirms — no need to do anything.
+              </p>
+            </div>
+          </div>
+        )}
 
         {/* ── Main Grid ── */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-4 items-stretch">

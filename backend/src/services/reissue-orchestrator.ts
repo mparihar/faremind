@@ -22,6 +22,7 @@ import { chargeOriginalCard, refundCollectionWithAudit } from './customer-collec
 import { buildPtrPassengers } from '../lib/ptr-passengers';
 import { backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
 import * as mbq from '../lib/manage-booking-queries';
+import { fireNotification } from '../lib/notify';
 
 function mfRefOf(booking: any): string | null {
   return booking?.pnrs?.find((p: any) => p.providerOrderId)?.providerOrderId
@@ -315,6 +316,23 @@ export async function initiateReissue(
       settlementId = cr.id;
     } catch (e) {
       console.error(`[Reissue][PTR] CRITICAL: could not queue settlement for ${bookingId} — fulfilment will not be verified: ${(e as Error).message}`);
+    }
+
+    // The customer has been charged for a change the airline has not completed yet.
+    // Acknowledge that now; reissue-settlement sends the confirmation once it settles.
+    // Same notice the customer-initiated change path sends, so both behave alike.
+    if (booking.customerEmail) {
+      fireNotification({
+        event_type: 'DATE_CHANGE_SUBMITTED',
+        booking_id: bookingId,
+        customer_email: booking.customerEmail,
+        data: {
+          booking_reference: booking.masterBookingReference,
+          customer_name: booking.customerName ?? '',
+          amount_collected: quote.totalCollect > 0 ? quote.totalCollect.toFixed(2) : '',
+          currency: 'USD',
+        },
+      });
     }
   }
 

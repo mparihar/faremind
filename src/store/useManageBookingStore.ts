@@ -147,6 +147,9 @@ interface ManageBookingStore {
   timeline: TimelineEvent[];
   timelineLoading: boolean;
 
+  // An accepted-but-unfulfilled flight change, if one is in flight
+  pendingChange: any | null;
+
   // Provider coupon state + credit notes (Mystifly)
   couponStatus: any | null;
   couponStatusLoading: boolean;
@@ -233,6 +236,7 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
   cancelQuote: null, cancelSuccess: null, cancelLoading: false, cancelError: null, cancelErrorCode: null, cancelRetryable: false, cancelSupportTicketCreated: false,
   seatMaps: [], seatMapLoading: false,
   timeline: [], timelineLoading: false,
+  pendingChange: null,
   couponStatus: null, couponStatusLoading: false,
   creditNotes: null, creditNotesLoading: false,
   eticket: null, eticketLoading: false, eticketError: null,
@@ -304,7 +308,7 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
     set({ bookingLoading: true });
     try {
       const data = await api<any>(`/api/manage-booking/${bookingId}`);
-      set({ booking: data.booking, bookingLoading: false });
+      set({ booking: data.booking, pendingChange: data.pendingChange ?? null, bookingLoading: false });
     } catch { set({ bookingLoading: false }); }
   },
 

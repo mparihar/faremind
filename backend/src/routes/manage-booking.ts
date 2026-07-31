@@ -426,7 +426,33 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const { bookingId } = request.params as { bookingId: string };
       const booking = await mbq.getMasterBookingFull(bookingId);
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
-      return { booking };
+
+      // A reissue accepted by the airline sits InProcess for up to ~60 min before it is
+      // fulfilled, and the booking deliberately does not change during that window — its
+      // status, itinerary and fare all still describe the ticket the customer holds,
+      // which is correct but leaves them charged with nothing on screen to explain it.
+      // getMasterBookingFull does not include changeRequests, so surface the in-flight
+      // one here for the UI to show.
+      const pending = await prisma.changeRequest.findFirst({
+        where: { bookingId: booking.id, status: 'PROVIDER_PROCESSING' },
+        orderBy: { createdAt: 'desc' },
+        select: {
+          id: true, type: true, status: true, createdAt: true,
+          collectedAmount: true, currency: true, providerPtrId: true, nextCheckAt: true,
+        },
+      }).catch(() => null);
+
+      const pendingChange = pending ? {
+        id: pending.id,
+        type: pending.type,
+        submittedAt: pending.createdAt,
+        collectedAmount: pending.collectedAmount != null ? Number(pending.collectedAmount) : null,
+        currency: pending.currency || booking.currency || 'USD',
+        providerPtrId: pending.providerPtrId,
+        nextCheckAt: pending.nextCheckAt,
+      } : null;
+
+      return { booking, pendingChange };
     } catch (e) { fastify.log.error(e, '[manage-booking/detail]'); reply.code(500).send({ error: 'Server error' }); }
   });
 
@@ -1824,6 +1850,23 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Email notification for confirmed flight change. When the reissue is
       // still processing, the reissue-reconciliation cron sends the confirmation
       // once the provider fulfils it — don't tell the customer it's done yet.
+      // Provider accepted but has not fulfilled yet. Suppressing the confirmation is
+      // right, but saying nothing leaves a charged customer with no acknowledgement at
+      // all — send the submitted notice instead, and confirm later when it settles.
+      if (booking.customerEmail && isProcessing) {
+        fireNotification({
+          event_type: 'DATE_CHANGE_SUBMITTED',
+          booking_id: bookingId,
+          customer_email: booking.customerEmail,
+          data: {
+            booking_reference: booking.masterBookingReference,
+            customer_name: booking.customerName ?? '',
+            amount_collected: totalCollect > 0 ? totalCollect.toFixed(2) : '',
+            currency: 'USD',
+          },
+        });
+      }
+
       if (booking.customerEmail && !isProcessing) {
         const paxNames = booking.passengers.map(p => `${p.firstName} ${p.lastName}`).join(', ');
         const oldSeg = (booking.pnrs[0] as any)?.segments?.[0];

@@ -493,6 +493,23 @@ export default function AgentPostBookingPage() {
                     <p className="text-amber-400 text-xs font-semibold mb-2">{quoteResult.pricingError}</p>
                   )}
 
+                  {/* The airline's own verdict on whether these coupons can still be
+                      serviced. Advisory — the provider will quote regardless, and the
+                      demo environment reports every coupon as N/A. */}
+                  {quoteResult.couponAdvice?.checked && !quoteResult.couponAdvice.eligible && (
+                    <div className="mb-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3">
+                      <p className="text-amber-300 text-xs font-bold">
+                        Airline reports {quoteResult.couponAdvice.openSegments} of {quoteResult.couponAdvice.totalSegments} coupons open
+                      </p>
+                      {(quoteResult.couponAdvice.warnings || []).map((w: string, i: number) => (
+                        <p key={i} className="text-[11px] text-amber-200/80 mt-1">{w}</p>
+                      ))}
+                      <p className="text-[11px] text-slate-400 mt-1.5">
+                        The quote above may still be accepted by the provider, but fulfilment can fail. Verify before charging the customer.
+                      </p>
+                    </div>
+                  )}
+
                   {/* Void / Refund quote figures */}
                   {quoteResult.quote && !quoteResult.priced && (
                     <div className="grid grid-cols-3 gap-3 mb-2">
