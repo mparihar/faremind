@@ -746,8 +746,11 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
           const chosen = options.find((p: any) => Number(p?.Option) === (preferenceOption ?? 1)) || options[0];
           const fares: any[] = Array.isArray(chosen?.QuotedFares) ? chosen.QuotedFares : [];
           if (fares.length > 0) {
+            // TotalFareDifference is the total for the whole booking, NOT per head —
+            // confirmed by Mystifly. PassengerCount is informational; multiplying by it
+            // would bill a 2-passenger reissue twice.
             const sum = (pick: (f: any) => any) => fares.reduce(
-              (s, f) => s + (parseFloat(pick(f)) || 0) * (parseInt(f?.PassengerCount, 10) || 1), 0);
+              (s, f) => s + (parseFloat(pick(f)) || 0), 0);
             const providerCurrency = String(fares[0]?.Currency || 'USD').toUpperCase();
             // TotalFareDifference already includes Penalty — never add them together.
             const rawFareDiff = sum((f) => f.TotalFareDifference);

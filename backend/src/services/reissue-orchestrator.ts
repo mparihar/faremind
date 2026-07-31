@@ -118,11 +118,11 @@ export async function getReissueQuote(
     );
   }
 
-  // QuotedFares is one row per passenger type, carrying its own PassengerCount.
-  // NOTE: verify against a multi-passenger booking before relying on this to charge —
-  // with a single ADT the per-pax and per-group readings are indistinguishable.
+  // TotalFareDifference is the total for the whole booking, NOT a per-head amount —
+  // confirmed by Mystifly. PassengerCount is informational; multiplying by it would
+  // bill a 2-passenger reissue twice. Sum the rows (one per passenger type) as-is.
   const sumFares = (pick: (f: any) => any) => quotedFares.reduce(
-    (s, f) => s + (parseFloat(pick(f)) || 0) * (parseInt(f?.PassengerCount, 10) || 1), 0);
+    (s, f) => s + (parseFloat(pick(f)) || 0), 0);
 
   const providerCurrency = (quotedFares[0]?.Currency || data?.Currency || 'USD').toUpperCase();
   const rawFareDiff = sumFares((f) => f.TotalFareDifference);
