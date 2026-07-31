@@ -1096,17 +1096,32 @@ export async function searchPtrStatus(mfRef: string): Promise<any> {
   return result;
 }
 
+/** PTR types MarkAsRead accepts (OnePointRestAPI.ValidationModels.MarkAsRead+PTRType). */
+export type MarkAsReadPtrType =
+  | 'None' | 'VoidQuote' | 'Void' | 'RefundQuote' | 'Refund'
+  | 'ReIssueQuote' | 'ReIssue' | 'ScheduleChange' | 'FutureCredit';
+
 /**
  * Mark a PTR notification as read.
+ *
+ * Contract is {MFRef, id, requestType} and all three are required — `id` is the
+ * provider PTRId, not the MFRef. The previous body ({UniqueID, Target}) sent two
+ * properties that do not exist on this endpoint and omitted every required one, so
+ * every call returned HTTP 400 "Please enter valid id greater than 0. / The MFRef
+ * field is required."
  */
-export async function markPtrAsRead(uniqueId: string): Promise<any> {
-
+export async function markPtrAsRead(
+  mfRef: string,
+  ptrId: number,
+  requestType: MarkAsReadPtrType = 'None',
+): Promise<any> {
   const result = await mystiflyRequest<any>({
     method: 'POST',
     path: `/api/MarkAsRead`,
     body: {
-      UniqueID: uniqueId,
-      Target: MYSTIFLY_TARGET,
+      MFRef: mfRef,
+      id: ptrId,
+      requestType,
     } as unknown as Record<string, unknown>,
     retries: 0,
   });

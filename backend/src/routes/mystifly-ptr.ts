@@ -936,10 +936,16 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/mark-read', async (request, reply) => {
     try {
-      const { uniqueId } = request.body as { uniqueId: string };
+      const { uniqueId, providerPtrId, requestType } = request.body as {
+        uniqueId: string; providerPtrId?: number; requestType?: mystifly.MarkAsReadPtrType;
+      };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
+      // `id` is the provider PTRId and must be > 0 — the endpoint 400s without it.
+      if (!providerPtrId || providerPtrId <= 0) {
+        return reply.code(400).send({ error: 'providerPtrId (the Mystifly PTR id) is required and must be greater than 0.', errorCode: 'MISSING_PTR_ID' });
+      }
 
-      const result = await mystifly.markPtrAsRead(uniqueId);
+      const result = await mystifly.markPtrAsRead(uniqueId, providerPtrId, requestType || 'None');
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
