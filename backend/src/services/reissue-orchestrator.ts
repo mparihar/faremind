@@ -39,7 +39,9 @@ function buildOriginDestinations(booking: any): mystifly.MystiflyReissueOriginDe
   return journeys.map((j: any) => ({
     originLocationCode: j.originAirport,
     destinationLocationCode: j.destinationAirport,
-    departureDateTime: new Date(j.departureDateTime).toISOString().slice(0, 19),
+    // Date at midnight, per Mystifly's ReissueQuoteRQ contract — a wall-clock time would
+    // narrow the search instead of returning the whole day's options.
+    departureDateTime: `${new Date(j.departureDateTime).toISOString().slice(0, 10)}T00:00:00`,
     cabinPreference: mystifly.toCabinType(j.segments?.[0]?.cabin || j.cabinSummary || 'economy'),
   }));
 }
@@ -220,8 +222,45 @@ export async function initiateReissue(
     throw Object.assign(new Error(`Reissue failed at the provider: ${reErr.message}.${chargeId ? ' Your charge has been refunded.' : ''}`), { code: 'REISSUE_FAILED' });
   }
 
-  const ptrNumber = String(reissueResult?.Data?.PtrId || reissueResult?.Data?.ptrId || quote.ptrNumber || 'N/A');
-  console.log(`[Reissue][PTR] forcedBy=${forcedBy || 'STAFF'} bookingRef=${booking.masterBookingReference} mfRef=${mfRef} ptrNumber=${ptrNumber} executed=true collected=${quote.totalCollect} USD`);
+  // Accepting returns PTRType=ReIssue / PTRStatus=InProcess with an SLA (typically 60
+  // min): the airline has NOT reissued yet. Treat this as SUBMITTED, not completed —
+  // reissue-settlement advances the booking once the provider reports
+  // Resolution=Reissued, and refunds the collection if it is rejected.
+  const execData = reissueResult?.Data || reissueResult || {};
+  const ptrNumber = String(execData?.PTRId ?? execData?.PtrId ?? quote.ptrNumber ?? 'N/A');
+  const execPtrStatus = execData?.PTRStatus || 'InProcess';
+  const slaInMinutes = execData?.SLAInMinutes ?? null;
+  const settled = /completed/i.test(execPtrStatus);
+  console.log(`[Reissue][PTR] forcedBy=${forcedBy || 'STAFF'} bookingRef=${booking.masterBookingReference} mfRef=${mfRef} ptrNumber=${ptrNumber} ptrStatus=${execPtrStatus} settled=${settled} sla=${slaInMinutes ?? '-'}min collected=${quote.totalCollect} USD`);
+
+  // Queue fulfilment polling with the collection attached, so a later rejection refunds
+  // the customer automatically.
+  let settlementId: string | null = null;
+  if (!settled) {
+    try {
+      const cr = await prisma.changeRequest.create({
+        data: {
+          bookingId,
+          type: 'DATE_CHANGE',
+          status: 'PROVIDER_PROCESSING',
+          requestedBy: forcedBy || 'STAFF',
+          requestedData: { newFareSourceCode, preferenceOption: quote.preferenceOption } as any,
+          totalCost: quote.totalCollect,
+          currency: 'USD',
+          providerPtrId: String(quote.providerPtrId),
+          providerMfRef: mfRef,
+          providerResponse: reissueResult as any,
+          collectedChargeId: chargeId ?? null,
+          collectedAmount: quote.totalCollect > 0 ? quote.totalCollect : null,
+          // First poll ~30 min after accept; reissue-settlement widens the back-off.
+          nextCheckAt: new Date(Date.now() + 30 * 60 * 1000),
+        } as any,
+      });
+      settlementId = cr.id;
+    } catch (e) {
+      console.error(`[Reissue][PTR] CRITICAL: could not queue settlement for ${bookingId} — fulfilment will not be verified: ${(e as Error).message}`);
+    }
+  }
 
   // 4. Records
   const servicePayment = await prisma.servicePayment.create({
@@ -244,24 +283,43 @@ export async function initiateReissue(
   await prisma.bookingEvent.create({
     data: {
       bookingId,
-      eventType: 'REISSUE_COMPLETED',
-      eventTitle: 'Ticket reissued (change) + difference collected',
-      eventDescription: `Reissued to a new fare. Collected $${quote.totalCollect} (fare difference $${quote.fareDifference} + service fee $${quote.serviceFee}). Provider PTR ${ptrNumber}.`,
+      // Submitted ≠ reissued. reissue-settlement writes CHANGE_CONFIRMED once the
+      // provider reports Resolution=Reissued, or CHANGE_REJECTED (+ refund) if not.
+      eventType: settled ? 'REISSUE_COMPLETED' : 'REISSUE_SUBMITTED',
+      eventTitle: settled
+        ? 'Ticket reissued (change) + difference collected'
+        : 'Reissue submitted to the airline + difference collected',
+      eventDescription: settled
+        ? `Reissued to a new fare. Collected $${quote.totalCollect} (fare difference $${quote.fareDifference} + service fee $${quote.serviceFee}). Provider PTR ${ptrNumber}.`
+        : `Reissue request accepted by the provider (PTR ${ptrNumber}, status ${execPtrStatus}${slaInMinutes ? `, SLA ~${slaInMinutes} min` : ''}). The ticket is NOT reissued yet — fulfilment is being polled and the booking updates once the airline confirms. Collected $${quote.totalCollect} (fare difference $${quote.fareDifference} + service fee $${quote.serviceFee}); it is refunded automatically if the airline rejects the reissue.`,
       actorType: forcedBy?.startsWith('ADMIN') ? 'admin' : 'agent',
       // Cast: ReissueQuote is a declared interface, so it has no index signature and
       // Prisma's InputJsonValue rejects it structurally.
-      payloadJson: { quote, chargeId, newFareSourceCode, ptrNumber } as any,
+      payloadJson: { quote, chargeId, newFareSourceCode, ptrNumber, execPtrStatus, settlementId } as any,
     },
   }).catch(() => {});
 
-  await prisma.masterBooking.update({
-    where: { id: bookingId },
-    data: { revalidatedFareSourceCode: newFareSourceCode },
-  }).catch(() => {});
+  // Only bind the new fare to the booking once the airline has actually reissued;
+  // otherwise the booking would advertise a fare it is not yet ticketed on.
+  if (settled) {
+    await prisma.masterBooking.update({
+      where: { id: bookingId },
+      data: { revalidatedFareSourceCode: newFareSourceCode },
+    }).catch(() => {});
+  }
 
   return {
     success: true,
     ptrNumber,
+    ptrStatus: execPtrStatus,
+    settled,
+    pendingFulfilment: !settled,
+    slaInMinutes,
+    settlementId,
+    status: settled ? 'REISSUED' : 'SUBMITTED',
+    message: settled
+      ? 'Reissue completed by the provider.'
+      : `Reissue submitted. The airline fulfils it${slaInMinutes ? ` within ~${slaInMinutes} minutes` : ' shortly'}; the booking updates automatically once confirmed.`,
     collected: quote.totalCollect,
     currency: 'USD',
     fareDifference: quote.fareDifference,

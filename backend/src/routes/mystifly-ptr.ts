@@ -121,7 +121,9 @@ async function loadPtrOriginDestinations(
     return booking.journeys.map((j: any) => ({
       originLocationCode: j.originAirport,
       destinationLocationCode: j.destinationAirport,
-      departureDateTime: new Date(j.departureDateTime).toISOString().slice(0, 19),
+      // Date at midnight, per Mystifly's ReissueQuoteRQ contract — a wall-clock time
+      // would narrow the search instead of returning the whole day's options.
+      departureDateTime: `${new Date(j.departureDateTime).toISOString().slice(0, 10)}T00:00:00`,
       cabinPreference: mystifly.toCabinType(j.segments[0]?.cabin || j.cabinSummary || 'economy'),
     }));
   } catch {
@@ -220,6 +222,55 @@ async function updatePtrRecord(id: string, data: Record<string, any>) {
     where: { id },
     data,
   });
+}
+
+/**
+ * Hand an accepted-but-unfulfilled reissue to the settlement cron.
+ *
+ * Accepting a ReIssueQuote returns PTRStatus=InProcess with a 60-minute SLA — the
+ * airline has NOT reissued yet. `reissue-reconciliation-cron` polls ChangeRequest rows
+ * in PROVIDER_PROCESSING and `services/reissue-settlement.ts` advances them only once
+ * the provider reports Resolution=Reissued (or refunds + escalates on rejection).
+ * Without this row nothing ever verifies fulfilment, so the booking would claim a
+ * reissue that may still fail at the airline an hour later.
+ */
+async function enqueueReissueSettlement(params: {
+  uniqueId: string;
+  bookingId?: string;
+  providerPtrId: number;
+  requestedBy?: string;
+  providerResponse?: unknown;
+  collectedChargeId?: string | null;
+  collectedAmount?: number | null;
+}): Promise<string | null> {
+  // Resolve by MFRef as well as FareMind id/reference — the PTR console often has only
+  // the MFRef, and an unresolved booking means fulfilment is never verified.
+  const booking = await resolvePtrBooking(params.uniqueId, params.bookingId);
+  if (!booking) {
+    console.warn(`[PTR] enqueueReissueSettlement: no MasterBooking for "${params.bookingId || params.uniqueId}" — reissue will NOT be polled.`);
+    return null;
+  }
+  try {
+    const cr = await prisma.changeRequest.create({
+      data: {
+        bookingId: booking.id,
+        type: 'DATE_CHANGE',
+        status: 'PROVIDER_PROCESSING',
+        requestedBy: params.requestedBy || 'agent',
+        providerPtrId: String(params.providerPtrId),
+        providerMfRef: params.uniqueId,
+        providerResponse: (params.providerResponse ?? undefined) as any,
+        collectedChargeId: params.collectedChargeId ?? null,
+        collectedAmount: params.collectedAmount ?? null,
+        // First poll ~30 min after accept; reissue-settlement widens the back-off.
+        nextCheckAt: new Date(Date.now() + 30 * 60 * 1000),
+      } as any,
+    });
+    return cr.id;
+  } catch (e) {
+    console.error('[PTR] enqueueReissueSettlement failed:', (e as Error).message);
+    return null;
+  }
 }
 
 // ═══════════════════════════════════════════════
@@ -569,8 +620,9 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/reissue', async (request, reply) => {
     try {
-      const { uniqueId, ptrId, providerPtrId, preferenceOption, requestedBy } = request.body as {
-        uniqueId: string; ptrId?: string; providerPtrId?: number; preferenceOption?: number; requestedBy?: string;
+      const { uniqueId, ptrId, providerPtrId, preferenceOption, bookingId, requestedBy } = request.body as {
+        uniqueId: string; ptrId?: string; providerPtrId?: number; preferenceOption?: number;
+        bookingId?: string; requestedBy?: string;
       };
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
       if (!providerPtrId) return reply.code(400).send({ error: 'providerPtrId (the ReIssueQuote PTR id) is required — run Get Reissue Quote first.', errorCode: 'MISSING_PTR_ID' });
@@ -587,9 +639,42 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(422).send({ error: message, errorCode: 'MYSTIFLY_REISSUE_FAILED', raw: result });
       }
 
-      if (ptrId) await updatePtrRecord(ptrId, { status: 'COMPLETED', executedAt: new Date(), providerExecResponse: result });
+      // Accepting returns PTRType=ReIssue / PTRStatus=InProcess with an SLA (typically
+      // 60 min) — the airline has NOT reissued yet. Mark COMPLETED only if the provider
+      // itself says so; otherwise EXECUTING, exactly as /void and /refund do.
+      const data = result?.Data || result;
+      const ptrStatus = data?.PTRStatus || 'InProcess';
+      const slaInMinutes = data?.SLAInMinutes ?? null;
+      const settled = /completed/i.test(ptrStatus);
+      if (ptrId) await updatePtrRecord(ptrId, { status: settled ? 'COMPLETED' : 'EXECUTING', executedAt: new Date(), providerExecResponse: result });
 
-      return { success: true, ptrId, raw: result };
+      // Queue fulfilment polling. Booking status is advanced by reissue-settlement only
+      // after the provider reports Resolution=Reissued — never here.
+      let settlementId: string | null = null;
+      if (!settled) {
+        settlementId = await enqueueReissueSettlement({
+          uniqueId,
+          bookingId,
+          providerPtrId,
+          requestedBy,
+          providerResponse: result,
+        });
+      }
+
+      return {
+        success: true,
+        ptrId,
+        providerPtrId,
+        ptrStatus,
+        slaInMinutes,
+        settled,
+        pendingFulfilment: !settled,
+        settlementId,
+        message: settled
+          ? 'Reissue completed by the provider.'
+          : data?.Message || `Reissue submitted. The airline fulfils it${slaInMinutes ? ` within ~${slaInMinutes} minutes` : ' shortly'}; the booking updates automatically once confirmed.`,
+        raw: result,
+      };
     } catch (error: any) {
       console.error('[PTR] ReIssue error:', error.message);
       return reply.code(502).send({ error: `ReIssue failed: ${error.message}` });
