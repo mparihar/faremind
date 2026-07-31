@@ -68,6 +68,20 @@ export interface RoundTripOption {
   bookingProvider: string;
   cabinClass: CabinClass;
 
+  // ── Fare family ──
+  /** The airline's own brand, verbatim — displayed, never rewritten. */
+  airlineFareFamily?: string;
+  /** Internal tier for filters/analytics only. Never render this. */
+  normalizedFareTier?: import('@/lib/types').NormalizedFareTier;
+  /** Same metal at a different fare shares this key — the fare ladder. */
+  itineraryKey?: string;
+  /** Reservation booking designator (RBD). */
+  bookingClass?: string;
+  /** Raw provider allowance text, kept verbatim. */
+  checkedBaggageAllowance?: string;
+  cabinBaggageAllowance?: string;
+  seatsRemaining?: number;
+
   fareRules: {
     refundable: boolean;
     changeable: boolean;

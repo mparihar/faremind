@@ -10,6 +10,7 @@ import { useBookingStore } from '@/store/useBookingStore';
 import { useCheckoutStore } from '@/store/useCheckoutStore';
 import { useOfferSessionStore } from '@/store/useOfferSessionStore';
 import type { FareSelectionPayload, PriceProtectionQuote } from '@/lib/fare-types';
+import type { FareSiblingOffer } from '@/lib/fare-siblings';
 import { apiFetch } from '@/lib/api-client';
 import { getAirlineLogo } from '@/lib/utils';
 
@@ -145,7 +146,7 @@ export default function FareSelectionModal({ onClose }: Props) {
     const raw = sessionStorage.getItem('fm_fare_context');
     if (!raw) { onClose(); return; }
 
-    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; durationMinutes?: number; layoverMinutes?: number[]; trip?: string; fareRules?: { changeable?: boolean; changeFee?: number; refundable?: boolean; cancellationFee?: number }; baggage?: { carryOn?: number; checked?: number } };
+    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; durationMinutes?: number; layoverMinutes?: number[]; trip?: string; fareRules?: { changeable?: boolean; changeFee?: number; refundable?: boolean; cancellationFee?: number }; baggage?: { carryOn?: number; checked?: number }; offers?: FareSiblingOffer[] };
     try { ctx = JSON.parse(raw); } catch { onClose(); return; }
     setFareContext({ origin: ctx.origin, destination: ctx.destination, trip: ctx.trip || 'one_way' });
 
@@ -168,9 +169,34 @@ export default function FareSelectionModal({ onClose }: Props) {
     if (ctx.baggage?.checked !== undefined) {
       providerParams += `&provider_checked_bags=${ctx.baggage.checked}`;
     }
-    apiFetch<FareSelectionPayload>(
-      `/api/fares/options?offer_id=${encodeURIComponent(ctx.offerId)}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${encodeURIComponent(ctx.origin)}&destination=${encodeURIComponent(ctx.destination)}&stops=${ctx.stops}&duration_minutes=${ctx.durationMinutes ?? 0}${layoverParam}${tripParam}${providerParams}`
-    )
+    // Preferred path: POST the airline's own fare ladder for this flight (every
+    // offer from the search sharing its itinerary). Each entry keeps the
+    // carrier's brand and its own FareSourceCode. The GET fallback below is for
+    // entry points that only hold a single offer.
+    const request = ctx.offers?.length
+      ? apiFetch<FareSelectionPayload>('/api/fares/options', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            offers: ctx.offers,
+            traveler_count: ctx.travelers,
+            currency: ctx.currency,
+            origin: ctx.origin,
+            destination: ctx.destination,
+            stops: ctx.stops,
+            trip: ctx.trip || 'one_way',
+            flight_context: {
+              duration_minutes: ctx.durationMinutes ?? 0,
+              stops: ctx.stops,
+              layover_minutes: ctx.layoverMinutes ?? [],
+            },
+          }),
+        })
+      : apiFetch<FareSelectionPayload>(
+          `/api/fares/options?offer_id=${encodeURIComponent(ctx.offerId)}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${encodeURIComponent(ctx.origin)}&destination=${encodeURIComponent(ctx.destination)}&stops=${ctx.stops}&duration_minutes=${ctx.durationMinutes ?? 0}${layoverParam}${tripParam}${providerParams}`
+        );
+
+    request
       .then(data => {
         s().setPayload(data);
         // Default to cheapest fare — matches the price the user saw on the search card
@@ -241,7 +267,11 @@ export default function FareSelectionModal({ onClose }: Props) {
       fareId:         selectedFare.id,
       offerId:        selectedFare.offerId,
       cabin:          selectedFare.cabin,
+      // The airline's fare family. Carried unchanged from here into checkout,
+      // the booking record, the confirmation email and every servicing screen.
       name:           selectedFare.name,
+      airlineFareFamily: selectedFare.airlineFareFamily ?? null,
+      normalizedFareTier: selectedFare.normalizedFareTier,
       basePrice:      selectedFare.basePrice,
       totalPrice:     selectedFare.totalPrice,
       priceProtection: store.priceProtection,
@@ -249,6 +279,7 @@ export default function FareSelectionModal({ onClose }: Props) {
       grandTotal:     selectedFare.totalPrice + (store.priceProtection ? totalProtectionFee : 0),
       currency:       store.payload?.currency || 'USD',
       policy:         selectedFare.policy,
+      benefits:       selectedFare.benefits,
     };
 
     // Write to Zustand store right now
@@ -273,6 +304,8 @@ export default function FareSelectionModal({ onClose }: Props) {
         offerId:      selectedFare.offerId,
         cabin:        selectedFare.cabin,
         name:         selectedFare.name,
+        airlineFareFamily: selectedFare.airlineFareFamily ?? null,
+        normalizedFareTier: selectedFare.normalizedFareTier,
         basePrice:    selectedFare.basePrice,
         totalPrice:   selectedFare.totalPrice,
         priceProtection: store.priceProtection,
@@ -406,12 +439,14 @@ export default function FareSelectionModal({ onClose }: Props) {
                     <span className="text-[10px] font-bold text-[#1ABC9C] uppercase tracking-wider">AI Recommendations</span>
                   </div>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                    <AiChip
-                      headline={payload.aiRecommendations.topPick.headline}
-                      reason={payload.aiRecommendations.topPick.reason}
-                      fareId={payload.aiRecommendations.topPick.fareId}
-                      onScrollTo={scrollToFare}
-                    />
+                    {payload.aiRecommendations.topPick && (
+                      <AiChip
+                        headline={payload.aiRecommendations.topPick.headline}
+                        reason={payload.aiRecommendations.topPick.reason}
+                        fareId={payload.aiRecommendations.topPick.fareId}
+                        onScrollTo={scrollToFare}
+                      />
+                    )}
                     {payload.aiRecommendations.others.map((rec, i) => (
                       <AiChip
                         key={i}

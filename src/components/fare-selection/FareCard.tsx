@@ -82,14 +82,30 @@ export default function FareCard({
   const grandTotal = allPassengerFareTotal + (isBundleEnabled() && selected && priceProtection ? totalProtectionFee : 0);
 
 
+  // Benefit rows are stated only where the provider actually told us. A row we
+  // cannot source is omitted rather than rendered as a "no" — the fare-tier
+  // templates used to assert lounge access and miles earning we had no data for.
+  const b = fare.benefits;
+
+  const carryOnLabel = b?.carryOnAllowance
+    ? `Carry-on: ${b.carryOnAllowance}`
+    : fare.baggage.carryOnPieces > 0
+    ? `${fare.baggage.carryOnPieces}× carry-on${fare.baggage.carryOnWeightKg ? ` (${fare.baggage.carryOnWeightKg} kg)` : ''}`
+    : null;
+
+  const checkedPieces = b?.checkedPieces ?? fare.baggage.checked;
+  const checkedLabel = b?.checkedAllowance
+    ? `Checked baggage: ${b.checkedAllowance}`
+    : checkedPieces > 0
+    ? `${checkedPieces}× checked bag${checkedPieces > 1 ? 's' : ''}${fare.baggage.checkedWeightKg ? ` · ${fare.baggage.checkedWeightKg} kg` : ''}`
+    : 'No checked bag';
+
   const features: Feature[] = [
+    ...(carryOnLabel ? [{ status: 'yes' as FeatureStatus, label: carryOnLabel }] : []),
     {
-      status: 'yes',
-      label:  `${fare.baggage.carryOnPieces}× carry-on${fare.baggage.carryOnWeightKg ? ` (${fare.baggage.carryOnWeightKg} kg)` : ''}`,
+      status: (checkedPieces > 0 ? 'yes' : 'no') as FeatureStatus,
+      label: checkedLabel,
     },
-    fare.baggage.checked > 0
-      ? { status: 'yes', label: `${fare.baggage.checked}× checked bag${fare.baggage.checked > 1 ? 's' : ''}${fare.baggage.checkedWeightKg ? ` · ${fare.baggage.checkedWeightKg} kg` : ''}` }
-      : { status: 'no',  label: 'No checked bag' },
     fare.policy.refundable === null || fare.policy.refundable === undefined
       ? { status: 'partial', label: 'Refund: Contact airline' }
       : !fare.policy.refundable
@@ -108,19 +124,26 @@ export default function FareCard({
       : fare.policy.changeFeeUsd
       ? { status: 'partial', label: `Change fee: ${fmtPrice(fare.policy.changeFeeUsd, currency)}` }
       : { status: 'yes',     label: 'Changeable' },
-    fare.policy.seatSelection === 'free'
-      ? { status: 'yes',     label: 'Free seat selection' }
+    // Seat policy: only claim it when the provider stated it.
+    ...(fare.policy.seatSelection === 'free'
+      ? [{ status: 'yes' as FeatureStatus, label: 'Free seat selection' }]
       : fare.policy.seatSelection === 'fee'
-      ? { status: 'partial', label: `Seat: ${fmtPrice(fare.policy.seatSelectionFeeUsd!, currency)}/seat` }
-      : { status: 'no',      label: 'No seat selection' },
-    { status: fare.policy.priorityBoarding ? 'yes' : 'no', label: 'Priority boarding' },
-    ...(fare.cabin !== 'economy'
+      ? [{ status: 'partial' as FeatureStatus, label: fare.policy.seatSelectionFeeUsd != null ? `Seat: ${fmtPrice(fare.policy.seatSelectionFeeUsd, currency)}/seat` : 'Seat selection: fee applies' }]
+      : fare.policy.seatSelection === 'not_available'
+      ? [{ status: 'no' as FeatureStatus, label: 'No seat selection' }]
+      : []),
+    ...(fare.policy.priorityBoarding != null
+      ? [{ status: (fare.policy.priorityBoarding ? 'yes' : 'no') as FeatureStatus, label: 'Priority boarding' }]
+      : []),
+    ...(fare.cabin !== 'economy' && fare.policy.loungeAccess != null
       ? [{ status: (fare.policy.loungeAccess ? 'yes' : 'no') as FeatureStatus, label: 'Lounge access' }]
       : []),
-    {
-      status: fare.policy.milesEarning === 'full' ? 'yes' : fare.policy.milesEarning === 'reduced' ? 'partial' : 'no',
-      label:  fare.policy.milesEarning === 'full' ? 'Full miles earned' : fare.policy.milesEarning === 'reduced' ? '50% miles earned' : 'No miles earned',
-    },
+    ...(fare.policy.milesEarning != null
+      ? [{
+          status: (fare.policy.milesEarning === 'full' ? 'yes' : fare.policy.milesEarning === 'reduced' ? 'partial' : 'no') as FeatureStatus,
+          label:  fare.policy.milesEarning === 'full' ? 'Full miles earned' : fare.policy.milesEarning === 'reduced' ? '50% miles earned' : 'No miles earned',
+        }]
+      : []),
   ];
 
   return (
@@ -159,9 +182,15 @@ export default function FareCard({
             })}
         </div>
 
-        {/* Fare name + price */}
+        {/* Fare name + price. `fare.name` is the airline's own fare family,
+            verbatim — FareMind never substitutes a name of its own. */}
         <div>
           <h3 className="text-[15px] font-extrabold text-slate-900 leading-tight">{fare.name}</h3>
+          {b?.bookingClass && (
+            <p className="text-[10px] font-semibold text-slate-400 tracking-wide mt-0.5">
+              Class {b.bookingClass}
+            </p>
+          )}
           <div className="mt-1.5 flex items-baseline gap-1.5">
             <span className="text-[26px] font-black text-[#F97316] leading-none">{fmtPrice(grandTotal, currency)}</span>
             <span className="text-xs text-slate-400">
@@ -194,7 +223,8 @@ export default function FareCard({
         </div>
 
         {/* Seats warning */}
-        {fare.seatsRemaining !== undefined && fare.seatsRemaining <= 5 && (
+        {/* Real provider availability. This used to be Math.random(). */}
+        {fare.seatsRemaining != null && fare.seatsRemaining > 0 && fare.seatsRemaining <= 5 && (
           <p className="text-[12px] font-bold text-red-500">
             Only {fare.seatsRemaining} seat{fare.seatsRemaining !== 1 ? 's' : ''} left!
           </p>

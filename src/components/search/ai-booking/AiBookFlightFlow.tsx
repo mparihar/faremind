@@ -52,6 +52,7 @@ const PREVIOUS_STATUS: Partial<Record<AiBookingStatus, AiBookingStatus>> = {
 
 import { useAiBookingStore } from '@/store/useAiBookingStore';
 import { apiFetch } from '@/lib/api-client';
+import { collectFareSiblings } from '@/lib/fare-siblings';
 import { useCheckoutStore } from '@/store/useCheckoutStore';
 import { useOfferSessionStore } from '@/store/useOfferSessionStore';
 import { isBundleEnabled } from '@/lib/bundle-flags';
@@ -294,9 +295,25 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
       if (flight.baggage?.checked !== undefined) {
         providerParams += `&provider_checked_bags=${flight.baggage.checked}`;
       }
-      const payload = await apiFetch<FareSelectionPayload>(
-        `/api/fares/options?offer_id=${encodeURIComponent(flight.providerOfferId)}&base_price=${flight.totalPrice}&traveler_count=1&currency=${flight.currency || 'USD'}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&stops=${flight.stops}&duration_minutes=${flight.totalDuration ?? 0}${providerParams}`
-      );
+      // The airline's own fare ladder for this flight — every search offer
+      // sharing its itinerary, each keeping the carrier's brand. The AI bot
+      // shows the same fare names as the web and agent surfaces.
+      const siblings = collectFareSiblings(flight, flights);
+      const payload = siblings.length
+        ? await apiFetch<FareSelectionPayload>('/api/fares/options', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              offers: siblings,
+              traveler_count: 1,
+              currency: flight.currency || 'USD',
+              origin, destination, stops: flight.stops,
+              flight_context: { duration_minutes: flight.totalDuration ?? 0, stops: flight.stops },
+            }),
+          })
+        : await apiFetch<FareSelectionPayload>(
+            `/api/fares/options?offer_id=${encodeURIComponent(flight.providerOfferId)}&base_price=${flight.totalPrice}&traveler_count=1&currency=${flight.currency || 'USD'}&origin=${encodeURIComponent(origin)}&destination=${encodeURIComponent(destination)}&stops=${flight.stops}&duration_minutes=${flight.totalDuration ?? 0}${providerParams}`
+          );
       const allFares = payload.fareGroups.flatMap(g => g.fares);
       setFareOptions(allFares);
     } catch (err) {

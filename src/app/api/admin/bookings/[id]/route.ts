@@ -139,7 +139,12 @@ export const GET = withAdmin(async (_req: NextRequest, { params }: any) => {
     totalDuration,
     stops:              outJourney?.totalStops ?? 0,
     cabinClass:         allSegments[0]?.cabin ?? outJourney?.cabinSummary?.toUpperCase() ?? 'ECONOMY',
-    fareClass:          allSegments[0]?.fareClass ?? null,
+    // Prefer the family frozen on the booking; fall back to the segment for
+    // bookings taken before fare families were recorded.
+    fareClass:          mb.airlineFareFamily ?? allSegments[0]?.fareClass ?? null,
+    airlineFareFamily:  mb.airlineFareFamily ?? null,
+    normalizedFareTier: mb.normalizedFareTier ?? null,
+    bookingClass:       mb.bookingClass ?? allSegments[0]?.fareClass ?? null,
     airlineCode:        primaryAirlineCode,
     airlineName:        primaryAirlineName,
     provider:           mb.primaryProvider,

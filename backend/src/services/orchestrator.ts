@@ -252,6 +252,7 @@ async function searchMystifly(params: {
                 SeatsRemaining: itinRef?.SeatsRemaining,
                 FareBasisCode: itinRef?.FareBasisCodes || '',
                 FareFamily: itinRef?.FareFamily || '',
+                RBD: itinRef?.RBD || '',
               });
             }
           }
@@ -490,6 +491,7 @@ async function searchMystiflyLowestFare(params: {
                 SeatsRemaining: itinRef?.SeatsRemaining,
                 FareBasisCode: itinRef?.FareBasisCodes || '',
                 FareFamily: itinRef?.FareFamily || '',
+                RBD: itinRef?.RBD || '',
               });
             }
           }

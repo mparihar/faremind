@@ -11,6 +11,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { useFareStore } from '@/store/useFareStore';
 import { useCheckoutStore } from '@/store/useCheckoutStore';
 import FareSelectionModal from '@/components/fare-selection/FareSelectionModal';
+import { collectFareSiblings, collectRoundTripFareSiblings } from '@/lib/fare-siblings';
 import { AIRPORTS } from '@/lib/mock-data';
 import FlightCard from '@/components/search/FlightCard';
 import SearchForm from '@/components/search/SearchForm';
@@ -680,9 +681,13 @@ function SearchContent() {
       returnDate: returnDateParam,
       fareRules: flight.fareRules,
       baggage: flight.baggage,
+      // The airline's own fare ladder for this flight — every offer in the
+      // results sharing this itinerary. The panel labels each with the
+      // carrier's brand instead of a FareMind-invented tier name.
+      offers: collectFareSiblings(flight, results),
     }));
     setShowFareModal(true);
-  }, [fareStore, searchParams, adults, childrenParam, infantsParam, date, cabin, tripParam, returnDateParam]);
+  }, [fareStore, searchParams, adults, childrenParam, infantsParam, date, cabin, tripParam, returnDateParam, results]);
 
   const panelFilteredRT = useMemo(() => {
     let f = prefsFilteredRT;
@@ -1256,6 +1261,7 @@ function SearchContent() {
                       returnDate: returnDateParam,
                       fareRules: rt.fareRules,
                       baggage: rt.baggage,
+                      offers: collectRoundTripFareSiblings(rt, sortedRoundTrip),
                     }));
                     setShowFareModal(true);
                   }
@@ -1802,6 +1808,7 @@ function SearchContent() {
               returnDate: returnDateParam,
               fareRules: selectedRoundTrip.fareRules,
               baggage: selectedRoundTrip.baggage,
+              offers: collectRoundTripFareSiblings(selectedRoundTrip, sortedRoundTrip),
             }));
             setSelectedRoundTrip(null);
             setShowFareModal(true);

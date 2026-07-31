@@ -1,48 +1,26 @@
+/**
+ * Fare Options — the airline's fare ladder for one flight.
+ *
+ * The customer-facing label on every fare is the airline's own brand, exactly
+ * as the provider filed it ("ECO VALUE", "DELTA MAIN BASIC", "INDIGO UPFRONT").
+ * FareMind never renames it. Our value is the AI scoring, badges, and the
+ * benefit normalization that makes brands comparable across carriers.
+ *
+ * POST /options  — the real path. The caller passes the sibling offers from the
+ *   search (everything sharing an `itineraryKey`), which is the provider's own
+ *   "same metal, different fare" grouping. No extra provider call.
+ *
+ * GET /options   — compatibility path for callers that only hold a single
+ *   offer. Returns that one fare, priced and labelled from provider data. It no
+ *   longer projects a seven-rung ladder out of `fare_tier_templates`; those
+ *   names were FareMind inventions that all resolved to the same price and the
+ *   same underlying offer.
+ */
 import { FastifyPluginAsync } from 'fastify';
 import { computeAiScores, type FareInput, type FlightContext } from '../services/ai-fare-scorer';
 import { cacheGet, cacheSet, fareOptionsKey } from '../services/cache';
-import { prisma } from '../lib/db';
-
-interface FareTemplate {
-  name: string; cabin: string; priceMultiplier: number;
-  carryOn: boolean; carryOnPieces: number; carryOnWeightKg: number | null;
-  checked: number; checkedWeightKg: number | null; extraBagFeeUsd: number | null;
-  refundable: boolean; refundFeeUsd: number | null;
-  changeable: boolean; changeFeeUsd: number | null;
-  seatSelection: 'free' | 'fee' | 'not_available'; seatSelectionFeeUsd: number | null;
-  upgradeable: boolean; loungeAccess: boolean; priorityBoarding: boolean;
-  milesEarning: 'full' | 'reduced' | 'none';
-}
-
-/** Load fare tier templates from DB, converting Decimal fields to numbers. */
-async function loadFareTemplates(): Promise<FareTemplate[]> {
-  const rows = await prisma.fareTierTemplate.findMany({
-    where: { active: true },
-    orderBy: { displayOrder: 'asc' },
-  });
-
-  return rows.map(r => ({
-    name: r.name,
-    cabin: r.cabin,
-    priceMultiplier: Number(r.priceMultiplier),
-    carryOn: r.carryOn,
-    carryOnPieces: r.carryOnPieces,
-    carryOnWeightKg: r.carryOnWeightKg !== null ? Number(r.carryOnWeightKg) : null,
-    checked: r.checkedBags,
-    checkedWeightKg: r.checkedWeightKg !== null ? Number(r.checkedWeightKg) : null,
-    extraBagFeeUsd: r.extraBagFeeUsd !== null ? Number(r.extraBagFeeUsd) : null,
-    refundable: r.refundable,
-    refundFeeUsd: r.refundFeeUsd !== null ? Number(r.refundFeeUsd) : null,
-    changeable: r.changeable,
-    changeFeeUsd: r.changeFeeUsd !== null ? Number(r.changeFeeUsd) : null,
-    seatSelection: r.seatSelection as 'free' | 'fee' | 'not_available',
-    seatSelectionFeeUsd: r.seatSelectionFeeUsd !== null ? Number(r.seatSelectionFeeUsd) : null,
-    upgradeable: r.upgradeable,
-    loungeAccess: r.loungeAccess,
-    priorityBoarding: r.priorityBoarding,
-    milesEarning: r.milesEarning as 'full' | 'reduced' | 'none',
-  }));
-}
+import { displayFareFamily, cabinBucket, normalizeFareTier, parseBaggageAllowance } from '../services/fare-family';
+import type { NormalizedFareTier } from '../lib/types';
 
 type AiBadge = 'cheapest' | 'best_value' | 'most_flexible' | 'premium_upgrade' | 'ai_pick' | 'best_comfort';
 
@@ -52,161 +30,334 @@ const BADGE_HEADLINES: Record<AiBadge, string> = {
   best_comfort: 'Best Comfort',
 };
 
+const CABIN_ORDER: Array<'economy' | 'premium_economy' | 'business' | 'first'> =
+  ['economy', 'premium_economy', 'business', 'first'];
+const CABIN_LABELS: Record<string, string> = {
+  economy: 'Economy', premium_economy: 'Premium Economy', business: 'Business', first: 'First',
+};
+
+/** One fare as it arrives from the caller — a normalized search offer. */
+interface IncomingOffer {
+  id?: string;
+  offerId?: string;
+  providerOfferId?: string;
+  airlineFareFamily?: string | null;
+  normalizedFareTier?: NormalizedFareTier | null;
+  cabinClass?: string | null;
+  bookingClass?: string | null;
+  totalPrice?: number;
+  currency?: string;
+  seatsRemaining?: number | null;
+  checkedBaggageAllowance?: string | null;
+  cabinBaggageAllowance?: string | null;
+  baggage?: { carryOn?: number; checked?: number } | null;
+  fareRules?: {
+    refundable?: boolean | null; changeable?: boolean | null;
+    changeFee?: number | null; cancellationFee?: number | null;
+  } | null;
+}
+
+/**
+ * Benefits we can state from provider data. Anything the provider does not tell
+ * us stays null — "unknown" — rather than being filled in from a template. A
+ * confident-looking lounge-access claim we invented is worse than a blank.
+ */
+interface NormalizedBenefits {
+  carryOnAllowance: string | null;
+  carryOnWeightKg: number | null;
+  checkedAllowance: string | null;
+  checkedPieces: number | null;
+  checkedWeightKg: number | null;
+  refundable: boolean | null;
+  refundFeeUsd: number | null;
+  changeable: boolean | null;
+  changeFeeUsd: number | null;
+  seatSelection: 'free' | 'fee' | 'not_available' | null;
+  bookingClass: string | null;
+}
+
+function buildBenefits(o: IncomingOffer): NormalizedBenefits {
+  const checked = parseBaggageAllowance(o.checkedBaggageAllowance);
+  const cabin = parseBaggageAllowance(o.cabinBaggageAllowance);
+  return {
+    carryOnAllowance: cabin.raw || null,
+    carryOnWeightKg: cabin.kg,
+    checkedAllowance: checked.raw || null,
+    checkedPieces: checked.pieces ?? (typeof o.baggage?.checked === 'number' ? o.baggage.checked : null),
+    checkedWeightKg: checked.kg,
+    refundable: o.fareRules?.refundable ?? null,
+    refundFeeUsd: o.fareRules?.cancellationFee ?? null,
+    changeable: o.fareRules?.changeable ?? null,
+    changeFeeUsd: o.fareRules?.changeFee ?? null,
+    // Mystifly does not return seat-selection policy in search. Leave unknown
+    // rather than asserting 'fee' or 'free'.
+    seatSelection: null,
+    bookingClass: o.bookingClass || null,
+  };
+}
+
+/**
+ * Score and shape a set of fares for the same flight. Uses the existing
+ * computeAiScores engine unchanged — same weights, same badges, same
+ * explanations — only the labels and the inputs are now real.
+ */
+function buildFareOptions(offers: IncomingOffer[], ctx: FlightContext, travelers: number, currency: string) {
+  const scorerInputs: FareInput[] = offers.map((o, i) => {
+    const b = buildBenefits(o);
+    return {
+      id: o.id || `fare_${i}`,
+      // The scorer normalizes price within the group, so per-person vs total
+      // only has to be consistent. Use per-person for readability.
+      totalPrice: Math.round((o.totalPrice ?? 0) / travelers),
+      checked: b.checkedPieces ?? 0,
+      refundable: b.refundable === true,
+      refundFeeUsd: b.refundFeeUsd,
+      changeable: b.changeable === true,
+      changeFeeUsd: b.changeFeeUsd,
+      // Unknown seat policy scores as the neutral middle option rather than
+      // penalising a fare for data the provider withheld.
+      seatSelection: b.seatSelection ?? 'fee',
+      cabin: cabinBucket(o.cabinClass),
+      name: displayFareFamily(o.airlineFareFamily, o.cabinClass),
+    };
+  });
+
+  const scored = computeAiScores(scorerInputs, ctx);
+  const scoreMap = new Map(scored.map((s) => [s.id, s]));
+
+  return offers.map((o, i) => {
+    const id = o.id || `fare_${i}`;
+    const b = buildBenefits(o);
+    const s = scoreMap.get(id)!;
+    const allPaxTotal = Math.round(o.totalPrice ?? 0);
+    return {
+      id,
+      // The FareSourceCode this fare actually books. Every fare in the ladder is
+      // a distinct provider offer — unlike the old templates, which all shared
+      // one offerId and so all booked the identical fare.
+      offerId: o.providerOfferId || o.offerId || '',
+      cabin: cabinBucket(o.cabinClass),
+      // Airline branding, verbatim. This is what the customer sees everywhere.
+      name: displayFareFamily(o.airlineFareFamily, o.cabinClass),
+      airlineFareFamily: o.airlineFareFamily || null,
+      // Internal only — for filters, analytics and upgrade logic. Not a label.
+      normalizedFareTier: o.normalizedFareTier
+        ?? normalizeFareTier({
+          fareFamily: o.airlineFareFamily, cabinClass: o.cabinClass,
+          refundable: b.refundable, changeable: b.changeable, checkedBags: b.checkedPieces,
+        }),
+      basePrice: Math.round(allPaxTotal / travelers),
+      totalPrice: allPaxTotal,
+      currency: o.currency || currency,
+      benefits: b,
+      // Legacy shape kept so existing consumers keep rendering while the UI
+      // migrates to `benefits`.
+      baggage: {
+        carryOn: b.carryOnAllowance !== null,
+        carryOnPieces: b.carryOnAllowance ? 1 : 0,
+        carryOnWeightKg: b.carryOnWeightKg,
+        checked: b.checkedPieces ?? 0,
+        checkedWeightKg: b.checkedWeightKg,
+        extraBagFeeUsd: null,
+      },
+      policy: {
+        refundable: b.refundable, refundFeeUsd: b.refundFeeUsd,
+        changeable: b.changeable, changeFeeUsd: b.changeFeeUsd,
+        seatSelection: b.seatSelection, seatSelectionFeeUsd: null,
+        upgradeable: null, loungeAccess: null, priorityBoarding: null, milesEarning: null,
+      },
+      aiScore: s.breakdown.finalScore,
+      aiBadges: s.badges as AiBadge[],
+      aiExplanation: s.explanation,
+      aiScoreBreakdown: s.breakdown,
+      // Real availability from the provider; null when it did not say.
+      seatsRemaining: typeof o.seatsRemaining === 'number' ? o.seatsRemaining : null,
+      popular: s.badges.includes('best_value'),
+    };
+  });
+}
+
+type FareOption = ReturnType<typeof buildFareOptions>[number];
+
+function buildResponse(
+  fareOptions: FareOption[],
+  opts: { offerId: string; origin: string; destination: string; stops: number; trip: string; currency: string },
+) {
+  const fareGroups = CABIN_ORDER
+    .map((cabin) => ({
+      cabin,
+      label: CABIN_LABELS[cabin],
+      // Cheapest first — the tier ordering is inferred and must not drive display.
+      fares: fareOptions.filter((f) => f.cabin === cabin).sort((a, b) => a.totalPrice - b.totalPrice),
+    }))
+    .filter((g) => g.fares.length > 0);
+
+  const allSorted = [...fareOptions].sort((a, b) => b.aiScore - a.aiScore);
+  const topPick = allSorted.find((f) => f.aiBadges.includes('ai_pick')) ?? allSorted[0];
+
+  const seenIds = new Set<string>();
+  const others = ([
+    fareOptions.find((f) => f.aiBadges.includes('cheapest')),
+    fareOptions.find((f) => f.aiBadges.includes('most_flexible')),
+    fareOptions.find((f) => f.aiBadges.includes('best_comfort')),
+    fareOptions.find((f) => f.aiBadges.includes('premium_upgrade')),
+  ].filter(Boolean) as FareOption[])
+    .filter((f) => {
+      if (!topPick || f.id === topPick.id || seenIds.has(f.id)) return false;
+      seenIds.add(f.id);
+      return true;
+    });
+
+  const stopsLabel = opts.stops === 0 ? 'Non-stop' : `${opts.stops} stop${opts.stops > 1 ? 's' : ''}`;
+  const journeySummary = opts.trip === 'round_trip'
+    ? `${opts.origin} → ${opts.destination} · ${stopsLabel}  |  ${opts.destination} → ${opts.origin}`
+    : `${opts.origin} → ${opts.destination} · ${stopsLabel}`;
+
+  return {
+    offerId: opts.offerId,
+    destinationCity: opts.destination,
+    journeySummary,
+    fareGroups,
+    aiRecommendations: {
+      topPick: topPick ? {
+        badge: topPick.aiBadges[0] ?? 'best_value',
+        fareId: topPick.id,
+        headline: BADGE_HEADLINES[topPick.aiBadges[0] as AiBadge] ?? 'AI Best Choice',
+        reason: topPick.aiExplanation,
+      } : null,
+      others: others.map((f) => ({
+        badge: f.aiBadges[0],
+        fareId: f.id,
+        headline: BADGE_HEADLINES[f.aiBadges[0] as AiBadge] ?? f.name,
+        reason: f.aiExplanation,
+      })),
+    },
+    currency: opts.currency,
+    baseCurrency: opts.currency,
+  };
+}
+
 const plugin: FastifyPluginAsync = async (fastify) => {
+  /**
+   * The real path. Body carries the sibling offers for one flight — everything
+   * from the search sharing an `itineraryKey`.
+   */
+  fastify.post('/options', async (request, reply) => {
+    try {
+      const body = request.body as {
+        offers?: IncomingOffer[];
+        traveler_count?: number;
+        currency?: string;
+        origin?: string;
+        destination?: string;
+        stops?: number;
+        trip?: string;
+        flight_context?: { duration_minutes?: number; stops?: number; layover_minutes?: number[] };
+      };
+
+      const offers = Array.isArray(body?.offers) ? body.offers.filter((o) => (o?.totalPrice ?? 0) > 0) : [];
+      if (offers.length === 0) {
+        return reply.code(400).send({ error: 'offers[] is required and must contain at least one priced fare' });
+      }
+
+      const travelers = Math.max(1, Number(body.traveler_count) || 1);
+      const currency = body.currency || offers[0]?.currency || 'USD';
+      const stops = Number(body.stops ?? body.flight_context?.stops ?? 0) || 0;
+      const ctx: FlightContext = {
+        durationMinutes: Number(body.flight_context?.duration_minutes) || 0,
+        stops,
+        layoverMinutes: body.flight_context?.layover_minutes ?? [],
+      };
+
+      const fareOptions = buildFareOptions(offers, ctx, travelers, currency);
+      const anchorOfferId = offers[0]?.providerOfferId || offers[0]?.offerId || '';
+
+      const withoutBrand = offers.filter((o) => !((o.airlineFareFamily || '').trim())).length;
+      if (withoutBrand > 0) {
+        fastify.log.info(
+          `[fare-options] ${withoutBrand}/${offers.length} fares carry no airline FareFamily — labelled by cabin, not invented.`,
+        );
+      }
+
+      return buildResponse(fareOptions, {
+        offerId: anchorOfferId,
+        origin: body.origin || '',
+        destination: body.destination || '',
+        stops,
+        trip: body.trip || 'one_way',
+        currency,
+      });
+    } catch (err) {
+      fastify.log.error({ err }, '[fare-options] POST failed');
+      return reply.code(500).send({ error: 'Failed to build fare options' });
+    }
+  });
+
+  /**
+   * Compatibility path — a caller holding one offer and no siblings. Returns
+   * that single fare, labelled from provider data.
+   */
   fastify.get('/options', async (request, reply) => {
     try {
       const q = request.query as Record<string, string>;
-      const offer_id         = q.offer_id || '';
+      const offer_id = q.offer_id || '';
       if (!offer_id) {
-        console.warn('[fare-options] ⚠️ offer_id is EMPTY — all fares will have empty offerId. Bookings for these fares will fail at checkout!');
+        fastify.log.warn('[fare-options] offer_id is empty — the returned fare cannot be booked.');
       }
-      const base_price       = q.base_price;
-      const traveler_count   = q.traveler_count || '1';
-      const currency         = q.currency || 'USD';
-      const origin           = q.origin || '';
-      const destination      = q.destination || '';
-      const stops            = q.stops || '0';
-      const duration_minutes = q.duration_minutes || '0';
-      const layover_minutes  = q.layover_minutes || '';
-      const trip             = q.trip || 'one_way';
+      if (!q.base_price) return reply.code(400).send({ error: 'base_price is required' });
 
-      // Provider-sourced fare rules — these are the sole source of truth
-      // for changeable/changeFee/refundable/refundFee. DB templates are
-      // NEVER used for these 4 fields.
-      const providerChangeable  = q.provider_changeable;  // 'true' | 'false' | undefined
-      const providerChangeFee   = q.provider_change_fee;  // numeric string or undefined
-      const providerRefundable  = q.provider_refundable;  // 'true' | 'false' | undefined
-      const providerRefundFee   = q.provider_refund_fee;  // numeric string or undefined
+      const basePriceNum = parseFloat(q.base_price);
+      const travelers = parseInt(q.traveler_count || '1', 10) || 1;
+      const currency = q.currency || 'USD';
+      const stopsNum = parseInt(q.stops || '0', 10) || 0;
+      const cabin = q.cabin_class || 'economy';
 
-      // Provider-sourced baggage — the base fare's checked bag count from live API
-      const providerCheckedBags = q.provider_checked_bags; // numeric string or undefined
-
-      if (!base_price) return reply.code(400).send({ error: 'base_price is required' });
-
-      const basePriceNum = parseFloat(base_price);
-      const travelers    = parseInt(traveler_count, 10) || 1;
-      // base_price is the all-passenger total (exact provider fare)
-      // Derive per-person for display, but compute tier totals from the original total
-      // to avoid rounding loss (e.g. $2176 / 3 = $725.33 → $725 × 3 = $2175 ≠ $2176)
-      const perPersonBase = Math.round(basePriceNum / travelers);
-      const stopsNum     = parseInt(stops, 10) || 0;
-      const durationMins = parseInt(duration_minutes, 10) || 0;
-      const layoverMins  = layover_minutes
-        ? layover_minutes.split(',').map(Number).filter((n) => !isNaN(n) && n > 0)
-        : [];
-
-      // ── Redis cache check ──────────────────────────────────────────────────
-      const cacheKey = fareOptionsKey(offer_id, basePriceNum, travelers);
+      const cacheKey = `${fareOptionsKey(offer_id, basePriceNum, travelers)}:${q.fare_family || ''}`;
       const cached = await cacheGet<object>(cacheKey);
       if (cached) return cached;
 
-      const ctx: FlightContext = { durationMinutes: durationMins, stops: stopsNum, layoverMinutes: layoverMins };
-
-      // Load fare tier templates from DB
-      const FARE_TEMPLATES = await loadFareTemplates();
-      if (FARE_TEMPLATES.length === 0) {
-        return reply.code(500).send({ error: 'No fare tier templates configured. Please configure them in Admin > Commercial Settings > Fare Tiers.' });
-      }
-
-      // Resolve provider-sourced fare rules (single source of truth)
-      const resolvedChangeable  = providerChangeable !== undefined ? providerChangeable === 'true'  : undefined;
-      const resolvedChangeFee   = providerChangeFee !== undefined && providerChangeFee !== '' ? parseFloat(providerChangeFee) : null;
-      const resolvedRefundable  = providerRefundable !== undefined ? providerRefundable === 'true'  : undefined;
-      const resolvedRefundFee   = providerRefundFee !== undefined && providerRefundFee !== '' ? parseFloat(providerRefundFee) : null;
-      const resolvedCheckedBags = providerCheckedBags !== undefined ? parseInt(providerCheckedBags, 10) : null;
-
-      // When provider gives base checked bags, use it for the cheapest tier.
-      // Higher tiers get at least as many bags, but can have more per template.
-      const fareInputs: FareInput[] = FARE_TEMPLATES.map((t, i) => {
-        let effectiveChecked = t.checked;
-        if (resolvedCheckedBags !== null) {
-          // For the cheapest tier (index 0 / multiplier 1.0), use exact provider value
-          // For higher tiers, use max(template value, provider value) so upgrades are always ≥ base
-          effectiveChecked = i === 0 ? resolvedCheckedBags : Math.max(t.checked, resolvedCheckedBags);
-        }
-        return {
-        id: `fare_${i}_${offer_id || 'mock'}`,
-        totalPrice: Math.round(basePriceNum * t.priceMultiplier / travelers),
-        checked: effectiveChecked,
-        // Use provider values for refundable/changeable (provider is sole source of truth)
-        refundable: resolvedRefundable ?? t.refundable,
-        refundFeeUsd: resolvedRefundFee !== null ? resolvedRefundFee : t.refundFeeUsd,
-        changeable: resolvedChangeable ?? t.changeable,
-        changeFeeUsd: resolvedChangeFee !== null ? resolvedChangeFee : t.changeFeeUsd,
-        seatSelection: t.seatSelection, cabin: t.cabin, name: t.name,
-        priorityBoarding: t.priorityBoarding, loungeAccess: t.loungeAccess, milesEarning: t.milesEarning,
-      }});
-
-      const scored   = computeAiScores(fareInputs, ctx);
-      const scoreMap = new Map(scored.map((s) => [s.id, s]));
-
-      const fareOptions = FARE_TEMPLATES.map((t, i) => {
-        const id    = `fare_${i}_${offer_id || 'mock'}`;
-        // Compute total from original all-passenger price to avoid rounding loss
-        const allPaxTotal = Math.round(basePriceNum * t.priceMultiplier);
-        const perPerson   = Math.round(allPaxTotal / travelers);
-        const s     = scoreMap.get(id)!;
-
-        // Provider values are the sole source of truth for these 4 fields.
-        // If provider didn't supply them (undefined), leave as null to indicate "unknown".
-        const effectiveChangeable  = resolvedChangeable ?? null;
-        const effectiveChangeFee   = resolvedChangeFee;
-        const effectiveRefundable  = resolvedRefundable ?? null;
-        const effectiveRefundFee   = resolvedRefundFee;
-
-        return {
-          id, offerId: offer_id, cabin: t.cabin, name: t.name,
-          basePrice: perPerson, totalPrice: allPaxTotal, currency,
-          baggage: { carryOn: t.carryOn, carryOnPieces: t.carryOnPieces, carryOnWeightKg: t.carryOnWeightKg, checked: resolvedCheckedBags !== null ? (i === 0 ? resolvedCheckedBags : Math.max(t.checked, resolvedCheckedBags)) : t.checked, checkedWeightKg: t.checkedWeightKg, extraBagFeeUsd: t.extraBagFeeUsd },
-          policy: { refundable: effectiveRefundable, refundFeeUsd: effectiveRefundFee, changeable: effectiveChangeable, changeFeeUsd: effectiveChangeFee, seatSelection: t.seatSelection, seatSelectionFeeUsd: t.seatSelectionFeeUsd, upgradeable: t.upgradeable, loungeAccess: t.loungeAccess, priorityBoarding: t.priorityBoarding, milesEarning: t.milesEarning },
-          aiScore: s.breakdown.finalScore, aiBadges: s.badges as AiBadge[], aiExplanation: s.explanation,
-          aiScoreBreakdown: s.breakdown, seatsRemaining: Math.floor(Math.random() * 8) + 1,
-          popular: s.badges.includes('best_value'),
-        };
-      });
-
-      const cabinOrder  = ['economy', 'premium_economy', 'business'];
-      const cabinLabels: Record<string, string> = { economy: 'Economy', premium_economy: 'Premium Economy', business: 'Business' };
-      const fareGroups = cabinOrder.map((cabin) => ({
-        cabin, label: cabinLabels[cabin], fares: fareOptions.filter((f) => f.cabin === cabin),
-      })).filter((g) => g.fares.length > 0);
-
-      const allSorted = [...fareOptions].sort((a, b) => b.aiScore - a.aiScore);
-      const topPick   = allSorted.find((f) => f.aiBadges.includes('ai_pick')) ?? allSorted[0];
-      const othersRaw = [
-        fareOptions.find((f) => f.aiBadges.includes('cheapest') && f.id !== topPick.id),
-        fareOptions.find((f) => f.aiBadges.includes('most_flexible') && f.id !== topPick.id),
-        fareOptions.find((f) => f.aiBadges.includes('best_comfort') && f.id !== topPick.id),
-        fareOptions.find((f) => f.aiBadges.includes('premium_upgrade') && f.id !== topPick.id),
-      ].filter(Boolean);
-
-      const seenIds = new Set<string>();
-      const others = othersRaw.filter((f) => {
-        if (!f || seenIds.has(f.id)) return false;
-        seenIds.add(f.id);
-        return true;
-      });
-
-      const stopsLabel = stopsNum === 0 ? 'Non-stop' : `${stopsNum} stop${stopsNum > 1 ? 's' : ''}`;
-      const journeySummary = trip === 'round_trip'
-        ? `${origin} → ${destination} · ${stopsLabel}  |  ${destination} → ${origin}`
-        : `${origin} → ${destination} · ${stopsLabel}`;
-
-      const response = {
-        offerId: offer_id, destinationCity: destination, journeySummary, fareGroups,
-        aiRecommendations: {
-          topPick: { badge: topPick.aiBadges[0] ?? 'best_value', fareId: topPick.id, headline: BADGE_HEADLINES[topPick.aiBadges[0] as AiBadge] ?? 'AI Best Choice', reason: topPick.aiExplanation },
-          others: others.map((f) => f && ({ badge: f.aiBadges[0], fareId: f.id, headline: BADGE_HEADLINES[f.aiBadges[0] as AiBadge] ?? f.name, reason: f.aiExplanation })).filter(Boolean),
-        },
-        currency, baseCurrency: currency,
+      const ctx: FlightContext = {
+        durationMinutes: parseInt(q.duration_minutes || '0', 10) || 0,
+        stops: stopsNum,
+        layoverMinutes: (q.layover_minutes || '')
+          .split(',').map(Number).filter((n) => !isNaN(n) && n > 0),
       };
 
-      // Cache for 300s — fare options are stable within 5 minutes
+      const offer: IncomingOffer = {
+        id: `fare_0_${offer_id || 'unknown'}`,
+        providerOfferId: offer_id,
+        airlineFareFamily: q.fare_family || null,
+        cabinClass: cabin,
+        bookingClass: q.booking_class || null,
+        totalPrice: basePriceNum,
+        currency,
+        seatsRemaining: q.seats_remaining ? parseInt(q.seats_remaining, 10) : null,
+        checkedBaggageAllowance: q.provider_checked_baggage || null,
+        cabinBaggageAllowance: q.provider_cabin_baggage || null,
+        baggage: q.provider_checked_bags !== undefined
+          ? { checked: parseInt(q.provider_checked_bags, 10) } : null,
+        fareRules: {
+          refundable: q.provider_refundable !== undefined ? q.provider_refundable === 'true' : null,
+          changeable: q.provider_changeable !== undefined ? q.provider_changeable === 'true' : null,
+          changeFee: q.provider_change_fee ? parseFloat(q.provider_change_fee) : null,
+          cancellationFee: q.provider_refund_fee ? parseFloat(q.provider_refund_fee) : null,
+        },
+      };
+
+      const response = buildResponse(buildFareOptions([offer], ctx, travelers, currency), {
+        offerId: offer_id,
+        origin: q.origin || '',
+        destination: q.destination || '',
+        stops: stopsNum,
+        trip: q.trip || 'one_way',
+        currency,
+      });
+
       await cacheSet(cacheKey, response, 300);
       return response;
     } catch (err) {
-      console.error('[fare-options] Error:', err);
-      reply.code(500).send({ error: 'Failed to generate fare options' });
+      fastify.log.error({ err }, '[fare-options] GET failed');
+      return reply.code(500).send({ error: 'Failed to generate fare options' });
     }
   });
 
@@ -254,8 +405,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         })),
       };
     } catch (err) {
-      console.error('[fare-options/compute-ai-score] Error:', err);
-      reply.code(500).send({ error: 'Failed to compute AI scores' });
+      fastify.log.error({ err }, '[fare-options/compute-ai-score] failed');
+      return reply.code(500).send({ error: 'Failed to compute AI scores' });
     }
   });
 };

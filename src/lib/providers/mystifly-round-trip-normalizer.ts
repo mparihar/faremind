@@ -10,6 +10,7 @@
 import type { CabinClass, FlightSegment } from '@/lib/types';
 import type { JourneySegment, Layover, RoundTripOption } from '@/lib/round-trip-types';
 import { generateId, getAirlineLogo, getAirlineName } from '@/lib/utils';
+import { normalizeFareTier, itineraryKey, parseBaggageAllowance } from '@/lib/fare-family';
 
 // ── Cabin mapping (same as backend/src/services/mystifly.ts) ──
 
@@ -191,21 +192,14 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
       label: t.TaxCode,
     }));
 
-  // Baggage — API data flows through as-is from backend
+  // Baggage — API data flows through as-is from backend.
+  // A weight-based allowance above zero is one checked allowance whatever the
+  // number; the old `>= 20 ? 1 : 0` rule reported a real 15Kg bag as "no bag".
   const baggageStr = firstSeg?.Baggage || firstSeg?.baggage || '';
-  let checked = 0;
-  let checkedWeight: number | undefined;
-  if (baggageStr) {
-    const pcMatch = baggageStr.match(/(\d+)P/i);
-    const kgMatch = baggageStr.match(/(\d+)K/i);
-    if (pcMatch) {
-      checked = parseInt(pcMatch[1]);
-    } else if (kgMatch) {
-      const weightKg = parseInt(kgMatch[1]);
-      checkedWeight = weightKg;
-      checked = weightKg >= 20 ? 1 : 0;
-    }
-  }
+  const cabinBaggageStr = firstSeg?.CabinBaggage || firstSeg?.cabinBaggage || '';
+  const checkedAllowance = parseBaggageAllowance(baggageStr);
+  const checked = checkedAllowance.pieces ?? 0;
+  const checkedWeight = checkedAllowance.kg ?? undefined;
 
   // Fare conditions — use live penalties data if available
   const penalties = itinerary._penalties;
@@ -229,6 +223,12 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
   // Filter out invalid itineraries
   if (totalPrice <= 0) return null;
 
+  // The airline's fare family, from ItineraryReferenceList via the backend's
+  // segment merge. Never rewritten — this is the label the customer sees from
+  // search all the way through to servicing.
+  const airlineFareFamily = (firstSeg?.FareFamily || firstSeg?.fareFamily || '').toString().trim() || undefined;
+  const bookingClass = (firstSeg?.RBD || firstSeg?.rbd || '').toString().trim() || undefined;
+
   return {
     id: generateId(),
     providerOfferId: fareSourceCode,
@@ -248,6 +248,22 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
     airlineCodes: allCodes,
     bookingProvider: validatingAirline,
     cabinClass,
+    // Airline branding, passed through verbatim from ItineraryReferenceList.
+    airlineFareFamily,
+    normalizedFareTier: normalizeFareTier({
+      fareFamily: airlineFareFamily,
+      cabinClass,
+      refundable: isRefundable,
+      changeable: isChangeable,
+      checkedBags: checked,
+    }),
+    itineraryKey: itineraryKey([...outbound.segments, ...ret.segments]),
+    bookingClass,
+    checkedBaggageAllowance: checkedAllowance.raw || undefined,
+    cabinBaggageAllowance: cabinBaggageStr || undefined,
+    seatsRemaining: typeof firstSeg?.SeatsRemaining === 'number'
+      ? firstSeg.SeatsRemaining
+      : (typeof firstSeg?.SeatsRemaining?.Number === 'number' ? firstSeg.SeatsRemaining.Number : undefined),
     fareRules: {
       refundable: isRefundable,
       changeable: isChangeable,

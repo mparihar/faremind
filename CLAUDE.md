@@ -1,12 +1,26 @@
+# CLAUDE.md
+
+This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+
 @AGENTS.md
 
 # FareMind — Project Entry Point
 
-> **Read this first.** It tells you where everything is documented. Full engineering references live in [`docs/`](./docs/). Every future session should be able to orient from this file alone. Facts here are derived from repository source; anything unverified is marked **Not confirmed from repository** in the linked doc.
+> **Read this first.** It tells you where everything is documented. Full engineering references live in [`docs/`](./docs/). Every future session should be able to orient from this file alone. Facts here are derived from repository source; anything unverified is marked **Not confirmed from repository** in the linked doc. (`README.md` is untouched `create-next-app` boilerplate — ignore it.)
 
 ## ⚠️ Before writing any code
 
-**This is NOT the Next.js you know** (see `AGENTS.md`). Next.js 16 has breaking changes — read the relevant guide in `node_modules/next/dist/docs/` before writing App Router code. Also: `next.config.ts` sets `typescript.ignoreBuildErrors:true`, so type errors do **not** fail the build — run `tsc`/lint yourself.
+**This is NOT the Next.js you know** (see `AGENTS.md`). Next.js 16 has breaking changes — read the relevant guide in `node_modules/next/dist/docs/` before writing App Router code.
+
+`next.config.ts` sets `typescript.ignoreBuildErrors:true`, so type errors do **not** fail the build. But the repo does **not** typecheck or lint clean — measured at `0f8fd28`:
+
+| Check | Command | Baseline at HEAD |
+|---|---|---|
+| Frontend types | `npx tsc --noEmit` | **87** errors |
+| Backend types | `cd backend && npx tsc --noEmit` | **2** errors |
+| Lint | `npm run lint` (= `eslint`) | **3099** errors, 1324 warnings |
+
+So a clean run is not the gate. Scope checks to what you touched (`npx tsc --noEmit 2>&1 \| grep <your-file>`, `npx eslint <path>`) and compare against this baseline — a repo-wide run will drown your change in pre-existing noise. Root-level strays (`test.js`, `count.js`, `scratch_fees.js`, `move-script.js`) are not part of the app.
 
 ## Project overview
 
@@ -36,12 +50,15 @@ Next.js 16.2.4 / React 19 / Tailwind 4 / Zustand · Fastify gateway (Node 22 via
 ```bash
 npm ci && npm ci --prefix backend
 npx prisma generate
-cp .env.example .env            # fill secrets
-npm run dev                     # frontend :3000
-cd backend && node --import tsx src/index.ts   # backend :3001
+cp .env.example .env               # fill secrets
+npm run dev                        # frontend :3000
+npm run dev --prefix backend       # backend :3001 — tsx watch (hot reload)
 ```
 
+- Backend `npm start` (`node --import tsx src/index.ts`) is the **no-watch** prod-style boot; use `npm run dev` while developing.
+- The frontend reaches the gateway via **`BACKEND_URL`** (server-side, ~31 call sites) and **`NEXT_PUBLIC_BACKEND_URL`** (browser). Both must point at :3001 locally or backend-owned routes (Stripe webhook, Mystifly, ticketing, ranking) silently no-op.
 - `npm run build` = `prisma generate && next build`. DB: `db:push` / `db:migrate` / `db:migrate:prod` / `db:seed` / `db:studio`.
+- Prisma is one schema shared by both packages: backend scripts pass `--schema ../prisma/schema.prisma`. After editing `prisma/schema.prisma`, regenerate in **both** (`npx prisma generate` and `npm run db:generate --prefix backend`).
 - Point a dev machine at the prod DB only with `DISABLE_SCHEDULERS=true`.
 - Build/deploy: [docs/DEPLOYMENT.md](./docs/DEPLOYMENT.md). Env vars: [docs/BACKEND_ARCHITECTURE.md](./docs/BACKEND_ARCHITECTURE.md#environment-variables).
 
@@ -49,7 +66,7 @@ cd backend && node --import tsx src/index.ts   # backend :3001
 
 Conventions, folder rules, error handling, logging, and a **review checklist**: [docs/DEVELOPMENT_GUIDE.md](./docs/DEVELOPMENT_GUIDE.md). Highlights:
 - Prisma PascalCase models → `snake_case` tables; `cuid()` PKs; extend enums, don't repurpose.
-- Ranking edits must touch **both** `backend/src/ranking` and `src/lib/ranking` (byte-identical mirrors).
+- Ranking edits must touch **both** `backend/src/ranking` and `src/lib/ranking`. Every file present in both is byte-identical; the backend additionally owns `explanation/`, `index.ts`, `route.ts`, `tests/` (no frontend counterpart — don't create one). Verify with `diff -rq backend/src/ranking src/lib/ranking` — the only expected output is those four backend-only entries.
 - **Never retry billable provider calls** (`retries:0` for book/ticket/cancel/refund/order).
 - Persist raw provider payloads; map status via the status-mapper, not inline strings.
 - Never charge the customer on provider failure — except ERBUK082 (pending, no refund).
@@ -75,6 +92,16 @@ Conventions, folder rules, error handling, logging, and a **review checklist**: 
 
 Single instant order (`POST /air/orders`, `type:'instant'`, paid from Duffel balance); **Stripe capture after** the order. Three divergent clients exist; production checkout uses an inline client. Detail: [docs/DUFFEL_INTEGRATION.md](./docs/DUFFEL_INTEGRATION.md).
 
+## Fare families
+
+**FareMind never renames an airline's fare.** The carrier owns the branding; we own the comparison. Mystifly returns the brand on `ItineraryReferenceList[].FareFamily` — `ECO VALUE`, `DELTA MAIN BASIC`, `INDIGO UPFRONT`, `SMART`, `BUSINESS FLEX` — and that string is displayed verbatim from search through checkout, ticket, email and servicing.
+
+- `services/fare-family.ts` (mirrored at `src/lib/fare-family.ts`) derives an **internal** `normalizedFareTier` (`BASIC|STANDARD|FLEX|PREMIUM|BUSINESS|FIRST`) for ranking, filters and analytics. It is **never rendered**. Pattern + attribute inference only, so a brand we have never seen still tiers correctly with no code change — there are no seeded fare names.
+- The fare ladder for a flight is the set of search offers sharing an `itineraryKey` (same metal, different fare). This mirrors Mystifly's own `GroupedItems`. `POST /api/fares/options` takes that set; the `GET` form is a single-offer compatibility path.
+- `fare_tier_templates` still exists for admin/backward compatibility but **must not supply customer-facing names**. It previously projected 7 invented tiers (`Economy Basic`…`Business Extra`) at `priceMultiplier 1.0` onto one offer — so every tier showed the same price and booked the identical fare.
+- Provider silence stays `null` ("Contact airline"), never a fabricated "no". Lounge access, miles earning and seat policy are not in Mystifly search.
+- `MasterBooking.airlineFareFamily` / `normalizedFareTier` / `bookingClass` freeze the fare at book time.
+
 ## Generic "Make a Payment" (payment_purpose)
 
 One `ServicePayment` table, discriminated by `paymentPurpose` (BOOKING_PAYMENT | AGENT_WALLET_RECHARGE | OTHER_PAYMENT), drives all three categories via one shared create path (frontend `src/lib/payments/orchestrator.ts`) and one authoritative fulfiller — the **Stripe webhook on the BACKEND** (`backend/src/routes/stripe-webhook.ts`, signature-verified raw body + `StripeWebhookEvent` dedupe). Backend `services/payment-fulfill.ts` dispatches per purpose (booking→ticket/event, wallet→direct `rechargeWallet()`, other→PaymentRequest settle) with a single-claim idempotency guard. The legacy frontend `/api/service-payments/confirm` is now a **server-verified idempotent fallback** — it re-fetches the PI (never trusts the browser) then delegates to backend `POST /api/payments/fulfill`. Stripe webhook/refund/cancellation business logic lives on the backend; PaymentIntent creation (tied to browser card forms) stays frontend-side. Money is always minor-units/Decimal (`money.ts`), never floats. UI: `account/make-payment` (Booking + Other) and `agent/make-payment` (all three) show a "Make a Payment For" selector; shared panels in `src/components/payments/`. Admin: `/admin/payments` (all purposes + PaymentRequest mgmt). Requires **`STRIPE_WEBHOOK_SECRET`** on the **backend** (webhook endpoint is the backend URL `…/api/stripe/webhook`). Agent wallet self-recharge (`/api/agent/wallet/recharge`) + auto-recharge (`auto-recharge.ts`, off-session, consent-gated, locked, config-driven via SystemConfig — never hard-coded). Wallet-disabled agents get a recharge-only session (`withAgentWalletAccess`).
@@ -93,7 +120,26 @@ Two live engines: **10-dimension** (round-trip primary, `backend/src/ranking`) a
 
 ## Testing strategy
 
-Fare/HoldAllowed/booking/refund/ticketing certification + required evidence: [docs/TESTING_GUIDE.md](./docs/TESTING_GUIDE.md). Note: no unified test runner is confirmed; ranking + a few unit tests exist under `*/tests` / `__tests__`.
+There is **no `test` script and no test framework installed** — each suite is run directly, and they don't share a runner. Verified commands:
+
+```bash
+# Ranking suites (node:test) — the only real automated tests. Run one file, or the dir.
+cd backend && npx tsx --test src/ranking/tests/domestic-ranking.test.ts
+cd backend && npx tsx --test src/ranking/tests/*.test.ts
+
+# Standalone script-style test (hand-rolled asserts, no framework)
+npx tsx src/lib/__tests__/duffel-assistant.test.ts
+
+# Read-only financial invariant audit; exits non-zero on any inconsistency
+PROD_DB_URL="postgres://…" node backend/scripts/reconcile-financials.mjs --recent 15
+
+# Playwright booking walkthrough — needs the dev server on :3000; no playwright.config exists
+npx tsx scripts/e2e-bookings.ts
+```
+
+Two traps: `src/lib/ai-scoring/__tests__/FlightRefundabilityUpgradeRule.test.ts` imports **`vitest`, which is not installed** — it cannot run until someone adds vitest, so treat it as a spec document, not a suite. And `domestic-ranking.test.ts` has **1 pre-existing failure at HEAD** ("Test 2: Slightly more expensive domestic flight wins when it saves significant time"; 5/6 pass) — verify against that baseline before assuming you broke it.
+
+Fare/HoldAllowed/booking/refund/ticketing certification + required evidence: [docs/TESTING_GUIDE.md](./docs/TESTING_GUIDE.md).
 
 ## Deployment
 

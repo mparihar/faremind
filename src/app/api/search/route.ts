@@ -161,7 +161,10 @@ export async function GET(request: NextRequest) {
             },
             comfort: {
               cabinClass: (rt.cabinClass || 'economy').toLowerCase(),
-              fareClassName: undefined,
+              // The airline's fare family. scoreComfort() keys off brand words
+              // (basic|light|saver → 40, flex → 68, classic → 62); passing
+              // undefined made every offer score as undifferentiated economy.
+              fareClassName: rt.airlineFareFamily || undefined,
             },
             ancillaries: {
               mealService: allSegments.some(s => (s as any).amenities?.meal),

@@ -9,6 +9,7 @@ import type { UnifiedFlight, FlightSegment, Provider } from '../lib/types';
 import { calculateValueScore, getAirlineLogo, getAirlineName, generateId } from '../lib/utils';
 import type { DuffelOffer } from './duffel';
 import { fromCabinType } from './mystifly';
+import { normalizeFareTier, itineraryKey, parseBaggageAllowance } from './fare-family';
 
 function parseDuration(isoDuration: string): number {
   if (!isoDuration) return 0;
@@ -339,13 +340,9 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
   // Mystifly v2.2 provides per-fare-brand baggage (e.g. 0PC for Basic Economy,
   // 1PC for Economy Classic, 2PC for Main). We trust the API value as-is.
   const baggageStr = firstSegRaw?.Baggage || firstSegRaw?.baggage || '';
-  let checked = 0;
-  if (baggageStr) {
-    const kgMatch = baggageStr.match(/(\d+)K/i);
-    const pcMatch = baggageStr.match(/(\d+)P/i);
-    if (pcMatch) checked = parseInt(pcMatch[1]);
-    else if (kgMatch) checked = parseInt(kgMatch[1]) >= 20 ? 1 : 0;
-  }
+  const cabinBaggageStr = firstSegRaw?.CabinBaggage || firstSegRaw?.cabinBaggage || '';
+  const checkedAllowance = parseBaggageAllowance(baggageStr);
+  const checked = checkedAllowance.pieces ?? 0;
 
   // ── Fare conditions — use LIVE API penalties data when available ──
   const penalties = itinerary._penalties;
@@ -399,6 +396,20 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
     : rawFareType === 'public' ? 'public'
     : undefined;
 
+  // ── Fare family — the airline's own brand, passed through verbatim ──
+  // Mystifly returns this on ItineraryReferenceList[].FareFamily; orchestrator
+  // merges it onto each segment. It is the customer-facing label and FareMind
+  // never rewrites it. The normalized tier beside it is internal only.
+  const airlineFareFamily = (firstSegRaw?.FareFamily || firstSegRaw?.fareFamily || '').toString().trim() || undefined;
+  const bookingClass = (firstSegRaw?.RBD || firstSegRaw?.rbd || firstSegRaw?.BookingClass || '').toString().trim() || undefined;
+  const normalizedFareTier = normalizeFareTier({
+    fareFamily: airlineFareFamily,
+    cabinClass,
+    refundable: isRefundable,
+    changeable: isChangeable,
+    checkedBags: checked,
+  });
+
   return {
     id: generateId(),
     provider: 'mystifly' as Provider,
@@ -426,7 +437,23 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
     totalDuration,
     stops,
     valueScore: calculateValueScore(totalPrice, totalDuration, stops, isRefundable),
-    fareClass: firstSegRaw?.BookingClass || firstSegRaw?.bookingClass || undefined,
+    // fareClass feeds ranking/core/scoreComfort.ts, which keys off brand words
+    // (basic|light|saver → 40, flex → 68, classic → 62). Before this it read
+    // `BookingClass`, a field the orchestrator never sets, so every Mystifly
+    // offer scored as undifferentiated economy.
+    fareClass: airlineFareFamily ?? bookingClass,
+    airlineFareFamily,
+    normalizedFareTier,
+    itineraryKey: itineraryKey(segments),
+    bookingClass,
+    checkedBaggageAllowance: checkedAllowance.raw || undefined,
+    cabinBaggageAllowance: cabinBaggageStr || undefined,
+    // v2.2 ItineraryReferenceList gives a bare number; v1 FlightSegments gives
+    // { BelowMinimum, Number }. Real data either way — the fare panel used to
+    // fabricate this with Math.random().
+    seatsRemaining: typeof firstSegRaw?.SeatsRemaining === 'number'
+      ? firstSegRaw.SeatsRemaining
+      : (typeof firstSegRaw?.SeatsRemaining?.Number === 'number' ? firstSegRaw.SeatsRemaining.Number : undefined),
     fareSource,
   };
 }

@@ -4,6 +4,13 @@
 
 export type Provider = 'duffel' | 'amadeus' | 'mystifly';
 export type CabinClass = 'economy' | 'premium_economy' | 'business' | 'first';
+
+/**
+ * Internal fare tier derived from the airline's fare family on the backend.
+ * For ranking, filters and analytics only — the customer always sees the
+ * airline's own brand. Mirrors backend/src/lib/types.ts.
+ */
+export type NormalizedFareTier = 'BASIC' | 'STANDARD' | 'FLEX' | 'PREMIUM' | 'BUSINESS' | 'FIRST';
 export type TripType = 'one_way' | 'round_trip' | 'multi_city';
 export type SortOption = 'price' | 'duration' | 'departure' | 'value';
 
@@ -120,6 +127,23 @@ export interface UnifiedFlight {
   fareType?: 'lowest' | 'branded';
   fareSource?: 'public' | 'private'; // Mystifly pricing source (Public/Private fare)
   seatsRemaining?: number;
+
+  // ── Fare family (mirrors backend/src/lib/types.ts) ──
+  /** The airline's own brand — displayed verbatim, never rewritten. */
+  airlineFareFamily?: string;
+  /** Internal tier for filters/analytics only. Never render this. */
+  normalizedFareTier?: NormalizedFareTier;
+  /**
+   * Identity of the physical journey. Offers sharing a key are the same flights
+   * at different fare families — that set is the fare ladder shown in the panel.
+   */
+  itineraryKey?: string;
+  /** Reservation booking designator (RBD). */
+  bookingClass?: string;
+  /** Raw provider allowance text, kept verbatim ('15Kg', '0PC', '7KG'). */
+  checkedBaggageAllowance?: string;
+  cabinBaggageAllowance?: string;
+
   tags?: FlightTag[];
   breakdown?: ScoreBreakdown;
   offerExpiresAt?: string;

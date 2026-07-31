@@ -7,6 +7,7 @@ import FareCard from '@/components/fare-selection/FareCard';
 import { useFareStore, getSelectedFareOption } from '@/store/useFareStore';
 import { useBookingStore } from '@/store/useBookingStore';
 import type { FareSelectionPayload, FareOption, PriceProtectionQuote } from '@/lib/fare-types';
+import type { FareSiblingOffer } from '@/lib/fare-siblings';
 import { apiFetch } from '@/lib/api-client';
 import { usePricingConfig, computeServiceFee } from '@/hooks/usePricingConfig';
 
@@ -100,7 +101,7 @@ export default function FareSelectionPage() {
     const raw = sessionStorage.getItem('fm_fare_context');
     if (!raw) { router.replace('/search'); return; }
 
-    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; trip?: string; fareRules?: { changeable?: boolean; changeFee?: number; refundable?: boolean; cancellationFee?: number }; baggage?: { carryOn?: number; checked?: number } };
+    let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; durationMinutes?: number; layoverMinutes?: number[]; trip?: string; fareRules?: { changeable?: boolean; changeFee?: number; refundable?: boolean; cancellationFee?: number }; baggage?: { carryOn?: number; checked?: number }; offers?: FareSiblingOffer[] };
     try { ctx = JSON.parse(raw); } catch { router.replace('/search'); return; }
 
     store.setLoading(true);
@@ -116,13 +117,38 @@ export default function FareSelectionPage() {
     if (ctx.baggage?.checked !== undefined) {
       providerParams += `&provider_checked_bags=${ctx.baggage.checked}`;
     }
-    apiFetch<FareSelectionPayload>(
-      `/api/fares/options?offer_id=${ctx.offerId}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${ctx.origin}&destination=${ctx.destination}&stops=${ctx.stops}${tripParam}${providerParams}`
+    // Preferred path: the airline's own fare ladder for this flight. The GET
+    // fallback covers contexts written before this page was opened.
+    (ctx.offers?.length
+      ? apiFetch<FareSelectionPayload>('/api/fares/options', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            offers: ctx.offers,
+            traveler_count: ctx.travelers,
+            currency: ctx.currency,
+            origin: ctx.origin,
+            destination: ctx.destination,
+            stops: ctx.stops,
+            trip: ctx.trip || 'one_way',
+            flight_context: {
+              duration_minutes: ctx.durationMinutes ?? 0,
+              stops: ctx.stops,
+              layover_minutes: ctx.layoverMinutes ?? [],
+            },
+          }),
+        })
+      : apiFetch<FareSelectionPayload>(
+          `/api/fares/options?offer_id=${ctx.offerId}&base_price=${ctx.basePrice}&traveler_count=${ctx.travelers}&currency=${ctx.currency}&origin=${ctx.origin}&destination=${ctx.destination}&stops=${ctx.stops}${tripParam}${providerParams}`
+        )
     )
       .then(data => {
         store.setPayload(data);
-        // Default select the AI pick
-        const aiPickFareId = data.aiRecommendations.topPick.fareId;
+        // Default select the AI pick, falling back to the cheapest fare when
+        // there is nothing to rank (a flight sold at a single fare family).
+        const aiPickFareId = data.aiRecommendations.topPick?.fareId
+          ?? [...data.fareGroups.flatMap(g => g.fares)].sort((a, b) => a.totalPrice - b.totalPrice)[0]?.id;
+        if (!aiPickFareId) return;
         store.selectFare(aiPickFareId);
         // Default protection quote for the ai pick fare
         const aiPickFare = data.fareGroups.flatMap(g => g.fares).find(f => f.id === aiPickFareId);
@@ -312,12 +338,14 @@ export default function FareSelectionPage() {
             <span className="text-[11px] font-bold text-[#1ABC9C] uppercase tracking-wider">AI Recommendations</span>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-            <AiChip
-              headline={payload.aiRecommendations.topPick.headline}
-              reason={payload.aiRecommendations.topPick.reason}
-              fareId={payload.aiRecommendations.topPick.fareId}
-              onScrollTo={scrollToFare}
-            />
+            {payload.aiRecommendations.topPick && (
+              <AiChip
+                headline={payload.aiRecommendations.topPick.headline}
+                reason={payload.aiRecommendations.topPick.reason}
+                fareId={payload.aiRecommendations.topPick.fareId}
+                onScrollTo={scrollToFare}
+              />
+            )}
             {payload.aiRecommendations.others.map((rec, i) => (
               <AiChip
                 key={i}

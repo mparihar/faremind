@@ -695,6 +695,19 @@ model MasterBooking {
   lastProviderSupportOpenedBy  String?    @map("last_provider_support_opened_by")
   providerSupportSessionCount  Int        @default(0) @map("provider_support_session_count")
 
+  // ── Fare family ──
+  // The airline's own brand, stored exactly as the provider returned it
+  // ("ECO VALUE", "DELTA MAIN BASIC", "INDIGO UPFRONT"). This is the label the
+  // customer sees from search through to servicing, and it is never overwritten
+  // with a FareMind-defined name.
+  airlineFareFamily            String?    @map("airline_fare_family")
+  // Internal tier derived from the family (BASIC | STANDARD | FLEX | PREMIUM |
+  // BUSINESS | FIRST) for filters, analytics and upgrade logic. Never displayed.
+  normalizedFareTier           String?    @map("normalized_fare_tier")
+  // Indexed below — analytics and filters query by tier, never by brand.
+  // Reservation booking designator (RBD) at time of booking.
+  bookingClass                 String?    @map("booking_class")
+
   // ── Mystifly / Provider Lifecycle Fields ──
   searchFareSourceCode         String?    @map("search_fare_source_code")      // Original FSC from search
   revalidatedFareSourceCode    String?    @map("revalidated_fare_source_code") // FSC returned by revalidation
@@ -721,6 +734,7 @@ model MasterBooking {
   @@index([agentUserId])
   @@index([mystiflyMfRef])
   @@index([bookingAttemptKey])
+  @@index([normalizedFareTier])
   @@map("master_bookings")
 }
 

@@ -96,6 +96,46 @@ function resolveBookingSource(input: {
 }
 
 /**
+ * The airline's fare family for this booking, plus the internal tier.
+ *
+ * Preference order is selected fare → source flight → source round trip: the
+ * customer picked a specific fare in the panel, so that selection is the most
+ * accurate record of what they agreed to buy. Falls back to the search offer
+ * when an entry point (AI bot, agent quick-book) skipped the panel.
+ *
+ * Returns an empty object when nothing carries a family, so the create call
+ * simply omits the columns rather than writing an invented name. Never throws —
+ * a missing brand is not worth failing a paid booking over.
+ */
+function resolveFareFamily(input: {
+  selectedFare?: any; sourceFlight?: any; sourceRoundTrip?: any;
+}): { airlineFareFamily?: string; normalizedFareTier?: string; bookingClass?: string } {
+  try {
+    const sources = [input.selectedFare, input.sourceFlight, input.sourceRoundTrip];
+
+    const family = sources
+      .map((s) => (s?.airlineFareFamily ?? '').toString().trim())
+      .find((v) => v.length > 0);
+
+    const tier = sources
+      .map((s) => (s?.normalizedFareTier ?? '').toString().trim().toUpperCase())
+      .find((v) => v.length > 0);
+
+    const rbd = sources
+      .map((s) => (s?.bookingClass ?? '').toString().trim())
+      .find((v) => v.length > 0);
+
+    return {
+      ...(family ? { airlineFareFamily: family } : {}),
+      ...(tier ? { normalizedFareTier: tier } : {}),
+      ...(rbd ? { bookingClass: rbd } : {}),
+    };
+  } catch {
+    return {};
+  }
+}
+
+/**
  * Fare rules as the airline states them, from a Mystifly TripDetails payload.
  *
  * BookingPnr is meant to freeze the terms the customer agreed to, but it was written
@@ -1768,6 +1808,12 @@ export async function POST(req: NextRequest) {
           // AI-assisted booking indistinguishable.
           bookingSource: resolveBookingSource({ bookingSource, agentUserId, createdByRole }),
 
+          // The airline's fare family, frozen at book time. Recorded exactly as
+          // the provider filed it so every downstream screen — My Trips, agent
+          // and admin consoles, emails, reissue/refund/void — shows the customer
+          // the same name the airline itself recognises.
+          ...resolveFareFamily({ selectedFare, sourceFlight, sourceRoundTrip }),
+
           // Agent booking attribution
           ...(agentUserId ? {
             agentUserId,
@@ -2490,7 +2536,13 @@ export async function POST(req: NextRequest) {
             destination: destinationAirport,
             route: `${originAirport} - ${destinationAirport}`,
             airline: airlineName,
-            fare_class: selectedFare?.cabin ?? 'Economy',
+            // The airline's own fare family, so the confirmation email names the
+            // fare the way the airline does. Falls back to the cabin only when
+            // the carrier filed no brand.
+            fare_class: selectedFare?.airlineFareFamily
+              || selectedFare?.name
+              || selectedFare?.cabin
+              || 'Economy',
             passengers: passengers.map((p: any) => ({ name: `${p.firstName} ${p.lastName}`.trim(), type: p.type ?? 'adult' })),
             total_amount: `$${totalAmount.toLocaleString()}`,
             total_charged: totalAmount,

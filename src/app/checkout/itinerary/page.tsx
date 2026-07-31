@@ -533,27 +533,33 @@ export default function CheckoutItineraryPage() {
           : 'Changeable (Included)'
         : 'Not changeable';
 
+    // `null` on a policy means the provider did not state it. Say so rather
+    // than rendering the absence as a denial.
     const seatLabel =
       policy.seatSelection === 'free'
         ? 'Free seat selection'
         : policy.seatSelection === 'fee'
           ? `Seat selection (fee)`
-          : 'Not available';
+          : policy.seatSelection === 'not_available'
+            ? 'Not available'
+            : 'Contact airline';
 
     const milesLabel =
       policy.milesEarning === 'full'
         ? 'Full miles'
         : policy.milesEarning === 'reduced'
           ? 'Reduced miles'
-          : 'No miles';
+          : policy.milesEarning === 'none'
+            ? 'No miles'
+            : 'Contact airline';
 
     return [
       { label: 'Carry-on bag', value: carryOnLabel, positive: baggage.carryOn },
       { label: 'Checked bags', value: checkedLabel, positive: baggage.checked > 0 },
-      { label: 'Cancellation', value: cancelLabel, positive: policy.refundable },
-      { label: 'Flight changes', value: changeLabel, positive: policy.changeable },
-      { label: 'Seat selection', value: seatLabel, positive: policy.seatSelection !== 'not_available' },
-      { label: 'Miles earning', value: milesLabel, positive: policy.milesEarning !== 'none' },
+      { label: 'Cancellation', value: cancelLabel, positive: policy.refundable === true },
+      { label: 'Flight changes', value: changeLabel, positive: policy.changeable === true },
+      { label: 'Seat selection', value: seatLabel, positive: policy.seatSelection != null && policy.seatSelection !== 'not_available' },
+      { label: 'Miles earning', value: milesLabel, positive: policy.milesEarning != null && policy.milesEarning !== 'none' },
     ];
   }, [fareOption, currency]);
 

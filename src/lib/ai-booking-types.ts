@@ -49,15 +49,16 @@ export interface AiFareDetails {
   checkedBags: number;
   checkedWeightKg: number | null;
 
-  // Policies
-  refundable: boolean;
+  // Policies. `null` means the provider did not state it — render as unknown,
+  // never as a "no". These were previously filled from fare-tier templates.
+  refundable: boolean | null;
   refundFee: number | null;
-  changeable: boolean;
+  changeable: boolean | null;
   changeFee: number | null;
-  seatSelection: 'free' | 'fee' | 'not_available';
+  seatSelection: 'free' | 'fee' | 'not_available' | null;
   seatSelectionFee: number | null;
-  priorityBoarding: boolean;
-  milesEarning: 'full' | 'reduced' | 'none';
+  priorityBoarding: boolean | null;
+  milesEarning: 'full' | 'reduced' | 'none' | null;
 
   // AI
   aiScore: number;             // 0–100

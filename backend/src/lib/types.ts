@@ -6,6 +6,12 @@
 export type Provider = 'duffel' | 'amadeus' | 'mystifly';
 export type CabinClass = 'economy' | 'premium_economy' | 'business' | 'first';
 
+/**
+ * Internal fare tier. Derived from the airline's fare family for ranking,
+ * filters and analytics — never shown to a customer. See services/fare-family.ts.
+ */
+export type NormalizedFareTier = 'BASIC' | 'STANDARD' | 'FLEX' | 'PREMIUM' | 'BUSINESS' | 'FIRST';
+
 export interface AirlineInfo {
   code: string;
   name: string;
@@ -85,6 +91,21 @@ export interface UnifiedFlight {
   fareType?: 'lowest' | 'branded';
   fareSource?: 'public' | 'private'; // Mystifly pricing source (Public/Private fare)
   seatsRemaining?: number;
+
+  // ── Fare family ──
+  // The airline's own brand ("ECO VALUE", "DELTA MAIN BASIC", "INDIGO UPFRONT").
+  // This is the customer-facing label and is never rewritten by FareMind.
+  airlineFareFamily?: string;
+  // Internal tier for ranking/filters/analytics only — never displayed.
+  normalizedFareTier?: NormalizedFareTier;
+  // Identity of the physical journey. Offers sharing a key are the same metal
+  // at different fare families — the set the fare panel shows.
+  itineraryKey?: string;
+  // Reservation booking designator (RBD) — 'Y', 'N', 'Z', …
+  bookingClass?: string;
+  // Raw provider allowance strings, kept verbatim for display ('15Kg', '0PC').
+  checkedBaggageAllowance?: string;
+  cabinBaggageAllowance?: string;
   tags?: FlightTag[];
   breakdown?: ScoreBreakdown;
   offerExpiresAt?: string;
