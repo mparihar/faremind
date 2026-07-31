@@ -161,11 +161,10 @@ async function validate(b) {
   const cur = b.currency || 'USD';
   const mfRef = b.mystifly_mf_ref || b.provider_order_id || b.master_pnr;
 
-  // Which surface created it. created_by_role is not reliably set, so report what is
-  // actually knowable rather than inferring a channel that is not recorded.
-  const surface = b.created_by_role
-    ? b.created_by_role
-    : b.agent_user_id ? 'UNLABELLED (agent attached)' : b.user_id ? 'UNLABELLED (user attached)' : 'UNKNOWN';
+  // booking_source is the authoritative surface. Fall back to the older, agent-only
+  // created_by_role for rows written before that column existed.
+  const surface = b.booking_source
+    || (b.created_by_role ? `${b.created_by_role} (legacy)` : b.agent_user_id ? 'UNLABELLED (agent attached)' : 'UNLABELLED');
 
   if (!AS_JSON) {
     console.log(`\n${B}${b.master_booking_reference}${X}  ${D}pnr=${b.master_pnr ?? '-'} · ${b.primary_provider} · ${b.booking_status}/${b.ticketing_status}/${b.payment_status} · surface=${surface}${X}`);
@@ -300,11 +299,19 @@ async function validate(b) {
   await db.connect();
   const cols = `id, master_booking_reference, master_pnr, mystifly_mf_ref, provider_order_id, primary_provider,
                 booking_status, ticketing_status, payment_status, currency, total_amount, provider_payable_total,
-                markup_amount, service_fee_amount, third_party_payable_total, created_by_role, agent_user_id, user_id, created_at`;
+                markup_amount, service_fee_amount, third_party_payable_total,
+                created_by_role, agent_user_id, user_id, created_at`;
+
+  // booking_source is newer than some deployments — select it only where it exists so
+  // the validator still runs against a database that has not taken the migration.
+  const hasSource = (await db.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_name='master_bookings' AND column_name='booking_source'`
+  )).rowCount > 0;
+  const selectCols = hasSource ? `${cols}, booking_source` : cols;
   let where = '', params = [];
   if (REF) { where = 'WHERE master_booking_reference=$1'; params = [REF]; }
   const limit = ALL || REF ? '' : `LIMIT ${RECENT}`;
-  const rows = (await db.query(`SELECT ${cols} FROM master_bookings ${where} ORDER BY created_at DESC ${limit}`, params)).rows;
+  const rows = (await db.query(`SELECT ${selectCols} FROM master_bookings ${where} ORDER BY created_at DESC ${limit}`, params)).rows;
 
   if (!AS_JSON) console.log(`\n${D}Validating ${rows.length} booking(s) against the provider…${X}`);
   for (const b of rows) {

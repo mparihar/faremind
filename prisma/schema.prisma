@@ -670,6 +670,12 @@ model MasterBooking {
   ancillaries            BookingAncillary[]
   servicePayments        ServicePayment[]
 
+  // Which surface produced this booking. createdByRole below only records agent
+  // ownership — it is written inside the agent branch, so customer and AI-assisted
+  // bookings leave it NULL and become indistinguishable from each other. That is why
+  // the AI-bot markup gap could only be inferred from a NULL rather than seen.
+  bookingSource          BookingSource?     @map("booking_source")
+
   // Agent booking ownership
   createdByRole          String?            @map("created_by_role")       // 'AGENT' | 'CUSTOMER' | null
   agentUserId            String?            @map("agent_user_id")
@@ -1973,6 +1979,17 @@ enum MbTripType {
   ONE_WAY
   ROUND_TRIP
   MULTI_CITY
+}
+
+/// Which surface a MasterBooking was created from, so per-surface certification and
+/// financial reconciliation can be done without inferring the channel from a NULL.
+enum BookingSource {
+  CUSTOMER_WEB    // logged-in or guest customer through the /checkout wizard
+  AGENT_PORTAL    // FareMind agent booking on a customer's behalf
+  AI_ASSISTANT    // AI-assisted booking flow (AiBookFlightFlow)
+  LIMIT_ORDER     // auto-booked when a limit order matched
+  ADMIN           // created by staff from the admin console
+  UNKNOWN         // pre-dates this field, or the caller did not identify itself
 }
 
 enum MbBookingStatus {

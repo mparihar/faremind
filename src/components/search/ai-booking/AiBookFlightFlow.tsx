@@ -712,6 +712,12 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
     try {
       const { selectedFare } = store.hydrateCheckoutStore();
 
+      // Mark the handoff so the booking is attributed to the AI flow. The checkout
+      // wizard is shared with the normal and agent paths and carries no other signal
+      // of where the customer came from, which is why AI-assisted bookings previously
+      // landed in the database indistinguishable from customer ones.
+      if (typeof window !== 'undefined') sessionStorage.setItem('fm_booking_source', 'AI_ASSISTANT');
+
       try {
         const data = await apiFetch<{ sessionId: string }>('/api/booking-session/select-fare', {
           method: 'POST',

@@ -73,6 +73,28 @@ interface DuffelOrder {
   created_at: string;
 }
 
+type BookingSourceValue = 'CUSTOMER_WEB' | 'AGENT_PORTAL' | 'AI_ASSISTANT' | 'LIMIT_ORDER' | 'ADMIN' | 'UNKNOWN';
+const BOOKING_SOURCES: BookingSourceValue[] = ['CUSTOMER_WEB', 'AGENT_PORTAL', 'AI_ASSISTANT', 'LIMIT_ORDER', 'ADMIN', 'UNKNOWN'];
+
+/**
+ * Decide which surface a booking came from.
+ *
+ * Trust the caller when it names itself with a value we recognise; an unrecognised
+ * string is treated as absent rather than written through, so the column stays a
+ * dependable enum. Otherwise fall back to what the payload implies: an agent id means
+ * the agent portal, and anything else reaching this route is the customer checkout.
+ * Never returns null — an unattributed booking is what created the gap this replaces.
+ */
+function resolveBookingSource(input: {
+  bookingSource?: unknown; agentUserId?: unknown; createdByRole?: unknown;
+}): BookingSourceValue {
+  const claimed = String(input.bookingSource ?? '').toUpperCase().trim();
+  if ((BOOKING_SOURCES as string[]).includes(claimed)) return claimed as BookingSourceValue;
+  if (input.agentUserId) return 'AGENT_PORTAL';
+  if (String(input.createdByRole ?? '').toUpperCase() === 'AGENT') return 'AGENT_PORTAL';
+  return 'CUSTOMER_WEB';
+}
+
 function generateRef() {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
   return 'FM' + Array.from({ length: 6 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
@@ -272,6 +294,8 @@ export async function POST(req: NextRequest) {
       agentName,
       agentEmail,
       createdByRole,
+      // Which surface is booking. Sent by the caller; inferred below when absent.
+      bookingSource,
     } = body;
 
     // FAREMIND_BUNDLE defense-in-depth: override protection/insurance to false
@@ -1682,6 +1706,11 @@ export async function POST(req: NextRequest) {
           providerCapabilities: {
             addBaggageAllowed: offer?.available_services?.some((s: any) => s.type === 'baggage') ?? false,
           },
+
+          // Which surface booked this. Always written — unlike createdByRole below,
+          // which lives inside the agent branch and so left every customer and
+          // AI-assisted booking indistinguishable.
+          bookingSource: resolveBookingSource({ bookingSource, agentUserId, createdByRole }),
 
           // Agent booking attribution
           ...(agentUserId ? {

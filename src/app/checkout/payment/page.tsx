@@ -441,6 +441,15 @@ function PaymentFormInner() {
       const agentCtxRaw = typeof window !== 'undefined' ? sessionStorage.getItem('agentBookingContext') : null;
       const agentCtx = agentCtxRaw ? JSON.parse(agentCtxRaw) : null;
 
+      // Consume the AI-flow marker: read it once and clear it, so a later booking in the
+      // same tab is not mis-attributed to the AI assistant by a leftover value.
+      let sourceMarker: string | null = null;
+      if (typeof window !== 'undefined') {
+        sourceMarker = sessionStorage.getItem('fm_booking_source');
+        if (sourceMarker) sessionStorage.removeItem('fm_booking_source');
+      }
+      const bookingSource = sourceMarker || (agentCtx ? 'AGENT_PORTAL' : 'CUSTOMER_WEB');
+
       const bookingRes = await fetch('/api/checkout/bookings/confirm', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -482,6 +491,8 @@ function PaymentFormInner() {
           expectedRoute,
           currency: currency ?? 'USD',
           userId: user?.id ?? null,
+          // Which surface is booking — recorded for every booking, not just agent ones.
+          bookingSource,
           // Agent booking attribution
           ...(agentCtx ? {
             agentUserId: agentCtx.agentUserId,
