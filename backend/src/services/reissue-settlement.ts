@@ -17,7 +17,7 @@
 
 import { prisma } from '../lib/db';
 import { getProvider } from './provider-adapter';
-import { refundCollection } from './customer-collect';
+import { refundCollectionWithAudit } from './customer-collect';
 import { getTripDetails } from './mystifly';
 import * as mbq from '../lib/manage-booking-queries';
 import { fireNotification } from '../lib/notify';
@@ -118,14 +118,19 @@ export async function checkReissueSettlement(changeRequestId: string): Promise<v
   if (providerStatus.status === 'REJECTED' || providerStatus.status === 'FAILED') {
     let refundNote = '';
     if (cr.collectedChargeId) {
-      try {
-        await refundCollection(cr.collectedChargeId);
-        refundNote = ` Collected amount ($${Number(cr.collectedAmount ?? 0).toFixed(2)}) refunded to the original card.`;
-        console.log(`[reissue-settlement] Refunded collection ${cr.collectedChargeId} after reissue rejection.`);
-      } catch (err) {
-        refundNote = ` CRITICAL: refund of ${cr.collectedChargeId} FAILED — manual refund required.`;
-        console.error(`[reissue-settlement] Refund of ${cr.collectedChargeId} failed:`, err instanceof Error ? err.message : err);
-      }
+      // Records a BookingRefund + timeline entry, flips the collection's ServicePayment
+      // to REFUNDED, and raises its own HIGH ticket if the refund cannot be made.
+      const reversal = await refundCollectionWithAudit({
+        bookingId: cr.bookingId,
+        chargeId: cr.collectedChargeId,
+        amount: cr.collectedAmount != null ? Number(cr.collectedAmount) : null,
+        reason: 'the airline rejected the reissue',
+        eventType: 'REISSUE_REFUNDED',
+        bookingRef: booking?.masterBookingReference,
+      });
+      refundNote = reversal.refunded
+        ? ` Collected amount ($${Number(cr.collectedAmount ?? 0).toFixed(2)}) refunded to the original card.`
+        : ` CRITICAL: refund of ${cr.collectedChargeId} FAILED (${reversal.error}) — manual refund required.`;
     }
 
     const reason = `Provider reissue not fulfilled (PTR ${cr.providerPtrId}, status "${providerStatus.rawStatus}").${refundNote}`;

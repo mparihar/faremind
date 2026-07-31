@@ -18,7 +18,7 @@ import { prisma } from '../lib/db';
 import * as mystifly from './mystifly';
 import { getAdminServiceFee } from './cancellation-orchestrator';
 import { toUsd } from './fx';
-import { chargeOriginalCard, refundCollection } from './customer-collect';
+import { chargeOriginalCard, refundCollectionWithAudit } from './customer-collect';
 import { buildPtrPassengers } from '../lib/ptr-passengers';
 
 function mfRefOf(booking: any): string | null {
@@ -236,12 +236,28 @@ export async function initiateReissue(
       throw new Error(reissueResult.Message || 'Reissue rejected by the airline');
     }
   } catch (reErr: any) {
-    // Reissue failed after we charged → refund the collection
+    // Reissue failed after we charged → give the money back, with a record of it, and
+    // raise a ticket if the refund itself fails rather than logging into the void.
+    let reversal: { refunded: boolean; error?: string } | null = null;
     if (chargeId) {
-      try { await refundCollection(chargeId); console.log(`[Reissue][Collect] refunded ${chargeId} after reissue failure`); }
-      catch (rfErr: any) { console.error(`[Reissue][Collect] CRITICAL: refund of ${chargeId} failed after reissue failure: ${rfErr.message}`); }
+      reversal = await refundCollectionWithAudit({
+        bookingId,
+        chargeId,
+        amount: quote.totalCollect,
+        reason: 'the airline rejected the reissue',
+        eventType: 'REISSUE_REFUNDED',
+        bookingRef: booking.masterBookingReference,
+      });
     }
-    throw Object.assign(new Error(`Reissue failed at the provider: ${reErr.message}.${chargeId ? ' Your charge has been refunded.' : ''}`), { code: 'REISSUE_FAILED' });
+    const refundNote = !chargeId
+      ? ''
+      : reversal?.refunded
+        ? ' Your charge has been refunded.'
+        : ' IMPORTANT: the refund of your charge did not go through — support has been notified and will refund it manually.';
+    throw Object.assign(new Error(`Reissue failed at the provider: ${reErr.message}.${refundNote}`), {
+      code: 'REISSUE_FAILED',
+      refundIssued: reversal?.refunded ?? null,
+    });
   }
 
   // Accepting returns PTRType=ReIssue / PTRStatus=InProcess with an SLA (typically 60

@@ -91,3 +91,103 @@ export async function chargeOriginalCard(
 export async function refundCollection(chargeId: string): Promise<void> {
   await stripe.refunds.create({ payment_intent: chargeId });
 }
+
+export interface CollectionRefundResult {
+  refunded: boolean;
+  amount: number | null;
+  stripeRefundId: string | null;
+  error?: string;
+}
+
+/**
+ * Give back a collection we took for a servicing action that then failed — e.g. the
+ * airline refused the reissue we had already charged for.
+ *
+ * The bare refundCollection() above issues the Stripe refund and nothing else, so a
+ * reversed collection left no BookingRefund, no timeline entry and a ServicePayment
+ * still reading SUCCEEDED, and a refund that itself failed was only console.error'd —
+ * the customer stayed charged with nobody told. This records the reversal the same way
+ * a cancellation refund is recorded, and escalates loudly when it cannot be made.
+ *
+ * Refunds the whole PaymentIntent (Stripe's default with no `amount`), which is exactly
+ * what the customer paid for the servicing action: fare difference plus service fee.
+ * Never throws — returns a typed result.
+ */
+export async function refundCollectionWithAudit(params: {
+  bookingId: string;
+  chargeId: string;
+  /** Amount collected, for records. Falls back to the Stripe refund amount. */
+  amount?: number | null;
+  currency?: string;
+  /** Why it is being reversed, e.g. 'the airline rejected the reissue'. */
+  reason: string;
+  /** Timeline event type, e.g. 'REISSUE_REFUNDED'. */
+  eventType?: string;
+  bookingRef?: string;
+}): Promise<CollectionRefundResult> {
+  const { bookingId, chargeId, reason } = params;
+  const currency = params.currency || 'USD';
+
+  try {
+    const stripeRefund = await stripe.refunds.create(
+      { payment_intent: chargeId, reason: 'requested_by_customer', metadata: { booking_id: bookingId, kind: 'collection_reversal' } },
+      { idempotencyKey: `collect-refund-${chargeId}` },
+    );
+    const amount = params.amount ?? (stripeRefund.amount != null ? stripeRefund.amount / 100 : null);
+
+    await prisma.bookingRefund.create({
+      data: {
+        bookingId, amount: amount ?? 0, currency,
+        method: 'ORIGINAL_PAYMENT', status: 'COMPLETED', provider: 'MYSTIFLY',
+      },
+    }).catch((e: any) => console.error('[collect-refund] BookingRefund record failed:', e?.message));
+
+    // The collection's ServicePayment must stop claiming the customer paid.
+    await prisma.servicePayment.updateMany({
+      where: { stripePaymentIntentId: chargeId },
+      data: { status: 'REFUNDED' },
+    }).catch(() => {});
+
+    await prisma.bookingEvent.create({
+      data: {
+        bookingId,
+        eventType: params.eventType || 'COLLECTION_REFUNDED',
+        eventTitle: 'Collected Amount Refunded',
+        eventDescription: `${amount != null ? `${amount.toFixed(2)} ${currency}` : 'The collected amount'} was refunded to the original card because ${reason}. Stripe refund ${stripeRefund.id}.`,
+        actorType: 'system', actorName: 'Collection Reversal',
+        payloadJson: { stripeRefundId: stripeRefund.id, amount, chargeId } as any,
+      },
+    }).catch(() => {});
+
+    console.log(`[collect-refund] refunded ${chargeId} (${amount ?? '?'} ${currency}) — ${reason}`);
+    return { refunded: true, amount, stripeRefundId: stripeRefund.id };
+  } catch (err: any) {
+    const message = err?.message || 'Stripe refund failed';
+    console.error(`[collect-refund] CRITICAL: refund of ${chargeId} FAILED — customer still charged: ${message}`);
+
+    await prisma.bookingEvent.create({
+      data: {
+        bookingId, eventType: 'REFUND_FAILED', eventTitle: 'Refund Failed',
+        eventDescription: `The amount collected from the customer could NOT be refunded after ${reason}: ${message}. The customer is still charged — a manual refund is required.`,
+        actorType: 'system', actorName: 'Collection Reversal',
+      },
+    }).catch(() => {});
+
+    await prisma.supportTicket.create({
+      data: {
+        subject: `Collection refund FAILED: ${params.bookingRef || bookingId} — customer still charged`,
+        description: [
+          `A collection taken from the customer could not be refunded after ${reason}.`,
+          '', `Stripe PaymentIntent: ${chargeId}`,
+          `Amount: ${params.amount != null ? `${Number(params.amount).toFixed(2)} ${currency}` : 'unknown'}`,
+          `Error: ${message}`, '', 'A manual refund to the original card is required.',
+        ].join('\n'),
+        priority: 'HIGH', status: 'OPEN', category: 'Refund', channel: 'SYSTEM',
+        bookingRef: params.bookingRef || undefined,
+        ticketType: 'REFUND', queue: 'CANCELLATION_SUPPORT',
+      } as any,
+    }).catch(() => {});
+
+    return { refunded: false, amount: params.amount ?? null, stripeRefundId: null, error: message };
+  }
+}

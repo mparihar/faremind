@@ -8,7 +8,7 @@ import { getProvider } from '../services/provider-adapter';
 import { initiateCancellation, getAdminServiceFee as getCancelServiceFee, queueCancellationForIssuance } from '../services/cancellation-orchestrator';
 import { getReissueQuote, initiateReissue } from '../services/reissue-orchestrator';
 import { toUsd } from '../services/fx';
-import { chargeOriginalCard, refundCollection } from '../services/customer-collect';
+import { chargeOriginalCard, refundCollectionWithAudit } from '../services/customer-collect';
 import { buildPtrPassengers } from '../lib/ptr-passengers';
 import { backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
 import { acceptScheduleChange, refundScheduleChange, reissueScheduleChange } from '../services/schedule-change';
@@ -1732,12 +1732,21 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       try {
         result = await provider.confirmChangeOption(changeOfferId, paymentAmount, paymentCurrency);
       } catch (changeErr: any) {
+        let reversal: { refunded: boolean } | null = null;
         if (chargeId) {
-          try { await refundCollection(chargeId); console.log(`[Change][Collect] refunded ${chargeId} after change failure`); }
-          catch (rfErr: any) { console.error(`[Change][Collect] CRITICAL: refund of ${chargeId} failed after change failure: ${rfErr.message}`); }
+          // Same audited reversal the agent reissue path uses: records the refund and
+          // raises a HIGH ticket if it fails, instead of logging and moving on.
+          reversal = await refundCollectionWithAudit({
+            bookingId,
+            chargeId,
+            amount: totalCollect > 0 ? totalCollect : null,
+            reason: 'the provider rejected the flight change',
+            eventType: 'CHANGE_REFUNDED',
+            bookingRef: booking.masterBookingReference,
+          });
         }
         releaseCancelLock(bookingId);
-        throw Object.assign(changeErr, { _chargeRefunded: !!chargeId });
+        throw Object.assign(changeErr, { _chargeRefunded: reversal?.refunded ?? false });
       }
       releaseCancelLock(bookingId);
 
