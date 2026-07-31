@@ -20,6 +20,8 @@ import { getAdminServiceFee } from './cancellation-orchestrator';
 import { toUsd } from './fx';
 import { chargeOriginalCard, refundCollectionWithAudit } from './customer-collect';
 import { buildPtrPassengers } from '../lib/ptr-passengers';
+import { backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
+import * as mbq from '../lib/manage-booking-queries';
 
 function mfRefOf(booking: any): string | null {
   return booking?.pnrs?.find((p: any) => p.providerOrderId)?.providerOrderId
@@ -87,7 +89,23 @@ export async function getReissueQuote(
     );
   }
 
-  const result = await mystifly.reissueQuote(mfRef, originDestinations, passengers);
+  let result = await mystifly.reissueQuote(mfRef, originDestinations, passengers);
+
+  // A stored e-ticket goes stale when the airline replaces it — most obviously after an
+  // earlier reissue — and the provider then rejects the number we sent. Re-read the
+  // numbers and try once more, so a booking that has been reissued before is not stuck.
+  if (result?.Success === false && /e-?ticket\s*(number)?\s*(is)?\s*(wrong|invalid|incorrect|not\s*valid)/i.test(String(result?.Message || ''))) {
+    console.warn(`[Reissue][Quote] ${mfRef}: provider rejected the stored e-ticket ("${result.Message}") — refreshing and retrying once.`);
+    const r = await backfillEticketsFromTripDetails(booking.id, mfRef, { force: true }).catch(() => null);
+    if (r && r.updated > 0) {
+      const reloaded = await mbq.getMasterBookingFull(booking.id);
+      const refreshed = reloaded ? buildPtrPassengers(reloaded) : passengers;
+      if (refreshed.map((p) => p.eTicket).join(',') !== passengers.map((p) => p.eTicket).join(',')) {
+        result = await mystifly.reissueQuote(mfRef, originDestinations, refreshed);
+      }
+    }
+  }
+
   const data = result?.Data || result;
   const err = data?.Errors?.[0] || result?.Error;
   if (err && (err.Code || err.code)) {

@@ -37,7 +37,11 @@ const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: tru
  * every PTR request. Resolves the booking by Mystifly UniqueID (MFRef) or the
  * provided FareMind booking id/reference, then maps passengers + e-tickets.
  */
-async function loadPtrPassengers(uniqueId: string, bookingId?: string): Promise<PtrPassenger[]> {
+async function loadPtrPassengers(
+  uniqueId: string,
+  bookingId?: string,
+  opts: { forceRefresh?: boolean } = {},
+): Promise<PtrPassenger[]> {
   try {
     const booking = await prisma.masterBooking.findFirst({
       where: {
@@ -60,11 +64,13 @@ async function loadPtrPassengers(uniqueId: string, bookingId?: string): Promise<
     // Bookings can reach a PTR with no e-ticket persisted yet (ticketing resolved
     // asynchronously). Mystifly rejects any PTR whose passengers lack an e-ticket, so
     // pull the numbers from TripDetails first — same guard the cancellation path uses.
+    // forceRefresh additionally re-reads numbers we already hold, for when the provider
+    // has told us the stored one is wrong.
     const mfRef = booking.mystiflyMfRef || booking.providerOrderId || booking.masterPnr;
     const hasEticket = booking.tickets.some((t: any) => t.eTicketNumber || t.ticketNumber);
-    if (!hasEticket && mfRef) {
+    if ((!hasEticket || opts.forceRefresh) && mfRef) {
       try {
-        const r = await backfillEticketsFromTripDetails(booking.id, mfRef);
+        const r = await backfillEticketsFromTripDetails(booking.id, mfRef, { force: !!opts.forceRefresh });
         if (r.updated > 0) {
           const reloaded = await prisma.masterBooking.findUnique({
             where: { id: booking.id },
@@ -178,6 +184,52 @@ function extractPtrError(result: any): { hasError: boolean; message: string; cod
     };
   }
   return { hasError: false, message: '', code: '' };
+}
+
+/**
+ * Does this provider message mean the e-ticket we sent is not the one the airline holds?
+ * Mystifly phrases it "Eticket number is wrong"; keep the match loose enough to catch
+ * the neighbouring wordings without swallowing unrelated ticket errors.
+ */
+function isStaleEticketError(message: string): boolean {
+  return /e-?ticket\s*(number)?\s*(is)?\s*(wrong|invalid|incorrect|not\s*valid)/i.test(message)
+    || /invalid\s+e-?ticket/i.test(message);
+}
+
+/**
+ * Run a PTR call, and if the provider rejects the e-ticket we sent, refresh the stored
+ * numbers from the provider and try once more.
+ *
+ * A stored e-ticket goes stale whenever the airline replaces it — most obviously after a
+ * successful reissue. The normal backfill only fills blanks, so without this a booking
+ * that has been reissued once can never be voided, refunded or reissued again: every
+ * later PTR is rejected with a number we keep re-sending. One retry against freshly-read
+ * numbers costs nothing on the happy path, since it only runs after a rejection.
+ */
+async function withEticketRetry<T>(
+  uniqueId: string,
+  bookingId: string | undefined,
+  run: (passengers: PtrPassenger[]) => Promise<T>,
+): Promise<{ result: T; retried: boolean }> {
+  const passengers = await loadPtrPassengers(uniqueId, bookingId);
+  const result = await run(passengers);
+
+  const { hasError, message } = extractPtrError(result);
+  if (!hasError || !isStaleEticketError(message)) return { result, retried: false };
+
+  console.warn(`[PTR] ${uniqueId}: provider rejected the stored e-ticket ("${message}") — refreshing and retrying once.`);
+  const refreshed = await loadPtrPassengers(uniqueId, bookingId, { forceRefresh: true });
+
+  const before = passengers.map((p) => p.eTicket).join(',');
+  const after = refreshed.map((p) => p.eTicket).join(',');
+  if (!after || after === before) {
+    // Nothing new to send — return the original rejection rather than burn a second call.
+    console.warn(`[PTR] ${uniqueId}: refresh produced no different e-ticket; keeping the original error.`);
+    return { result, retried: false };
+  }
+
+  console.log(`[PTR] ${uniqueId}: e-ticket refreshed, retrying the request.`);
+  return { result: await run(refreshed), retried: true };
 }
 
 /** Resolve a MasterBooking id from either its cuid `id` or its `masterBookingReference`. */
@@ -453,8 +505,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const passengers = await loadPtrPassengers(uniqueId, bookingId);
-      const result = await mystifly.voidQuote(uniqueId, passengers);
+      const { result } = await withEticketRetry(uniqueId, bookingId, (pax) => mystifly.voidQuote(uniqueId, pax));
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
@@ -509,8 +560,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
       // Direct Void — submit with the passengers array. Returns PTRStatus=InProcess;
       // fulfilment (Resolution=Voided) settles async and is polled via searchPtr.
-      const passengers = await loadPtrPassengers(uniqueId, bookingId);
-      const result = await mystifly.executeVoid(uniqueId, passengers);
+      const { result } = await withEticketRetry(uniqueId, bookingId, (pax) => mystifly.executeVoid(uniqueId, pax));
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
@@ -568,8 +618,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      const passengers = await loadPtrPassengers(uniqueId, bookingId);
-      const result = await mystifly.refundQuote(uniqueId, passengers);
+      const { result } = await withEticketRetry(uniqueId, bookingId, (pax) => mystifly.refundQuote(uniqueId, pax));
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
@@ -630,8 +679,8 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
       // Accept Refund — RefundQuote + AcceptQuote=yes + the RefundQuote PTR id + passengers.
       // Returns PTRType=Refund, PTRStatus=InProcess; settles async (Resolution=Refunded).
-      const passengers = await loadPtrPassengers(uniqueId, bookingId);
-      const result = await mystifly.executeRefund(uniqueId, providerPtrId, passengers, 'Refund accepted via FareMind');
+      const { result } = await withEticketRetry(uniqueId, bookingId,
+        (pax) => mystifly.executeRefund(uniqueId, providerPtrId, pax, 'Refund accepted via FareMind'));
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
@@ -716,7 +765,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(422).send({ error: msg, errorCode: 'REISSUE_QUOTE_INCOMPLETE' });
       }
 
-      const result = await mystifly.reissueQuote(uniqueId, onds, passengers);
+      const { result } = await withEticketRetry(uniqueId, bookingId, (pax) => mystifly.reissueQuote(uniqueId, onds, pax));
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {

@@ -32,7 +32,26 @@ export function tripTicketStatus(tripResult: any): string {
   return String(ti?.TicketStatus || tripResult?.Data?.TktStatus || '').trim();
 }
 
-/** Extract e-ticket numbers from TripDetails / AirTicketOrderStatus responses. */
+/**
+ * Is this e-ticket entry still the live one?
+ *
+ * TripDetails returns the booking's whole ticket history, each entry tagged with an
+ * ETicketType — a booking that has been reissued carries both the superseded number
+ * (`Reissued`) and the current one (`Ticketed`). Sending a superseded number to any PTR
+ * endpoint is rejected with "Eticket number is wrong", so dead entries must be dropped
+ * rather than collected alongside the live one.
+ */
+function isLiveEticketEntry(tk: any): boolean {
+  const type = String(tk?.ETicketType ?? tk?.eTicketType ?? '').trim();
+  if (!type) return true; // untyped entries: keep, nothing says they are dead
+  return !/reissued|refunded|voided|exchanged|cancell?ed/i.test(type);
+}
+
+/**
+ * Extract e-ticket numbers from TripDetails / AirTicketOrderStatus responses.
+ *
+ * Superseded numbers are skipped — see isLiveEticketEntry.
+ */
 export function extractEticketNumbers(tripResult: any, statusResult?: any): string[] {
   const nums: string[] = [];
   const push = (n: any) => {
@@ -53,6 +72,7 @@ export function extractEticketNumbers(tripResult: any, statusResult?: any): stri
     // (the e-ticket array sits on the PassengerInfo wrapper, NOT under Passenger).
     const eTickets = wrap?.ETickets || [];
     for (const tk of Array.isArray(eTickets) ? eTickets : [eTickets]) {
+      if (!isLiveEticketEntry(tk)) continue;
       push(tk?.ETicketNumber || tk?.eTicketNumber || tk?.TicketNumber || tk?.Number);
     }
 
@@ -96,17 +116,28 @@ export interface EticketBackfillResult {
 /**
  * Ensure the booking's ticket rows carry e-ticket numbers, fetching them from
  * Mystifly TripDetails when missing. Returns backfill outcome + issuance state.
+ *
+ * `force` re-reads and overwrites rows that already hold a number. A stored e-ticket
+ * can go stale — a successful reissue replaces the number at the airline, after which
+ * every later PTR on that booking is rejected with "Eticket number is wrong" — and the
+ * default missing-only pass would never correct it.
  */
-export async function backfillEticketsFromTripDetails(bookingId: string, mfRef: string): Promise<EticketBackfillResult> {
+export async function backfillEticketsFromTripDetails(
+  bookingId: string,
+  mfRef: string,
+  opts: { force?: boolean } = {},
+): Promise<EticketBackfillResult> {
   const tickets = await prisma.bookingTicket.findMany({
     where: { bookingId },
     orderBy: { createdAt: 'asc' },
   });
   const alreadyHad = tickets.some((t) => t.eTicketNumber || t.ticketNumber);
-  const missing = tickets.filter((t) => !t.eTicketNumber && !t.ticketNumber);
-  if (tickets.length === 0 || missing.length === 0) {
+  // Forced refresh targets every row; the normal pass only fills the blanks.
+  const targets = opts.force ? tickets : tickets.filter((t) => !t.eTicketNumber && !t.ticketNumber);
+  if (tickets.length === 0 || targets.length === 0) {
     return { updated: 0, ticketStatus: '', hasEticket: alreadyHad, pendingIssuance: false };
   }
+  const missing = targets;
 
   let tripResult: any = null;
   let statusResult: any = null;
@@ -124,11 +155,14 @@ export async function backfillEticketsFromTripDetails(bookingId: string, mfRef: 
     return { updated: 0, ticketStatus: status, hasEticket: alreadyHad, pendingIssuance };
   }
 
-  // Best-effort 1:1 assignment to the rows still missing a number.
+  // Best-effort 1:1 assignment, skipping rows already holding the right number so a
+  // forced refresh only writes what actually changed.
   let updated = 0;
   for (let i = 0; i < missing.length && i < nums.length; i++) {
+    const row = missing[i];
+    if (row.eTicketNumber === nums[i] && row.ticketNumber === nums[i]) continue;
     await prisma.bookingTicket.update({
-      where: { id: missing[i].id },
+      where: { id: row.id },
       data: { eTicketNumber: nums[i], ticketNumber: nums[i] },
     });
     updated++;
