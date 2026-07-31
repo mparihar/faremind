@@ -8,6 +8,8 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { adminFetch } from '@/store/useAdminStore';
+import CouponStatusPanel from '@/components/booking/CouponStatusPanel';
+import PtrQuoteResult from '@/components/post-booking/PtrQuoteResult';
 
 /**
  * Admin Post-Booking Servicing Page — MYSTIFLY ONLY
@@ -93,6 +95,14 @@ export default function AdminPostBookingPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingId]);
 
+  // A quote belongs to the MFRef/booking it was taken against, and handleExecute reuses
+  // its providerPtrId. Drop it when the target changes so a quote taken for one booking
+  // can never be executed against another. Parity with the agent console.
+  useEffect(() => {
+    setQuoteResult(null);
+    setExecResult(null);
+  }, [uniqueId, bookingId]);
+
   async function loadPtrRecords() {
     setRecordsLoading(true);
     try {
@@ -139,7 +149,15 @@ export default function AdminPostBookingPage() {
       if (quoteResult?.ptrId) body.ptrId = quoteResult.ptrId;
       if (quoteResult?.providerPtrId) body.providerPtrId = quoteResult.providerPtrId; // Mystifly PTR id (required to accept refund)
       if (bookingId) body.bookingId = bookingId;
-      if (type === 'reissue' && newFSC) body.newFareSourceCode = newFSC;
+      if (type === 'reissue') {
+        if (newFSC) body.newFareSourceCode = newFSC;
+        // Send back the option and the total that was displayed, so the backend aborts
+        // rather than charging more if the airline repriced since the quote.
+        if (quoteResult?.priced) {
+          body.preferenceOption = quoteResult.priced.preferenceOption;
+          body.expectedTotalCollect = quoteResult.priced.totalCollect;
+        }
+      }
 
       const res = await fetch(`${BACKEND_URL}/api/mystifly-ptr/${type}`, {
         method: 'POST',
@@ -384,9 +402,13 @@ export default function AdminPostBookingPage() {
                   className="flex items-center gap-2 px-5 py-3 bg-amber-500/15 border border-amber-400/20 rounded-xl text-amber-400 text-sm font-bold hover:bg-amber-500/25 disabled:opacity-50">
                   {loading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Get Reissue Quote
                 </button>
-                <button onClick={() => handleExecute('reissue')} disabled={execLoading || !uniqueId.trim() || !quoteResult?.success}
+                {/* Gated on a priced quote: the card is charged before the change is sent
+                    to the airline, so the operator must have seen the amount first. */}
+                <button onClick={() => handleExecute('reissue')} disabled={execLoading || !uniqueId.trim() || !quoteResult?.success || !quoteResult?.priced}
+                  title={!quoteResult?.priced ? 'Get a reissue quote first — the fare difference and service fee must be priced before charging.' : undefined}
                   className="flex items-center gap-2 px-5 py-3 bg-blue-500/15 border border-blue-400/20 rounded-xl text-blue-400 text-sm font-bold hover:bg-blue-500/25 disabled:opacity-50">
-                  {execLoading ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />} Execute Reissue
+                  {execLoading ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
+                  {quoteResult?.priced ? `Charge ${fmt(quoteResult.priced.totalCollect, quoteResult.priced.currency)} & Reissue` : 'Execute Reissue'}
                 </button>
               </div>
               <div className="mt-2 rounded-xl border border-emerald-500/30 bg-emerald-500/5 p-4">
@@ -413,47 +435,26 @@ export default function AdminPostBookingPage() {
                 className="flex items-center gap-2 px-5 py-3 bg-[#1ABC9C]/15 border border-[#1ABC9C]/20 rounded-xl text-[#1ABC9C] text-sm font-bold hover:bg-[#1ABC9C]/25 disabled:opacity-50 mb-4">
                 {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Search PTR Status
               </button>
-            </div>
-          )}
 
-          {/* Quote Result */}
-          {quoteResult && (
-            <div className={`p-4 rounded-xl border mb-3 ${quoteResult.error ? 'bg-red-400/10 border-red-400/20' : 'bg-emerald-400/10 border-emerald-400/20'}`}>
-              {quoteResult.error ? (
-                <p className="text-red-400 text-sm font-semibold flex items-center gap-2"><XCircle size={14} /> {quoteResult.error}</p>
-              ) : (
-                <div>
-                  <p className="text-emerald-400 text-sm font-bold flex items-center gap-2 mb-2"><CheckCircle2 size={14} /> Quote received</p>
-                  {quoteResult.quote && (
-                    <div className="grid grid-cols-3 gap-3 mb-2">
-                      {quoteResult.quote.TotalAmount != null && (
-                        <div>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase">Total</p>
-                          <p className="text-sm font-black text-white">{fmt(quoteResult.quote.TotalAmount, quoteResult.quote.Currency)}</p>
-                        </div>
-                      )}
-                      {quoteResult.quote.PenaltyAmount != null && (
-                        <div>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase">Penalty</p>
-                          <p className="text-sm font-black text-amber-400">{fmt(quoteResult.quote.PenaltyAmount, quoteResult.quote.Currency)}</p>
-                        </div>
-                      )}
-                      {quoteResult.quote.RefundAmount != null && (
-                        <div>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase">Refund Amount</p>
-                          <p className="text-sm font-black text-emerald-400">{fmt(quoteResult.quote.RefundAmount, quoteResult.quote.Currency)}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <details className="bg-slate-900/50 border border-slate-700/30 rounded-xl mt-2">
-                    <summary className="px-3 py-2 text-xs font-bold text-slate-500 cursor-pointer hover:text-slate-300 uppercase tracking-wider">Raw Response</summary>
-                    <pre className="px-3 pb-3 text-xs text-slate-400 font-mono overflow-x-auto max-h-48">{JSON.stringify(quoteResult, null, 2)}</pre>
-                  </details>
+              {/* Same panel and endpoints the agent console and the customer see. Coupon
+                  state is the airline's own verdict on whether a refund / void / reissue
+                  is still possible, so it is worth checking before quoting one. */}
+              {bookingId.trim() ? (
+                <div className="mt-2 border-t border-slate-700/50 pt-4">
+                  <h4 className="text-white font-bold text-sm mb-3">Ticket &amp; Coupon Status</h4>
+                  <CouponStatusPanel bookingId={bookingId.trim()} showCreditNotes />
                 </div>
+              ) : (
+                <p className="text-slate-500 text-xs mt-2 border-t border-slate-700/50 pt-4">
+                  Enter a Booking ID above to see per-segment coupon status and provider credit notes.
+                </p>
               )}
             </div>
           )}
+
+          {/* Quote figures + coupon advice — shared with the agent console. */}
+          <PtrQuoteResult quoteResult={quoteResult} fmt={fmt} />
+
 
           {/* Exec Result */}
           {execResult && (

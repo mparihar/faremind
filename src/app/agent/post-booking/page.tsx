@@ -10,6 +10,7 @@ import {
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
 import CouponStatusPanel from '@/components/booking/CouponStatusPanel';
+import PtrQuoteResult from '@/components/post-booking/PtrQuoteResult';
 
 /**
  * Agent Post-Booking Servicing Page — MYSTIFLY ONLY
@@ -460,87 +461,9 @@ export default function AgentPostBookingPage() {
             </div>
           )}
 
-          {/* Quote Result */}
-          {quoteResult && (
-            <div className={`p-4 rounded-xl border mb-3 ${quoteResult.error ? 'bg-red-400/10 border-red-400/20' : 'bg-emerald-400/10 border-emerald-400/20'}`}>
-              {quoteResult.error ? (
-                <p className="text-red-400 text-sm font-semibold flex items-center gap-2"><XCircle size={14} /> {quoteResult.error}</p>
-              ) : (
-                <div>
-                  <p className="text-emerald-400 text-sm font-bold flex items-center gap-2 mb-2"><CheckCircle2 size={14} /> Quote received</p>
-                  {/* Reissue: what the customer will be CHARGED. Priced from
-                      GetExchangeQuote — fare difference already includes the airline
-                      penalty, so the penalty is shown for information and never added. */}
-                  {quoteResult.priced && (
-                    <div className="mb-3 rounded-xl border border-slate-700/50 bg-slate-900/40 p-3">
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Amount to collect from customer</p>
-                      <div className="space-y-1 text-sm">
-                        <div className="flex justify-between"><span className="text-slate-400">Fare difference</span><span className="text-white">{fmt(quoteResult.priced.fareDifference, quoteResult.priced.currency)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-400">Airline penalty <span className="text-[10px] text-slate-600">(included above)</span></span><span className="text-amber-400">{fmt(quoteResult.priced.penalty, quoteResult.priced.currency)}</span></div>
-                        <div className="flex justify-between"><span className="text-slate-400">FareMind service fee</span><span className="text-white">{fmt(quoteResult.priced.serviceFee, quoteResult.priced.currency)}</span></div>
-                        <div className="flex justify-between border-t border-slate-700 pt-1 mt-1 font-black text-white"><span>Total to charge</span><span>{fmt(quoteResult.priced.totalCollect, quoteResult.priced.currency)}</span></div>
-                      </div>
-                      {quoteResult.priced.providerCurrency && quoteResult.priced.providerCurrency !== quoteResult.priced.currency && (
-                        <p className="text-[10px] text-slate-500 mt-2">Converted from {quoteResult.priced.providerCurrency}.</p>
-                      )}
-                      {quoteResult.optionCount > 1 && (
-                        <p className="text-[10px] text-slate-500 mt-1">{quoteResult.optionCount} fare options returned; showing option {quoteResult.priced.preferenceOption}.</p>
-                      )}
-                      <p className="text-[11px] text-emerald-300/80 mt-2">The card is charged when you execute, before the change is sent to the airline.</p>
-                    </div>
-                  )}
-                  {quoteResult.pricingError && (
-                    <p className="text-amber-400 text-xs font-semibold mb-2">{quoteResult.pricingError}</p>
-                  )}
+          {/* Quote figures + coupon advice — shared with the admin console. */}
+          <PtrQuoteResult quoteResult={quoteResult} fmt={fmt} />
 
-                  {/* The airline's own verdict on whether these coupons can still be
-                      serviced. Advisory — the provider will quote regardless, and the
-                      demo environment reports every coupon as N/A. */}
-                  {quoteResult.couponAdvice?.checked && !quoteResult.couponAdvice.eligible && (
-                    <div className="mb-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3">
-                      <p className="text-amber-300 text-xs font-bold">
-                        Airline reports {quoteResult.couponAdvice.openSegments} of {quoteResult.couponAdvice.totalSegments} coupons open
-                      </p>
-                      {(quoteResult.couponAdvice.warnings || []).map((w: string, i: number) => (
-                        <p key={i} className="text-[11px] text-amber-200/80 mt-1">{w}</p>
-                      ))}
-                      <p className="text-[11px] text-slate-400 mt-1.5">
-                        The quote above may still be accepted by the provider, but fulfilment can fail. Verify before charging the customer.
-                      </p>
-                    </div>
-                  )}
-
-                  {/* Void / Refund quote figures */}
-                  {quoteResult.quote && !quoteResult.priced && (
-                    <div className="grid grid-cols-3 gap-3 mb-2">
-                      {quoteResult.quote.TotalRefundAmount != null && (
-                        <div>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase">Refund Amount</p>
-                          <p className="text-sm font-black text-emerald-400">{fmt(quoteResult.quote.TotalRefundAmount, quoteResult.quote.Currency)}</p>
-                        </div>
-                      )}
-                      {(quoteResult.quote.CancellationCharge ?? quoteResult.quote.TotalVoidingFee) != null && (
-                        <div>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase">{quoteResult.quote.TotalVoidingFee != null ? 'Voiding Fee' : 'Cancellation Charge'}</p>
-                          <p className="text-sm font-black text-amber-400">{fmt(quoteResult.quote.TotalVoidingFee ?? quoteResult.quote.CancellationCharge, quoteResult.quote.Currency)}</p>
-                        </div>
-                      )}
-                      {quoteResult.quote.TotalRefundCharges != null && (
-                        <div>
-                          <p className="text-[10px] font-bold text-slate-500 uppercase">Total Charges</p>
-                          <p className="text-sm font-black text-amber-400">{fmt(quoteResult.quote.TotalRefundCharges, quoteResult.quote.Currency)}</p>
-                        </div>
-                      )}
-                    </div>
-                  )}
-                  <details className="bg-slate-900/50 border border-slate-700/30 rounded-xl mt-2">
-                    <summary className="px-3 py-2 text-xs font-bold text-slate-500 cursor-pointer hover:text-slate-300 uppercase tracking-wider">Raw Response</summary>
-                    <pre className="px-3 pb-3 text-xs text-slate-400 font-mono overflow-x-auto max-h-48">{JSON.stringify(quoteResult, null, 2)}</pre>
-                  </details>
-                </div>
-              )}
-            </div>
-          )}
 
           {/* Exec Result */}
           {execResult && (
