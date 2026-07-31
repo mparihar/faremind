@@ -67,15 +67,14 @@ export const POST = withAgentWalletAccess(async (req, { agent }) => {
 
   const policy = await getRechargePolicy();
 
-  // ── Validate amount server-side against the configured minimum ──
-  let amount: number;
-  try {
-    amount = assertPositiveAmount(rawAmount, 'recharge amount');
-  } catch (e: any) {
-    return NextResponse.json({ error: e.message }, { status: 400 });
-  }
-  if (amount < policy.minimumRechargeAmount) {
-    return NextResponse.json({ error: `Minimum recharge is ${policy.currency} ${policy.minimumRechargeAmount}.` }, { status: 400 });
+  // ── Recharge is a FIXED amount = the configured minimum recharge amount ──────
+  // Agents cannot recharge an arbitrary amount; the workflow always uses the
+  // configured amount (admin-set via SystemConfig). Any client-supplied amount is
+  // ignored — the server is the source of truth.
+  void rawAmount;
+  const amount = policy.minimumRechargeAmount;
+  if (!(amount > 0)) {
+    return NextResponse.json({ error: 'Recharge amount is not configured. Contact the administrator.' }, { status: 400 });
   }
 
   // Enabling auto-recharge requires saving the card AND accepting the terms.

@@ -256,3 +256,62 @@ export async function setAgentPrivilege(userId: string, enabled: boolean, actor:
   if (enabled) await evaluateThresholds(wallet.id, actor);
   return getWalletSummary(userId);
 }
+
+/**
+ * Admin/Support: reassign a BLOCKED_WALLET_LIMIT booking back to its original
+ * agent after the agent has recharged. Verifies the recharged wallet can cover
+ * the booking, attributes it, deducts utilization, recalculates, re-enables the
+ * agent (if no remaining restriction), and audits the whole chain.
+ */
+export async function reassignBlockedBooking(bookingId: string, actor: string): Promise<{ success: boolean; error?: string; wallet?: WalletSummary; bookingRef?: string; reactivated?: boolean }> {
+  const booking = await prisma.masterBooking.findUnique({
+    where: { id: bookingId },
+    select: { id: true, masterBookingReference: true, walletOverLimit: true, blockedAgentUserId: true, totalAmount: true },
+  });
+  if (!booking) return { success: false, error: 'Booking not found.' };
+  if (!booking.walletOverLimit || !booking.blockedAgentUserId) return { success: false, error: 'This booking is not a blocked (over-limit) booking.' };
+
+  const agentId = booking.blockedAgentUserId;
+  const amount = round2(n(booking.totalAmount));
+  const wallet = await getOrCreateWallet(agentId);
+  const remaining = remainingOf(wallet);
+  if (remaining < amount) {
+    return { success: false, error: `Insufficient wallet balance to reassign. Available ${remaining}, booking ${amount}. The agent must recharge first.` };
+  }
+
+  // Attribute back to the agent + clear the block.
+  await prisma.masterBooking.update({
+    where: { id: bookingId },
+    data: { agentUserId: agentId, walletOverLimit: false, walletBlockStatus: null, blockedAgentUserId: null },
+  });
+
+  // Deduct from the wallet (records history + re-evaluates thresholds).
+  await recordBookingUtilization(agentId, amount, bookingId);
+
+  // Recalculate + re-enable the agent if there is no remaining restriction.
+  const policy = await getWalletPolicy();
+  const fresh = await prisma.agentWallet.findUnique({ where: { id: wallet.id } });
+  const rem2 = remainingOf(fresh!);
+  const status2 = computeStatus(rem2, policy);
+  const user = await prisma.user.findUnique({ where: { id: agentId }, select: { isActive: true } });
+  let reactivated = false;
+  if (status2 !== 'DISABLED' && user && !user.isActive) {
+    await prisma.user.update({ where: { id: agentId }, data: { isActive: true } });
+    await addHistory(fresh!.id, agentId, 'AUTO_ENABLE', 0, rem2, rem2, actor, 'Reactivated after blocked-booking reassignment');
+    const { email, name } = await agentEmail(agentId);
+    if (email) fireNotification({ event_type: 'WALLET_REACTIVATED', customer_email: email, data: { agent_name: name, remaining: rem2, currency: fresh!.currency } });
+    reactivated = true;
+  }
+
+  await prisma.bookingEvent.create({
+    data: {
+      bookingId, eventType: 'WALLET_BOOKING_REASSIGNED',
+      eventTitle: 'Blocked booking reassigned to agent',
+      eventDescription: `Reassigned ${booking.masterBookingReference} to the original agent by ${actor}. ${amount} deducted from wallet; available now ${rem2}.${reactivated ? ' Agent reactivated.' : ''}`,
+      actorType: 'admin', actorName: actor,
+      payloadJson: { agentUserId: agentId, amount, remainingAfter: rem2, reactivated },
+    },
+  }).catch(() => {});
+
+  return { success: true, wallet: await getWalletSummary(agentId), bookingRef: booking.masterBookingReference, reactivated };
+}

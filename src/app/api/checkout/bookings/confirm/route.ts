@@ -2267,19 +2267,22 @@ export async function POST(req: NextRequest) {
               // ── Over the wallet limit → do NOT attribute to the agent. Flag the
               //    booking admin/support-only, and disable the agent for attempting
               //    an over-limit booking. Utilization is NOT charged for this one. ──
-              await prisma.masterBooking.update({ where: { id: masterBooking.id }, data: { walletOverLimit: true, agentUserId: null } }).catch(() => {});
+              await prisma.masterBooking.update({
+                where: { id: masterBooking.id },
+                data: { walletOverLimit: true, walletBlockStatus: 'BLOCKED_WALLET_LIMIT', blockedAgentUserId: resolvedAgentId, agentUserId: null },
+              }).catch(() => {});
               await prisma.bookingEvent.create({
                 data: {
-                  bookingId: masterBooking.id, eventType: 'WALLET_OVER_LIMIT',
-                  eventTitle: 'Over agent wallet limit — not attributed to agent',
-                  eventDescription: `Booking ${masterBookingReference} ($${totalAmount}) would exceed the agent's wallet (remaining ${chk.remaining ?? 'n/a'}). Not attributed to the agent; visible to Admin/Support only. Agent disabled.`,
+                  bookingId: masterBooking.id, eventType: 'WALLET_LIMIT_EXCEEDED',
+                  eventTitle: 'Booking blocked — wallet limit exceeded',
+                  eventDescription: `Booking ${masterBookingReference} ($${totalAmount}) would exceed the agent's wallet (remaining ${chk.remaining ?? 'n/a'}). Status BLOCKED_WALLET_LIMIT — not attributed to the agent; visible to Admin/Support only until reassigned after recharge. Agent deactivated (WALLET_LIMIT_EXCEEDED).`,
                   actorType: 'system', actorName: 'Wallet Guard',
-                  payloadJson: { agentUserId: resolvedAgentId, amount: totalAmount, remaining: chk.remaining ?? null },
+                  payloadJson: { blockedAgentUserId: resolvedAgentId, amount: totalAmount, remaining: chk.remaining ?? null, reason: 'WALLET_LIMIT_EXCEEDED' },
                 },
               }).catch(() => {});
               await fetch(`${BACKEND}/api/agent-wallet/action`, {
                 method: 'POST', headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ userId: resolvedAgentId, action: 'disable', reason: `Attempted over-limit booking ${masterBookingReference} ($${totalAmount})`, actor: 'SYSTEM (wallet guard)' }),
+                body: JSON.stringify({ userId: resolvedAgentId, action: 'disable', reason: `WALLET_LIMIT_EXCEEDED — attempted booking ${masterBookingReference} ($${totalAmount})`, actor: 'SYSTEM (wallet guard)' }),
               }).catch(() => {});
             }
           }

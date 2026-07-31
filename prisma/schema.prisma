@@ -677,8 +677,11 @@ model MasterBooking {
   agentEmail             String?            @map("agent_email")
   // True when an agent-owned booking pushed cumulative utilized OVER the wallet
   // amount: it is NOT attributed to the agent (agentUserId left null) and is
-  // hidden from the agent's views — visible to Admin/Support only.
+  // hidden from the agent's views — visible to Admin/Support only until an
+  // admin reassigns it after the agent recharges.
   walletOverLimit        Boolean            @default(false) @map("wallet_over_limit")
+  walletBlockStatus      String?            @map("wallet_block_status")     // 'BLOCKED_WALLET_LIMIT' | null
+  blockedAgentUserId     String?            @map("blocked_agent_user_id")   // original agent to reassign to after recharge
 
   // Provider Support (Duffel Assistant) — added for internal support tool
   duffelCustomerUserId         String?    @map("duffel_customer_user_id")

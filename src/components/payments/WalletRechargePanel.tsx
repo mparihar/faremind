@@ -108,16 +108,12 @@ export default function WalletRechargePanel({ sessionToken, onBack }: { sessionT
           {phase === 'form' && (
             <>
               <div>
-                <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Recharge Amount ({c}) * <span className="text-slate-600 normal-case">(min {fmt(info.policy.minimumRechargeAmount)})</span></label>
-                <div className="relative">
-                  <span className="absolute left-4 top-1/2 -translate-y-1/2 text-[#1ABC9C] font-bold">$</span>
-                  <input type="number" value={amount} onChange={(e) => setAmount(e.target.value)} min={info.policy.minimumRechargeAmount} step="1" className={`${cls} pl-8 text-lg font-bold`} />
+                <label className="text-[10px] text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Recharge Amount ({c}) <span className="text-slate-600 normal-case">· fixed by policy</span></label>
+                <div className="flex items-center justify-between px-4 py-3 rounded-xl bg-[#1ABC9C]/[0.06] border border-[#1ABC9C]/20">
+                  <span className="text-2xl font-black text-[#1ABC9C]">{fmt(info.policy.minimumRechargeAmount)}</span>
+                  <span className="text-[11px] text-slate-500">Configured recharge amount</span>
                 </div>
-                <div className="flex gap-2 mt-2">
-                  {[info.policy.minimumRechargeAmount, info.policy.automaticRechargeAmount, info.policy.automaticRechargeTargetBalance].map((v, i) => (
-                    <button key={i} onClick={() => setAmount(String(v))} className="px-3 py-1 rounded-lg bg-white/[0.04] border border-white/[0.08] text-xs text-slate-300 hover:text-white">{fmt(v)}</button>
-                  ))}
-                </div>
+                <p className="text-[11px] text-slate-500 mt-1.5">Recharge is a fixed amount set by the administrator; it cannot be changed here.</p>
               </div>
 
               {/* Consent: save card */}

@@ -45,6 +45,19 @@ const agentWalletPlugin: FastifyPluginAsync = async (fastify) => {
     }
   });
 
+  // Reassign a blocked (over-limit) booking to its original agent after recharge.
+  fastify.post('/reassign-booking', async (request, reply) => {
+    try {
+      const { bookingId, actor } = request.body as { bookingId?: string; actor?: string };
+      if (!bookingId) return reply.code(400).send({ error: 'bookingId is required' });
+      const result = await wallet.reassignBlockedBooking(bookingId, actor || 'ADMIN');
+      if (!result.success) return reply.code(400).send({ error: result.error });
+      return result;
+    } catch (e: any) {
+      return reply.code(500).send({ error: e?.message || 'Reassign failed' });
+    }
+  });
+
   // Admin action — { userId, action, amount?, reason?, actor }
   fastify.post('/action', async (request, reply) => {
     try {
