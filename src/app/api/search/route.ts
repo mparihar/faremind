@@ -10,7 +10,7 @@ import { prisma } from '@/lib/db';
 import { getTravelDnaForRecommendation } from '@/lib/services/travel-dna-service';
 import type { TravelDnaRecommendationContext } from '@/lib/services/travel-dna-service';
 import { flexCacheKey, flexCacheGet, flexCacheSet, flexCacheClearRoute } from '@/lib/flex-search-cache';
-import { rankingInputCorrectionEnabled, legacyCheckedBags } from '@/lib/feature-flags';
+import { rankingInputCorrectionEnabled, legacyCheckedBags, withLegacyBaggage } from '@/lib/feature-flags';
 
 export const maxDuration = 120; // Allow up to 2 minutes for search
 
@@ -291,7 +291,9 @@ export async function GET(request: NextRequest) {
           departureWindow: (searchParams.get('departure_window') as AiUserPreferences['departureWindow']) || undefined,
         };
 
-        const rtRankResult = rankFlightOffers(rtResult.options, 'ROUND_TRIP', rtAiPrefs, true, undefined, travelDnaContext);
+        // Same gating as the primary 10-dimension path above — this fallback
+        // bypasses that input mapping entirely.
+        const rtRankResult = rankFlightOffers(withLegacyBaggage(rtResult.options), 'ROUND_TRIP', rtAiPrefs, true, undefined, travelDnaContext);
         rankingMetadata = rtRankResult.metadata;
 
         const ranked = rtRankResult.ranked.map((r) => ({
@@ -418,7 +420,10 @@ export async function GET(request: NextRequest) {
       departureWindow: (searchParams.get('departure_window') as AiUserPreferences['departureWindow']) || undefined,
     };
 
-    const rankResult = rankFlightOffers(backendFlights, 'ONE_WAY', aiPrefs, true, undefined, travelDnaContext);
+    // One-way has no 10-dimension path, so the flag must be applied here too or
+    // the corrected bag count would reach the scorer unconditionally — moving
+    // both the Baggage Value dimension and the effective-price bag estimate.
+    const rankResult = rankFlightOffers(withLegacyBaggage(backendFlights), 'ONE_WAY', aiPrefs, true, undefined, travelDnaContext);
 
     // Map ranked results to the format the frontend expects (AI-scored)
     const scoredFlights = rankResult.ranked.map((r) => ({

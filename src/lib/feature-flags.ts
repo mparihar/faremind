@@ -56,3 +56,33 @@ export function legacyCheckedBags(rawAllowance?: string | null): number {
   if (kg) return parseInt(kg[1], 10) >= 20 ? 1 : 0;
   return 0;
 }
+
+/**
+ * Restore the pre-fix checked-bag count on offers headed for the 8-dimension
+ * scoring engine (src/lib/ai-scoring).
+ *
+ * That engine consumes `baggage.checked` twice, and both uses carry real
+ * weight:
+ *   • Baggage Value dimension — 10-13% of the composite
+ *   • Effective Price — when `checkedBagsIncluded === 0` it adds an estimated
+ *     $35 domestic / $75 international per piece, per passenger, per leg, and
+ *     effective price is 34-36% of the composite.
+ *
+ * So correcting a 15Kg allowance from 0 bags to 1 both raises the baggage score
+ * and removes a phantom bag fee. Gating it here keeps the OFF path a true
+ * no-op for one-way searches and the round-trip fallback, which do not pass
+ * through the 10-dimension engine's input mapping.
+ *
+ * Returns the array untouched when the correction is enabled.
+ */
+export function withLegacyBaggage<T extends {
+  baggage?: { carryOn?: number; checked?: number } | null;
+  checkedBaggageAllowance?: string;
+}>(offers: T[]): T[] {
+  if (rankingInputCorrectionEnabled()) return offers;
+  return offers.map((o) => {
+    const legacy = legacyCheckedBags(o.checkedBaggageAllowance);
+    if (!o.baggage || o.baggage.checked === legacy) return o;
+    return { ...o, baggage: { ...o.baggage, checked: legacy } };
+  });
+}
