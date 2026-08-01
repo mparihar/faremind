@@ -1806,6 +1806,23 @@ export async function POST(req: NextRequest) {
         data: {
           masterBookingReference,
           masterPnr,
+
+          // The three identifiers, written together so the association is
+          // established the moment the booking is confirmed:
+          //
+          //   masterBookingReference  FM9IPA4E     FareMind
+          //   mystiflyMfRef           MF35532626   Mystifly servicing APIs
+          //   airlinePnr              EMBV6D7      airline check-in / support
+          //
+          // masterPnr is a generic "provider booking reference" column — it holds
+          // Mystifly's ref here but Duffel's on a Duffel booking, so it cannot be
+          // relied on to mean "the Mystifly reference". mystiflyMfRef is explicit,
+          // which is what lets any surface resolve the right identifier without
+          // guessing which provider a booking came from.
+          ...(mystiflyBookingResult?.uniqueId
+            ? { mystiflyMfRef: mystiflyBookingResult.uniqueId as string }
+            : {}),
+
           customerEmail,
           customerName,
           userId: resolvedUserId,
