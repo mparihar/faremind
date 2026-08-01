@@ -27,10 +27,30 @@ export interface SearchVersionConfig {
   matchedRuleName: string | null;
 }
 
-// Default configuration when no rule matches
+// Default configuration when no rule matches.
+//
+// fareType 'All' — NOT 'Public'. It maps to PricingSourceType on the v2.2
+// search, and 'Public' silently excludes every WebFare. Measured on DEL-BOM
+// 18 Nov / 5 Dec 2026, 2 adults:
+//
+//   Public   →  113 itineraries  {Public:113}
+//              families: ECO VALUE 50, ECO CLASSIC 50, (none) 13
+//   All      → 1000 itineraries  {WebFare:800, Public:100, Private:100}
+//              families: ROUNDTRIP FARE 529, INDIGO UPFRONT 271,
+//                        REGULAR FARE 100, ECO VALUE 50, ECO CLASSIC 50
+//
+// 800 of 1000 offers were being discarded before we ever saw them, and with
+// them every IndiGo fare family — which is why the fare panel had nothing to
+// show for a 6E itinerary.
+//
+// This does not start selling fares we were not selling already: the parallel
+// v1 "lowest fare" search has always used PricingSourceType 'All', so these
+// WebFares were reaching customers regardless — just stripped of their brand,
+// baggage and RBD, because v1 returns none of that. Aligning the branded
+// search means the same fares now arrive described.
 const DEFAULT_CONFIG: SearchVersionConfig = {
   version: 'v2.2',
-  fareType: 'Public',
+  fareType: 'All',
   target: (process.env.MYSTIFLY_TARGET || 'Test'),
   holdAllowed: false,
   holdDurationMinutes: null,
