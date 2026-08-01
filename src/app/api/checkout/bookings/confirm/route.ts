@@ -136,6 +136,47 @@ function resolveFareFamily(input: {
 }
 
 /**
+ * The AIRLINE's record locator from a Mystifly TripDetails payload.
+ *
+ * Lives at ReservationItems[].AirlinePNR. This is the code a customer quotes at
+ * airline check-in — it is NOT the Mystifly booking reference (MF…), which
+ * identifies the booking inside Mystifly and drives the servicing APIs.
+ *
+ * Returns null when the airline has not published one yet; the caller must show
+ * "Not Available" rather than substituting the Mystifly reference. Rejects
+ * anything shaped like a Mystifly reference as a guard against re-introducing
+ * the substitution. Never throws.
+ */
+function airlinePnrFromTripDetails(raw: any): string | null {
+  try {
+    const ti = raw?.Data?.TripDetailsResult?.TravelItinerary
+      || raw?.Data?.TravelItinerary
+      || raw?.TripDetailsResult?.TravelItinerary
+      || raw?.TravelItinerary
+      || raw;
+
+    const groups: any[] = [
+      ...(Array.isArray(ti?.Itineraries) ? ti.Itineraries.map((i: any) => i?.ItineraryInfo) : []),
+      ti?.ItineraryInfo,
+    ].filter(Boolean);
+
+    const counts = new Map<string, number>();
+    for (const g of groups) {
+      for (const item of (Array.isArray(g?.ReservationItems) ? g.ReservationItems : [])) {
+        const pnr = String(item?.AirlinePNR ?? '').trim();
+        if (!pnr || /^MF\d+$/i.test(pnr)) continue;
+        counts.set(pnr, (counts.get(pnr) ?? 0) + 1);
+      }
+    }
+    if (counts.size === 0) return null;
+    // Most segments wins — on a codeshare that is the operating carrier's.
+    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
+  } catch {
+    return null;
+  }
+}
+
+/**
  * Fare rules as the airline states them, from a Mystifly TripDetails payload.
  *
  * BookingPnr is meant to freeze the terms the customer agreed to, but it was written
@@ -1587,6 +1628,17 @@ export async function POST(req: NextRequest) {
             // Capture the airline's own fare rules so the BookingPnr snapshot records what
             // was actually agreed, rather than the fare-options view — which reports null
             // when the provider said nothing and was being written through as "restricted".
+            // The AIRLINE's own record locator (ReservationItems[].AirlinePNR).
+            // Distinct from mystiflyBookingResult.uniqueId, which is Mystifly's
+            // reference and is used only for provider servicing calls. Showing
+            // the Mystifly reference as an "Airline PNR" sends the customer to
+            // the airline with a code the airline cannot find.
+            const airlinePnrFound = airlinePnrFromTripDetails(tripData.raw);
+            if (airlinePnrFound) {
+              (mystiflyBookingResult as any).airlinePnr = airlinePnrFound;
+              console.log(`[Mystifly] airline PNR from TripDetails: ${airlinePnrFound}`);
+            }
+
             const providerRules = mystiflyFareRulesFromTripDetails(tripData.raw);
             if (providerRules) {
               (mystiflyBookingResult as any).fareRules = providerRules;
@@ -1813,6 +1865,14 @@ export async function POST(req: NextRequest) {
           // and admin consoles, emails, reissue/refund/void — shows the customer
           // the same name the airline itself recognises.
           ...resolveFareFamily({ selectedFare, sourceFlight, sourceRoundTrip }),
+
+          // The airline's own record locator, when the airline has already
+          // published it. Often absent this early — the reconciliation worker and
+          // the servicing screen both capture it later. Never defaulted to the
+          // Mystifly reference.
+          ...((mystiflyBookingResult as any)?.airlinePnr
+            ? { airlinePnr: (mystiflyBookingResult as any).airlinePnr as string }
+            : {}),
 
           // Agent booking attribution
           ...(agentUserId ? {
@@ -2529,7 +2589,9 @@ export async function POST(req: NextRequest) {
           data: {
             booking_reference: masterBookingReference,
             pnr: masterPnr,
-            airline_pnr: masterPnr,
+            // The AIRLINE's locator — never the Mystifly reference. Null when the
+            // airline has not published one; templates render "Not Available".
+            airline_pnr: (mystiflyBookingResult as any)?.airlinePnr ?? null,
             customer_name: customerName,
             customer_email: customerEmail,
             origin: originAirport,
@@ -2566,7 +2628,9 @@ export async function POST(req: NextRequest) {
           data: {
             booking_reference: masterBookingReference,
             pnr: masterPnr,
-            airline_pnr: masterPnr,
+            // The AIRLINE's locator — never the Mystifly reference. Null when the
+            // airline has not published one; templates render "Not Available".
+            airline_pnr: (mystiflyBookingResult as any)?.airlinePnr ?? null,
             customer_name: customerName,
             customer_email: customerEmail,
             origin: originAirport,

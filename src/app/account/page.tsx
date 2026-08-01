@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
 import {
@@ -209,7 +210,10 @@ export default function AccountDashboard() {
   const stops = j?.totalStops ?? 0;
 
   const pnr0 = nextTrip?.pnrs?.[0];
-  const airlinePnr = pnr0?.pnrCode || nextTrip?.masterPnr || '—';
+  // pnrCode / masterPnr hold MYSTIFLY's reference. The airline's own locator
+  // lives on airlinePnr; showing the Mystifly one here sent customers to the
+  // airline with a code it cannot find.
+  const airlinePnr = airlinePnrLabel((nextTrip as any)?.airlinePnr ?? (pnr0 as any)?.airlinePnr, '—');
   const airlineName = pnr0?.airlineName || '';
 
   const memberSince = 'May 2024';

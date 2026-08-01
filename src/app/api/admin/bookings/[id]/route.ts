@@ -139,6 +139,16 @@ export const GET = withAdmin(async (_req: NextRequest, { params }: any) => {
     totalDuration,
     stops:              outJourney?.totalStops ?? 0,
     cabinClass:         allSegments[0]?.cabin ?? outJourney?.cabinSummary?.toUpperCase() ?? 'ECONOMY',
+    // ── Identifiers — four distinct things, never substituted ──
+    //   masterBookingReference  FM9IPA4E    FareMind support + internal lookup
+    //   mystiflyBookingReference MF35532626 Mystifly servicing APIs only
+    //   airlinePnr              EMBV6D7     airline check-in / airline support
+    //   eTicketNumbers          per passenger
+    // airlinePnr is null when the airline has not published one — consumers must
+    // render "Not Available" rather than falling back to the Mystifly reference.
+    mystiflyBookingReference: mb.mystiflyMfRef ?? mb.masterPnr ?? null,
+    airlinePnr:         mb.airlinePnr ?? null,
+
     // Prefer the family frozen on the booking; fall back to the segment for
     // bookings taken before fare families were recorded.
     fareClass:          mb.airlineFareFamily ?? allSegments[0]?.fareClass ?? null,

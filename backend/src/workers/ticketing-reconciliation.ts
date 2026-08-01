@@ -22,6 +22,7 @@ import { prisma } from '../lib/db';
 import * as mystifly from '../services/mystifly';
 import { extractEticketNumbers, backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
 import { backfillFareRulesFromTripDetails } from '../lib/fare-rules-backfill';
+import { backfillAirlinePnr } from '../lib/airline-pnr-backfill';
 import { executeQueuedCancellation } from '../services/cancellation-orchestrator';
 import {
   mapProviderBookingStatus,
@@ -231,6 +232,12 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     // and blocking self-service refund/change. Best-effort, never fails the run.
     try { await backfillFareRulesFromTripDetails(record.bookingId, mfRef, tripDetailsResponse); }
     catch (err) { console.warn(`[TicketRecon] fare-rules backfill failed for ${mfRef}:`, (err as Error).message); }
+
+    // Capture the AIRLINE's record locator (ReservationItems[].AirlinePNR).
+    // It is not available at checkout and is what the customer needs for airline
+    // check-in — distinct from the Mystifly reference used for servicing calls.
+    try { await backfillAirlinePnr(record.bookingId, mfRef, tripDetailsResponse); }
+    catch (err) { console.warn(`[TicketRecon] airline-PNR capture failed for ${mfRef}:`, (err as Error).message); }
 
     // If a cancellation was queued while the ticket was still issuing, execute it
     // now (void within the window + refund). Best-effort — never fail reconciliation.

@@ -5,6 +5,7 @@
 
 import { FastifyPluginAsync } from 'fastify';
 import { backfillFareRulesFromTripDetails } from '../lib/fare-rules-backfill';
+import { backfillAirlinePnr } from '../lib/airline-pnr-backfill';
 import { getProvider } from '../services/provider-adapter';
 import { initiateCancellation, getAdminServiceFee as getCancelServiceFee, queueCancellationForIssuance } from '../services/cancellation-orchestrator';
 import { getReissueQuote, initiateReissue } from '../services/reissue-orchestrator';
@@ -520,6 +521,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         try {
           const mfRef = booking.mystiflyMfRef || booking.masterPnr || primaryPnr.providerOrderId;
           if (mfRef) {
+            // Same lazy-correction point for the airline record locator.
+            await backfillAirlinePnr(booking.id, mfRef).catch(() => {});
             const { rules } = await backfillFareRulesFromTripDetails(booking.id, mfRef);
             if (rules) {
               resolvedRefundable = rules.refundable;

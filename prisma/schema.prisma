@@ -695,6 +695,18 @@ model MasterBooking {
   lastProviderSupportOpenedBy  String?    @map("last_provider_support_opened_by")
   providerSupportSessionCount  Int        @default(0) @map("provider_support_session_count")
 
+  // ── Airline record locator ──
+  // The AIRLINE's own PNR (e.g. "EMBV6D7"), from TripDetails
+  // ReservationItems[].AirlinePNR. This is what the customer quotes for airline
+  // check-in, airline support and airline itinerary lookup.
+  //
+  // It is NOT masterPnr / mystiflyMfRef, which hold Mystifly's booking reference
+  // ("MF35532626") and exist for Mystifly's servicing APIs. Those three are
+  // distinct identifiers and must never be substituted for one another —
+  // showing the Mystifly reference under an "Airline PNR" label sends customers
+  // to the airline with a code the airline does not recognise.
+  airlinePnr             String?            @map("airline_pnr")
+
   // ── Fare family ──
   // The airline's own brand, stored exactly as the provider returned it
   // ("ECO VALUE", "DELTA MAIN BASIC", "INDIGO UPFRONT"). This is the label the
@@ -735,6 +747,7 @@ model MasterBooking {
   @@index([mystiflyMfRef])
   @@index([bookingAttemptKey])
   @@index([normalizedFareTier])
+  @@index([airlinePnr])
   @@map("master_bookings")
 }
 
@@ -750,6 +763,11 @@ model BookingPnr {
   status           PnrStatus @default(ACTIVE) @map("status")
   provider         String?
   providerOrderId  String?   @map("provider_order_id")
+  // The airline's own record locator for THIS pnr. pnrCode/providerOrderId hold
+  // the Mystifly reference and drive provider servicing calls; this is the
+  // customer-facing airline locator. Stored per row so multi-airline and
+  // codeshare bookings keep each carrier's locator rather than overwriting.
+  airlinePnr       String?   @map("airline_pnr")
   airlineCode      String?   @map("airline_code")
   airlineName      String?   @map("airline_name")
   displayLabel     String?   @map("display_label")

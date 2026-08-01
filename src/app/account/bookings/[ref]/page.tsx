@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
@@ -327,7 +328,7 @@ export default function BookingDetailPage() {
               <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
                 <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Booking Details</p>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  {[['Reference', b.masterBookingReference], ['Airline PNR', b.masterPnr || '—'], ['Departure', depDate], ['Trip Type', (b.tripType || '').replace(/_/g, ' ')],
+                  {[['Reference', b.masterBookingReference], ['Airline PNR', airlinePnrLabel((b as any).airlinePnr, '—')], ['Departure', depDate], ['Trip Type', (b.tripType || '').replace(/_/g, ' ')],
                     ['Provider', b.primaryProvider], ['Passengers', `${b.passengers?.length || 1}`], ['Payment', (b.paymentStatus || '').replace(/_/g, ' ')], ['Ticketing', (b.ticketingStatus || '').replace(/_/g, ' ')]
                   ].map(([label, val]) => (
                     <div key={label as string} className="flex justify-between py-1.5 border-b border-white/[0.03]">
@@ -362,7 +363,7 @@ export default function BookingDetailPage() {
                       ['Airline', allSegs[0]?.airlineName || b.primaryProvider],
                       ['Class', allSegs[0]?.cabin ? allSegs[0].cabin.charAt(0).toUpperCase() + allSegs[0].cabin.slice(1).toLowerCase() : '—'],
                       ['Status', (b.bookingStatus || '').replace(/_/g, ' ')],
-                      ['Airline PNR', b.masterPnr || '—'],
+                      ['Airline PNR', airlinePnrLabel((b as any).airlinePnr, '—')],
                     ].map(([label, val]) => (
                       <div key={label as string} className="flex justify-between py-1.5 border-b border-white/[0.03]">
                         <span className="text-slate-500">{label}</span>

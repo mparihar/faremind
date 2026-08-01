@@ -364,6 +364,45 @@ async function validate(b) {
           : 'brand is an airline value, not an internal tier');
     }
   }
+
+  // ── IDENTIFIERS: the airline PNR must be the AIRLINE's, never Mystifly's ──
+  if ('airline_pnr' in b) {
+    // TripDetails carries it on ReservationItems[].AirlinePNR.
+    const groups = [
+      ...(Array.isArray(ti?.Itineraries) ? ti.Itineraries.map((i) => i?.ItineraryInfo) : []),
+      ti?.ItineraryInfo,
+    ].filter(Boolean);
+    const providerPnrs = [...new Set(groups
+      .flatMap((g) => (Array.isArray(g?.ReservationItems) ? g.ReservationItems : []))
+      .map((it) => String(it?.AirlinePNR ?? '').trim())
+      .filter(Boolean))];
+
+    const ours = String(b.airline_pnr ?? '').trim();
+    const isMystiflyShaped = /^MF\d+$/i.test(ours);
+
+    check('IDENTIFIERS', 'airline PNR is not the Mystifly ref', !isMystiflyShaped,
+      isMystiflyShaped
+        ? `airline_pnr holds "${ours}", which is Mystifly's booking reference — the airline cannot find this code`
+        : ours ? `airline_pnr="${ours}"` : 'no airline PNR stored');
+
+    if (providerPnrs.length > 0) {
+      check('IDENTIFIERS', 'airline PNR matches provider', providerPnrs.includes(ours),
+        ours
+          ? `ours "${ours}" vs airline ${providerPnrs.map((p) => `"${p}"`).join(', ')}`
+          : `airline published ${providerPnrs.map((p) => `"${p}"`).join(', ')} but nothing is stored`);
+    } else {
+      check('IDENTIFIERS', 'airline PNR matches provider', true,
+        'airline has published no record locator — "Not Available" is correct', true);
+    }
+
+    // The three references must be distinct values.
+    const mfRefStored = String(b.mystifly_mf_ref ?? b.master_pnr ?? '').trim();
+    check('IDENTIFIERS', 'references are distinct',
+      !ours || !mfRefStored || ours !== mfRefStored,
+      ours && ours === mfRefStored
+        ? `airline_pnr and the Mystifly reference are both "${ours}" — one has overwritten the other`
+        : `FareMind=${b.master_booking_reference} · Mystifly=${mfRefStored || '—'} · airline=${ours || 'Not Available'}`);
+  }
 }
 
 (async () => {
@@ -386,6 +425,7 @@ async function validate(b) {
     cols,
     hasSource ? 'booking_source' : null,
     hasFamily ? 'airline_fare_family, normalized_fare_tier, booking_class' : null,
+    (await hasCol('airline_pnr')) ? 'airline_pnr' : null,
   ].filter(Boolean).join(', ');
   let where = '', params = [];
   if (REF) { where = 'WHERE master_booking_reference=$1'; params = [REF]; }

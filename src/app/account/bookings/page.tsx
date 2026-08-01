@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useMemo } from 'react';
+import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import { useSearchParams } from 'next/navigation';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
@@ -195,7 +196,7 @@ export default function MyTripsPage() {
                             </span>
                           )}
                           <span className="text-sm text-slate-300 font-mono font-bold tracking-wider">
-                            Airline PNR: {b.masterPnr || b.masterBookingReference}
+                            Airline PNR: {airlinePnrLabel((b as any).airlinePnr)}
                           </span>
                           <StatusBadge status={b.bookingStatus} />
                           {b.ticketingStatus && b.ticketingStatus !== 'NOT_STARTED' && (

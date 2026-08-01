@@ -107,6 +107,26 @@ async function sendBrevo(to: string, subject: string, html: string, text: string
 // HTML wrapper (FAREMIND branding)
 // ═══════════════════════════════════════════════════════════
 
+/**
+ * The AIRLINE's record locator for display.
+ *
+ * Never falls back to `d.pnr`, which holds the Mystifly booking reference
+ * ("MF35532626"). Quoting that to an airline is useless — the airline has no
+ * record of it — so an unavailable locator must say so plainly. Also rejects
+ * anything shaped like a Mystifly reference, in case one is ever passed in
+ * under the wrong key.
+ */
+function airlinePnrFor(d: Record<string, unknown>): string | null {
+  const v = String(d.airline_pnr ?? '').trim();
+  if (!v || /^MF\d+$/i.test(v)) return null;
+  return v;
+}
+
+/** Same value, rendered for a customer. */
+function airlinePnrLabel(d: Record<string, unknown>): string {
+  return airlinePnrFor(d) ?? 'Not Available';
+}
+
 function wrap(title: string, body: string): string {
   const year = new Date().getFullYear();
   return `<!DOCTYPE html>
@@ -150,7 +170,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
 
   switch (eventType) {
     case 'BOOKING_CONFIRMED': {
-      const airlinePnr = String(d.airline_pnr || d.pnr || '');
+      const airlinePnr = airlinePnrLabel(d);
       const airline = String(d.airline ?? '');
       const confirmedAt = d.confirmed_at ? new Date(String(d.confirmed_at)).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });
       const cardLast4 = String(d.card_last4 ?? '');
@@ -513,7 +533,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
             <div style="margin-top:14px;">
               <div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;">
                 <span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span>
-                <span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${String(d.airline_pnr || d.pnr || '')}</span>
+                <span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${airlinePnrLabel(d)}</span>
               </div>
             </div>
           </div>
@@ -526,7 +546,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
             <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
               <tr><td style="padding:6px 0;color:#64748b;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:18px;color:#1abc9c;">${amount}</td></tr>
               <tr><td style="padding:6px 0;color:#64748b;">FAREMIND Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${ref}</td></tr>
-              <tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-family:'Courier New',monospace;font-weight:700;color:#1abc9c;letter-spacing:1px;">${String(d.airline_pnr || d.pnr || '')}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-family:'Courier New',monospace;font-weight:700;color:#1abc9c;letter-spacing:1px;">${airlinePnrLabel(d)}</td></tr>
               <tr><td style="padding:6px 0;color:#64748b;">Payment Status</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#10b981;">Confirmed</td></tr>
             </table>
           </div>
@@ -544,7 +564,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
           <p style="margin:4px 0 0;font-size:12px;"><a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a></p>
           <p style="margin:4px 0 0;font-size:12px;"><a href="http://www.faremind.ai" style="color:#1abc9c;text-decoration:none;">www.faremind.ai</a></p>
         `),
-        text: `Hello ${name},\n\nWe have successfully received your payment of ${amount} for booking ${ref}.\n\nPayment Details\nAmount Paid: ${amount}\nFAREMIND Booking Reference: ${ref}\nAirline PNR: ${String(d.airline_pnr || d.pnr || '')}\nPayment Status: Confirmed\n\nYour booking remains active and no further action is required at this time.\n\nThank you for choosing FAREMIND.`,
+        text: `Hello ${name},\n\nWe have successfully received your payment of ${amount} for booking ${ref}.\n\nPayment Details\nAmount Paid: ${amount}\nFAREMIND Booking Reference: ${ref}\nAirline PNR: ${airlinePnrLabel(d)}\nPayment Status: Confirmed\n\nYour booking remains active and no further action is required at this time.\n\nThank you for choosing FAREMIND.`,
       };
 
     case 'PAYMENT_FAILED':
@@ -779,7 +799,7 @@ function buildAgentEmail(eventType: string, d: Record<string, unknown>, agentNam
 
   switch (eventType) {
     case 'BOOKING_CONFIRMED': {
-      const airlinePnr = String(d.airline_pnr || d.pnr || '');
+      const airlinePnr = airlinePnrLabel(d);
       const airline = String(d.airline ?? '');
       const fareClass = String(d.fare_class ?? '');
       const confirmedAt = d.confirmed_at ? new Date(String(d.confirmed_at)).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : new Date().toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' });

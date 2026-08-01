@@ -1,5 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
+import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plane, ArrowLeft, Loader2, AlertCircle, User, MapPin, Calendar, ChevronDown, ChevronUp, X, Check, XCircle, Luggage, CreditCard, Ticket, Mail, Download, Printer, Shield, RefreshCw, Clock } from 'lucide-react';
@@ -490,12 +491,11 @@ export default function BookingDetailPage() {
                 {b.masterPnr && b.masterPnr !== b.masterBookingReference && (
                   <div className="h-5 w-px bg-white/10" />
                 )}
-                {b.masterPnr && b.masterPnr !== b.masterBookingReference && (
-                  <div className="flex items-center gap-2">
-                    <span className="text-white text-sm font-black font-mono tracking-wider uppercase">AIRLINE PNR</span>
-                    <span className="text-[#1ABC9C] text-sm font-black font-mono tracking-wider">{b.masterPnr}</span>
-                  </div>
-                )}
+                {/* masterPnr is MYSTIFLY's reference — internal only. */}
+                <div className="flex items-center gap-2">
+                  <span className="text-white text-sm font-black font-mono tracking-wider uppercase">AIRLINE PNR</span>
+                  <span className="text-[#1ABC9C] text-sm font-black font-mono tracking-wider">{airlinePnrLabel((b as any).airlinePnr)}</span>
+                </div>
               </div>
 
               {/* Row 2: Journey Legs */}

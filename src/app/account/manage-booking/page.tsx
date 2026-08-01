@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
+import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import type { KeyboardEvent as RKE, ClipboardEvent as RCE } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -117,7 +118,7 @@ function ReservationCard({ booking }: { booking: any }) {
                 REFERENCE: <span className="text-white font-black">{booking.masterBookingReference}</span>
               </span>
               <span className="text-xs text-slate-500 font-mono tracking-wider">
-                Airline PNR: <span className="text-white font-black">{pnr}</span>
+                Airline PNR: <span className="text-white font-black">{airlinePnrLabel((booking as any).airlinePnr)}</span>
               </span>
               <span className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider border ${status.cls}`}>
                 <span className={`w-1.5 h-1.5 rounded-full ${status.dot}`} />

@@ -1,6 +1,7 @@
 'use client';
 
 import { Fragment, useEffect } from 'react';
+import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import { useState } from 'react';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
@@ -418,7 +419,7 @@ export default function ConfirmPage() {
   };
 
   const handleShare = () => {
-    const text = `FAREMIND Booking · Airline PNR: ${confirmation.pnr} · ${routeLabel}`;
+    const text = `FAREMIND Booking ${confirmation.masterBookingReference} · Airline PNR: ${airlinePnrLabel((confirmation as any).airlinePnr)} · ${routeLabel}`;
     if (navigator.share) navigator.share({ title: 'My FAREMIND Booking', text }).catch(() => {});
     else navigator.clipboard.writeText(text);
   };
@@ -474,16 +475,17 @@ export default function ConfirmPage() {
               <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.25em] mb-1"><span className="text-white">FARE</span><span className="text-[#009CA6]">MIND</span> Booking Reference</p>
               <p className="text-3xl sm:text-4xl font-black text-white tracking-[0.2em] font-mono mb-1">{confirmation.masterBookingReference}</p>
               {/* Airline confirmation codes */}
-              {confirmation.pnrs && confirmation.pnrs.length > 0 && (
-                <div className="mt-3 mb-3 space-y-1.5">
-                  {confirmation.pnrs.map((p, i) => (
-                    <div key={i} className="flex items-center justify-center gap-3">
-                      <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.25em]">{p.displayLabel.replace('Full Trip PNR', 'AIRLINE PNR')}</span>
-                      <span className="font-mono font-black text-[#1ABC9C] tracking-widest text-lg">{p.pnrCode}</span>
-                    </div>
-                  ))}
+              {/* The AIRLINE's own record locator — what the customer quotes at
+                  check-in. `pnrs[].pnrCode` holds MYSTIFLY's reference and must
+                  never appear under this label. */}
+              <div className="mt-3 mb-3 space-y-1.5">
+                <div className="flex items-center justify-center gap-3">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.25em]">AIRLINE PNR</span>
+                  <span className="font-mono font-black text-[#1ABC9C] tracking-widest text-lg">
+                    {airlinePnrLabel((confirmation as any).airlinePnr)}
+                  </span>
                 </div>
-              )}
+              </div>
               {/* bookingId hidden from customer — visible in admin console */}
               <div className="flex items-center justify-center gap-2">
                 <CopyButton text={confirmation.masterBookingReference} className="bg-white/10 hover:bg-white/20 text-white border border-white/10" />
