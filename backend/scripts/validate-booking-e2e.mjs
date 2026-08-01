@@ -298,6 +298,62 @@ async function validate(b) {
   check('SERVICING', 'coupons open', segs.length > 0 && open === segs.length,
     segs.length ? `${open}/${segs.length} coupons OPEN${open === segs.length ? '' : ' — airline says not valid for REFUND/VOID/REISSUE'}` : 'no coupon data',
     true);
+
+  // ── SURFACE: which channel booked this, so each can be certified separately ──
+  const KNOWN_SOURCES = ['CUSTOMER_WEB', 'AGENT_PORTAL', 'AI_ASSISTANT', 'ADMIN_PORTAL'];
+  check('SURFACE', 'attributed',
+    b.booking_source != null && b.booking_source !== 'UNKNOWN',
+    b.booking_source
+      ? `booking_source=${b.booking_source}${KNOWN_SOURCES.includes(b.booking_source) ? '' : ' (unrecognised value)'}`
+      : 'no booking_source — predates the attribution migration, cannot certify per-surface');
+
+  // Agent bookings must carry an agent; customer/AI bookings must not.
+  if (b.booking_source === 'AGENT_PORTAL') {
+    check('SURFACE', 'agent attached', !!b.agent_user_id,
+      b.agent_user_id ? 'agent_user_id present' : 'AGENT_PORTAL booking with no agent_user_id');
+  } else if (b.booking_source && b.booking_source !== 'UNKNOWN') {
+    check('SURFACE', 'no stray agent', !b.agent_user_id,
+      b.agent_user_id ? `${b.booking_source} booking carries agent_user_id ${b.agent_user_id}` : 'no agent attached, as expected', true);
+  }
+
+  // ── FARE FAMILY: the airline's own brand, frozen at book time ──
+  // Compare against the provider's live TripDetails value rather than trusting our copy.
+  if ('airline_fare_family' in b) {
+    const providerFamily = String(
+      ti?.ReservationItems?.[0]?.FareFamily ?? ti?.FareFamily ?? '',
+    ).trim();
+    const ourFamily = String(b.airline_fare_family ?? '').trim();
+
+    if (!ourFamily && !providerFamily) {
+      check('FAREFAMILY', 'recorded', true,
+        'neither we nor the provider carry a fare family for this booking', true);
+    } else if (!ourFamily) {
+      check('FAREFAMILY', 'recorded', false,
+        `provider reports "${providerFamily}" but the booking stored none` +
+        ' — expected on bookings taken before the fare-family deploy');
+    } else {
+      check('FAREFAMILY', 'recorded', true, `stored "${ourFamily}"`);
+      if (providerFamily) {
+        check('FAREFAMILY', 'matches provider',
+          ourFamily.toUpperCase() === providerFamily.toUpperCase(),
+          `ours "${ourFamily}" vs provider "${providerFamily}"`);
+      }
+    }
+
+    const TIERS = ['BASIC', 'STANDARD', 'FLEX', 'PREMIUM', 'BUSINESS', 'FIRST'];
+    if (b.normalized_fare_tier) {
+      check('FAREFAMILY', 'tier valid', TIERS.includes(b.normalized_fare_tier),
+        `normalized_fare_tier=${b.normalized_fare_tier}`);
+    }
+    // The internal tier must never leak into the customer-facing brand.
+    if (ourFamily) {
+      check('FAREFAMILY', 'brand is not the tier',
+        !TIERS.includes(ourFamily.toUpperCase()),
+        TIERS.includes(ourFamily.toUpperCase())
+          ? `airline_fare_family holds the INTERNAL tier "${ourFamily}" — a tier must never be shown as a brand`
+          : 'brand is an airline value, not an internal tier');
+    }
+  }
 }
 
 (async () => {
@@ -307,12 +363,20 @@ async function validate(b) {
                 markup_amount, service_fee_amount, third_party_payable_total,
                 created_by_role, agent_user_id, user_id, created_at`;
 
-  // booking_source is newer than some deployments — select it only where it exists so
-  // the validator still runs against a database that has not taken the migration.
-  const hasSource = (await db.query(
-    `SELECT 1 FROM information_schema.columns WHERE table_name='master_bookings' AND column_name='booking_source'`
+  // booking_source and the fare-family columns are newer than some deployments —
+  // select each only where it exists so the validator still runs against a database
+  // that has not taken those migrations.
+  const hasCol = async (name) => (await db.query(
+    `SELECT 1 FROM information_schema.columns WHERE table_name='master_bookings' AND column_name=$1`, [name]
   )).rowCount > 0;
-  const selectCols = hasSource ? `${cols}, booking_source` : cols;
+
+  const hasSource = await hasCol('booking_source');
+  const hasFamily = await hasCol('airline_fare_family');
+  const selectCols = [
+    cols,
+    hasSource ? 'booking_source' : null,
+    hasFamily ? 'airline_fare_family, normalized_fare_tier, booking_class' : null,
+  ].filter(Boolean).join(', ');
   let where = '', params = [];
   if (REF) { where = 'WHERE master_booking_reference=$1'; params = [REF]; }
   const limit = ALL || REF ? '' : `LIMIT ${RECENT}`;
