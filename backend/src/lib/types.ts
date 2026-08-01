@@ -41,9 +41,20 @@ export interface FlightSegment {
   operatingCarrier?: AirlineInfo;
 }
 
+/**
+ * Fare conditions as the PROVIDER stated them.
+ *
+ * `null` means the provider did not tell us — distinct from `false`, which
+ * means it explicitly said no. Mystifly's v2.2 PenaltiesInfoList is a shared
+ * reference list, and the bulk of offers point at an entirely EMPTY record
+ * (both flags false, fee strings "", currency ""). Reading that as a firm
+ * "non-refundable" printed a restriction the airline never stated — and
+ * TripDetails for those same fares reports refundable=Yes with a real fee.
+ * Render null as "Contact airline", never as a denial.
+ */
 export interface FareRules {
-  refundable: boolean;
-  changeable: boolean;
+  refundable: boolean | null;
+  changeable: boolean | null;
   cancellationFee?: number;
   changeFee?: number;
 }

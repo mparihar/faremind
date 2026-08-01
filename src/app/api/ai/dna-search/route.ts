@@ -151,8 +151,11 @@ export async function POST(req: NextRequest) {
       departureHour: depHour,
       cabinClass: f.cabinClass,
       baggageChecked: f.baggage.checked,
-      refundable: f.fareRules.refundable,
-      changeable: f.fareRules.changeable,
+      // `null` means the provider never stated it. This matcher takes booleans,
+      // so unknown is treated as "not guaranteed" — it must not be presented to
+      // the customer as a denial, which is why the card renders it separately.
+      refundable: f.fareRules.refundable === true,
+      changeable: f.fareRules.changeable === true,
     }, topPrefs);
 
     return {

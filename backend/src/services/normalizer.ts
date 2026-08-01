@@ -346,15 +346,19 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
 
   // ── Fare conditions — use LIVE API penalties data when available ──
   const penalties = itinerary._penalties;
-  let isRefundable: boolean;
-  let isChangeable: boolean;
+  let isRefundable: boolean | null;
+  let isChangeable: boolean | null;
   let changeFee: number | undefined;
   let cancellationFee: number | undefined;
 
   if (penalties) {
-    // v2.2 path: live data from PenaltiesInfoList
-    isRefundable = penalties.refundAllowed === true;
-    isChangeable = penalties.changeAllowed === true;
+    // v2.2 path: live data from PenaltiesInfoList.
+    // The orchestrator passes null when the referenced penalty record is empty
+    // — most offers share one such record, and treating it as a firm "no" put a
+    // restriction on the card that the airline never stated. Carry the null
+    // through so the UI can say "Contact airline" instead of "Non-refundable".
+    isRefundable = penalties.refundAllowed === null ? null : penalties.refundAllowed === true;
+    isChangeable = penalties.changeAllowed === null ? null : penalties.changeAllowed === true;
     // Only surface penalty AMOUNTS when they're in the same currency as the fare.
     // Mystifly returns penalties in the airline's filing currency (often INR) while
     // the fare is in USD, and there is no FX rate in the response — so exposing the
@@ -371,7 +375,7 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
     isRefundable = itinerary.IsRefundable === true ||
       itinerary.isRefundable === true ||
       pricingInfo.IsRefundable === true;
-    isChangeable = false; // Unknown — don't claim it
+    isChangeable = null; // genuinely unknown on v1 — do not claim a restriction
   }
   // ── Tax breakdown — pass through provider tax line items ──
   const rawTaxBreakUp: Array<{ Amount: string; TaxCode: string }> = pricingInfo._taxBreakUp || [];

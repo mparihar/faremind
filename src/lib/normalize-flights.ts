@@ -110,8 +110,10 @@ export function normalizeFlightCard(flight: UnifiedFlight): FareMindFlightCard {
     segment_count: flight.segments.length,
     connection_airports: connections,
     cabin: flight.cabinClass,
-    refundable: flight.fareRules.refundable,
-    changeable: flight.fareRules.changeable,
+    // See FareRules — `null` is "provider did not say". Coerced for this
+    // boolean-only consumer; display paths keep the null.
+    refundable: flight.fareRules.refundable === true,
+    changeable: flight.fareRules.changeable === true,
     is_red_eye: redEye,
     ai_score: flight.valueScore,
     ...heuristics,

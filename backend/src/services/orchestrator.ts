@@ -280,10 +280,35 @@ async function searchMystifly(params: {
           }
           totalTaxAmount = Math.round((totalAmount - totalBaseFare) * 100) / 100;
 
-          // Extract LIVE penalties from API — no guessing
+          // Extract LIVE penalties from API — no guessing.
+          //
+          // PenaltiesInfoList is a SHARED reference list and most of it is not
+          // populated. Measured on DEL-BOM 20 Nov / 5 Dec, 1000 itineraries
+          // resolved to just three records:
+          //
+          //   ref=0  refundAllowed=true   5000 INR / 3000 INR    50 itineraries
+          //   ref=1  refundAllowed=false  fees "" currency ""    900 itineraries
+          //   ref=2  refundAllowed=true   3500 INR / 1000 INR    50 itineraries
+          //
+          // ref=1 is an EMPTY record, not a restrictive one — no fees, no
+          // currency, both flags false. Reading it as a firm "non-refundable"
+          // put "Non-refundable / No changes allowed" on 900 of 1000 cards,
+          // and TripDetails for those same fares reports refundable=Yes with a
+          // real $72.65 charge. So the card was asserting a restriction the
+          // airline never stated.
+          //
+          // Treat that shape as UNKNOWN (null) so it renders "Contact airline".
+          // A record carrying any real data is trusted as stated.
           const penaltyDetail = penalties?.Penaltydetails?.[0];
-          const refundAllowed = penaltyDetail?.RefundAllowed === true;
-          const changeAllowed = penaltyDetail?.ChangeAllowed === true;
+          const hasPenaltyData = !!penaltyDetail && (
+            penaltyDetail.RefundAllowed === true
+            || penaltyDetail.ChangeAllowed === true
+            || String(penaltyDetail.RefundPenaltyAmount ?? '').trim() !== ''
+            || String(penaltyDetail.ChangePenaltyAmount ?? '').trim() !== ''
+            || String(penaltyDetail.Currency ?? '').trim() !== ''
+          );
+          const refundAllowed = hasPenaltyData ? penaltyDetail!.RefundAllowed === true : null;
+          const changeAllowed = hasPenaltyData ? penaltyDetail!.ChangeAllowed === true : null;
           const changePenaltyAmount = parseFloat(penaltyDetail?.ChangePenaltyAmount || '0');
           const refundPenaltyAmount = parseFloat(penaltyDetail?.RefundPenaltyAmount || '0');
           const penaltyCurrency = penaltyDetail?.Currency || '';

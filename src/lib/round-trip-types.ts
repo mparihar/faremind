@@ -82,9 +82,13 @@ export interface RoundTripOption {
   cabinBaggageAllowance?: string;
   seatsRemaining?: number;
 
+  /**
+   * Provider fare conditions. `null` = the provider did not state it — see
+   * FareRules in @/lib/types. Render as "Contact airline", never as a denial.
+   */
   fareRules: {
-    refundable: boolean;
-    changeable: boolean;
+    refundable: boolean | null;
+    changeable: boolean | null;
     cancellationFee?: number;
     changeFee?: number;
   };
