@@ -19,7 +19,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { computeAiScores, type FareInput, type FlightContext } from '../services/ai-fare-scorer';
 import { cacheGet, cacheSet, fareOptionsKey } from '../services/cache';
-import { displayFareFamily, cabinBucket, normalizeFareTier, parseBaggageAllowance } from '../services/fare-family';
+import { displayFareFamily, cabinBucket, normalizeFareTier, parseBaggageAllowance, disambiguateFareLabels } from '../services/fare-family';
 import type { NormalizedFareTier } from '../lib/types';
 
 type AiBadge = 'cheapest' | 'best_value' | 'most_flexible' | 'premium_upgrade' | 'ai_pick' | 'best_comfort';
@@ -102,6 +102,15 @@ function buildBenefits(o: IncomingOffer): NormalizedBenefits {
  * explanations — only the labels and the inputs are now real.
  */
 function buildFareOptions(offers: IncomingOffer[], ctx: FlightContext, travelers: number, currency: string) {
+  // Airline-named fares keep their brand verbatim. Brandless ones (Mystifly's
+  // v1 "lowest fare" search returns no FareFamily) get a controlled generic
+  // label, disambiguated by RBD so two of them are never indistinguishable.
+  const labels = disambiguateFareLabels(offers, (o) => ({
+    fareFamily: o.airlineFareFamily,
+    cabinClass: o.cabinClass,
+    bookingClass: o.bookingClass,
+  }));
+
   const scorerInputs: FareInput[] = offers.map((o, i) => {
     const b = buildBenefits(o);
     return {
@@ -118,7 +127,7 @@ function buildFareOptions(offers: IncomingOffer[], ctx: FlightContext, travelers
       // penalising a fare for data the provider withheld.
       seatSelection: b.seatSelection ?? 'fee',
       cabin: cabinBucket(o.cabinClass),
-      name: displayFareFamily(o.airlineFareFamily, o.cabinClass),
+      name: labels[i],
     };
   });
 
@@ -137,8 +146,9 @@ function buildFareOptions(offers: IncomingOffer[], ctx: FlightContext, travelers
       // one offerId and so all booked the identical fare.
       offerId: o.providerOfferId || o.offerId || '',
       cabin: cabinBucket(o.cabinClass),
-      // Airline branding, verbatim. This is what the customer sees everywhere.
-      name: displayFareFamily(o.airlineFareFamily, o.cabinClass),
+      // Airline branding, verbatim when the carrier filed one; otherwise a
+      // controlled generic label — never an invented brand.
+      name: labels[i],
       airlineFareFamily: o.airlineFareFamily || null,
       // Internal only — for filters, analytics and upgrade logic. Not a label.
       normalizedFareTier: o.normalizedFareTier

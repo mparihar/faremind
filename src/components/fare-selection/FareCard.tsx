@@ -93,8 +93,14 @@ export default function FareCard({
     ? `${fare.baggage.carryOnPieces}× carry-on${fare.baggage.carryOnWeightKg ? ` (${fare.baggage.carryOnWeightKg} kg)` : ''}`
     : null;
 
+  // "Unknown" and "none" are different claims. The provider's v1 lowest-fare
+  // search returns no baggage data at all; saying "No checked bag" there states
+  // a restriction the airline never made.
+  const checkedKnown = b ? (b.checkedAllowance !== null || b.checkedPieces !== null) : true;
   const checkedPieces = b?.checkedPieces ?? fare.baggage.checked;
-  const checkedLabel = b?.checkedAllowance
+  const checkedLabel = !checkedKnown
+    ? 'Checked baggage: not provided by airline'
+    : b?.checkedAllowance
     ? `Checked baggage: ${b.checkedAllowance}`
     : checkedPieces > 0
     ? `${checkedPieces}× checked bag${checkedPieces > 1 ? 's' : ''}${fare.baggage.checkedWeightKg ? ` · ${fare.baggage.checkedWeightKg} kg` : ''}`
@@ -103,7 +109,7 @@ export default function FareCard({
   const features: Feature[] = [
     ...(carryOnLabel ? [{ status: 'yes' as FeatureStatus, label: carryOnLabel }] : []),
     {
-      status: (checkedPieces > 0 ? 'yes' : 'no') as FeatureStatus,
+      status: (!checkedKnown ? 'partial' : checkedPieces > 0 ? 'yes' : 'no') as FeatureStatus,
       label: checkedLabel,
     },
     fare.policy.refundable === null || fare.policy.refundable === undefined

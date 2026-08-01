@@ -22,6 +22,7 @@ import {
   cabinBucket,
   itineraryKey,
   parseBaggageAllowance,
+  disambiguateFareLabels,
   type NormalizedFareTier,
 } from './fare-family';
 import { scoreComfort } from '../ranking/core/scoreComfort';
@@ -166,10 +167,12 @@ test('premium cabins ignore the brand entirely — comfort is cabin-driven', () 
 test('display never invents a brand', () => {
   assert.equal(displayFareFamily('ECO VALUE', 'economy'), 'ECO VALUE');
   assert.equal(displayFareFamily('  Comfort+  ', 'economy'), 'Comfort+');
-  assert.equal(displayFareFamily('', 'economy'), 'Economy');
-  assert.equal(displayFareFamily(null, 'business'), 'Business');
-  assert.equal(displayFareFamily(undefined, 'premium_economy'), 'Premium Economy');
-  assert.equal(displayFareFamily('', 'first'), 'First');
+  // No brand filed → a controlled generic label, never the bare cabin name
+  // (which would read as though the airline calls the fare that).
+  assert.equal(displayFareFamily('', 'economy'), 'Economy Fare');
+  assert.equal(displayFareFamily(null, 'business'), 'Business Fare');
+  assert.equal(displayFareFamily(undefined, 'premium_economy'), 'Premium Economy Fare');
+  assert.equal(displayFareFamily('', 'first'), 'First Class Fare');
 });
 
 test('cabin bucket keeps the four industry tabs', () => {
@@ -223,4 +226,57 @@ test('baggage weight is preserved for display, not just bucketed', () => {
   }
   assert.equal(parseBaggageAllowance('15Kg').kg, 15);
   assert.equal(parseBaggageAllowance('32Kg').kg, 32);
+});
+
+// ─── Brandless fares (Mystifly v1 "lowest fare" returns no FareFamily) ────────
+
+test('brandless fares get a controlled generic label, never a bare cabin name', () => {
+  // "Economy" alone reads as though the airline calls the fare that.
+  assert.equal(displayFareFamily('', 'economy'), 'Economy Fare');
+  assert.equal(displayFareFamily(null, 'premium_economy'), 'Premium Economy Fare');
+  assert.equal(displayFareFamily(undefined, 'business'), 'Business Fare');
+  assert.equal(displayFareFamily('', 'first'), 'First Class Fare');
+});
+
+test('two brandless fares in a cabin are distinguishable, named ones untouched', () => {
+  const read = (o: any) => ({ fareFamily: o.f, cabinClass: o.c, bookingClass: o.r });
+
+  // Airline-named fares keep their brand verbatim, even when several exist.
+  assert.deepEqual(
+    disambiguateFareLabels(
+      [{ f: 'ECO VALUE', c: 'economy', r: 'T' }, { f: 'ECO CLASSIC', c: 'economy', r: 'T' }],
+      read,
+    ),
+    ['ECO VALUE', 'ECO CLASSIC'],
+  );
+
+  // Two brandless economy fares → disambiguated by RBD, which is real data.
+  assert.deepEqual(
+    disambiguateFareLabels([{ f: '', c: 'economy', r: 'V' }, { f: '', c: 'economy', r: 'M' }], read),
+    ['Economy Fare – RBD V', 'Economy Fare – RBD M'],
+  );
+
+  // No RBD either → numbered, the last resort.
+  assert.deepEqual(
+    disambiguateFareLabels([{ f: '', c: 'economy', r: '' }, { f: '', c: 'economy', r: null }], read),
+    ['Economy Fare 1', 'Economy Fare 2'],
+  );
+
+  // A single brandless fare needs no suffix.
+  assert.deepEqual(disambiguateFareLabels([{ f: '', c: 'economy', r: 'V' }], read), ['Economy Fare']);
+
+  // Mixed: only the brandless ones are disambiguated.
+  assert.deepEqual(
+    disambiguateFareLabels(
+      [{ f: 'FLEX', c: 'economy', r: 'Y' }, { f: '', c: 'economy', r: 'V' }, { f: '', c: 'economy', r: 'M' }],
+      read,
+    ),
+    ['FLEX', 'Economy Fare – RBD V', 'Economy Fare – RBD M'],
+  );
+
+  // Different cabins do not collide with each other.
+  assert.deepEqual(
+    disambiguateFareLabels([{ f: '', c: 'economy', r: '' }, { f: '', c: 'business', r: '' }], read),
+    ['Economy Fare', 'Business Fare'],
+  );
 });

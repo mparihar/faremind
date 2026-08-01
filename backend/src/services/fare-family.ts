@@ -99,11 +99,56 @@ export function normalizeFareTier(input: FareTierInput): NormalizedFareTier {
 export function displayFareFamily(fareFamily?: string | null, cabinClass?: string | null): string {
   const name = (fareFamily || '').trim();
   if (name) return name;
+  // No brand filed. Use a controlled, obviously-generic label — never an
+  // invented brand, and never the bare cabin name, which reads as though the
+  // airline calls the fare that. Mystifly's v1 "lowest fare" search returns no
+  // FareFamily at all, so this path is common.
   const c = (cabinClass || 'economy').toLowerCase().replace(/[\s-]+/g, '_');
-  if (c.includes('first')) return 'First';
-  if (c.includes('business')) return 'Business';
-  if (c.includes('premium')) return 'Premium Economy';
-  return 'Economy';
+  if (c.includes('first')) return 'First Class Fare';
+  if (c.includes('business')) return 'Business Fare';
+  if (c.includes('premium')) return 'Premium Economy Fare';
+  return 'Economy Fare';
+}
+
+/**
+ * Make unnamed fares in the same cabin distinguishable.
+ *
+ * Two brandless offers would otherwise render as two identical "Economy Fare"
+ * cards. Disambiguate with provider-backed data first — the booking class is
+ * real and meaningful — and fall back to an index only when nothing else
+ * separates them.
+ *
+ * Named fares are returned untouched: the airline's brand is always the label.
+ */
+export function disambiguateFareLabels<T>(
+  offers: T[],
+  read: (o: T) => { fareFamily?: string | null; cabinClass?: string | null; bookingClass?: string | null },
+): string[] {
+  const base = offers.map((o) => {
+    const { fareFamily, cabinClass } = read(o);
+    return displayFareFamily(fareFamily, cabinClass);
+  });
+
+  // Only labels shared by more than one brandless offer need disambiguating.
+  const counts = new Map<string, number>();
+  base.forEach((label, i) => {
+    if ((read(offers[i]).fareFamily || '').trim()) return; // airline-named — leave alone
+    counts.set(label, (counts.get(label) ?? 0) + 1);
+  });
+
+  const usedSuffix = new Map<string, number>();
+  return base.map((label, i) => {
+    const { fareFamily, bookingClass } = read(offers[i]);
+    if ((fareFamily || '').trim()) return label;
+    if ((counts.get(label) ?? 0) < 2) return label;
+
+    const rbd = (bookingClass || '').trim();
+    if (rbd) return `${label} – RBD ${rbd}`;
+
+    const n = (usedSuffix.get(label) ?? 0) + 1;
+    usedSuffix.set(label, n);
+    return `${label} ${n}`;
+  });
 }
 
 /** Cabin bucket for the fare panel's tabs. */
