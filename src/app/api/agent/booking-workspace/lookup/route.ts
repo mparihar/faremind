@@ -35,10 +35,25 @@ export async function GET(request: NextRequest) {
       include: includeRelations,
     });
 
-    // 2. By PNR code
+    // 2. By AIRLINE PNR — the code an agent reads back from the customer's
+    //    boarding pass or airline confirmation. Checked before the provider ref.
+    if (!booking) {
+      booking = await prisma.masterBooking.findFirst({
+        where: { airlinePnr: { equals: q, mode: 'insensitive' } },
+        include: includeRelations,
+      });
+    }
+
+    // 3. By provider reference (Mystifly) or a per-PNR airline locator, for
+    //    multi-airline trips and for support pasting from provider tooling.
     if (!booking) {
       const pnr = await prisma.bookingPnr.findFirst({
-        where: { pnrCode: { equals: q, mode: 'insensitive' } },
+        where: {
+          OR: [
+            { airlinePnr: { equals: q, mode: 'insensitive' } },
+            { pnrCode: { equals: q, mode: 'insensitive' } },
+          ],
+        },
         select: { bookingId: true },
       });
       if (pnr) {

@@ -28,7 +28,11 @@ export const GET = withAgentServicing(async (req: NextRequest, { agent }) => {
       {
         OR: [
           { masterBookingReference: { contains: search, mode: 'insensitive' } },
+          // The AIRLINE's locator — what a customer quotes on the phone.
+          { airlinePnr: { contains: search, mode: 'insensitive' } },
+          // Mystifly's reference, for agents pasting from provider tooling.
           { masterPnr: { contains: search, mode: 'insensitive' } },
+          { mystiflyMfRef: { contains: search, mode: 'insensitive' } },
           { customerName: { contains: search, mode: 'insensitive' } },
           { customerEmail: { contains: search, mode: 'insensitive' } },
         ],

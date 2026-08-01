@@ -34,7 +34,12 @@ export const GET = withAdmin(async (req: NextRequest) => {
     if (search) {
       // Resolve any matching PNR codes first
       const matchingPnrs = await prisma.bookingPnr.findMany({
-        where: { pnrCode: { contains: search, mode: 'insensitive' } },
+        where: {
+          OR: [
+            { airlinePnr: { contains: search, mode: 'insensitive' } },
+            { pnrCode: { contains: search, mode: 'insensitive' } },
+          ],
+        },
         select: { bookingId: true },
       });
       const refBookingIds = [...new Set(matchingPnrs.map(r => r.bookingId))];
@@ -56,8 +61,12 @@ export const GET = withAdmin(async (req: NextRequest) => {
       const allMatchedIds = [...new Set([...refBookingIds, ...paymentBookingIds, ...providerOrderBookingIds])];
 
       where.OR = [
-        { masterPnr: { contains: search, mode: 'insensitive' } },
         { masterBookingReference: { contains: search, mode: 'insensitive' } },
+        // The AIRLINE's locator — the code a customer reads out to support.
+        { airlinePnr: { contains: search, mode: 'insensitive' } },
+        // Mystifly's reference, for support pasting from provider tooling.
+        { masterPnr: { contains: search, mode: 'insensitive' } },
+        { mystiflyMfRef: { contains: search, mode: 'insensitive' } },
         { customerEmail: { contains: search, mode: 'insensitive' } },
         { customerName: { contains: search, mode: 'insensitive' } },
         { originAirport: { contains: search.toUpperCase() } },
