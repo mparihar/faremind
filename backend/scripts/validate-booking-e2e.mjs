@@ -231,9 +231,19 @@ async function validate(b) {
   let matched = 0;
   const mismatches = [];
   // We store the flight number carrier-prefixed ("6E6328"); the provider returns it bare
-  // ("6328"). Strip any leading carrier code — IATA codes are alphanumeric (6E, 9W), so
-  // matching only [A-Z]{2} silently fails for numeric-leading carriers like IndiGo.
-  const bareFlight = (v) => String(v ?? '').replace(/^[0-9A-Z]{2}(?=\d)/i, '').replace(/^0+/, '');
+  // ("6328"). Strip the carrier code only when there actually is one.
+  //
+  // An IATA carrier code always contains at least one letter (6E, 9W, AI, U2); a bare
+  // flight number never does. Matching `^[0-9A-Z]{2}(?=\d)` alone therefore ate the
+  // first two DIGITS of a bare number — "6328" became "28", "809" became "9" — so every
+  // segment mismatched and the failure looked like a data problem. Require a letter in
+  // the prefix before stripping it.
+  const bareFlight = (v) => {
+    const s = String(v ?? '').trim().toUpperCase();
+    const m = s.match(/^([0-9A-Z]{2})(\d+)$/);
+    if (m && /[A-Z]/.test(m[1])) return m[2].replace(/^0+/, '');
+    return s.replace(/^0+/, '');
+  };
   for (const seg of ps) {
     const hit = ourSegs.find((o) => o.o === seg.origin && o.d === seg.destination
       && bareFlight(o.f) === bareFlight(seg.flightNumber));
