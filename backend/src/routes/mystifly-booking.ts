@@ -674,14 +674,27 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       try {
         const reval = await mystifly.revalidateFlight(fareSourceCode);
         const rd = reval?.Data || {};
-        const rf = rd?.PricedItineraries?.[0]?.FareSourceCode
+        // Revalidate puts the new FSC on the PLURAL PricedItineraries[0], nested
+        // under AirItineraryPricingInfo:
+        //   Data.PricedItineraries[0].AirItineraryPricingInfo.FareSourceCode
+        // The lookup below previously checked AirItineraryPricingInfo only under
+        // the SINGULAR `PricedItinerary`, so none of its four paths ever matched.
+        // Revalidation ran, succeeded, and its result was silently dropped — the
+        // raw search FSC went to SeatMap/Flight and came back ERBUK018 /
+        // ERSEM014 "API version mismatch", which read as "this airline has no
+        // seat map" when it actually meant "you sent the wrong code".
+        const rf = rd?.PricedItineraries?.[0]?.AirItineraryPricingInfo?.FareSourceCode
+          || rd?.PricedItineraries?.[0]?.FareSourceCode
           || rd?.PricedItinerary?.AirItineraryPricingInfo?.FareSourceCode
           || rd?.PricedItinerary?.FareSourceCode
           || rd?.FareSourceCode;
         if (rf) seatFsc = rf;
-        console.log(`[SEATMAP][DEBUG] pre-revalidate ok=${reval?.Success !== false} fscChanged=${seatFsc !== fareSourceCode}`);
+        console.log(`[SEATMAP] pre-revalidate ok=${reval?.Success !== false} fscResolved=${!!rf} fscChanged=${seatFsc !== fareSourceCode}`);
+        if (!rf) {
+          console.warn('[SEATMAP] revalidate returned no FareSourceCode — falling back to the search FSC, which SeatMap will reject');
+        }
       } catch (e) {
-        console.warn('[SEATMAP][DEBUG] pre-revalidate failed:', (e as Error).message);
+        console.warn('[SEATMAP] pre-revalidate failed:', (e as Error).message);
       }
 
       const result = await mystifly.getSeatMap(seatFsc);
