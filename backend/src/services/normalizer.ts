@@ -499,7 +499,26 @@ export function mergeAndRankFlights(flights: UnifiedFlight[]): UnifiedFlight[] {
     // Filter out invalid offers (no price, no duration, no segments)
     if (f.totalPrice <= 0 || f.totalDuration <= 0 || f.segments.length === 0) continue;
 
-    const key = `${f.airline.code}-${f.segments[0]?.departure.time}-${f.segments[0]?.departure.airport}-${f.totalPrice}-${f.fareRules.refundable ? 'R' : 'NR'}`;
+    // Identity is the WHOLE journey, not just its first segment.
+    //
+    // This key used to read `segments[0]` only, which for a round trip is the
+    // first outbound segment — the return leg was absent entirely. Any two
+    // trips sharing an outbound and a price collapsed into one however
+    // different their returns were, and the customer lost the ability to pick
+    // a return time. Measured on DEL-BOM 23 Nov / 11 Dec: one key merged eight
+    // distinct trips (same outbound 6E449, eight different returns, all
+    // $88.88) into a single card, and the key preserved only 18% of the
+    // genuinely distinct trips the provider sent.
+    //
+    // `itineraryKey` covers every segment (carrier, flight number, both
+    // airports, departure time). Price and refundability stay in the key so
+    // the same metal at different fare families remains distinct — that set is
+    // what the fare panel shows.
+    //
+    // Adding a segment to the key can only ever SPLIT a bucket, never merge
+    // two that were previously separate, so this strictly recovers offers that
+    // were being dropped. See backend/scripts/dedup-key-proposal.ts.
+    const key = `${itineraryKey(f.segments)}-${f.totalPrice}-${f.fareRules.refundable ? 'R' : 'NR'}`;
 
     if (seen.has(key)) {
       // Duplicate found — check if this flight has richer data and should replace

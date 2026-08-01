@@ -101,7 +101,8 @@ async function run(cap: string) {
   const invalid = flights.filter((f) => !(f.totalPrice > 0) || !(f.totalDuration > 0) || f.segments.length === 0).length;
   const merged = mergeAndRankFlights(flights);
 
-  // Reproduce the dedup key so we can see WHAT is collapsing.
+  // The PRE-FIX key, kept for diagnostics: it shows what the outbound-only key
+  // used to merge, i.e. what the current full-itinerary key now recovers.
   const keyOf = (f: any) =>
     `${f.airline.code}-${f.segments[0]?.departure.time}-${f.segments[0]?.departure.airport}-${f.totalPrice}-${f.fareRules.refundable ? 'R' : 'NR'}`;
   const buckets = new Map<string, any[]>();
@@ -113,7 +114,9 @@ async function run(cap: string) {
   }
   const collapsed = [...buckets.values()].filter((v) => v.length > 1);
 
-  return { cap, raw: raw.length, groups: (d.GroupedItems || []).length, normFailed, invalid, flights: flights.length, merged: merged.length, buckets, collapsed };
+  const preFixMerged = buckets.size;
+
+  return { cap, raw: raw.length, groups: (d.GroupedItems || []).length, normFailed, invalid, flights: flights.length, merged: merged.length, preFixMerged, buckets, collapsed };
 }
 
 async function main() {
@@ -129,15 +132,16 @@ async function main() {
     console.log(`  3. normalize failures             ${String(r.normFailed).padStart(5)}`);
     console.log(`  4. dropped as invalid             ${String(r.invalid).padStart(5)}   (no price / no duration / no segments)`);
     console.log(`  5. AFTER dedup (what the UI gets) ${String(r.merged).padStart(5)}   <-- mergeAndRankFlights()`);
-    console.log(`     collapsed by dedup             ${String(r.flights - r.invalid - r.merged).padStart(5)}   across ${r.collapsed.length} keys`);
+    console.log(`     collapsed by dedup             ${String(r.flights - r.invalid - r.merged).padStart(5)}`);
+    console.log(`     would have collapsed pre-fix   ${String(r.flights - r.invalid - r.preFixMerged).padStart(5)}   across ${r.collapsed.length} outbound-only keys`);
 
-    // Show the biggest collapses and what actually differed inside them.
+    // Show what the OLD key merged — these are the trips the fix recovers.
     const worst = [...r.collapsed].sort((a, b) => b.length - a.length).slice(0, 3);
     for (const group of worst) {
       const f0 = group[0];
       const fams = [...new Set(group.map((x: any) => x.airlineFareFamily || '(none)'))];
       const fscs = new Set(group.map((x: any) => x.providerOfferId));
-      console.log(`\n     ── ${group.length} fares collapsed into 1 ──`);
+      console.log(`\n     ── ${group.length} distinct trips the OLD key merged into 1 (now preserved) ──`);
       console.log(`        ${f0.airline.code} dep ${f0.segments[0]?.departure.time} $${f0.totalPrice} refundable=${f0.fareRules.refundable}`);
       console.log(`        distinct fare families : ${fams.join(', ')}`);
       console.log(`        distinct FareSourceCodes: ${fscs.size}`);
