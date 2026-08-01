@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, use } from 'react';
+import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import { apiUrl } from '@/lib/api-client';
@@ -865,12 +866,10 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                               <span className="text-slate-400">FareMind Reference</span>
                               <span className="text-white font-bold font-mono">{cancelQuote.bookingReference}</span>
                             </div>
-                            {cancelQuote.airlinePnr && (
-                              <div className="flex justify-between">
-                                <span className="text-slate-400">Airline PNR</span>
-                                <span className="text-white font-bold font-mono">{cancelQuote.airlinePnr}</span>
-                              </div>
-                            )}
+                            <div className="flex justify-between">
+                              <span className="text-slate-400">Airline PNR</span>
+                              <span className="text-white font-bold font-mono">{airlinePnrLabel(cancelQuote.airlinePnr)}</span>
+                            </div>
                             {cancelQuote.route && (
                               <div className="flex justify-between">
                                 <span className="text-slate-400">Route</span>

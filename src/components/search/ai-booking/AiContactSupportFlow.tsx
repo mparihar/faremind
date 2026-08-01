@@ -634,7 +634,7 @@ export default function AiContactSupportFlow({ onExit }: Props) {
                 ['Email', email],
                 ['Phone', phone],
                 ...(fbr ? [['FareMind Booking Ref', fbr]] : []),
-                ...(pnr ? [['Airline PNR', pnr]] : []),
+                ...(pnr ? [['Booking Reference', pnr]] : []),
               ].map(([label, value]) => (
                 <div key={label as string} className="flex justify-between text-[11px]">
                   <span className="text-slate-400 font-medium">{label}</span>

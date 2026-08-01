@@ -1,6 +1,7 @@
 'use client';
 
 import { motion } from 'framer-motion';
+import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import {
   TrendingDown,
   TrendingUp,
@@ -72,7 +73,7 @@ export default function BookingCard({ booking, index }: BookingCardProps) {
             )}>
               {booking.status}
             </span>
-            <span className="text-xs text-slate-500 font-mono">Airline PNR: {booking.pnr}</span>
+            <span className="text-xs text-slate-500 font-mono">Airline PNR: {airlinePnrLabel((booking as any).airlinePnr)}</span>
           </div>
           <div className="flex items-center gap-2">
             {booking.priceTracking ? (

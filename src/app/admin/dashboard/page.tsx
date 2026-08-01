@@ -184,7 +184,7 @@ export default function AdminDashboardPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/50">
-                {['AIRLINE PNR', 'Passenger', 'Route', 'Departure', 'Amount', 'Status'].map(h => (
+                {['PROVIDER REF', 'Passenger', 'Route', 'Departure', 'Amount', 'Status'].map(h => (
                   <th key={h} className="px-6 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>

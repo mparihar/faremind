@@ -122,7 +122,7 @@ function PnrPopover({ pnrs, onClick }: { pnrs: BookingPnrRow[]; onClick: (pnr: s
         onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-700/50 text-slate-300 text-xs font-bold hover:bg-slate-600/50 transition-all"
       >
-        {pnrs.length} AIRLINE PNRs
+        {pnrs.length} PROVIDER REFs
         <ChevronDown size={10} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
@@ -169,7 +169,7 @@ const DATA_COLUMNS = [
   }),
   col.display({
     id: 'pnrDisplay',
-    header: 'AIRLINE PNR(s)',
+    header: 'PROVIDER REF(s)',
     cell: ({ row, table }) => {
       const pnrs = row.original.pnrs ?? [];
       if (pnrs.length === 0) return <span className="text-slate-600 text-sm">—</span>;
@@ -290,7 +290,7 @@ export default function AdminBookingsPage() {
   useEffect(() => { load(); }, [load]);
 
   async function handleDelete(id: string, ref: string | null) {
-    const msg = `You are about to delete booking ${ref ?? id} and all associated passengers, AIRLINE PNRs, seats, meals, add-ons, payment records, and logs from FAREMIND.\n\nThis does not cancel the provider/airline booking unless cancellation flow is executed.\n\nContinue?`;
+    const msg = `You are about to delete booking ${ref ?? id} and all associated passengers, PROVIDER REFs, seats, meals, add-ons, payment records, and logs from FAREMIND.\n\nThis does not cancel the provider/airline booking unless cancellation flow is executed.\n\nContinue?`;
     if (!window.confirm(msg)) return;
     setDeleting(id);
     const res = await adminFetch(`/api/admin/bookings/${id}`, { method: 'DELETE' });
@@ -372,7 +372,7 @@ export default function AdminBookingsPage() {
           <input
             value={search}
             onChange={e => { setSearch(e.target.value); setPage(1); }}
-            placeholder="Search FBR, AIRLINE PNR, email, name, airport, Stripe ID, provider order…"
+            placeholder="Search FBR, PROVIDER REF, email, name, airport, Stripe ID, provider order…"
             className="w-full pl-9 pr-4 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-white placeholder-slate-500 text-sm focus:outline-none focus:border-[#1ABC9C] transition-all"
           />
         </div>

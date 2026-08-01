@@ -21,7 +21,7 @@ const TABS: { id: Tab; label: string; icon: React.ElementType }[] = [
   { id: 'summary',    label: 'Booking Summary',    icon: Hash },
   { id: 'journey',    label: 'Journey Details',    icon: Plane },
   { id: 'passengers', label: 'Passengers',         icon: User },
-  { id: 'tickets',    label: 'Tickets / AIRLINE PNRs',     icon: Ticket },
+  { id: 'tickets',    label: 'Tickets / PROVIDER REFs',     icon: Ticket },
   { id: 'seats',      label: 'Seats',              icon: Armchair },
   { id: 'meals',      label: 'Meals',              icon: UtensilsCrossed },
   { id: 'addons',     label: 'Add-ons',            icon: Package },
@@ -493,7 +493,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   </p>
                   <ul className="text-slate-400 text-xs space-y-0.5 ml-4 list-disc">
                     <li>{booking.passengers?.length ?? 0} passenger(s)</li>
-                    <li>{pnrs.length} AIRLINE PNR(s)</li>
+                    <li>{pnrs.length} PROVIDER REF(s)</li>
                     <li>{tickets.length} ticket(s)</li>
                     <li>{seats.length} seat(s), {meals.length} meal(s), {otherAddons.length} add-on(s)</li>
                     <li>{booking.payments?.length ?? 0} payment record(s)</li>
@@ -645,7 +645,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       {/* ── PNR selector bar (only when multiple PNRs exist) ── */}
       {pnrs.length > 1 && (
         <div className="flex items-center gap-2 mb-5 p-3 bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-x-auto scrollbar-hide">
-          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0 mr-1">Filter AIRLINE PNR</span>
+          <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider shrink-0 mr-1">Filter PROVIDER REF</span>
           <button
             onClick={() => setSelectedPnrId(null)}
             className={`px-3 py-1.5 rounded-xl text-xs font-bold transition-all shrink-0 border ${
@@ -729,7 +729,10 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Master AIRLINE PNR</label>
+                    {/* Two different identifiers. masterPnr is MYSTIFLY's booking
+                        reference and drives every servicing call; the airline's own
+                        locator is what a customer quotes at check-in. */}
+                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Master PROVIDER REF (Mystifly)</label>
                     <input className={inp} value={editBookingData.masterPnr ?? ''} onChange={e => setEditBookingData(d => ({ ...d, masterPnr: e.target.value }))} placeholder="e.g. ABC123" />
                   </div>
                   <div>
@@ -817,7 +820,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 <div className="flex items-center justify-between mb-4">
                   <div className="flex items-center gap-2 flex-wrap">
                     <h3 className="text-xs font-black text-slate-400 uppercase tracking-widest">
-                      Airline PNRs ({booking.pnrs?.length ?? 0})
+                      Provider Refs ({booking.pnrs?.length ?? 0})
                     </h3>
                     {booking.pnrStrategy && <Badge value={booking.pnrStrategy} />}
                     {booking.connectionProtStatus && <Badge value={booking.connectionProtStatus} />}
@@ -825,7 +828,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                       <span className="px-2 py-0.5 rounded-full bg-amber-400/15 text-amber-400 text-[10px] font-bold border border-amber-400/20">Split Ticket</span>
                     )}
                   </div>
-                  <span className="text-[10px] text-slate-500 italic">Select an AIRLINE PNR to scope all tabs</span>
+                  <span className="text-[10px] text-slate-500 italic">Select an PROVIDER REF to scope all tabs</span>
                 </div>
 
                 {booking.riskLabel && (
@@ -868,7 +871,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                         <div className="space-y-1">
                           <div className="flex items-center gap-1.5">
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_COLORS[pnr.pnrType] ?? 'bg-slate-400/15 text-slate-400'}`}>
-                              {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'AIRLINE PNR' : pnr.pnrType.replace(/_/g, ' ')}
+                              {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'PROVIDER REF' : pnr.pnrType.replace(/_/g, ' ')}
                             </span>
                             <span className="text-slate-500 text-[10px] font-semibold">{dirIcon}</span>
                           </div>
@@ -887,7 +890,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                         {/* Active indicator */}
                         {isActive && (
                           <p className="mt-2.5 text-[#1ABC9C] text-[10px] font-bold uppercase tracking-wider">
-                            ● Tabs scoped to this AIRLINE PNR
+                            ● Tabs scoped to this PROVIDER REF
                           </p>
                         )}
                       </button>
@@ -910,7 +913,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         return (
           <div className="space-y-8">
             {visibleJourneys.length === 0 ? (
-              <p className="text-slate-500 text-sm">No journey data for the selected AIRLINE PNR filter.</p>
+              <p className="text-slate-500 text-sm">No journey data for the selected PROVIDER REF filter.</p>
             ) : (
               visibleJourneys.map((journey: any) => {
                 const journeyPnrs = pnrs.filter((p: any) =>
@@ -920,7 +923,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <div key={journey.id} className="space-y-2">
                     {journeyPnrs.length > 0 && (
                       <div className="flex items-center gap-2 px-1">
-                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">AIRLINE PNR</span>
+                        <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">PROVIDER REF</span>
                         {journeyPnrs.map((p: any) => (
                           <span
                             key={p.id}
@@ -1081,7 +1084,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       )}
 
       {/* ══════════════════════════════════════════════════════════
-          TAB: TICKETS / AIRLINE PNRs
+          TAB: TICKETS / PROVIDER REFs
           ══════════════════════════════════════════════════════════ */}
       {tab === 'tickets' && (() => {
         const visibleTickets = selectedPnr
@@ -1102,7 +1105,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-slate-700/50">
-                  {['Passenger', 'Ticket Number', 'E-Ticket', 'Airline', 'AIRLINE PNR Ref', 'Status'].map(h => (
+                  {['Passenger', 'Ticket Number', 'E-Ticket', 'Airline', 'PROVIDER REF Ref', 'Status'].map(h => (
                     <th key={h} className="pb-2 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider pr-4">{h}</th>
                   ))}
                 </tr>
@@ -1133,7 +1136,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               return (
                 <Section
                   key={pnrCode}
-                  title={`Tickets — AIRLINE PNR ${pnrCode === '__no_pnr__' ? 'Unassigned' : pnrCode} (${rows.length})`}
+                  title={`Tickets — PROVIDER REF ${pnrCode === '__no_pnr__' ? 'Unassigned' : pnrCode} (${rows.length})`}
                 >
                   {pnrMeta && (
                     <div className="flex items-center gap-2 mb-3">
@@ -1151,7 +1154,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
             <Section title={`E-Tickets (${visibleTickets.length})`}>
               {visibleTickets.length === 0 ? (
                 <p className="text-slate-500 text-sm">
-                  {selectedPnr ? `No tickets for AIRLINE PNR ${selectedPnr.pnrCode}.` : 'No tickets issued yet.'}
+                  {selectedPnr ? `No tickets for PROVIDER REF ${selectedPnr.pnrCode}.` : 'No tickets issued yet.'}
                 </p>
               ) : (
                 <TicketTable rows={visibleTickets} />
@@ -1160,13 +1163,13 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           )}
 
           <Section
-            title={`AIRLINE PNR Records (${booking.pnrs?.length ?? 0})`}
+            title={`PROVIDER REF Records (${booking.pnrs?.length ?? 0})`}
             action={isOps ? (
               <button
                 onClick={() => setAddRefOpen(v => !v)}
                 className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-slate-700/50 text-slate-300 hover:text-white text-xs font-bold transition-all"
               >
-                <Plus size={11} /> Add AIRLINE PNR
+                <Plus size={11} /> Add PROVIDER REF
               </button>
             ) : undefined}
           >
@@ -1174,15 +1177,15 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               <div className="mb-4 p-4 bg-slate-900/50 border border-slate-700 rounded-xl space-y-3">
                 <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
                   <div>
-                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">AIRLINE PNR Type</label>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">PROVIDER REF Type</label>
                     <select className={sel} value={addRefData.pnrType} onChange={e => setAddRefData(d => ({ ...d, pnrType: e.target.value }))}>
                       {['MASTER_AIRLINE_PNR','AIRLINE_PNR','PROVIDER_PNR','SPLIT_TICKET_PNR','SUB_PNR'].map(t => (
-                        <option key={t} value={t} className="bg-slate-800">{t === 'MASTER_AIRLINE_PNR' ? 'AIRLINE PNR' : t.replace(/_/g, ' ')}</option>
+                        <option key={t} value={t} className="bg-slate-800">{t === 'MASTER_AIRLINE_PNR' ? 'PROVIDER REF' : t.replace(/_/g, ' ')}</option>
                       ))}
                     </select>
                   </div>
                   <div>
-                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">AIRLINE PNR *</label>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">PROVIDER REF *</label>
                     <input className={inp} value={addRefData.pnrCode} onChange={e => setAddRefData(d => ({ ...d, pnrCode: e.target.value }))} placeholder="e.g. ABC123" />
                   </div>
                   <div>
@@ -1209,19 +1212,19 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 <div className="flex justify-end gap-2">
                   <button onClick={() => setAddRefOpen(false)} className="px-3 py-1.5 rounded-xl border border-slate-600 text-slate-400 hover:text-white text-xs transition-all"><X size={11} className="inline mr-1" />Cancel</button>
                   <button onClick={addReference} disabled={saving || !addRefData.pnrCode.trim()} className="flex items-center gap-1.5 px-3 py-1.5 rounded-xl bg-[#1ABC9C] hover:bg-[#1ABC9C]/80 text-white text-xs font-bold disabled:opacity-50 transition-all">
-                    <Plus size={11} />{saving ? 'Adding…' : 'Add AIRLINE PNR'}
+                    <Plus size={11} />{saving ? 'Adding…' : 'Add PROVIDER REF'}
                   </button>
                 </div>
               </div>
             )}
             {(booking.pnrs?.length ?? 0) === 0 ? (
-              <p className="text-slate-500 text-sm">No AIRLINE PNRs stored.</p>
+              <p className="text-slate-500 text-sm">No PROVIDER REFs stored.</p>
             ) : (
               <div className="space-y-2">
                 {booking.pnrs?.map((pnr: any) => (
                   <div key={pnr.id} className="flex items-center gap-4 p-3 bg-slate-900/40 rounded-xl">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold w-40 text-center ${STATUS_COLORS[pnr.pnrType] ?? 'bg-slate-400/15 text-slate-400'}`}>
-                      {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'AIRLINE PNR' : pnr.pnrType.replace(/_/g, ' ')}
+                      {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'PROVIDER REF' : pnr.pnrType.replace(/_/g, ' ')}
                     </span>
                     <span className="font-mono text-white font-black text-sm flex-1">{pnr.pnrCode}</span>
                     {pnr.isPrimary && (
@@ -1235,9 +1238,9 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                     <Badge value={pnr.status} />
                     {isOps && !pnr.isPrimary && (
                       <button
-                        onClick={() => setConfirmDel({ apiPath: `/api/admin/bookings/${id}/references/${pnr.id}`, label: `AIRLINE PNR ${pnr.pnrCode}` })}
+                        onClick={() => setConfirmDel({ apiPath: `/api/admin/bookings/${id}/references/${pnr.id}`, label: `PROVIDER REF ${pnr.pnrCode}` })}
                         className="p-1.5 rounded-lg bg-red-500/10 text-red-400 hover:bg-red-500/20 transition-all"
-                        title="Delete AIRLINE PNR"
+                        title="Delete PROVIDER REF"
                       >
                         <Trash2 size={12} />
                       </button>
@@ -1258,7 +1261,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
         <div className="space-y-4">
         {selectedPnr && (
           <div className="flex items-center gap-2 px-4 py-3 bg-slate-800/50 border border-slate-700/50 rounded-2xl">
-            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Showing add-ons for AIRLINE PNR</span>
+            <span className="text-[10px] font-black text-slate-500 uppercase tracking-wider">Showing add-ons for PROVIDER REF</span>
             <span className="font-mono font-black text-[#1ABC9C] text-xs">{selectedPnr.pnrCode}</span>
             <Badge value={selectedPnr.journeyDirection} />
             {selectedPnr.airlineName && <span className="text-xs text-slate-400">{selectedPnr.airlineName}</span>}
@@ -1443,11 +1446,11 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 {booking.pnrStrategy && (
                   <>
                     <tr>
-                      <td className="px-5 py-3 text-slate-400 font-semibold">AIRLINE PNR Strategy</td>
+                      <td className="px-5 py-3 text-slate-400 font-semibold">PROVIDER REF Strategy</td>
                       <td className="px-5 py-3"><Badge value={booking.pnrStrategy} /></td>
                     </tr>
                     <tr>
-                      <td className="px-5 py-3 text-slate-400 font-semibold">AIRLINE PNR Count</td>
+                      <td className="px-5 py-3 text-slate-400 font-semibold">PROVIDER REF Count</td>
                       <td className="px-5 py-3 text-white font-bold">{booking.pnrCount ?? pnrs.length}</td>
                     </tr>
                     {booking.isSplitTicket && (
@@ -1881,14 +1884,14 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
       )}
 
       {/* ══════════════════════════════════════════════════════════
-          BOTTOM: MASTER BOOKING ↔ AIRLINE PNR ASSOCIATION TABLE
+          BOTTOM: MASTER BOOKING ↔ PROVIDER REF ASSOCIATION TABLE
           Always visible regardless of selected tab
           ══════════════════════════════════════════════════════════ */}
       {pnrs.length > 0 && (
         <div className="mt-8 bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
           <div className="px-5 py-4 border-b border-slate-700/50 flex items-center gap-3">
             <Hash size={14} className="text-[#1ABC9C]" />
-            <h3 className="text-white font-bold text-sm">Master Booking ↔ AIRLINE PNR Association</h3>
+            <h3 className="text-white font-bold text-sm">Master Booking ↔ PROVIDER REF Association</h3>
             {booking.pnrStrategy && <Badge value={booking.pnrStrategy} />}
             {booking.connectionProtStatus && <Badge value={booking.connectionProtStatus} />}
             {booking.isSplitTicket && (
@@ -1900,7 +1903,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/50 bg-slate-900/30">
-                {['Master Ref', 'AIRLINE PNR', 'Type', 'Direction', 'Airline', 'Provider', 'Provider Order ID', 'Primary', 'Status'].map(h => (
+                {['Master Ref', 'PROVIDER REF', 'Type', 'Direction', 'Airline', 'Provider', 'Provider Order ID', 'Primary', 'Status'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -1921,7 +1924,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   <td className="px-4 py-3 font-mono text-white font-black">{pnr.pnrCode}</td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_COLORS[pnr.pnrType] ?? 'bg-slate-400/15 text-slate-400'}`}>
-                      {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'AIRLINE PNR' : pnr.pnrType.replace(/_/g, ' ')}
+                      {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'PROVIDER REF' : pnr.pnrType.replace(/_/g, ' ')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-400">{pnr.journeyDirection}</td>
@@ -1979,7 +1982,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   {fcQuote && (
                     <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-300 space-y-1">
                       <div className="flex justify-between"><span className="text-slate-500">Route</span><span>{fcQuote.route}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">Airline PNR</span><span className="font-mono">{fcQuote.airlinePnr ?? '—'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Provider Ref</span><span className="font-mono">{fcQuote.airlinePnr ?? '—'}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Method</span><span className="font-bold">{fcQuote.method}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">PTR #</span><span className="font-mono">{fcQuote.ptrNumber}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Provider refund</span><span>{fcQuote.providerRefund} {fcQuote.refundCurrency}</span></div>

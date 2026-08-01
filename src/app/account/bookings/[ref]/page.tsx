@@ -161,7 +161,7 @@ export default function BookingDetailPage() {
         return { 
           ...a, 
           disabled: !canAddBaggage(b), 
-          disabledReason: `Baggage changes for this booking are not available through FareMind. Please contact the airline directly using your airline PNR.${b.masterPnr || b.pnrs?.[0]?.pnrCode ? ` Airline PNR: ${b.masterPnr || b.pnrs?.[0]?.pnrCode}` : ''}` 
+          disabledReason: `Baggage changes for this booking are not available through FareMind. Please contact the airline directly using your airline PNR. Airline PNR: ${airlinePnrLabel((b as any).airlinePnr)}` 
         };
       }
       return a;

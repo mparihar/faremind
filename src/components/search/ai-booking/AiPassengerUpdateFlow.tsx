@@ -6,6 +6,7 @@
 'use client';
 
 import { useState } from 'react';
+import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   User, Edit3, Check, XCircle, Loader2, ArrowLeft, Lock,
@@ -23,6 +24,9 @@ interface Props {
   bookingId: string;
   bookingReference: string;
   pnrCode: string | undefined;
+  /** The AIRLINE's record locator. pnrCode holds MYSTIFLY's reference and
+   *  must never be shown as this. Absent → renders "Not Available". */
+  airlinePnr?: string | null;
   passengers: any[];
   onBack: () => void;
   onDone: () => void;
@@ -41,6 +45,7 @@ export default function AiPassengerUpdateFlow({
   bookingId,
   bookingReference,
   pnrCode,
+  airlinePnr,
   passengers,
   onBack,
   onDone,
@@ -332,7 +337,7 @@ export default function AiPassengerUpdateFlow({
 
           <div className="pt-1.5 border-t border-slate-100">
             <InfoRow label="FareMind Reference" value={bookingReference} />
-            {pnrCode && <InfoRow label="Airline PNR" value={pnrCode} />}
+            <InfoRow label="Airline PNR" value={airlinePnrLabel(airlinePnr)} />
           </div>
         </div>
 
@@ -396,7 +401,7 @@ export default function AiPassengerUpdateFlow({
             </div>
             <div className="pt-1.5 border-t border-slate-100">
               <InfoRow label="FareMind Reference" value={bookingReference} />
-              {pnrCode && <InfoRow label="Airline PNR" value={pnrCode} />}
+              <InfoRow label="Airline PNR" value={airlinePnrLabel(airlinePnr)} />
               <InfoRow label="Status" value="Updated with provider" highlight />
             </div>
           </div>

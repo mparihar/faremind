@@ -172,7 +172,7 @@ async function createCancellationSupportTicket(booking: any, reason: string): Pr
         customerName: booking.customerName ?? '',
         customerEmail: booking.customerEmail ?? '',
         bookingRef: booking.masterBookingReference,
-        airlinePnr: booking.masterPnr ?? undefined,
+        airlinePnr: booking.airlinePnr ?? undefined,   // airline locator, never the Mystifly ref
       },
     });
 
@@ -204,7 +204,9 @@ async function createFlightChangeSupportTicket(
     const route = `${booking.originAirport} â†’ ${booking.destinationAirport}`;
     const amount = fmtCurrency(Number(booking.totalAmount), booking.currency);
     const providerPnr = booking.pnrs?.find((p: any) => p.providerOrderId);
-    const airlinePnr = providerPnr?.airlinePnr || booking.masterPnr || 'N/A';
+    // Falls back to 'N/A', never to the Mystifly reference — quoting that to an
+    // airline is useless because the airline has no record of it.
+    const airlinePnr = providerPnr?.airlinePnr || booking.airlinePnr || 'N/A';
     const providerOrderId = providerPnr?.providerOrderId || (booking as any).providerOrderId || 'N/A';
 
     await prisma.supportTicket.create({
@@ -234,7 +236,7 @@ async function createFlightChangeSupportTicket(
         customerName: booking.customerName ?? '',
         customerEmail: booking.customerEmail ?? '',
         bookingRef: booking.masterBookingReference,
-        airlinePnr: booking.masterPnr ?? undefined,
+        airlinePnr: booking.airlinePnr ?? undefined,   // airline locator, never the Mystifly ref
       },
     });
 
@@ -654,7 +656,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           penaltyAmount: 0,
           quoteId: `mystifly_cancel_pending_${providerPnr.providerOrderId}`,
           bookingReference: booking.masterBookingReference,
-          airlinePnr: booking.masterPnr || primaryPnr?.pnrCode || null,
+          airlinePnr: booking.airlinePnr ?? primaryPnr?.airlinePnr ?? null,
           route: `${booking.originAirport} → ${booking.destinationAirport}`,
           departureDate: booking.departureDate,
           bookingStatus: booking.bookingStatus,
@@ -719,7 +721,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
               penaltyAmount: airlinePenalty,
               quoteId: `mystifly_cancel_stored_${providerPnr.providerOrderId}`,
               bookingReference: booking.masterBookingReference,
-              airlinePnr: booking.masterPnr || primaryPnr?.pnrCode || null,
+              airlinePnr: booking.airlinePnr ?? primaryPnr?.airlinePnr ?? null,
               route: `${booking.originAirport} → ${booking.destinationAirport}`,
               departureDate: booking.departureDate,
               bookingStatus: booking.bookingStatus,
@@ -749,7 +751,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             penaltyAmount: originalAmount,
             quoteId: `mystifly_cancel_norefund_${providerPnr.providerOrderId}`,
             bookingReference: booking.masterBookingReference,
-            airlinePnr: booking.masterPnr || primaryPnr?.pnrCode || null,
+            airlinePnr: booking.airlinePnr ?? primaryPnr?.airlinePnr ?? null,
             route: `${booking.originAirport} → ${booking.destinationAirport}`,
             departureDate: booking.departureDate,
             bookingStatus: booking.bookingStatus,
@@ -854,7 +856,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       return {
         quoteId: quote.quoteId,
         bookingReference: booking.masterBookingReference,
-        airlinePnr: booking.masterPnr || primaryPnr?.pnrCode || null,
+        airlinePnr: booking.airlinePnr ?? primaryPnr?.airlinePnr ?? null,
         route: `${booking.originAirport} â†’ ${booking.destinationAirport}`,
         departureDate: booking.departureDate,
         bookingStatus: booking.bookingStatus,

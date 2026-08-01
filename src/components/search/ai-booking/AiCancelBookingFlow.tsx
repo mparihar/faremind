@@ -6,6 +6,7 @@
 'use client';
 
 import { useEffect } from 'react';
+import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import { motion } from 'framer-motion';
 import {
   AlertTriangle, Check, XCircle, Loader2, Shield, ArrowLeft,
@@ -149,7 +150,7 @@ export default function AiCancelBookingFlow({
 
           <div className="space-y-2 bg-white rounded-lg border border-emerald-200/50 px-3 py-2.5">
             <InfoRow label="FareMind Reference" value={cancelSuccess.bookingReference} />
-            {pnrCode && <InfoRow label="Airline PNR" value={pnrCode} />}
+            <InfoRow label="Airline PNR" value={airlinePnrLabel((cancelSuccess as any)?.airlinePnr)} />
             <InfoRow label="Cancellation Type" value={cancelSuccess.cancellationMethod === 'VOID' ? 'Immediate Void' : 'Refund'} highlight />
             <InfoRow label="Status" value={cancelSuccess.cancellationMethod === 'VOID' ? 'Ticket voided' : 'Cancellation submitted'} highlight />
             <InfoRow
@@ -203,7 +204,7 @@ export default function AiCancelBookingFlow({
         {/* Summary Card */}
         <div className="px-3 py-3 rounded-xl border border-slate-200 bg-white space-y-2.5">
           <InfoRow label="FareMind Reference" value={q.bookingReference} />
-          {(q.airlinePnr || pnrCode) && <InfoRow label="Airline PNR" value={q.airlinePnr || pnrCode!} />}
+          <InfoRow label="Airline PNR" value={airlinePnrLabel((q as any).airlinePnr)} />
           <InfoRow label="Route" value={q.route || route} />
           <InfoRow label="Departure" value={formatBookingDate(q.departureDate || departureDate)} />
 

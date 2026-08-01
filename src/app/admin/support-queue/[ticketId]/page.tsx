@@ -275,12 +275,12 @@ export default function TicketDetailPage({ params }: { params: Promise<{ ticketI
                     </div>
                   )}
 
-                  {/* Airline PNR */}
-                  {(ticket.airlinePnr || parsed['Airline PNR'] || parsed['PNR (Airline)']) && (
+                  {/* Provider Ref */}
+                  {(ticket.airlinePnr || parsed['Provider Ref'] || parsed['PNR (Airline)']) && (
                     <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/30">
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Airline PNR</p>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Provider Ref</p>
                       <p className="text-[#1ABC9C] text-sm font-bold font-mono">
-                        {ticket.airlinePnr || parsed['Airline PNR'] || parsed['PNR (Airline)']}
+                        {ticket.airlinePnr || parsed['Provider Ref'] || parsed['PNR (Airline)']}
                       </p>
                     </div>
                   )}
@@ -578,10 +578,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ ticketI
                   </div>
                 )}
 
-                {/* Airline PNR */}
+                {/* Provider Ref */}
                 {ticket.airlinePnr && (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-400">Airline PNR</span>
+                    <span className="text-xs font-bold text-slate-400">Provider Ref</span>
                     <span className="text-sm font-bold text-white font-mono">{ticket.airlinePnr}</span>
                   </div>
                 )}
