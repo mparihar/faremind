@@ -17,6 +17,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import Stripe from 'stripe';
 import * as mystifly from '../services/mystifly';
+import { resolveBookingByAnyReference } from '../lib/booking-lookup';
 import type { PtrType } from '../services/mystifly';
 import { prisma } from '../lib/db';
 import { buildPtrPassengers, type PtrPassenger } from '../lib/ptr-passengers';
@@ -260,14 +261,21 @@ async function couponServicingAdvice(uniqueId: string): Promise<{
 
 const ENFORCE_COUPON_STATUS = process.env.PTR_ENFORCE_COUPON_STATUS === 'true';
 
-/** Resolve a MasterBooking id from either its cuid `id` or its `masterBookingReference`. */
+/**
+ * Resolve a MasterBooking id from any reference a caller might hold.
+ *
+ * Previously matched only the cuid or the FareMind reference, so a servicing
+ * request carrying an AIRLINE PNR — the code a customer actually reads off a
+ * boarding pass — silently failed to link. Now accepts the FareMind reference,
+ * the airline PNR, Mystifly's reference and the internal id.
+ *
+ * The provider call itself still uses Mystifly's reference; see
+ * lib/booking-lookup.ts, which performs that mapping.
+ */
 async function resolveMasterBookingId(input?: string): Promise<string | null> {
   if (!input) return null;
-  const b = await prisma.masterBooking.findFirst({
-    where: { OR: [{ id: input }, { masterBookingReference: input }] },
-    select: { id: true },
-  });
-  return b?.id ?? null;
+  const found = await resolveBookingByAnyReference(input);
+  return found?.bookingId ?? null;
 }
 
 async function createPtrRecord(params: {

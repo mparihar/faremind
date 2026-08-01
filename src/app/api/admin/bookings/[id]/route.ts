@@ -66,16 +66,33 @@ async function resolve(idOrRef: string) {
   });
   if (mb) return mb;
 
-  // 3. By masterPnr
+  // 3. By AIRLINE PNR — the code a customer or agent reads off a boarding pass.
   mb = await prisma.masterBooking.findFirst({
-    where: { masterPnr: { equals: idOrRef, mode: 'insensitive' } },
+    where: { airlinePnr: { equals: idOrRef, mode: 'insensitive' } },
+    include: FULL_INCLUDE,
+  });
+  if (mb) return mb;
+
+  // 4. By Mystifly's reference — support pastes this from provider tooling.
+  mb = await prisma.masterBooking.findFirst({
+    where: {
+      OR: [
+        { mystiflyMfRef: { equals: idOrRef, mode: 'insensitive' } },
+        { masterPnr: { equals: idOrRef, mode: 'insensitive' } },
+      ],
+    },
     include: FULL_INCLUDE,
   });
   if (mb) return mb;
 
   // 4. By any BookingPnr code
   const pnrRow = await prisma.bookingPnr.findFirst({
-    where: { pnrCode: { equals: idOrRef, mode: 'insensitive' } },
+    where: {
+      OR: [
+        { airlinePnr: { equals: idOrRef, mode: 'insensitive' } },
+        { pnrCode: { equals: idOrRef, mode: 'insensitive' } },
+      ],
+    },
     select: { bookingId: true },
   });
   if (pnrRow) {

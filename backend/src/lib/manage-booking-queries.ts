@@ -16,12 +16,17 @@ import { prisma } from './db';
  *  or providerOrderId so guests can look up via the PNR they received.
  */
 export async function lookupMasterBooking(ref: string, lastName: string) {
-  // Try direct master-level match first
+  // A customer holds two codes: our FareMind reference, and the AIRLINE PNR from
+  // their boarding pass. Both must work. masterPnr (Mystifly's reference) stays
+  // accepted for support who paste it from provider tooling, but is never the
+  // code we ask a customer for. Case-insensitive — these get typed from a phone
+  // screen or read off a printed pass.
   let booking = await prisma.masterBooking.findFirst({
     where: {
       OR: [
-        { masterBookingReference: ref },
-        { masterPnr: ref },
+        { masterBookingReference: { equals: ref, mode: 'insensitive' } },
+        { airlinePnr: { equals: ref, mode: 'insensitive' } },
+        { masterPnr: { equals: ref, mode: 'insensitive' } },
       ],
     },
     include: {
@@ -31,13 +36,15 @@ export async function lookupMasterBooking(ref: string, lastName: string) {
     },
   });
 
-  // If not found, search by airline PNR or provider order ID
+  // Fall back to per-PNR rows — multi-airline and codeshare trips carry a
+  // separate airline locator per carrier.
   if (!booking) {
     const pnrMatch = await prisma.bookingPnr.findFirst({
       where: {
         OR: [
-          { pnrCode: ref },
-          { providerOrderId: ref },
+          { airlinePnr: { equals: ref, mode: 'insensitive' } },
+          { pnrCode: { equals: ref, mode: 'insensitive' } },
+          { providerOrderId: { equals: ref, mode: 'insensitive' } },
         ],
       },
       select: { bookingId: true },
