@@ -10,11 +10,16 @@
  *   POST /api/mystifly/book         — Create PNR (no ticket yet)
  *   POST /api/mystifly/order-ticket — Issue ticket (after payment)
  *   POST /api/mystifly/cancel       — Cancel booking by MFRef
+ *
+ * Every post-booking endpoint takes `uniqueId`. Historically that had to be
+ * Mystifly's MFRef; callers now pass whatever reference they hold — a FareMind
+ * reference or the airline PNR — and `toMfRef` maps it before the provider call.
  */
 
 import { FastifyPluginAsync } from 'fastify';
 import * as crypto from 'crypto';
 import * as mystifly from '../services/mystifly';
+import { resolveMystiflyRef } from '../lib/booking-lookup';
 import type {
   MystiflyAirTraveler,
   MystiflyPassengerType,
@@ -184,6 +189,37 @@ function toMystiflyTravelers(passengers: any[]): MystiflyAirTraveler[] {
     }
 
     return traveler;
+  });
+}
+
+// ═══════════════════════════════════════════════
+// Reference mapping
+// ═══════════════════════════════════════════════
+
+/**
+ * Map any booking reference to the MFRef the Mystifly APIs require.
+ *
+ * A customer or agent holds our FareMind reference or the airline PNR off the
+ * boarding pass — not Mystifly's MF code. Servicing calls (cancel, ticket
+ * status, trip details, ancillaries) need the MF code, so we resolve it here
+ * rather than making every caller look it up.
+ *
+ * An MF-shaped input is returned untouched: internal callers already read
+ * `providerOrderId` off the booking, and re-querying would be pure overhead.
+ *
+ * Returns null when the reference matches no booking, or matches one with no
+ * provider reference — the caller must 404, never guess an MFRef.
+ */
+async function toMfRef(input: string): Promise<string | null> {
+  if (/^MF\d+$/i.test(input)) return input;
+  return resolveMystiflyRef(input);
+}
+
+/** Shared 404 for a reference that resolves to no Mystifly booking. */
+function unknownReference(reply: any, input: string) {
+  return reply.code(404).send({
+    error: `No Mystifly booking found for reference "${input}"`,
+    errorCode: 'BOOKING_NOT_FOUND',
   });
 }
 
@@ -438,7 +474,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'uniqueId is required' });
       }
 
-      const result = await mystifly.orderTicket(uniqueId, fareSourceCode, clientReferenceNo);
+      const mfRef = await toMfRef(uniqueId);
+      if (!mfRef) return unknownReference(reply, uniqueId);
+
+      const result = await mystifly.orderTicket(mfRef, fareSourceCode, clientReferenceNo);
 
       // Check for errors
       const error = result?.Data?.Error || result?.Error;
@@ -455,7 +494,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       return {
         success: true,
-        uniqueId,
+        uniqueId: mfRef,
         status,
         raw: result,
       };
@@ -478,7 +517,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'uniqueId is required' });
       }
 
-      const result = await mystifly.cancelBooking(uniqueId);
+      const mfRef = await toMfRef(uniqueId);
+      if (!mfRef) return unknownReference(reply, uniqueId);
+
+      const result = await mystifly.cancelBooking(mfRef);
 
       // Mystifly returns errors in multiple formats — handle all of them:
       // Format 1: { Data: { Error: { ErrorCode, ErrorMessage } } }
@@ -512,7 +554,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       return {
         success: true,
-        uniqueId,
+        uniqueId: mfRef,
         status,
         raw: result,
       };
@@ -537,7 +579,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'uniqueId is required' });
       }
 
-      const result = await mystifly.getTicketOrderStatus(uniqueId);
+      const mfRef = await toMfRef(uniqueId);
+      if (!mfRef) return unknownReference(reply, uniqueId);
+
+      const result = await mystifly.getTicketOrderStatus(mfRef);
 
       const error = result?.Data?.Error || result?.Error;
       if (error?.ErrorCode && error.ErrorCode !== '0') {
@@ -555,7 +600,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       return {
         success: true,
-        uniqueId,
+        uniqueId: mfRef,
         ticketStatus,
         ticketNumbers,
         raw: result,
@@ -581,7 +626,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'uniqueId is required' });
       }
 
-      const result = await mystifly.getTripDetails(uniqueId);
+      const mfRef = await toMfRef(uniqueId);
+      if (!mfRef) return unknownReference(reply, uniqueId);
+
+      const result = await mystifly.getTripDetails(mfRef);
 
       const error = result?.Data?.Error || result?.Error;
       if (error?.ErrorCode && error.ErrorCode !== '0') {
@@ -610,7 +658,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       return {
         success: true,
-        uniqueId,
+        uniqueId: mfRef,
         bookingStatus,
         ticketNumbers,
         raw: result,
@@ -754,7 +802,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'uniqueId and notes[] are required' });
       }
 
-      const result = await mystifly.addBookingNotes(uniqueId, notes);
+      const mfRef = await toMfRef(uniqueId);
+      if (!mfRef) return unknownReference(reply, uniqueId);
+
+      const result = await mystifly.addBookingNotes(mfRef, notes);
 
       const error = result?.Data?.Error || result?.Error;
       if (error?.ErrorCode && error.ErrorCode !== '0') {
@@ -792,7 +843,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'uniqueId (MFRef) is required' });
       }
 
-      const result = await mystifly.getAncillaryServices(uniqueId, {
+      const mfRef = await toMfRef(uniqueId);
+      if (!mfRef) return unknownReference(reply, uniqueId);
+
+      const result = await mystifly.getAncillaryServices(mfRef, {
         baggage: baggage ?? true,
         meal: meal ?? true,
         seatMap: seatMap ?? false,
@@ -826,7 +880,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       return {
         success: true,
-        uniqueId,
+        uniqueId: mfRef,
         baggage: baggageServices,
         meals: mealServices,
         seatMap: seatMapData,
@@ -860,14 +914,17 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       };
 
       if (!uniqueId) return reply.code(400).send({ error: 'uniqueId (MFRef) is required' });
+
+      const mfRef = await toMfRef(uniqueId);
+      if (!mfRef) return unknownReference(reply, uniqueId);
       if (!serviceKey && !seatMapKey) {
         return reply.code(400).send({ error: 'serviceKey or seatMapKey is required' });
       }
 
       const keys = { serviceKey, seatMapKey, baggage: baggage ?? !!serviceKey, meal: meal ?? false, seatMap: seatMap ?? !!seatMapKey };
       const result = action === 'cancel'
-        ? await mystifly.cancelAncillaryService(uniqueId, keys)
-        : await mystifly.confirmAncillaryService(uniqueId, keys);
+        ? await mystifly.cancelAncillaryService(mfRef, keys)
+        : await mystifly.confirmAncillaryService(mfRef, keys);
 
       const error = result?.Data?.Error || result?.Error;
       if (error?.ErrorCode && error.ErrorCode !== '0') {
@@ -878,7 +935,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
-      return { success: true, uniqueId, action: action || 'confirm', raw: result };
+      return { success: true, uniqueId: mfRef, action: action || 'confirm', raw: result };
     } catch (error: any) {
       console.error('[Mystifly] Ancillary confirm/cancel error:', error.message);
       return reply.code(502).send({
