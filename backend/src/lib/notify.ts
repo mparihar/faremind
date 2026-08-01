@@ -127,6 +127,29 @@ function airlinePnrLabel(d: Record<string, unknown>): string {
   return airlinePnrFor(d) ?? 'Not Available';
 }
 
+/**
+ * Mystifly's own booking reference, for INTERNAL recipients only.
+ *
+ * Support and operations need this to make provider calls (refund, reissue,
+ * void, status). It must never appear in a customer-facing "Airline PNR" field.
+ */
+function mystiflyRefFor(d: Record<string, unknown>): string | null {
+  const v = String(d.mystifly_ref ?? d.pnr ?? '').trim();
+  return v || null;
+}
+
+/**
+ * The three identifiers as table rows, for internal (support/agent) emails.
+ * Labelled explicitly so nobody has to infer which code goes where.
+ */
+function identifierRowsHtml(d: Record<string, unknown>, ref: string): string {
+  const mf = mystiflyRefFor(d);
+  return `
+              <tr><td style="padding:4px 0;color:#64748b;width:150px;">FareMind Reference</td><td style="padding:4px 0;font-weight:700;color:#0f172a;">${ref}</td></tr>
+              <tr><td style="padding:4px 0;color:#64748b;">Airline PNR</td><td style="padding:4px 0;font-family:'Courier New',monospace;font-weight:700;color:#1abc9c;">${airlinePnrLabel(d)}</td></tr>
+              ${mf ? `<tr><td style="padding:4px 0;color:#64748b;">Mystifly Ref (provider)</td><td style="padding:4px 0;font-family:'Courier New',monospace;color:#64748b;">${mf}</td></tr>` : ''}`;
+}
+
 function wrap(title: string, body: string): string {
   const year = new Date().getFullYear();
   return `<!DOCTYPE html>
@@ -162,8 +185,11 @@ function wrap(title: string, body: string): string {
 
 interface EmailSpec { subject: string; html: string; text: string; }
 
-function buildCustomerEmail(eventType: string, d: Record<string, unknown>): EmailSpec | null {
-  const ref = String(d.booking_reference ?? d.pnr ?? '');
+export function buildCustomerEmail(eventType: string, d: Record<string, unknown>): EmailSpec | null {
+  // FareMind's own reference. Deliberately no fallback to d.pnr — that holds
+  // MYSTIFLY's reference, and showing it as the booking reference is the same
+  // substitution this file exists to prevent.
+  const ref = String(d.booking_reference ?? '');
   const route = String(d.route ?? `${d.origin ?? ''} – ${d.destination ?? ''}`);
   const name = String(d.customer_name ?? 'Traveler');
   const amount = String(d.total_amount ?? '');
@@ -663,8 +689,11 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
   }
 }
 
-function buildSupportEmail(eventType: string, d: Record<string, unknown>): EmailSpec | null {
-  const ref = String(d.booking_reference ?? d.pnr ?? '');
+export function buildSupportEmail(eventType: string, d: Record<string, unknown>): EmailSpec | null {
+  // FareMind's own reference. Deliberately no fallback to d.pnr — that holds
+  // MYSTIFLY's reference, and showing it as the booking reference is the same
+  // substitution this file exists to prevent.
+  const ref = String(d.booking_reference ?? '');
   const name = String(d.customer_name ?? 'Unknown');
   const email = String(d.customer_email ?? '');
   const route = String(d.route ?? `${d.origin ?? ''} – ${d.destination ?? ''}`);
@@ -679,7 +708,7 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
           <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">New Booking Confirmed</h2>
           <div style="background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:20px;">
             <table width="100%" cellpadding="0" cellspacing="0" style="font-size:13px;">
-              <tr><td style="padding:4px 0;color:#64748b;width:140px;">Reference</td><td style="padding:4px 0;font-weight:700;color:#0f172a;">${ref}</td></tr>
+              ${identifierRowsHtml(d, ref)}
               <tr><td style="padding:4px 0;color:#64748b;">Customer</td><td style="padding:4px 0;color:#0f172a;">${name} &lt;${email}&gt;</td></tr>
               <tr><td style="padding:4px 0;color:#64748b;">Route</td><td style="padding:4px 0;color:#0f172a;">${route}</td></tr>
               ${amount ? `<tr><td style="padding:4px 0;color:#64748b;">Amount</td><td style="padding:4px 0;font-weight:700;color:#1abc9c;">${amount}</td></tr>` : ''}
@@ -789,8 +818,11 @@ function buildSupportEmail(eventType: string, d: Record<string, unknown>): Email
 // Agent email builder — rich customer-grade emails for agents
 // ═══════════════════════════════════════════════════════════
 
-function buildAgentEmail(eventType: string, d: Record<string, unknown>, agentName: string): EmailSpec | null {
-  const ref = String(d.booking_reference ?? d.pnr ?? '');
+export function buildAgentEmail(eventType: string, d: Record<string, unknown>, agentName: string): EmailSpec | null {
+  // FareMind's own reference. Deliberately no fallback to d.pnr — that holds
+  // MYSTIFLY's reference, and showing it as the booking reference is the same
+  // substitution this file exists to prevent.
+  const ref = String(d.booking_reference ?? '');
   const route = String(d.route ?? `${d.origin ?? ''} – ${d.destination ?? ''}`);
   const name = String(d.customer_name ?? 'Traveler');
   const email = String(d.customer_email ?? '');

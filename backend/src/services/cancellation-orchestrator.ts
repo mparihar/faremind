@@ -565,6 +565,7 @@ async function processCustomerRefund(
             // reference and the airline has no record of it. Absent → the
             // template renders "Not Available".
             airline_pnr: booking.airlinePnr ?? null,
+            mystifly_ref: booking.mystiflyMfRef ?? booking.masterPnr ?? null,   // internal recipients only
             route: `${booking.originAirport} → ${booking.destinationAirport}`,
             departure_date: booking.departureDate ? new Date(booking.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A',
             refund_amount: fmtCurrency(netRefundAmount, currency),

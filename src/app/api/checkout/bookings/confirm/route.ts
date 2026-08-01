@@ -2609,6 +2609,9 @@ export async function POST(req: NextRequest) {
             // The AIRLINE's locator — never the Mystifly reference. Null when the
             // airline has not published one; templates render "Not Available".
             airline_pnr: (mystiflyBookingResult as any)?.airlinePnr ?? null,
+            // Explicit key for INTERNAL (support/ops) emails — they need this to
+            // make provider calls. Never rendered in a customer "Airline PNR" field.
+            mystifly_ref: mystiflyBookingResult?.uniqueId ?? null,
             customer_name: customerName,
             customer_email: customerEmail,
             origin: originAirport,
@@ -2648,6 +2651,9 @@ export async function POST(req: NextRequest) {
             // The AIRLINE's locator — never the Mystifly reference. Null when the
             // airline has not published one; templates render "Not Available".
             airline_pnr: (mystiflyBookingResult as any)?.airlinePnr ?? null,
+            // Explicit key for INTERNAL (support/ops) emails — they need this to
+            // make provider calls. Never rendered in a customer "Airline PNR" field.
+            mystifly_ref: mystiflyBookingResult?.uniqueId ?? null,
             customer_name: customerName,
             customer_email: customerEmail,
             origin: originAirport,

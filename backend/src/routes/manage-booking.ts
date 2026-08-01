@@ -1339,6 +1339,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             booking_reference: booking.masterBookingReference,
             // AIRLINE locator, not masterPnr (Mystifly's reference).
             airline_pnr: booking.airlinePnr ?? null,
+            mystifly_ref: booking.mystiflyMfRef ?? booking.masterPnr ?? null,   // internal recipients only
             customer_name: booking.customerName ?? '',
             passenger_name: paxName,
             seats: [{
@@ -1434,6 +1435,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             booking_reference: booking.masterBookingReference,
             // AIRLINE locator, not masterPnr (Mystifly's reference).
             airline_pnr: booking.airlinePnr ?? null,
+            mystifly_ref: booking.mystiflyMfRef ?? booking.masterPnr ?? null,   // internal recipients only
             customer_name: booking.customerName ?? '',
             passenger_name: `${passenger.firstName} ${passenger.lastName}`,
             updated_fields: Object.keys(updates),
@@ -1925,6 +1927,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             booking_reference: booking.masterBookingReference,
             // AIRLINE locator, not masterPnr (Mystifly's reference).
             airline_pnr: booking.airlinePnr ?? null,
+            mystifly_ref: booking.mystiflyMfRef ?? booking.masterPnr ?? null,   // internal recipients only
             customer_name: booking.customerName ?? '',
             amount_collected: totalCollect > 0 ? totalCollect.toFixed(2) : '',
             currency: 'USD',
@@ -1961,6 +1964,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             booking_reference: booking.masterBookingReference,
             // AIRLINE locator, not masterPnr (Mystifly's reference).
             airline_pnr: booking.airlinePnr ?? null,
+            mystifly_ref: booking.mystiflyMfRef ?? booking.masterPnr ?? null,   // internal recipients only
             customer_name: booking.customerName ?? '',
             passenger_name: paxNames,
             old_flight_number: oldFlight,
@@ -2043,6 +2047,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             booking_reference: booking.masterBookingReference,
             // AIRLINE locator, not masterPnr (Mystifly's reference).
             airline_pnr: booking.airlinePnr ?? null,
+            mystifly_ref: booking.mystiflyMfRef ?? booking.masterPnr ?? null,   // internal recipients only
             pnr: booking.masterPnr,          // Mystifly reference — internal use only
             customer_name: booking.customerName ?? '',
             customer_email: booking.customerEmail ?? '',
