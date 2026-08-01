@@ -250,6 +250,8 @@ async function requestReissuePayment(
       customer_email: booking.customerEmail,
       data: {
         booking_reference: booking.masterBookingReference,
+        // The AIRLINE's locator — never masterPnr (Mystifly's reference).
+        airline_pnr: (booking as any).airlinePnr ?? null,
         customer_name: booking.customerName ?? '',
         fare_difference: quote.fareDifference.toFixed(2),
         penalty: quote.penalty.toFixed(2),
@@ -365,6 +367,8 @@ export async function executePaidReissue(payment: any): Promise<void> {
       customer_email: booking.customerEmail,
       data: {
         booking_reference: booking.masterBookingReference,
+        // The AIRLINE's locator — never masterPnr (Mystifly's reference).
+        airline_pnr: (booking as any).airlinePnr ?? null,
         customer_name: booking.customerName ?? '',
         amount_collected: ctx.quote.totalCollect.toFixed(2),
         currency: ctx.quote.currency,
@@ -527,6 +531,8 @@ export async function initiateReissue(
         customer_email: booking.customerEmail,
         data: {
           booking_reference: booking.masterBookingReference,
+        // The AIRLINE's locator — never masterPnr (Mystifly's reference).
+        airline_pnr: (booking as any).airlinePnr ?? null,
           customer_name: booking.customerName ?? '',
           amount_collected: quote.totalCollect > 0 ? quote.totalCollect.toFixed(2) : '',
           currency: 'USD',

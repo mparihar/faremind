@@ -560,6 +560,11 @@ async function processCustomerRefund(
           data: {
             customer_name: booking.customerName?.split(' ')[0] || 'Traveler',
             booking_reference: booking.masterBookingReference,
+            // The AIRLINE's locator, so a cancelled-booking email carries the code
+            // the airline recognises. Never masterPnr — that is Mystifly's
+            // reference and the airline has no record of it. Absent → the
+            // template renders "Not Available".
+            airline_pnr: booking.airlinePnr ?? null,
             route: `${booking.originAirport} → ${booking.destinationAirport}`,
             departure_date: booking.departureDate ? new Date(booking.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' }) : 'N/A',
             refund_amount: fmtCurrency(netRefundAmount, currency),
