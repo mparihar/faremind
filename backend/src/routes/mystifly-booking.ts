@@ -713,8 +713,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // — so per-seat pricing/selection can be built against the real payload.
       try {
         const d = result?.Data ?? result;
-        console.log(`[Mystifly][SeatMapDiag] top-level keys: ${Object.keys(result || {}).join(', ')}`);
-        console.log(`[Mystifly][SeatMapDiag] Data keys: ${Object.keys(d || {}).join(', ')}`);
         const findSeatArray = (obj: any, depth = 0): { path: string; keys: string[] } | null => {
           if (!obj || typeof obj !== 'object' || depth > 6) return null;
           for (const k of Object.keys(obj)) {
@@ -733,9 +731,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           return null;
         };
         const seatShape = findSeatArray(d);
-        console.log(seatShape
-          ? `[Mystifly][SeatMapDiag] seat array at "${seatShape.path}" item keys: ${seatShape.keys.join(', ')}`
-          : '[Mystifly][SeatMapDiag] no seat-like array found');
       } catch { /* diagnostic only */ }
 
       return { success: true, ...result };

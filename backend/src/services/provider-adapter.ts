@@ -1135,7 +1135,6 @@ export class MystiflyAdapter implements IBookingProvider {
   async getSeatMap(fareSourceCode: string): Promise<SeatMapData[]> {
     const result = await mystiflyClient.getSeatMap(fareSourceCode);
     if (!result) {
-      console.log('[SEATMAP][DEBUG] normalizer: null response → 0 seat maps');
       return [];
     }
 
@@ -1145,7 +1144,6 @@ export class MystiflyAdapter implements IBookingProvider {
     // Real response field is Data.SeatMaps[] (verified live). Keep the old guessed
     // keys as fallbacks in case a different fare/version nests it elsewhere.
     const cabins = data?.SeatMaps || data?.SeatMapResponses || data?.seatMapResponses || [];
-    console.log(`[SEATMAP][DEBUG] normalizer: cabins found under Data.SeatMaps = ${Array.isArray(cabins) ? cabins.length : 'not-an-array'}`);
 
     for (const cabin of cabins) {
       const rows: SeatMapRow[] = [];
@@ -1180,7 +1178,6 @@ export class MystiflyAdapter implements IBookingProvider {
       });
     }
 
-    console.log(`[SEATMAP][DEBUG] normalizer: parsed ${seatMaps.length} seat map(s), ${seatMaps.reduce((n, s) => n + s.rows.length, 0)} row(s) total`);
     return seatMaps;
   }
 
