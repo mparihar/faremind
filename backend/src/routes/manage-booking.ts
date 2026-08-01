@@ -4,6 +4,7 @@
  */
 
 import { FastifyPluginAsync } from 'fastify';
+import { backfillFareRulesFromTripDetails } from '../lib/fare-rules-backfill';
 import { getProvider } from '../services/provider-adapter';
 import { initiateCancellation, getAdminServiceFee as getCancelServiceFee, queueCancellationForIssuance } from '../services/cancellation-orchestrator';
 import { getReissueQuote, initiateReissue } from '../services/reissue-orchestrator';
@@ -502,9 +503,37 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         || primaryPnr?.cancellationFee == null
         || primaryPnr?.changeFee == null;
 
-      if (primaryPnr && snapshotLooksUnset && primaryPnr.providerOrderId) {
+      const providerName = (primaryPnr?.provider || booking.primaryProvider || '').toLowerCase();
+
+      if (primaryPnr && snapshotLooksUnset && providerName === 'mystifly') {
+        // Mystifly publishes TripDetailsPTC_FareBreakdowns only once the ticket is
+        // issued, so the snapshot written at checkout usually predates the airline's
+        // own terms. The reconciliation worker corrects bookings that pass through
+        // TICKETING_PENDING, but one that tickets synchronously never goes near it —
+        // so correct it here, on first view of the servicing screen.
+        //
+        // backfillFareRulesFromTripDetails writes only what the airline actually
+        // published, and returns null when the breakdowns are still absent, leaving
+        // the stored value untouched. The code this replaces used
+        // `order.conditions.refundable ?? false`, which turned "could not read it"
+        // into a definite "no" — the very defect being fixed.
         try {
-          const providerName = (primaryPnr.provider || booking.primaryProvider || '').toLowerCase();
+          const mfRef = booking.mystiflyMfRef || booking.masterPnr || primaryPnr.providerOrderId;
+          if (mfRef) {
+            const { rules } = await backfillFareRulesFromTripDetails(booking.id, mfRef);
+            if (rules) {
+              resolvedRefundable = rules.refundable;
+              resolvedChangeable = rules.changeable;
+              if (rules.cancellationFee != null) resolvedCancellationFee = rules.cancellationFee;
+              if (rules.changeFee != null) resolvedChangeFee = rules.changeFee;
+            }
+          }
+        } catch (providerErr) {
+          fastify.log.warn({ err: providerErr }, '[manage-booking/actions] fare-rules refresh failed, using stored values');
+        }
+      } else if (primaryPnr && snapshotLooksUnset && primaryPnr.providerOrderId) {
+        // Non-Mystifly providers keep the original order-based lookup.
+        try {
           const provider = getProvider(providerName);
           const order = await provider.getOrder(primaryPnr.providerOrderId);
           if (order.conditions) {
@@ -513,7 +542,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             if (order.conditions.refundPenalty != null) resolvedCancellationFee = order.conditions.refundPenalty;
             if (order.conditions.changePenalty != null) resolvedChangeFee = order.conditions.changePenalty;
 
-            // Persist live values back to DB so we don't need to query again
             await prisma.bookingPnr.update({
               where: { id: primaryPnr.id },
               data: {
@@ -522,7 +550,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
                 cancellationFee: resolvedCancellationFee,
                 changeFee: resolvedChangeFee,
               },
-            }).catch(() => {}); // Non-critical â€” silent fail
+            }).catch(() => {}); // Non-critical — silent fail
           }
         } catch (providerErr) {
           fastify.log.warn({ err: providerErr }, '[manage-booking/actions] Live fare rules lookup failed, using stored defaults');
