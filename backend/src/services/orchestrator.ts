@@ -14,6 +14,7 @@
 import * as duffel from './duffel';
 import * as amadeus from './amadeus';
 import * as mystifly from './mystifly';
+import type { MystiflyRequestOptions } from './mystifly';
 import { normalizeDuffelOffer, normalizeAmadeusOffer, normalizeMystiflyOffer, mergeAndRankFlights } from './normalizer';
 import { aggregateProviderOffers, type AggregationStats } from './provider-aggregation';
 import type { UnifiedFlight } from '../lib/types';
@@ -135,6 +136,7 @@ async function searchAmadeus(params: {
 }
 
 async function searchMystifly(params: {
+  maxResults?: MystiflyRequestOptions;
   origin: string; destination: string; date: string;
   returnDate?: string; adults: number; children?: number;
   infants?: number; cabin?: string;
@@ -170,6 +172,7 @@ async function searchMystifly(params: {
       pricingSource,
       searchVersion,
       legs: params.legs,
+      maxResults: params.maxResults,
     });
 
     const rawData = response?.Data || response || {};
@@ -410,6 +413,7 @@ async function searchMystifly(params: {
 // v1 returns the cheapest fares without brand info. Runs in parallel with v2.
 
 async function searchMystiflyLowestFare(params: {
+  maxResults?: MystiflyRequestOptions;
   origin: string; destination: string; date: string;
   returnDate?: string; adults: number; children?: number;
   infants?: number; cabin?: string;
@@ -586,6 +590,13 @@ export async function searchFlights(params: {
   infants?: number; cabin?: string;
   providers?: ('duffel' | 'amadeus' | 'mystifly')[];
   legs?: { origin: string; destination: string; departureDate: string }[];
+  /**
+   * Provider result cap. Callers that only need the cheapest price — the
+   * flexible-date strip reads nothing but `minPrice` — should pass a small
+   * value; Mystifly returns cheapest-first, so a full 1000-itinerary pull is
+   * pure waste there and made every tile take ~10s.
+   */
+  maxResults?: MystiflyRequestOptions;
 }): Promise<SearchResult> {
   const overallStart = Date.now();
   const searchId = `search_${Date.now()}_${Math.random().toString(36).substr(2, 8)}`;

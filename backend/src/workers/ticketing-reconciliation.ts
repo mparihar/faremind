@@ -21,6 +21,7 @@
 import { prisma } from '../lib/db';
 import * as mystifly from '../services/mystifly';
 import { extractEticketNumbers, backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
+import { backfillFareRulesFromTripDetails } from '../lib/fare-rules-backfill';
 import { executeQueuedCancellation } from '../services/cancellation-orchestrator';
 import {
   mapProviderBookingStatus,
@@ -221,6 +222,15 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     // reconciliation on a backfill error.
     try { await backfillEticketsFromTripDetails(record.bookingId, mfRef); }
     catch (err) { console.warn(`[TicketRecon] eTicket persist failed for ${mfRef}:`, (err as Error).message); }
+
+    // Correct the BookingPnr fare-rule snapshot. It is written moments after Book,
+    // but Mystifly does not publish TripDetailsPTC_FareBreakdowns until the ticket
+    // is issued — so checkout falls back to the search view, which reports
+    // RefundAllowed=false for fares the airline will actually refund. Nothing
+    // corrected it afterwards, leaving bookings permanently marked non-refundable
+    // and blocking self-service refund/change. Best-effort, never fails the run.
+    try { await backfillFareRulesFromTripDetails(record.bookingId, mfRef, tripDetailsResponse); }
+    catch (err) { console.warn(`[TicketRecon] fare-rules backfill failed for ${mfRef}:`, (err as Error).message); }
 
     // If a cancellation was queued while the ticket was still issuing, execute it
     // now (void within the window + refund). Best-effort — never fail reconciliation.
