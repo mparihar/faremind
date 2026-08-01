@@ -610,7 +610,14 @@ export async function searchFlights(params: MystiflySearchParams): Promise<any> 
     PricingSourceType: params.pricingSource || 'All',
     IsRefundable: params.isRefundable ?? false,
     PassengerTypeQuantities: passengerQuantities,
-    RequestOptions: params.maxResults || 'TwoHundred',
+    // Mystifly returns cheapest-fare-per-flight first and stops at the cap, so a
+    // low cap truncates the airline's fare ladder away entirely before we ever
+    // see it. Measured on DEL-BOM 23 Nov / 11 Dec: at 'TwoHundred' the response
+    // held 200 flights and ZERO of them carried more than one fare family; at
+    // 'Thousand' it held 696 flights of which 304 carried a real ladder, and two
+    // families (INDIGO UPFRONT, ECO CLASSIC) did not appear at the lower cap at
+    // all. The fare panel cannot show fares the search never requested.
+    RequestOptions: params.maxResults || 'Thousand',
     NearByAirports: params.nearByAirports ?? false,
     IsResidentFare: params.isResidentFare ?? false,
     Target: MYSTIFLY_TARGET,

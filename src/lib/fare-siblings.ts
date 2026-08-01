@@ -81,6 +81,16 @@ function toOffer(f: UnifiedFlight): FareSiblingOffer {
  * one-entry ladder rather than an empty panel.
  */
 export function collectFareSiblings(selected: UnifiedFlight, pool: UnifiedFlight[] = []): FareSiblingOffer[] {
+  // The search API groups by itinerary and attaches every fare for the journey.
+  // When present that is authoritative — it covers fares the ranker placed far
+  // down the list, which a scan of the currently-filtered pool would miss.
+  const attached = (selected as any).fareOffers;
+  if (Array.isArray(attached) && attached.length > 0) {
+    return [...attached]
+      .filter((o: any) => (o?.totalPrice ?? 0) > 0)
+      .sort((a: any, b: any) => a.totalPrice - b.totalPrice);
+  }
+
   const key = keyOf(selected);
   const seen = new Set<string>();
   const out: FareSiblingOffer[] = [];
@@ -145,6 +155,14 @@ export function collectRoundTripFareSiblings(
   selected: RoundTripOption,
   pool: RoundTripOption[] = [],
 ): FareSiblingOffer[] {
+  // Same as above — the grouped search response is authoritative when present.
+  const attached = (selected as any).fareOffers;
+  if (Array.isArray(attached) && attached.length > 0) {
+    return [...attached]
+      .filter((o: any) => (o?.totalPrice ?? 0) > 0)
+      .sort((a: any, b: any) => a.totalPrice - b.totalPrice);
+  }
+
   const key = rtKeyOf(selected);
   const seen = new Set<string>();
   const out: FareSiblingOffer[] = [];

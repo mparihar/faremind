@@ -11,6 +11,7 @@ import { getTravelDnaForRecommendation } from '@/lib/services/travel-dna-service
 import type { TravelDnaRecommendationContext } from '@/lib/services/travel-dna-service';
 import { flexCacheKey, flexCacheGet, flexCacheSet, flexCacheClearRoute } from '@/lib/flex-search-cache';
 import { rankingInputCorrectionEnabled, legacyCheckedBags, withLegacyBaggage } from '@/lib/feature-flags';
+import { groupByItinerary } from '@/lib/itinerary-groups';
 
 export const maxDuration = 120; // Allow up to 2 minutes for search
 
@@ -329,7 +330,7 @@ export async function GET(request: NextRequest) {
       }).catch(() => {});
       const providerStatus = getProviderStatus();
       return NextResponse.json({
-        roundTripOptions: allRankedRT,
+        roundTripOptions: groupByItinerary(allRankedRT),
         meta: {
           totalResults: allRankedRT.length, searchId: rtResult.searchId,
           totalTimeMs: rtResult.totalTimeMs, usedMockData: rtResult.usedMockData,
@@ -453,7 +454,10 @@ export async function GET(request: NextRequest) {
       tags:            [],
     }));
 
-    const rankedFlights = [...scoredFlights, ...unscoredFlights];
+    // One card per journey, every fare kept on `fareOffers` for the fare panel.
+    // Runs AFTER ranking, so card order is exactly what the scorer produced and
+    // the representative is whichever fare the ranker placed highest.
+    const rankedFlights = groupByItinerary([...scoredFlights, ...unscoredFlights]);
 
     const lowestPrice = rankedFlights.length > 0
       ? Math.min(...rankedFlights.map((f: any) => f.totalPrice))

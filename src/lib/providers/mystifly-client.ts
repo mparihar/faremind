@@ -189,6 +189,18 @@ function convertUnifiedToRoundTrip(flights: UnifiedFlight[]): RoundTripOption[] 
       cabinClass: f.cabinClass,
       fareRules: f.fareRules,
       baggage: f.baggage,
+
+      // Fare family must survive this conversion. Without these the fare panel
+      // had no brand to show and fell back to the bare cabin name — every card
+      // rendered as "Economy" — and no itineraryKey to group siblings by, so a
+      // real fare ladder could not be assembled.
+      airlineFareFamily: f.airlineFareFamily,
+      normalizedFareTier: f.normalizedFareTier,
+      itineraryKey: f.itineraryKey,
+      bookingClass: f.bookingClass,
+      checkedBaggageAllowance: f.checkedBaggageAllowance,
+      cabinBaggageAllowance: f.cabinBaggageAllowance,
+      seatsRemaining: f.seatsRemaining,
     });
   }
 
