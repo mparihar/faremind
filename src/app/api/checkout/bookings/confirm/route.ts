@@ -2005,6 +2005,13 @@ export async function POST(req: NextRequest) {
             providerOrderId: duffelOrder?.id ?? mystiflyBookingResult?.uniqueId ?? entry.providerOrderId ?? null,
             airlineCode: entry.airlineCode ?? null,
             airlineName: entry.airlineName ?? null,
+            // The AIRLINE's locator, written here as well as on the MasterBooking.
+            // Servicing reads providerPnr.airlinePnr and lookup falls back to it
+            // for multi-airline trips, so leaving it null loses the locator there.
+            // Only the reconciliation worker used to fill these, and a webfare
+            // tickets instantly — so it never ran, and every webfare booking had
+            // the locator on the master and nothing on its PNR rows.
+            airlinePnr: (mystiflyBookingResult as any)?.airlinePnr ?? null,
             displayLabel: entry.displayLabel,
             // Fare rules, in order of authority: what the airline stated at ticketing,
             // then the selected fare. UnifiedFlight uses `fareRules`, branded fares use
