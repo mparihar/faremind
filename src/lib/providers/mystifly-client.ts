@@ -93,7 +93,7 @@ export async function searchMystiflyRoundTrip(params: {
     } else {
       // Fallback: convert UnifiedFlight[] back to RoundTripOption-like structure
       // This is lossy but functional — pairs outbound+return segments
-      options = convertUnifiedToRoundTrip(flights);
+      options = convertUnifiedToRoundTrip(flights, params.destination);
     }
 
     // ── Diagnostic: dump first itinerary's airline data ──
@@ -128,35 +128,61 @@ import { generateId } from '@/lib/utils';
  * The backend normalizer flattens these into a single segments array. We split them
  * back based on the route turning point.
  */
-function convertUnifiedToRoundTrip(flights: UnifiedFlight[]): RoundTripOption[] {
+/**
+ * Where the outbound ends and the return begins, in a flat list of segments.
+ *
+ * The backend returns round trips as one-way-normalised UnifiedFlights — every
+ * segment of both legs in a single array — so the boundary has to be recovered
+ * here. The old rule compared airport codes and matched
+ * `segments[i].departure === segments[0].arrival`, which on booking FMM1FLR7
+ * (AA, DEL-YYZ: DEL→JFK, LGA→YYZ, YYZ→LGA, JFK→DEL) matched the FINAL segment
+ * because it departs JFK and the first one arrives JFK. It split 3 + 1, so the
+ * customer's outbound read DEL→LGA across 23 days with a 529-hour "layover",
+ * and the trip was labelled DEL⇄LGA instead of DEL⇄YYZ.
+ *
+ * Two robust signals, in order:
+ *
+ *   1. The searched destination. The return leg departs from it by definition,
+ *      so the first segment after position 0 that departs there is the boundary.
+ *   2. The destination stay. Failing that, the largest gap between segments —
+ *      nobody waits 22 days at a connecting airport, so the longest gap is the
+ *      trip itself, not a layover.
+ *
+ * Only if neither applies does it fall back to splitting down the middle.
+ */
+const MIN_STAY_HOURS = 12;
+
+function findReturnLegStart(segments: UnifiedFlight['segments'], destination?: string): number {
+  // 1 — the leg that departs the place the customer flew to.
+  if (destination) {
+    for (let i = 1; i < segments.length; i++) {
+      if (segments[i].departure.airport === destination) return i;
+    }
+  }
+
+  // 2 — the longest gap, when it is long enough to be a stay rather than a wait.
+  let bestIdx = -1;
+  let bestGapH = 0;
+  for (let i = 1; i < segments.length; i++) {
+    const arrive = new Date(segments[i - 1].arrival.time).getTime();
+    const depart = new Date(segments[i].departure.time).getTime();
+    if (!Number.isFinite(arrive) || !Number.isFinite(depart)) continue;
+    const gapH = (depart - arrive) / 3_600_000;
+    if (gapH > bestGapH) { bestGapH = gapH; bestIdx = i; }
+  }
+  if (bestIdx > 0 && bestGapH >= MIN_STAY_HOURS) return bestIdx;
+
+  // 3 — nothing to go on. Split evenly.
+  return Math.ceil(segments.length / 2);
+}
+
+function convertUnifiedToRoundTrip(flights: UnifiedFlight[], destination?: string): RoundTripOption[] {
   const options: RoundTripOption[] = [];
 
   for (const f of flights) {
     if (!f.segments || f.segments.length < 2) continue;
 
-    // Find the turning point: the segment where arrival city matches origin
-    // For DFW→LHR round-trip, the turning point is where arrival=DFW (return starts)
-    const origin = f.segments[0].departure.airport;
-    let splitIdx = -1;
-    for (let i = 1; i < f.segments.length; i++) {
-      // When arrival matches origin for any segment before the last, that's likely the boundary
-      // Or more reliably: when a departure airport matches the destination
-      if (f.segments[i].departure.airport === f.segments[0].arrival.airport ||
-          f.segments[i - 1].arrival.airport === f.segments[f.segments.length - 1].arrival.airport) {
-        // Check if this segment starts the return leg
-        const prevArr = f.segments[i - 1].arrival.airport;
-        const currDep = f.segments[i].departure.airport;
-        if (prevArr !== currDep || currDep === f.segments[f.segments.length - 1].arrival.airport) {
-          splitIdx = i;
-          break;
-        }
-      }
-    }
-
-    // Heuristic: if segments count is even, split in half
-    if (splitIdx === -1) {
-      splitIdx = Math.ceil(f.segments.length / 2);
-    }
+    const splitIdx = findReturnLegStart(f.segments, destination);
 
     const outSegs = f.segments.slice(0, splitIdx);
     const retSegs = f.segments.slice(splitIdx);
@@ -243,3 +269,6 @@ function segsToJourney(segments: FlightSegment[], direction: 'outbound' | 'retur
     segments,
   };
 }
+
+/** Exported for src/lib/providers/__tests__/rt-flat-split.test.ts. */
+export const __testing = { findReturnLegStart };
