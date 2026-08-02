@@ -112,7 +112,55 @@ function buildBenefits(o: IncomingOffer): NormalizedBenefits {
  * computeAiScores engine unchanged — same weights, same badges, same
  * explanations — only the labels and the inputs are now real.
  */
-function buildFareOptions(offers: IncomingOffer[], ctx: FlightContext, travelers: number, currency: string) {
+
+/**
+ * Collapse fares a customer cannot tell apart.
+ *
+ * Mystifly returns the same product more than once — the same journey at the
+ * same price with the same baggage and the same rules, under two
+ * FareSourceCodes, sometimes one carrying the airline's brand and one carrying
+ * none. Every dedupe on the way here keys on the FareSourceCode, so both
+ * survived and the panel offered "Economy Fare 1" and "Economy Fare 2" with
+ * identical benefits and identical prices. That is a choice with no content.
+ *
+ * Identity is what the customer can SEE: cabin, price, baggage, refundability,
+ * changeability, their fees, and seat policy. Where two match, the one carrying
+ * the airline's brand is kept — same fare, more information. Anything that
+ * differs on any of those fields is a real alternative and is left alone.
+ */
+function dedupeIndistinguishable(offers: IncomingOffer[]): IncomingOffer[] {
+  const identity = (o: IncomingOffer): string => {
+    const b = buildBenefits(o);
+    return [
+      (o.cabinClass ?? '').toLowerCase(),
+      Math.round(o.totalPrice ?? 0),
+      b.carryOnAllowance ?? '', b.carryOnWeightKg ?? '',
+      b.checkedAllowance ?? '', b.checkedPieces ?? '',
+      b.refundable ?? '', b.refundFeeUsd ?? '',
+      b.changeable ?? '', b.changeFeeUsd ?? '',
+      b.seatSelection ?? '',
+    ].join('|');
+  };
+
+  const kept = new Map<string, IncomingOffer>();
+  for (const offer of offers) {
+    const key = identity(offer);
+    const existing = kept.get(key);
+    if (!existing) { kept.set(key, offer); continue; }
+    // Prefer the branded copy — "STANDARD" tells the customer more than "".
+    const existingBrand = (existing.airlineFareFamily ?? '').trim();
+    const offerBrand = (offer.airlineFareFamily ?? '').trim();
+    if (!existingBrand && offerBrand) kept.set(key, offer);
+  }
+  return [...kept.values()];
+}
+
+function buildFareOptions(rawOffers: IncomingOffer[], ctx: FlightContext, travelers: number, currency: string) {
+  // Collapse duplicates BEFORE labelling and scoring, so badges and the "N of M"
+  // ordering describe the fares actually shown.
+  const offers = dedupeIndistinguishable(rawOffers);
+  const collapsed = rawOffers.length - offers.length;
+
   // Airline-named fares keep their brand verbatim. Brandless ones (Mystifly's
   // v1 "lowest fare" search returns no FareFamily) get a controlled generic
   // label, disambiguated by RBD so two of them are never indistinguishable.
@@ -145,6 +193,7 @@ function buildFareOptions(offers: IncomingOffer[], ctx: FlightContext, travelers
   // Classify every offer into a UI tab. One pass, one result each — the count
   // in must equal the count out, which the diagnostics line asserts.
   const diagnostics = emptyDiagnostics();
+  diagnostics.collapsedDuplicates = collapsed;
   const categories = offers.map((o) => {
     const r = classifyFareCategory({
       cabinClass: o.cabinClass,
@@ -476,3 +525,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 };
 
 export default plugin;
+
+/** Exported for src/routes/fare-options.dedupe.test.ts. */
+export const __testing = { dedupeIndistinguishable };

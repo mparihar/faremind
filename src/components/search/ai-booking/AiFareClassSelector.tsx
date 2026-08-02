@@ -106,8 +106,14 @@ export default function AiFareClassSelector({ fares, onSelect }: Props) {
                 <span className="flex items-center justify-center w-6 h-6 rounded-full bg-gradient-to-br from-[#1ABC9C] to-emerald-600 text-white text-[12px] font-black flex-none">
                   {idx + 1}
                 </span>
+                {/* The AIRLINE's brand, or nothing. `fare.name` falls back to
+                    "Economy Fare", numbered when several share it — which put
+                    "Economy Fare 1" and "Economy Fare 2" side by side with
+                    identical benefits and identical prices. The cabin is already
+                    stated above; a generic name repeated per row is noise. The
+                    web panel prints the brand or nothing for the same reason. */}
                 <span className="text-[13px] font-extrabold text-slate-900 truncate">
-                  {emoji} {fare.name}
+                  {emoji}{fare.airlineFareFamily ? ` ${fare.airlineFareFamily}` : ''}
                 </span>
               </div>
               <span className={`text-[11px] font-bold px-1.5 py-0.5 rounded-full border flex-none ${badge.color}`}>

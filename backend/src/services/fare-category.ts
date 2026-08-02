@@ -312,6 +312,8 @@ export const FARE_CATEGORY_LABELS: Record<FareCategory, string> = {
 
 export interface ClassificationDiagnostics {
   totalOffers: number;
+  /** Provider duplicates a customer could not tell apart, collapsed before display. */
+  collapsedDuplicates?: number;
   byCategory: Record<FareCategory, number>;
   byMethod: Record<ClassificationMethod, number>;
   discarded: number;
@@ -349,6 +351,7 @@ export function formatDiagnostics(d: ClassificationDiagnostics): string {
     `via cabin=${m.provider_cabin} segment=${m.segment_cabin} rbd=${m.booking_class}`
       + ` fareBasis=${m.fare_basis} mapping=${m.airline_mapping} name=${m.name_inference}`
       + ` unclassified=${m.unclassified}`,
+    `collapsedDuplicates=${d.collapsedDuplicates ?? 0}`,
     `discarded=${d.discarded}`,
   ].join(' · ');
 }
