@@ -9,7 +9,7 @@
 import assert from 'node:assert';
 import { airportTimeZone, allKnownZones } from '../airport-timezones';
 import { airportEpochMs, elapsedMinutes, journeyDurationMinutes } from '../journey-time';
-import { AIRPORTS } from '@/data/airports';
+import { AIRPORTS } from '../../data/airports';
 
 let passed = 0;
 function test(name: string, fn: () => void) {

@@ -14,7 +14,7 @@
  * Layovers need no correction — both sides are the same airport, so the offset
  * cancels — but they run through the same helper so there is one way to do it.
  */
-import { airportTimeZone } from '@/lib/airport-timezones';
+import { airportTimeZone } from './airport-timezones';
 
 /** Cache: repeated `Intl.DateTimeFormat` construction is the expensive part. */
 const formatters = new Map<string, Intl.DateTimeFormat>();

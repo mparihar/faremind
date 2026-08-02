@@ -1,4 +1,4 @@
-import type { Airport } from '@/lib/types';
+import type { Airport } from '../lib/types';
 
 export const AIRPORTS: Airport[] = [
   // ─── United States — Northeast ───

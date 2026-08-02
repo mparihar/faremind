@@ -15,7 +15,7 @@
  *   3. null — we do not know, and the caller must fall back rather than guess.
  *      A wrong duration is worse than the old one, because it looks authoritative.
  */
-import { AIRPORTS } from '@/data/airports';
+import { AIRPORTS } from '../data/airports';
 
 /** Airports whose country spans more than one zone, or which are an exception. */
 const AIRPORT_ZONES: Record<string, string> = {

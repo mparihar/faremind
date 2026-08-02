@@ -6,6 +6,7 @@
  */
 
 import type { UnifiedFlight, FlightSegment, Provider } from '../lib/types';
+import { elapsedMinutes } from '../../../src/lib/journey-time';
 import { calculateValueScore, getAirlineLogo, getAirlineName, generateId } from '../lib/utils';
 import type { DuffelOffer } from './duffel';
 import { fromCabinType } from './mystifly';
@@ -223,6 +224,27 @@ const TAX_CODE_LABELS: Record<string, string> = {
   FR: 'France Aviation Tax', DE: 'Germany Aviation Tax',
 };
 
+
+/**
+ * A segment's elapsed time, computed in the two airports' own timezones.
+ *
+ * Returns null when either airport has no known zone or a timestamp is
+ * unreadable, so the caller falls back to whatever the provider stated rather
+ * than showing a confident wrong number.
+ */
+function segmentDurationMinutes(seg: any): number | null {
+  return elapsedMinutes(
+    {
+      time: seg.DepartureDateTime || seg.departureDateTime,
+      airport: seg.DepartureAirportLocationCode || seg.departureAirportLocationCode,
+    },
+    {
+      time: seg.ArrivalDateTime || seg.arrivalDateTime,
+      airport: seg.ArrivalAirportLocationCode || seg.arrivalAirportLocationCode,
+    },
+  );
+}
+
 export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
   // v2.2 denormalized: FSC at root. v1 flat: FSC inside AirItineraryPricingInfo.
   const fareSourceCode = itinerary.FareSourceCode
@@ -267,7 +289,14 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
           logo: getAirlineLogo(marketingCode),
         },
         flightNumber: `${marketingCode}${flightNum}`.replace(/\s+/g, ''),
-        duration: parseMystiflyDuration(seg.JourneyDuration || seg.journeyDuration),
+        // Departure to arrival in each airport's own timezone. Measured on a
+        // live DEL-YYZ search, 496 of 854 segments disagreed with the provider's
+        // JourneyDuration: many carried 0 because the provider sent none (a
+        // 7h20m YYZ-LHR leg read 0h00m), and others were off by an hour. The
+        // timestamps are the thing the customer can check against the ticket,
+        // so they win; JourneyDuration is the fallback when a zone is unknown.
+        duration: segmentDurationMinutes(seg)
+          ?? parseMystiflyDuration(seg.JourneyDuration || seg.journeyDuration),
         aircraft: seg.Equipment || seg.equipment || undefined,
         operatingCarrier: operatingCode !== marketingCode
           ? { code: operatingCode, name: getAirlineName(operatingCode) }
