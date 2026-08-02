@@ -1680,6 +1680,27 @@ export async function POST(req: NextRequest) {
       : (sourceFlight?.segments ?? []);
     const retSegs: any[] = isRoundTrip ? (sourceRoundTrip.returnJourney?.segments ?? []) : [];
 
+    // A round trip must turn round somewhere: the outbound has to end where the
+    // return starts, and come home to where it left. Booking FMM1FLR7 was stored
+    // with the 5 Nov YYZ→LGA flight inside the OUTBOUND journey, so the trip read
+    // as DEL→LGA across 23 days. The split that caused it is fixed upstream in
+    // mystifly-client; this records it loudly if a bad grouping ever reaches
+    // persistence again, because from here it is written to the database and
+    // shown to the customer as fact.
+    if (isRoundTrip && outSegs.length && retSegs.length) {
+      const outEnd = outSegs[outSegs.length - 1]?.arrival?.airport;
+      const retStart = retSegs[0]?.departure?.airport;
+      const outStart = outSegs[0]?.departure?.airport;
+      const retEnd = retSegs[retSegs.length - 1]?.arrival?.airport;
+      if (outEnd !== retStart || outStart !== retEnd) {
+        console.error(
+          `[checkout/confirm] INCOHERENT ROUND TRIP — outbound ${outStart}→${outEnd}, `
+          + `return ${retStart}→${retEnd}. Segments: `
+          + [...outSegs, ...retSegs].map((s: any) => `${s?.departure?.airport}→${s?.arrival?.airport}`).join(' '),
+        );
+      }
+    }
+
     const firstSeg = outSegs[0] ?? null;
     const lastOutSeg = outSegs[outSegs.length - 1] ?? firstSeg;
 
