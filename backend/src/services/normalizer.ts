@@ -6,7 +6,7 @@
  */
 
 import type { UnifiedFlight, FlightSegment, Provider } from '../lib/types';
-import { elapsedMinutes } from '../../../src/lib/journey-time';
+import { elapsedMinutes } from './journey-time';
 import { calculateValueScore, getAirlineLogo, getAirlineName, generateId } from '../lib/utils';
 import type { DuffelOffer } from './duffel';
 import { fromCabinType } from './mystifly';

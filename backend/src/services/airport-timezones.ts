@@ -1,4 +1,10 @@
 /**
+ * MIRROR of src/lib/airport-timezones.ts — keep the two byte-identical below this header.
+ *
+ * Dockerfile.backend copies only backend/, prisma/ and the root package files,
+ * so the backend cannot import across into src/ at runtime: doing so crashed the
+ * container on startup and took production search down with a 502.
+ *
  * Airport → IANA timezone.
  *
  * Providers send local airport times with no offset ("2026-09-23T23:30:00").
