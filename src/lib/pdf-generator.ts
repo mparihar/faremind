@@ -79,7 +79,11 @@ export function generatePdf(booking: any, action: 'download' | 'base64' = 'base6
   const routeH = 40;
   doc.roundedRect(14, y, pw - 28, routeH, 3, 3, 'FD');
 
+  // A round trip is what the booking says it is; two journeys is the fallback
+  // for older rows that never recorded a tripType.
   const flights = booking.journeys || [];
+  const isRoundTrip = (booking.tripType || '').toLowerCase().includes('round') || flights.length > 1;
+
   if (flights.length > 0) {
     const j = flights[0];
     const origin = j.originAirport || booking.originAirport;
@@ -91,7 +95,8 @@ export function generatePdf(booking: any, action: 'download' | 'base64' = 'base6
     doc.text(origin, mid - 30, y + 18, { align: 'center' });
     doc.setTextColor(...TEAL);
     doc.setFontSize(16);
-    doc.text('⇄', mid, y + 17, { align: 'center' });
+    // Match the trip type — a one-way itinerary must not carry a return arrow.
+    doc.text(isRoundTrip ? '⇄' : '→', mid, y + 17, { align: 'center' });
     doc.setTextColor(...LIGHT);
     doc.setFontSize(22);
     doc.text(dest, mid + 30, y + 18, { align: 'center' });
@@ -120,7 +125,8 @@ export function generatePdf(booking: any, action: 'download' | 'base64' = 'base6
     doc.text(booking.originAirport || '', pw / 2 - 30, y + 18, { align: 'center' });
     doc.setTextColor(...TEAL);
     doc.setFontSize(16);
-    doc.text('⇄', pw / 2, y + 17, { align: 'center' });
+    // Match the trip type — a one-way itinerary must not carry a return arrow.
+    doc.text(isRoundTrip ? '⇄' : '→', pw / 2, y + 17, { align: 'center' });
     doc.setTextColor(...LIGHT);
     doc.setFontSize(22);
     doc.text(booking.destinationAirport || '', pw / 2 + 30, y + 18, { align: 'center' });

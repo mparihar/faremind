@@ -9,7 +9,7 @@ import { motion, AnimatePresence, type Variants } from 'framer-motion';
 import {
   Check, Copy, Share2, Download, LayoutDashboard, Search,
   ShieldCheck, Plane, User, CreditCard, CheckCircle2, Clock,
-  AlertCircle, Loader2, CalendarDays, MapPin, ArrowRightLeft,
+  AlertCircle, Loader2, CalendarDays, MapPin, ArrowRightLeft, ArrowRight,
   Info, Briefcase,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
@@ -557,7 +557,11 @@ export default function ConfirmPage() {
                   </p>
                 </div>
                 <div className="flex flex-col items-center gap-0.5 px-3">
-                  <ArrowRightLeft className="w-4 h-4 text-slate-400" />
+                  {/* The arrow must agree with the label beneath it — a one-way
+                      trip showed a two-way arrow over the words "One Way". */}
+                  {isRoundTrip
+                    ? <ArrowRightLeft className="w-4 h-4 text-slate-400" />
+                    : <ArrowRight className="w-4 h-4 text-slate-400" />}
                   <span className="text-[9px] font-bold text-slate-400 uppercase tracking-wider">{isRoundTrip ? 'Round Trip' : 'One Way'}</span>
                 </div>
                 <div className="text-center">
