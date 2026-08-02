@@ -271,6 +271,22 @@ export default function AiPassengerDetailCollector({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [currentFieldIdx, isAllDone]);
 
+  /**
+   * The next field that still needs an answer, at or after `from`.
+   *
+   * Plain `idx + 1` walks into fields auto-fill has already answered and asks
+   * for them again: recall filled everything but Gender, the traveller supplied
+   * Gender, and the bot then asked for date of birth, nationality, passport and
+   * expiry in turn — all of them already on screen as answered chips. Skipping
+   * what is already known is what makes recall worth having.
+   */
+  const nextUnanswered = (from: number, answered: Map<keyof AiPassengerData, string>) => {
+    for (let i = Math.max(0, from); i < fields.length; i++) {
+      if (!answered.has(fields[i] as keyof AiPassengerData)) return i;
+    }
+    return fields.length;   // nothing left — show the review card
+  };
+
   const handleSubmitField = () => {
     if (!currentField) return;
 
@@ -290,7 +306,7 @@ export default function AiPassengerDetailCollector({
     completedRef.current = done;
     setCompletedFields((prev) => new Map(prev).set(currentField, normalized));
     setInputValue('');
-    setCurrentFieldIdx(prev => prev + 1);
+    setCurrentFieldIdx(nextUnanswered(currentFieldIdx + 1, done));
 
     // Once we know who this is, recall the rest. The primary contact is
     // identified by email; a secondary traveller has no email field, so we use
@@ -335,9 +351,7 @@ export default function AiPassengerDetailCollector({
             // Move to the first field still unanswered — but only ever FORWARD.
             // The traveller may already be past it, and yanking them back is
             // exactly what made this feel like a loop.
-            const firstMissing = fields.findIndex((f) => !latest.has(f));
-            const target = firstMissing === -1 ? fields.length : firstMissing;
-            setCurrentFieldIdx((prev) => Math.max(prev, target));
+            setCurrentFieldIdx((prev) => Math.max(prev, nextUnanswered(0, latest)));
           })
           .finally(() => setLookingUp(false));
       }
@@ -414,7 +428,9 @@ export default function AiPassengerDetailCollector({
   }
 
   // ── Render current field prompt ─────────────────────────────────────────────
-  const progress = Math.round((currentFieldIdx / PASSENGER_FIELD_ORDER.length) * 100);
+  // Same basis as the counter beside it: answered, over what this passenger
+  // type needs — not cursor position over the primary contact's field list.
+  const progress = Math.round((Math.min(completedFields.size, fields.length) / fields.length) * 100);
 
   return (
     <div className="space-y-2.5">
@@ -427,7 +443,7 @@ export default function AiPassengerDetailCollector({
           />
         </div>
         <span className="text-[13px] text-slate-400 font-medium flex-none">
-          {currentFieldIdx + 1}/{PASSENGER_FIELD_ORDER.length}
+          {Math.min(completedFields.size, fields.length)}/{fields.length}
         </span>
       </div>
 
