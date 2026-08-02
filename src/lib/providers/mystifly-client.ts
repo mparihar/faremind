@@ -10,6 +10,7 @@
  */
 
 import type { RoundTripOption } from '@/lib/round-trip-types';
+import { journeyDurationMinutes } from '@/lib/journey-time';
 import { normalizeMystiflyRoundTripOffer } from './mystifly-round-trip-normalizer';
 
 /**
@@ -234,8 +235,13 @@ function convertUnifiedToRoundTrip(flights: UnifiedFlight[], destination?: strin
 }
 
 function segsToJourney(segments: FlightSegment[], direction: 'outbound' | 'return'): import('@/lib/round-trip-types').JourneySegment {
-  let durationMinutes = 0;
-  if (segments.length > 0) {
+  // Timezone-aware: the provider sends local airport times with no offset, so
+  // subtracting them treats both clocks as one. DEL->YYZ read 15h09m for a
+  // 24h39m journey; the same trip back read 34h03m for 24h33m. journeyDurationMinutes
+  // returns null when either airport's zone is unknown, and the original
+  // calculation stands — a wrong duration that looks authoritative is worse.
+  let durationMinutes = journeyDurationMinutes(segments) ?? 0;
+  if (durationMinutes === 0 && segments.length > 0) {
     const dep = new Date(segments[0].departure.time).getTime();
     const arr = new Date(segments[segments.length - 1].arrival.time).getTime();
     if (arr > dep) durationMinutes = Math.round((arr - dep) / 60000);
