@@ -67,8 +67,12 @@ export function searchKey(
   adults = 1,
   children = 0,
   infants = 0,
+  // The provider takes ONE CabinPreference per search and returns only that
+  // cabin, so results differ entirely by cabin. Leaving it out of the key made
+  // an economy result serve a business search until the entry expired.
+  cabin = 'economy',
 ): string {
-  return `flight_search:${origin}:${dest}:${date}:${returnDate}:${adults}:${children}:${infants}`;
+  return `flight_search:${origin}:${dest}:${date}:${returnDate}:${adults}:${children}:${infants}:${String(cabin).toLowerCase()}`;
 }
 
 export function fareOptionsKey(offerId: string, basePrice: number, travelers: number): string {

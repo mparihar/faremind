@@ -62,10 +62,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
     const effectiveDestination = isMultiCity ? legs![legs!.length - 1].destination.toUpperCase() : destination;
     const effectiveDate = isMultiCity ? legs![0].departureDate : date;
 
-    // ── Redis cache check (cabin-agnostic key) ───────────────────────────────
+    // ── Redis cache check ────────────────────────────────────────────────────
     const cacheKey = isMultiCity
-      ? searchKey(effectiveOrigin, effectiveDestination, effectiveDate, undefined, adults, children, infants) + ':mc'
-      : searchKey(origin, destination, date, returnDate, adults, children, infants);
+      ? searchKey(effectiveOrigin, effectiveDestination, effectiveDate, undefined, adults, children, infants, cabin) + ':mc'
+      : searchKey(origin, destination, date, returnDate, adults, children, infants, cabin);
     // Allow callers to force fresh provider data (e.g. re-searching after a fare
     // expired) so a stale cached result is never served. Still repopulates the cache.
     const forceFresh = q.refresh === '1' || q.refresh === 'true' || q.nocache === '1' || q.nocache === 'true';
@@ -77,6 +77,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         origin: effectiveOrigin, destination: effectiveDestination,
         date: effectiveDate, returnDate,
         adults, children, infants,
+        // Parsed above but never forwarded, so every provider search went out as
+        // CabinPreference 'Y'. Mystifly does return business — BCN-MUC yields 166
+        // business itineraries across 19 carriers — but a customer asking for it
+        // silently got economy back.
+        cabin,
         ...(isMultiCity ? { legs } : {}),
       });
 
