@@ -7,7 +7,8 @@
 'use client';
 
 import { useState, useRef, useEffect } from 'react';
-import { Check, AlertCircle, User, ChevronRight, ChevronLeft, Mic } from 'lucide-react';
+import { Check, AlertCircle, User, ChevronRight, ChevronLeft, Mic, Sparkles } from 'lucide-react';
+import { apiFetch } from '@/lib/api-client';
 import type { AiPassengerData } from '@/lib/ai-booking-types';
 import { PASSENGER_FIELD_ORDER, PASSENGER_FIELD_LABELS, SECONDARY_PASSENGER_FIELDS, COUNTRIES } from '@/lib/ai-booking-types';
 import {
@@ -172,6 +173,36 @@ function normalizeField(field: keyof AiPassengerData, value: string): string {
   }
 }
 
+
+// ─── Auto-fill ────────────────────────────────────────────────────────────────
+
+/**
+ * Recall a traveller we already hold and fill the rest of the form.
+ *
+ * The checkout page does this on the email and name blur handlers; the bot asked
+ * for all eleven fields every time, so a returning customer retyped a passport
+ * number they had already given us. Same two endpoints, same rule: only fill a
+ * field that is still empty, never overwrite something the person just typed.
+ */
+interface LookupResult { found?: boolean; data?: Record<string, string> }
+
+async function lookupTraveller(by: { email?: string; firstName?: string; lastName?: string }): Promise<Record<string, string> | null> {
+  try {
+    const res = by.email
+      ? await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-email', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ email: by.email }),
+        })
+      : await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-name', {
+          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ firstName: by.firstName, lastName: by.lastName }),
+        });
+    return res?.found && res.data ? res.data : null;
+  } catch {
+    return null;   // a lookup that fails must never block data entry
+  }
+}
+
 // ─── Props ────────────────────────────────────────────────────────────────────
 
 interface Props {
@@ -204,6 +235,9 @@ export default function AiPassengerDetailCollector({
   const [completedFields, setCompletedFields] = useState<Map<keyof AiPassengerData, string>>(new Map());
   const inputRef = useRef<HTMLInputElement>(null);
   const [isRecording, setIsRecording] = useState(false);
+  const [autoFilled, setAutoFilled] = useState<number>(0);   // how many fields we recalled
+  const [lookingUp, setLookingUp] = useState(false);
+  const lookedUpRef = useRef(false);                          // one lookup per passenger
   const [voiceSupported] = useState(() => typeof window !== 'undefined' && isSpeechRecognitionSupported());
 
   const currentField = fields[currentFieldIdx] as keyof AiPassengerData | undefined;
@@ -236,9 +270,52 @@ export default function AiPassengerDetailCollector({
 
     setError(null);
     onFieldUpdate(currentField, normalized);
-    setCompletedFields(prev => new Map(prev).set(currentField, normalized));
+    const done = new Map(completedFields).set(currentField, normalized);
+    setCompletedFields(done);
     setInputValue('');
     setCurrentFieldIdx(prev => prev + 1);
+
+    // Once we know who this is, recall the rest. The primary contact is
+    // identified by email; a secondary traveller has no email field, so we use
+    // the name — the same two signals the checkout page uses.
+    const identifiesTraveller =
+      currentField === 'email'
+      || (currentField === 'lastName' && !fields.includes('email'));
+    if (identifiesTraveller && !lookedUpRef.current) {
+      lookedUpRef.current = true;
+      const firstName = done.get('firstName') ?? passenger.firstName ?? '';
+      const lastName = done.get('lastName') ?? passenger.lastName ?? '';
+      const by = currentField === 'email'
+        ? { email: normalized }
+        : { firstName, lastName };
+      if (by.email || (firstName.trim().length >= 2 && lastName.trim().length >= 2)) {
+        setLookingUp(true);
+        void lookupTraveller(by)
+          .then((data) => {
+            if (!data) return;
+            // Fill only what is still blank. Anything already entered — in this
+            // session or a moment ago — is the traveller's own answer and wins.
+            let filled = 0;
+            for (const field of fields) {
+              const value = data[field];
+              if (!value) continue;
+              if (done.has(field) || (passenger as any)[field]) continue;
+              onFieldUpdate(field, value);
+              done.set(field, value);
+              filled += 1;
+            }
+            if (filled > 0) {
+              setCompletedFields(new Map(done));
+              setAutoFilled(filled);
+              // Jump to the first field still missing, so a fully-known
+              // traveller lands straight on the review step.
+              const nextIdx = fields.findIndex((f) => !done.has(f));
+              setCurrentFieldIdx(nextIdx === -1 ? fields.length : nextIdx);
+            }
+          })
+          .finally(() => setLookingUp(false));
+      }
+    }
   };
 
   const handleKeyDown = (e: React.KeyboardEvent) => {
@@ -351,6 +428,18 @@ export default function AiPassengerDetailCollector({
         <p className="text-[15px] text-white/90 leading-relaxed">
           Please enter your <span className="font-bold text-white">{PASSENGER_FIELD_LABELS[currentField!]}</span>:
         </p>
+        {/* Say what was recalled and from where. Filling fields silently would
+            leave the traveller unsure whether the passport number on file is
+            still the one they are travelling on. */}
+        {lookingUp && (
+          <p className="text-[13px] text-white/50 mt-1">Checking your saved details…</p>
+        )}
+        {autoFilled > 0 && !lookingUp && (
+          <p className="text-[13px] text-[#1ABC9C] mt-1 flex items-center gap-1.5">
+            <Sparkles className="w-3.5 h-3.5 shrink-0" />
+            Filled {autoFilled} detail{autoFilled > 1 ? 's' : ''} from your previous booking — please check {autoFilled > 1 ? 'they are' : 'it is'} still correct.
+          </p>
+        )}
         {currentField === 'phone' && (
           <p className="text-[13px] text-white/50 mt-0.5">Enter +country code followed by number (e.g. +1 9725671234)</p>
         )}
