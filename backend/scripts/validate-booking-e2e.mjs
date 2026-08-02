@@ -329,8 +329,14 @@ async function validate(b) {
   // ── FARE FAMILY: the airline's own brand, frozen at book time ──
   // Compare against the provider's live TripDetails value rather than trusting our copy.
   if ('airline_fare_family' in b) {
+    const reservationItems = [
+      ...(Array.isArray(ti?.Itineraries) ? ti.Itineraries.map((i) => i?.ItineraryInfo) : []),
+      ti?.ItineraryInfo,
+    ].filter(Boolean).flatMap((g) => (Array.isArray(g?.ReservationItems) ? g.ReservationItems : []));
+
     const providerFamily = String(
-      ti?.ReservationItems?.[0]?.FareFamily ?? ti?.FareFamily ?? '',
+      reservationItems.find((r) => String(r?.FareFamily ?? '').trim())?.FareFamily
+        ?? ti?.FareFamily ?? '',
     ).trim();
     const ourFamily = String(b.airline_fare_family ?? '').trim();
 
@@ -356,12 +362,24 @@ async function validate(b) {
         `normalized_fare_tier=${b.normalized_fare_tier}`);
     }
     // The internal tier must never leak into the customer-facing brand.
+    //
+    // But a tier-shaped name is only wrong if the AIRLINE did not file it.
+    // Scoot brands its cheapest fare literally "BASIC" (MF35535426), which
+    // collides with our internal tier of the same name — storing it is correct,
+    // and flagging it was a false positive. So compare against what the provider
+    // actually returned, and only fall back to the shape test when the provider
+    // gave us nothing to compare with.
     if (ourFamily) {
+      const tierShaped = TIERS.includes(ourFamily.toUpperCase());
+      const airlineFiledIt = providerFamily
+        && providerFamily.toUpperCase() === ourFamily.toUpperCase();
       check('FAREFAMILY', 'brand is not the tier',
-        !TIERS.includes(ourFamily.toUpperCase()),
-        TIERS.includes(ourFamily.toUpperCase())
-          ? `airline_fare_family holds the INTERNAL tier "${ourFamily}" — a tier must never be shown as a brand`
-          : 'brand is an airline value, not an internal tier');
+        !tierShaped || !!airlineFiledIt,
+        !tierShaped
+          ? 'brand is an airline value, not an internal tier'
+          : airlineFiledIt
+            ? `the airline itself files this fare as "${providerFamily}" — a genuine brand that happens to match a tier name`
+            : `airline_fare_family holds the INTERNAL tier "${ourFamily}" and the provider filed ${providerFamily ? `"${providerFamily}"` : 'nothing'} — a tier must never be shown as a brand`);
     }
   }
 

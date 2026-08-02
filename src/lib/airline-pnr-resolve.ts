@@ -27,6 +27,14 @@ export interface ResolvedAirlinePnr {
   source: 'stored' | 'provider' | 'not_published_yet' | 'provider_unavailable' | 'unsupported_provider' | 'not_found';
 }
 
+/** Fill any per-PNR row that has no locator yet. Never overwrites one that has. */
+async function backfillChildPnrs(bookingId: string, airlinePnr: string): Promise<void> {
+  await prisma.bookingPnr.updateMany({
+    where: { bookingId, airlinePnr: null },
+    data: { airlinePnr },
+  });
+}
+
 /**
  * `attempts` re-asks the provider when the first call finds nothing, spaced by
  * `delayMs`. Use it only off the request path — the confirmation email is sent
@@ -45,7 +53,16 @@ export async function resolveAirlinePnr(
     select: { id: true, airlinePnr: true, mystiflyMfRef: true, masterPnr: true, primaryProvider: true },
   });
   if (!booking) return { airlinePnr: null, source: 'not_found' };
-  if (booking.airlinePnr) return { airlinePnr: booking.airlinePnr, source: 'stored' };
+
+  if (booking.airlinePnr) {
+    // The master has it, but the per-PNR rows can still be blank: checkout
+    // writes the locator onto MasterBooking only, and a webfare is ticketed
+    // instantly so reconciliation — which does fill the children — may never
+    // run. Servicing reads providerPnr.airlinePnr, and lookup falls back to it
+    // for multi-airline trips, so leaving them null loses the locator there.
+    await backfillChildPnrs(booking.id, booking.airlinePnr);
+    return { airlinePnr: booking.airlinePnr, source: 'stored' };
+  }
 
   // Duffel orders carry their own identifiers through a different flow.
   const mfRef = booking.mystiflyMfRef || booking.masterPnr;
@@ -72,10 +89,7 @@ export async function resolveAirlinePnr(
       if (!found) { last = { airlinePnr: null, source: 'not_published_yet' }; continue; }
 
       await prisma.masterBooking.update({ where: { id: booking.id }, data: { airlinePnr: found } });
-      await prisma.bookingPnr.updateMany({
-        where: { bookingId: booking.id, airlinePnr: null },
-        data: { airlinePnr: found },
-      });
+      await backfillChildPnrs(booking.id, found);
       console.log(`[AirlinePnr] ${bookingId}: captured ${found} from TripDetails`);
       return { airlinePnr: found, source: 'provider' };
     } catch (err: any) {
