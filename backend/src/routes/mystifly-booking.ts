@@ -629,7 +629,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const mfRef = await toMfRef(uniqueId);
       if (!mfRef) return unknownReference(reply, uniqueId);
 
-      const result = await mystifly.getTripDetails(mfRef);
+      // Resilient: /api/v3/TripDetails errors on some bookings, so fall back
+      // through the older versions rather than surfacing a provider error.
+      const result = await mystifly.getTripDetailsResilient(mfRef);
 
       const error = result?.Data?.Error || result?.Error;
       if (error?.ErrorCode && error.ErrorCode !== '0') {

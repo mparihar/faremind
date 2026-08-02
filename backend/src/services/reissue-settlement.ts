@@ -18,7 +18,7 @@
 import { prisma } from '../lib/db';
 import { getProvider } from './provider-adapter';
 import { refundCollectionWithAudit } from './customer-collect';
-import { getTripDetails } from './mystifly';
+import { getTripDetailsResilient } from './mystifly';
 import * as mbq from '../lib/manage-booking-queries';
 import { fireNotification } from '../lib/notify';
 
@@ -75,7 +75,7 @@ export async function checkReissueSettlement(changeRequestId: string): Promise<v
     // Refresh the itinerary from the provider (best-effort).
     if ((booking?.primaryProvider || '').toLowerCase() === 'mystifly') {
       try {
-        const trip = await getTripDetails(cr.providerMfRef);
+        const trip = await getTripDetailsResilient(cr.providerMfRef);
         await prisma.bookingProviderPayload.create({
           data: {
             bookingId: cr.bookingId,

@@ -185,6 +185,28 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     console.warn(`[TicketRecon] TripDetails failed for ${mfRef}:`, (err as Error).message);
   }
 
+  // ── Step 2a: Capture what the airline has already published ──
+  // These ran only on the TICKETED transition, which is too late and sometimes
+  // never: the airline publishes the record locator at BOOK time (BookingStatus
+  // "Booked", TicketStatus "TktInProcess"), and a booking that stalls in
+  // ticketing — or gives up at Case C1 — never reached the capture at all. The
+  // customer needs the locator for check-in regardless of ticketing state.
+  //
+  // Safe to call on every poll: both backfills write nothing when the provider
+  // has published nothing, and never overwrite a stored value with a blank.
+  if (tripDetailsResponse) {
+    try { await backfillAirlinePnr(record.bookingId, mfRef, tripDetailsResponse); }
+    catch (err) { console.warn(`[TicketRecon] airline-PNR capture failed for ${mfRef}:`, (err as Error).message); }
+
+    // Same reasoning for the fare-rule snapshot. It is written moments after Book
+    // from the search view, which reports RefundAllowed=false for fares the airline
+    // will actually refund; TripDetailsPTC_FareBreakdowns corrects it. Leaving that
+    // until ticketing left bookings marked non-refundable and blocked self-service
+    // refund/change in the meantime.
+    try { await backfillFareRulesFromTripDetails(record.bookingId, mfRef, tripDetailsResponse); }
+    catch (err) { console.warn(`[TicketRecon] fare-rules backfill failed for ${mfRef}:`, (err as Error).message); }
+  }
+
   // ── Step 3: Determine outcome ──
   const mappedBookingStatus = mapProviderBookingStatus(ticketStatus);
   const mappedTicketingStatus = mapProviderTicketingStatus(ticketStatus);
@@ -223,21 +245,6 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     // reconciliation on a backfill error.
     try { await backfillEticketsFromTripDetails(record.bookingId, mfRef); }
     catch (err) { console.warn(`[TicketRecon] eTicket persist failed for ${mfRef}:`, (err as Error).message); }
-
-    // Correct the BookingPnr fare-rule snapshot. It is written moments after Book,
-    // but Mystifly does not publish TripDetailsPTC_FareBreakdowns until the ticket
-    // is issued — so checkout falls back to the search view, which reports
-    // RefundAllowed=false for fares the airline will actually refund. Nothing
-    // corrected it afterwards, leaving bookings permanently marked non-refundable
-    // and blocking self-service refund/change. Best-effort, never fails the run.
-    try { await backfillFareRulesFromTripDetails(record.bookingId, mfRef, tripDetailsResponse); }
-    catch (err) { console.warn(`[TicketRecon] fare-rules backfill failed for ${mfRef}:`, (err as Error).message); }
-
-    // Capture the AIRLINE's record locator (ReservationItems[].AirlinePNR).
-    // It is not available at checkout and is what the customer needs for airline
-    // check-in — distinct from the Mystifly reference used for servicing calls.
-    try { await backfillAirlinePnr(record.bookingId, mfRef, tripDetailsResponse); }
-    catch (err) { console.warn(`[TicketRecon] airline-PNR capture failed for ${mfRef}:`, (err as Error).message); }
 
     // If a cancellation was queued while the ticket was still issuing, execute it
     // now (void within the window + refund). Best-effort — never fail reconciliation.
