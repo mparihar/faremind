@@ -247,6 +247,11 @@ export default function AiPassengerDetailCollector({
   const [lookingUp, setLookingUp] = useState(false);
   const lookedUpRef = useRef(false);                          // one lookup per passenger
   const sessionToken = useAuthStore((st) => st.sessionToken);
+  // The lookup is in flight while the traveller keeps answering. Reading state
+  // through a ref means the response merges into their LATEST answers instead of
+  // a snapshot taken when the email was submitted.
+  const completedRef = useRef(completedFields);
+  completedRef.current = completedFields;
   const [voiceSupported] = useState(() => typeof window !== 'undefined' && isSpeechRecognitionSupported());
 
   const currentField = fields[currentFieldIdx] as keyof AiPassengerData | undefined;
@@ -279,8 +284,11 @@ export default function AiPassengerDetailCollector({
 
     setError(null);
     onFieldUpdate(currentField, normalized);
-    const done = new Map(completedFields).set(currentField, normalized);
-    setCompletedFields(done);
+    // Functional, so an in-flight lookup resolving at the same moment merges
+    // with this answer rather than replacing the map wholesale.
+    const done = new Map(completedRef.current).set(currentField, normalized);
+    completedRef.current = done;
+    setCompletedFields((prev) => new Map(prev).set(currentField, normalized));
     setInputValue('');
     setCurrentFieldIdx(prev => prev + 1);
 
@@ -302,25 +310,34 @@ export default function AiPassengerDetailCollector({
         void lookupTraveller(by, sessionToken)
           .then((data) => {
             if (!data) return;
-            // Fill only what is still blank. Anything already entered — in this
-            // session or a moment ago — is the traveller's own answer and wins.
+
+            // Merge into whatever has been answered BY NOW, not into the map as
+            // it was when the lookup started. Writing back the snapshot discarded
+            // every field typed while the request was in flight and then sent the
+            // traveller back to re-enter them — the reported loop.
+            const latest = new Map(completedRef.current);
             let filled = 0;
             for (const field of fields) {
               const value = data[field];
               if (!value) continue;
-              if (done.has(field) || (passenger as any)[field]) continue;
+              // Their own answer always wins, whenever they gave it.
+              if (latest.has(field) || (passenger as any)[field]) continue;
               onFieldUpdate(field, value);
-              done.set(field, value);
+              latest.set(field, value);
               filled += 1;
             }
-            if (filled > 0) {
-              setCompletedFields(new Map(done));
-              setAutoFilled(filled);
-              // Jump to the first field still missing, so a fully-known
-              // traveller lands straight on the review step.
-              const nextIdx = fields.findIndex((f) => !done.has(f));
-              setCurrentFieldIdx(nextIdx === -1 ? fields.length : nextIdx);
-            }
+            if (filled === 0) return;
+
+            completedRef.current = latest;
+            setCompletedFields(latest);
+            setAutoFilled(filled);
+
+            // Move to the first field still unanswered — but only ever FORWARD.
+            // The traveller may already be past it, and yanking them back is
+            // exactly what made this feel like a loop.
+            const firstMissing = fields.findIndex((f) => !latest.has(f));
+            const target = firstMissing === -1 ? fields.length : firstMissing;
+            setCurrentFieldIdx((prev) => Math.max(prev, target));
           })
           .finally(() => setLookingUp(false));
       }
