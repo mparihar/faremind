@@ -24,6 +24,9 @@ interface GroupableOffer {
   airlineFareFamily?: string | null;
   cabinClass?: string;
   bookingClass?: string | null;
+  segments?: Array<{ cabinClassCode?: string; fareBasisCode?: string }>;
+  airline?: { code?: string } | null;
+  provider?: string;
   fareRules?: { refundable?: boolean | null; changeable?: boolean | null; changeFee?: number | null; cancellationFee?: number | null } | null;
   baggage?: { carryOn?: number; checked?: number } | null;
   checkedBaggageAllowance?: string | null;
@@ -40,6 +43,16 @@ export interface FareOfferSummary {
   normalizedFareTier?: string;
   cabinClass?: string;
   bookingClass: string | null;
+  /**
+   * Per-segment cabin codes and fare bases. The fare panel classifies each
+   * offer into a UI tab from these when the offer-level cabin is absent, and
+   * uses them to spot a mixed-cabin itinerary rather than labelling it by
+   * whichever segment happened to be first.
+   */
+  segmentCabinCodes?: Array<string | null | undefined>;
+  fareBasisCodes?: Array<string | null | undefined>;
+  airlineCode?: string | null;
+  provider?: string | null;
   totalPrice: number;
   currency?: string;
   seatsRemaining: number | null;
@@ -62,6 +75,10 @@ function toSummary(o: any): FareOfferSummary {
     normalizedFareTier: o.normalizedFareTier,
     cabinClass: o.cabinClass,
     bookingClass: o.bookingClass ?? null,
+    segmentCabinCodes: (o.segments ?? []).map((sg: any) => sg?.cabinClassCode).filter(Boolean),
+    fareBasisCodes: (o.segments ?? []).map((sg: any) => sg?.fareBasisCode).filter(Boolean),
+    airlineCode: o.airline?.code ?? null,
+    provider: o.provider ?? null,
     totalPrice: o.totalPrice ?? 0,
     currency: o.currency,
     seatsRemaining: typeof o.seatsRemaining === 'number' ? o.seatsRemaining : null,

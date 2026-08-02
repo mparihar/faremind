@@ -39,6 +39,16 @@ export interface FlightSegment {
   duration: number;
   aircraft?: string;
   operatingCarrier?: AirlineInfo;
+
+  // ── Per-segment fare signals ──
+  // Both reach the orchestrator from ItineraryReferenceList and were dropped
+  // here. They are the 2nd and 4th inputs to cabin classification, and they are
+  // PER SEGMENT — an itinerary can mix cabins, which a single offer-level field
+  // cannot express.
+  /** Provider cabin code for this segment: 'Y' | 'S' | 'C' | 'J' | 'F' | 'P'. */
+  cabinClassCode?: string;
+  /** Airline fare basis for this segment, e.g. 'QL7XLGY1'. */
+  fareBasisCode?: string;
 }
 
 /**

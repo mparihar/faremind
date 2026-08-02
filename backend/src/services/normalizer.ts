@@ -272,6 +272,12 @@ export function normalizeMystiflyOffer(itinerary: any): UnifiedFlight {
         operatingCarrier: operatingCode !== marketingCode
           ? { code: operatingCode, name: getAirlineName(operatingCode) }
           : undefined,
+        // Kept verbatim, per segment. The orchestrator merges both onto the raw
+        // segment from ItineraryReferenceList; dropping them here left cabin
+        // classification with only the offer-level value, which cannot describe
+        // a mixed-cabin itinerary.
+        cabinClassCode: seg.CabinClassCode || seg.cabinClassCode || undefined,
+        fareBasisCode: seg.FareBasisCode || seg.fareBasisCode || undefined,
       });
     }
   }

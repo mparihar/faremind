@@ -13,11 +13,18 @@ import { usePricingConfig, computeServiceFee } from '@/hooks/usePricingConfig';
 
 // ─── Cabin tab labels ────────────────────────────────────────────────────────
 
+// FareMind's four UI tabs. These are display buckets, not fare families — the
+// airline's own brand ("ECO VALUE", "BUSINESS FLEX") is shown on the card
+// itself and is never rewritten. `other` holds anything the classifier could
+// not confidently place, including premium economy, so those fares stay
+// visible and bookable rather than being hidden.
 const CABIN_LABELS: Record<string, string> = {
   economy: 'Economy',
-  premium_economy: 'Premium Economy',
   business: 'Business',
   first: 'First',
+  other: 'Other',
+  // Retained so a cached payload from before the four-tab change still renders.
+  premium_economy: 'Premium Economy',
 };
 
 function fmtPrice(amount: number, currency: string) {

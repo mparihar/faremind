@@ -1,0 +1,14 @@
+[
+  {
+    "note": "TEMPLATE — this file ships empty on purpose. The built-in chain (provider cabin -> segment cabin -> RBD -> fare basis -> name inference) classifies almost everything, and anything it cannot place goes to the visible Other tab rather than being lost. Add a rule only when a real carrier is observed to be misplaced. Copy the shape below; every field except category is optional, and a rule matches when all of its populated fields match.",
+    "airline": "XX",
+    "provider": "mystifly",
+    "rbd": "W",
+    "fareFamilyPattern": "^PREMIUM",
+    "fareBasisPattern": "^W",
+    "category": "other",
+    "priority": 25,
+    "confidence": 0.95,
+    "enabled": false
+  }
+]

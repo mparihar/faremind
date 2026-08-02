@@ -20,6 +20,11 @@ import { FastifyPluginAsync } from 'fastify';
 import { computeAiScores, type FareInput, type FlightContext } from '../services/ai-fare-scorer';
 import { cacheGet, cacheSet, fareOptionsKey } from '../services/cache';
 import { displayFareFamily, cabinBucket, normalizeFareTier, parseBaggageAllowance, disambiguateFareLabels } from '../services/fare-family';
+import {
+  classifyFareCategory, FARE_CATEGORY_ORDER, FARE_CATEGORY_LABELS,
+  emptyDiagnostics, recordClassification, formatDiagnostics,
+  type FareCategory,
+} from '../services/fare-category';
 import type { NormalizedFareTier } from '../lib/types';
 
 type AiBadge = 'cheapest' | 'best_value' | 'most_flexible' | 'premium_upgrade' | 'ai_pick' | 'best_comfort';
@@ -45,6 +50,12 @@ interface IncomingOffer {
   normalizedFareTier?: NormalizedFareTier | null;
   cabinClass?: string | null;
   bookingClass?: string | null;
+  /** Per-segment provider cabin codes — 2nd classification signal. */
+  segmentCabinCodes?: Array<string | null | undefined>;
+  /** Per-segment airline fare basis codes — 4th classification signal. */
+  fareBasisCodes?: Array<string | null | undefined>;
+  airlineCode?: string | null;
+  provider?: string | null;
   totalPrice?: number;
   currency?: string;
   seatsRemaining?: number | null;
@@ -131,10 +142,27 @@ function buildFareOptions(offers: IncomingOffer[], ctx: FlightContext, travelers
     };
   });
 
+  // Classify every offer into a UI tab. One pass, one result each — the count
+  // in must equal the count out, which the diagnostics line asserts.
+  const diagnostics = emptyDiagnostics();
+  const categories = offers.map((o) => {
+    const r = classifyFareCategory({
+      cabinClass: o.cabinClass,
+      segmentCabinCodes: o.segmentCabinCodes,
+      bookingClass: o.bookingClass,
+      fareBasisCodes: o.fareBasisCodes,
+      fareFamily: o.airlineFareFamily,
+      airlineCode: o.airlineCode,
+      provider: o.provider,
+    });
+    recordClassification(diagnostics, r);
+    return r;
+  });
+
   const scored = computeAiScores(scorerInputs, ctx);
   const scoreMap = new Map(scored.map((s) => [s.id, s]));
 
-  return offers.map((o, i) => {
+  const built = offers.map((o, i) => {
     const id = o.id || `fare_${i}`;
     const b = buildBenefits(o);
     const s = scoreMap.get(id)!;
@@ -145,7 +173,13 @@ function buildFareOptions(offers: IncomingOffer[], ctx: FlightContext, travelers
       // a distinct provider offer — unlike the old templates, which all shared
       // one offerId and so all booked the identical fare.
       offerId: o.providerOfferId || o.offerId || '',
-      cabin: cabinBucket(o.cabinClass),
+      // Which FareMind UI tab this offer appears under. Separate from the
+      // scorer's `cabin` above, which stays on the four-value cabinBucket the
+      // ranking engine has always been given — classification must not move a
+      // score. `other` is a real, visible tab: an offer we cannot confidently
+      // place is still shown, never hidden.
+      cabin: categories[i].category,
+      categoryMethod: categories[i].method,
       // Airline branding, verbatim when the carrier filed one; otherwise a
       // controlled generic label — never an invented brand.
       name: labels[i],
@@ -185,22 +219,36 @@ function buildFareOptions(offers: IncomingOffer[], ctx: FlightContext, travelers
       popular: s.badges.includes('best_value'),
     };
   });
+
+  return { fareOptions: built, diagnostics };
 }
 
-type FareOption = ReturnType<typeof buildFareOptions>[number];
+type FareOption = ReturnType<typeof buildFareOptions>['fareOptions'][number];
 
 function buildResponse(
   fareOptions: FareOption[],
   opts: { offerId: string; origin: string; destination: string; stops: number; trip: string; currency: string },
 ) {
-  const fareGroups = CABIN_ORDER
+  // Four UI tabs: Economy, Business, First, Other. `other` is shown, not hidden
+  // — an offer we could not confidently place must still be bookable.
+  const fareGroups = FARE_CATEGORY_ORDER
     .map((cabin) => ({
       cabin,
-      label: CABIN_LABELS[cabin],
+      label: FARE_CATEGORY_LABELS[cabin],
       // Cheapest first — the tier ordering is inferred and must not drive display.
       fares: fareOptions.filter((f) => f.cabin === cabin).sort((a, b) => a.totalPrice - b.totalPrice),
     }))
     .filter((g) => g.fares.length > 0);
+
+  // The invariant: grouping is a partition, so every offer in is an offer out.
+  // A shortfall means a fare the provider sold us never reached the customer.
+  const grouped = fareGroups.reduce((n, g) => n + g.fares.length, 0);
+  if (grouped !== fareOptions.length) {
+    console.error(
+      `[fare-options] LOST ${fareOptions.length - grouped} of ${fareOptions.length} fares during grouping — `
+      + `categories seen: ${[...new Set(fareOptions.map((f) => f.cabin))].join(', ')}`,
+    );
+  }
 
   const allSorted = [...fareOptions].sort((a, b) => b.aiScore - a.aiScore);
   const topPick = allSorted.find((f) => f.aiBadges.includes('ai_pick')) ?? allSorted[0];
@@ -279,7 +327,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         layoverMinutes: body.flight_context?.layover_minutes ?? [],
       };
 
-      const fareOptions = buildFareOptions(offers, ctx, travelers, currency);
+      const { fareOptions, diagnostics } = buildFareOptions(offers, ctx, travelers, currency);
+
+      // One line per search. `discarded=0` is the contract: every offer the
+      // provider returned reached a tab. A non-zero value is a real defect.
+      fastify.log.info(`[fare-options] classification · ${formatDiagnostics(diagnostics)}`);
       const anchorOfferId = offers[0]?.providerOfferId || offers[0]?.offerId || '';
 
       const withoutBrand = offers.filter((o) => !((o.airlineFareFamily || '').trim())).length;
@@ -354,7 +406,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         },
       };
 
-      const response = buildResponse(buildFareOptions([offer], ctx, travelers, currency), {
+      const single = buildFareOptions([offer], ctx, travelers, currency);
+      fastify.log.info(`[fare-options] classification · ${formatDiagnostics(single.diagnostics)}`);
+      const response = buildResponse(single.fareOptions, {
         offerId: offer_id,
         origin: q.origin || '',
         destination: q.destination || '',
