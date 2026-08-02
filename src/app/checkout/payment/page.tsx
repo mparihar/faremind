@@ -505,8 +505,10 @@ function PaymentFormInner() {
         .then(async (r) => {
           const contentType = r.headers.get('content-type') || '';
           if (!contentType.includes('application/json')) {
-            // Server returned HTML (e.g. Next.js error page, timeout, or crash)
-            throw new Error('Booking server returned an unexpected response. Your card authorization is safe — please try again or contact support.');
+            // Server returned HTML (e.g. Next.js error page, timeout, or crash).
+            // Say what it means for the customer — "the booking did not go
+            // through" — rather than describing our own plumbing to them.
+            throw new Error('Booking could not be completed. Your card authorization is safe — please try again or contact support.');
           }
           return r.json();
         }) as {

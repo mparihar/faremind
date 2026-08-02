@@ -124,12 +124,14 @@ if (typeof buildCustomerEmail === 'function') {
 if (typeof buildSupportEmail === 'function') {
   test('admin email headline uses OUR reference, not the provider one', () => {
     const spec = buildSupportEmail('BOOKING_CONFIRMED', { ...base, airline_pnr: AIRLINE_PNR });
+    assert.ok(spec, 'template returned null');
     assert.ok(spec.subject.includes(FAREMIND_REF), `subject must carry ${FAREMIND_REF}, got: ${spec.subject}`);
     assert.ok(!spec.subject.includes(MYSTIFLY_REF), 'subject must not carry the MF code');
   });
 
   test('admin email keeps the Mystifly ref under its own label', () => {
     const spec = buildSupportEmail('BOOKING_CONFIRMED', { ...base, airline_pnr: null });
+    assert.ok(spec, 'template returned null');
     const i = spec.html.indexOf('Airline PNR');
     if (i < 0) return;                       // this template does not show a locator
     const cell = spec.html.slice(i, i + 300);
