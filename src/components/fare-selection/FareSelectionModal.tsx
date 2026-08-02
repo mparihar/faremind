@@ -459,8 +459,10 @@ export default function FareSelectionModal({ onClose }: Props) {
                   </div>
                 </div>
 
-                {/* Cabin tabs */}
-                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+                {/* Cabin tabs — only when there is a choice to make. With one
+                    cabin this was a lone "Economy" pill that selected nothing. */}
+                {payload.fareGroups.length > 1 && (
+                <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-slim">
                   {payload.fareGroups.map(group => (
                     <button
                       key={group.cabin}
@@ -475,10 +477,13 @@ export default function FareSelectionModal({ onClose }: Props) {
                     </button>
                   ))}
                 </div>
+                )}
 
-                {/* Fare tiles — horizontal scroll */}
+                {/* Fare tiles — horizontal scroll with a VISIBLE track, so a
+                    row wider than the panel reads as scrollable rather than as
+                    a card mysteriously clipped at the edge. */}
                 <div
-                  className="flex gap-3 pb-4 items-stretch overflow-x-auto snap-x snap-mandatory scrollbar-hide"
+                  className="flex gap-3 pb-3 items-stretch overflow-x-auto snap-x snap-mandatory scrollbar-slim"
                 >
                   {activeFares.map(fare => (
                     <div key={fare.id} id={`fare-${fare.id}`} className="flex min-w-[240px] sm:min-w-[280px] flex-1 snap-start">

@@ -146,6 +146,28 @@ body {
   display: none;
 }
 
+/* Visible-but-quiet scrollbar, for rows that scroll horizontally.
+   A hidden scrollbar on a row of fare cards leaves a card clipped at the edge
+   with nothing to say more exist — the track is the affordance. */
+.scrollbar-slim {
+  scrollbar-width: thin;
+  scrollbar-color: #cbd5e1 transparent;
+}
+.scrollbar-slim::-webkit-scrollbar {
+  height: 8px;
+}
+.scrollbar-slim::-webkit-scrollbar-track {
+  background: #f1f5f9;
+  border-radius: 999px;
+}
+.scrollbar-slim::-webkit-scrollbar-thumb {
+  background: #cbd5e1;
+  border-radius: 999px;
+}
+.scrollbar-slim::-webkit-scrollbar-thumb:hover {
+  background: #94a3b8;
+}
+
 /* ═══════════════════════════════════════════════
    Keyframes
    ═══════════════════════════════════════════════ */

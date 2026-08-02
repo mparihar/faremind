@@ -358,8 +358,9 @@ export default function FareSelectionPage() {
           </div>
         </div>
 
-        {/* ── Cabin tabs ── */}
-        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-hide">
+        {/* ── Cabin tabs — only when there is more than one cabin to pick ── */}
+        {payload.fareGroups.length > 1 && (
+        <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-slim">
           {payload.fareGroups.map(group => (
             <button
               key={group.cabin}
@@ -374,6 +375,7 @@ export default function FareSelectionPage() {
             </button>
           ))}
         </div>
+        )}
 
         {/* ── Fare cards ── */}
         <div className="space-y-4">
