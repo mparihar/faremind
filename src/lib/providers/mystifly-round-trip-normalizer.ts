@@ -144,6 +144,58 @@ function odToJourney(
  * Convert a Mystifly PricedItinerary (round-trip, 2 OD options) into a RoundTripOption.
  * Returns null if the itinerary doesn't have exactly 2 origin-destination options.
  */
+
+/**
+ * Re-split the two OD options when the provider put a return segment in the
+ * outbound one.
+ *
+ * Observed on booking FMM1FLR7 (AA, DEL-YYZ 13 Oct / 5 Nov): the search response
+ * grouped the four segments 3 + 1 —
+ *
+ *   OD[0]  DEL→JFK 13 Oct · LGA→YYZ 14 Oct · YYZ→LGA 5 Nov
+ *   OD[1]  JFK→DEL 5 Nov
+ *
+ * so the outbound "journey" ran DEL→LGA across 23 days with a 529-hour
+ * "layover" at YYZ, and the customer's confirmation said the trip was DEL⇄LGA
+ * rather than DEL⇄YYZ. TripDetails for the same booking is unambiguous — it
+ * marks those segments IsReturn false, false, TRUE, true — so the correct split
+ * is 2 + 2 and the search grouping is simply wrong.
+ *
+ * Nobody stays at a connecting airport for a day, so a gap that long is not a
+ * layover: it is the stay at the destination, which is exactly the journey
+ * boundary. Segments after it belong to the return.
+ *
+ * Only ever moves segments from the end of the outbound to the front of the
+ * return, and only when a gap that large exists — a normal itinerary is
+ * untouched.
+ */
+const MAX_LAYOVER_HOURS = 24;
+
+function resplitOnLongGap(outSegs: any[], retSegs: any[]): { out: any[]; ret: any[]; moved: number } {
+  if (outSegs.length < 2) return { out: outSegs, ret: retSegs, moved: 0 };
+
+  const timeOf = (v: any) => { const t = new Date(v).getTime(); return Number.isFinite(t) ? t : NaN; };
+
+  for (let i = 0; i < outSegs.length - 1; i++) {
+    const arrive = timeOf(outSegs[i]?.ArrivalDateTime ?? outSegs[i]?.arrivalDateTime);
+    const depart = timeOf(outSegs[i + 1]?.DepartureDateTime ?? outSegs[i + 1]?.departureDateTime);
+    if (!Number.isFinite(arrive) || !Number.isFinite(depart)) continue;
+
+    const gapHours = (depart - arrive) / 3_600_000;
+    if (gapHours <= MAX_LAYOVER_HOURS) continue;
+
+    const out = outSegs.slice(0, i + 1);
+    const ret = [...outSegs.slice(i + 1), ...retSegs];
+    console.warn(
+      `[Mystifly RT] Provider grouped a return segment into the outbound leg — `
+      + `${Math.round(gapHours)}h gap at ${outSegs[i]?.ArrivalAirportLocationCode ?? '?'} is a destination stay, not a layover. `
+      + `Re-split ${outSegs.length}+${retSegs.length} into ${out.length}+${ret.length}.`,
+    );
+    return { out, ret, moved: outSegs.length - out.length };
+  }
+  return { out: outSegs, ret: retSegs, moved: 0 };
+}
+
 export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption | null {
   const odOptions = itinerary.OriginDestinationOptions || [];
   if (odOptions.length < 2) return null;
@@ -158,8 +210,12 @@ export function normalizeMystiflyRoundTripOffer(itinerary: any): RoundTripOption
   }
   const validatingAirline = itinerary.ValidatingAirlineCode || '';
 
-  const outbound = odToJourney(odOptions[0], 'outbound', validatingAirline);
-  const ret = odToJourney(odOptions[1], 'return', validatingAirline);
+  const rawOut = odOptions[0]?.FlightSegments ?? odOptions[0]?.flightSegments ?? [];
+  const rawRet = odOptions[1]?.FlightSegments ?? odOptions[1]?.flightSegments ?? [];
+  const split = resplitOnLongGap(rawOut, rawRet);
+
+  const outbound = odToJourney({ ...odOptions[0], FlightSegments: split.out, flightSegments: split.out }, 'outbound', validatingAirline);
+  const ret = odToJourney({ ...odOptions[1], FlightSegments: split.ret, flightSegments: split.ret }, 'return', validatingAirline);
 
   const allCodes = [...new Set([...outbound.airlineCodes, ...ret.airlineCodes])];
   const allNames = [...new Set([...outbound.airlineNames, ...ret.airlineNames])];
