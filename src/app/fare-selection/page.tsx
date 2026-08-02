@@ -405,11 +405,6 @@ export default function FareSelectionPage() {
                 }`}
               >
                 {CABIN_LABELS[cabin]}
-                {count > 0 && (
-                  <span className={`ml-1.5 text-[11px] font-bold ${isActive ? 'text-white/70' : 'text-slate-400'}`}>
-                    {count}
-                  </span>
-                )}
               </button>
             );
           })}
@@ -440,7 +435,9 @@ export default function FareSelectionPage() {
         <div className="fixed bottom-0 left-0 right-0 z-40 bg-white border-t border-slate-100 shadow-[0_-4px_24px_rgba(0,0,0,0.07)]">
           <div className="max-w-4xl mx-auto px-4 py-4 flex items-center justify-between gap-4">
             <div>
-              <p className="text-[11px] text-slate-500 font-medium">{selectedFare.name}</p>
+              {selectedFare.airlineFareFamily && (
+                <p className="text-[11px] text-slate-500 font-medium">{selectedFare.airlineFareFamily}</p>
+              )}
               <div className="flex items-baseline gap-1.5">
                 <span className="text-[22px] font-extrabold text-slate-900">{fmtPrice(grandTotal, payload.currency)}</span>
                 <span className="text-[11px] text-slate-400">

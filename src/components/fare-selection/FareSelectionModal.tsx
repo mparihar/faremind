@@ -518,11 +518,6 @@ export default function FareSelectionModal({ onClose }: Props) {
                         }`}
                       >
                         {CABIN_LABELS[cabin]}
-                        {count > 0 && (
-                          <span className={`ml-1.5 text-[11px] font-bold ${isActive ? 'text-white/70' : 'text-slate-400'}`}>
-                            {count}
-                          </span>
-                        )}
                       </button>
                     );
                   })}
@@ -558,7 +553,9 @@ export default function FareSelectionModal({ onClose }: Props) {
           {!store.loading && payload && selectedFare && (
             <div className="px-4 sm:px-5 py-3 sm:py-4 bg-white border-t border-slate-100 shrink-0 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 sm:gap-4">
               <div>
-                <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">{selectedFare.name}</p>
+                {selectedFare.airlineFareFamily && (
+                  <p className="text-[10px] font-semibold text-slate-400 uppercase tracking-widest mb-0.5">{selectedFare.airlineFareFamily}</p>
+                )}
                 <div className="flex items-baseline gap-2">
                   <span className="text-3xl font-bold text-[#F97316] leading-none">{fmtPrice(grandTotal, payload.currency)}</span>
                   <span className="text-[10px] text-slate-400 font-medium">

@@ -188,10 +188,16 @@ export default function FareCard({
             })}
         </div>
 
-        {/* Fare name + price. `fare.name` is the airline's own fare family,
-            verbatim — FareMind never substitutes a name of its own. */}
+        {/* Fare name + price. The heading is the AIRLINE's own fare family,
+            verbatim — FareMind never substitutes a name of its own.
+            When the carrier filed no brand we show nothing rather than the
+            generic "Economy Fare": the cabin tab above already says Economy,
+            so the fallback only repeated it and read like a product name the
+            airline does not sell. */}
         <div>
-          <h3 className="text-[15px] font-extrabold text-slate-900 leading-tight">{fare.name}</h3>
+          {fare.airlineFareFamily && (
+            <h3 className="text-[15px] font-extrabold text-slate-900 leading-tight">{fare.airlineFareFamily}</h3>
+          )}
           {b?.bookingClass && (
             <p className="text-[10px] font-semibold text-slate-400 tracking-wide mt-0.5">
               Class {b.bookingClass}
