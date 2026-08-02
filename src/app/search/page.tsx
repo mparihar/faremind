@@ -247,6 +247,28 @@ function SearchContent() {
   const legsParam = searchParams.get('legs') || '';
   const dnaAutoTrigger = searchParams.get('dna') === '1';
 
+  /**
+   * Which search the URL is currently asking for, and which one has actually
+   * answered.
+   *
+   * `loading` alone cannot gate the empty state. It starts false and is only
+   * set true inside the fetch effect, so between first paint and that effect
+   * there is a frame where loading===false and results===[] — and the page
+   * renders "No flights found" for a search that has not been sent yet. On a
+   * slow client-side navigation that frame is long enough to see, which is why
+   * a refresh "fixed" it: the second load simply won the race.
+   *
+   * Comparing the two keys closes the gap. Results are only ever declared empty
+   * once the fetch for THESE parameters has come back.
+   */
+  const searchKey = `${origin}|${destination}|${date}|${adults}|${cabin}|${tripParam}|${returnDateParam}`;
+  const [completedSearchKey, setCompletedSearchKey] = useState<string | null>(null);
+  // The effect below bails out when the URL is missing origin/destination/date,
+  // so with incomplete params nothing is pending and the spinner must not show
+  // — otherwise it would never stop.
+  const hasSearchParams = !!(origin && destination && date);
+  const awaitingResults = hasSearchParams && (loading || completedSearchKey !== searchKey);
+
   const originAirport = useMemo(() => AIRPORTS.find((a) => a.code === origin), [origin]);
   const destAirport = useMemo(() => AIRPORTS.find((a) => a.code === destination), [destination]);
 
@@ -302,6 +324,7 @@ function SearchContent() {
   useEffect(() => {
     if (!origin || !destination || !date) return;
     setLoading(true);
+    setCompletedSearchKey(null);   // this search has not answered yet
     setSearchMeta(null);
     setResults([]);           // Clear one-way results
     setRoundTripOptions([]);  // Clear round-trip results
@@ -382,12 +405,15 @@ function SearchContent() {
         }
         if (data.meta) setSearchMeta(data.meta);
         if (cabin) setSelectedClasses(new Set([cabin]));
+        setCompletedSearchKey(searchKey);
         setLoading(false);
       })
-      .catch((err) => { 
-        console.error('Search failed:', err); 
+      .catch((err) => {
+        console.error('Search failed:', err);
         alert(`Search failed: ${err.message}`);
-        setLoading(false); 
+        // Mark it answered even on failure, so the spinner cannot hang forever.
+        setCompletedSearchKey(searchKey);
+        setLoading(false);
       });
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [origin, destination, date, adults, cabin, tripParam, returnDateParam]);
@@ -1212,8 +1238,10 @@ function SearchContent() {
         </div>
       )}
 
-      {/* Main content */}
-      {loading ? (
+      {/* Main content — the spinner stays up until the fetch for the current
+          parameters has actually come back, not merely until `loading` happens
+          to be false. */}
+      {awaitingResults ? (
         <div className="fixed inset-0 z-30 flex items-center justify-center">
           <div className="flex flex-col items-center gap-6">
             <div className="w-20 h-20 border-[4px] border-black/10 border-t-black rounded-full animate-spin" />
@@ -1289,7 +1317,7 @@ function SearchContent() {
               />
             </div>
 
-            {panelFilteredOneWay.length === 0 && roundTripOptions.length === 0 && !loading && (
+            {panelFilteredOneWay.length === 0 && roundTripOptions.length === 0 && !awaitingResults && (
               <div className="absolute inset-0 bg-white/20 backdrop-blur-[2px] flex items-center justify-center pointer-events-none">
                 <div className="glass-panel p-8 rounded-3xl text-center max-w-sm">
                   <Plane className="w-12 h-12 text-slate-400 mx-auto mb-4" />
