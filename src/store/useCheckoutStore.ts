@@ -81,18 +81,34 @@ export interface PricingBreakdown {
 }
 
 export interface ConfirmedPnr {
+  /** The PROVIDER's code for this PNR (Mystifly MFRef). Internal use only. */
   pnrCode: string;
   pnrType: string;
   journeyDirection: 'ALL' | 'OUTBOUND' | 'RETURN';
   isPrimary: boolean;
   airlineCode?: string | null;
   airlineName?: string | null;
+  /**
+   * The AIRLINE's locator for this PNR. Separate from `pnrCode` — templates
+   * printed `pnrCode` under an "AIRLINE PNR" heading, which is the provider's
+   * reference and useless at an airline desk.
+   */
+  airlinePnr?: string | null;
   displayLabel: string;
 }
 
 export interface BookingConfirmation {
+  /** Provider reference (Mystifly MFRef / Duffel order id). Internal use only. */
   pnr: string;
   masterBookingReference: string;
+  /**
+   * The AIRLINE's record locator — what the customer quotes at check-in.
+   * Null until the airline publishes it; the confirmation screen then asks the
+   * server for it. Never defaulted to `pnr`, which the airline cannot look up.
+   */
+  airlinePnr?: string | null;
+  /** Mystifly's reference, kept under its own name for servicing calls. */
+  mystiflyRef?: string | null;
   bookingId: string;
   status: 'confirmed' | 'pending' | 'failed';
   confirmedAt: string;

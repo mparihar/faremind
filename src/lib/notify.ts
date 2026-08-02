@@ -8,6 +8,7 @@
 
 import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
 import { prisma } from '@/lib/db';
+import { airlinePnrLabel, fareMindRef, looksLikeMystiflyRef } from '@/lib/booking-identifiers';
 
 const BREVO_API_URL = 'https://api.brevo.com/v3/smtp/email';
 const SENDER_EMAIL  = process.env.BREVO_SENDER_EMAIL ?? 'support@faremind.ai';
@@ -129,11 +130,40 @@ function wrap(title: string, body: string): string {
 // ═══════════════════════════════════════════════════════════
 // Event → Email mapping
 // ═══════════════════════════════════════════════════════════
+//
+// Three identifiers, and an email must never swap one for another:
+//
+//   FareMind reference   FMCA2CIN     ours — subject lines, support, our own lookup
+//   Airline PNR          EYUG8L       the AIRLINE's — check-in, airline support
+//   Mystifly reference   MF35534926   the provider's — internal servicing calls only
+//
+// These templates used to write `d.booking_reference ?? d.pnr` and
+// `d.airline_pnr || d.pnr`, and `d.pnr` carries the MYSTIFLY reference. So a
+// booking whose locator had not been published yet mailed the customer
+// "Airline PNR: MF35534926" — a code no airline desk can find — and the admin
+// mail announced "New Booking Confirmed – MF35534926" under a FareMind
+// Reference heading.
+//
+// `fareMindRef` and `airlinePnrLabel` both reject an MF-shaped value, so the
+// substitution cannot come back through a caller passing the wrong key.
 
 interface EmailSpec { subject: string; html: string; text: string; }
 
-function buildCustomerEmail(eventType: string, d: Record<string, unknown>): EmailSpec | null {
-  const ref = String(d.booking_reference ?? d.pnr ?? '');
+/** The airline's locator for this payload, or null — never the provider's. */
+function locatorOf(d: Record<string, unknown>): string | null {
+  const v = String(d.airline_pnr ?? '').trim();
+  return !v || looksLikeMystiflyRef(v) ? null : v;
+}
+
+/** The provider reference, for INTERNAL emails only, always under its own label. */
+function providerRefOf(d: Record<string, unknown>): string | null {
+  const v = String(d.mystifly_ref ?? d.pnr ?? '').trim();
+  return v || null;
+}
+
+/** Exported for src/lib/__tests__/notify-identifiers.test.ts. */
+export function buildCustomerEmail(eventType: string, d: Record<string, unknown>): EmailSpec | null {
+  const ref = fareMindRef(d.booking_reference);
   const route = String(d.route ?? `${d.origin ?? ''} – ${d.destination ?? ''}`);
   const name = String(d.customer_name ?? 'Traveler');
   const amount = String(d.total_amount ?? '');
@@ -218,7 +248,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
             <div style="margin-top:14px;">
               <div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;">
                 <span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span>
-                <span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${String(d.airline_pnr || d.pnr || '')}</span>
+                <span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${airlinePnrLabel(d.airline_pnr)}</span>
               </div>
             </div>
           </div>
@@ -231,7 +261,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
             <table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px;">
               <tr><td style="padding:6px 0;color:#64748b;">Amount Paid</td><td style="padding:6px 0;text-align:right;font-weight:900;font-size:18px;color:#1abc9c;">${amount}</td></tr>
               <tr><td style="padding:6px 0;color:#64748b;">FAREMIND Booking Reference</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#0f172a;">${ref}</td></tr>
-              <tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-family:'Courier New',monospace;font-weight:700;color:#1abc9c;letter-spacing:1px;">${String(d.airline_pnr || d.pnr || '')}</td></tr>
+              <tr><td style="padding:6px 0;color:#64748b;">Airline PNR</td><td style="padding:6px 0;text-align:right;font-family:'Courier New',monospace;font-weight:700;color:#1abc9c;letter-spacing:1px;">${airlinePnrLabel(d.airline_pnr)}</td></tr>
               <tr><td style="padding:6px 0;color:#64748b;">Payment Status</td><td style="padding:6px 0;text-align:right;font-weight:700;color:#10b981;">Confirmed</td></tr>
             </table>
           </div>
@@ -249,7 +279,7 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
           <p style="margin:4px 0 0;font-size:12px;"><a href="mailto:support@faremind.ai" style="color:#1abc9c;text-decoration:none;">support@faremind.ai</a></p>
           <p style="margin:4px 0 0;font-size:12px;"><a href="http://www.faremind.ai" style="color:#1abc9c;text-decoration:none;">www.faremind.ai</a></p>
         `),
-        text: `Hello ${name},\n\nWe have successfully received your payment of ${amount} for booking ${ref}.\n\nPayment Details\nAmount Paid: ${amount}\nFAREMIND Booking Reference: ${ref}\nAirline PNR: ${String(d.airline_pnr || d.pnr || '')}\nPayment Status: Confirmed\n\nYour booking remains active and no further action is required at this time.\n\nThank you for choosing FAREMIND.`,
+        text: `Hello ${name},\n\nWe have successfully received your payment of ${amount} for booking ${ref}.\n\nPayment Details\nAmount Paid: ${amount}\nFAREMIND Booking Reference: ${ref}\nAirline PNR: ${airlinePnrLabel(d.airline_pnr)}\nPayment Status: Confirmed\n\nYour booking remains active and no further action is required at this time.\n\nThank you for choosing FAREMIND.`,
       };
 
     case 'PAYMENT_FAILED':
@@ -310,8 +340,9 @@ function buildCustomerEmail(eventType: string, d: Record<string, unknown>): Emai
   }
 }
 
-function buildSupportEmail(eventType: string, d: Record<string, unknown>): EmailSpec | null {
-  const ref = String(d.booking_reference ?? d.pnr ?? '');
+/** Exported for src/lib/__tests__/notify-identifiers.test.ts. */
+export function buildSupportEmail(eventType: string, d: Record<string, unknown>): EmailSpec | null {
+  const ref = fareMindRef(d.booking_reference);
   const name = String(d.customer_name ?? 'Unknown');
   const email = String(d.customer_email ?? '');
   const route = String(d.route ?? `${d.origin ?? ''} – ${d.destination ?? ''}`);
@@ -484,7 +515,7 @@ async function getAdminRecipients(eventType: string): Promise<string[]> {
 
 export async function fireNotification(payload: NotifyPayload): Promise<void> {
   const { event_type, customer_email, data } = payload;
-  const ref = String(data.booking_reference ?? data.pnr ?? '') || null;
+  const ref = fareMindRef(data.booking_reference) || null;
   const customerName = String(data.customer_name ?? 'Customer');
 
   // Diagnostic logging — visible in production logs

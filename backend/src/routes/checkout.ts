@@ -329,7 +329,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   fastify.post('/notifications/booking-confirm', async (request, reply) => {
     try {
       const {
-        email, pnr, bookingId, paymentIntentId,
+        email, pnr, bookingReference, airlinePnr, bookingId, paymentIntentId,
         customerName, passengerNames, passengers: passengersDetail,
         total, currency, routeLabel,
         airline, fareClass, last4,
@@ -385,8 +385,15 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         booking_id: bookingId ?? pnr,
         customer_email: email,
         data: {
-          booking_reference: pnr,
+          // OUR reference. `pnr` here is the PROVIDER's (MF35534926) — using it
+          // as booking_reference put an internal code in the admin email's
+          // subject line and under its "FareMind Reference" heading.
+          booking_reference: bookingReference || undefined,
           pnr,
+          // The AIRLINE's locator, or absent. Templates render "Not Available"
+          // rather than falling back to either reference above.
+          airline_pnr: airlinePnr ?? null,
+          mystifly_ref: pnr,
           provider_booking_id: bookingId ?? pnr,
           customer_name:  customerName ?? passengersArr[0]?.name ?? 'Traveler',
           customer_email: email,

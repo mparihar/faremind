@@ -47,3 +47,19 @@ export function mystiflyRef(booking: { mystiflyMfRef?: unknown; masterPnr?: unkn
   const v = String(booking?.mystiflyMfRef ?? booking?.masterPnr ?? '').trim();
   return v || null;
 }
+
+/**
+ * OUR reference — the code on our confirmation, in our subject lines, and the
+ * one support asks for.
+ *
+ * Templates and screens widely wrote `masterBookingReference ?? pnr`, which on a
+ * Mystifly booking silently prints MF35534926 where FMCA2CIN belongs — including
+ * in email subjects, where it becomes the customer's whole idea of their booking
+ * number. There is no correct fallback: a missing reference is a bug to see, not
+ * to paper over with an internal provider code.
+ */
+export function fareMindRef(value: unknown, missing = ''): string {
+  const v = String(value ?? '').trim();
+  if (!v || looksLikeMystiflyRef(v)) return missing;
+  return v;
+}

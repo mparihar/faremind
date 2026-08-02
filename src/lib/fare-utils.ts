@@ -9,6 +9,7 @@ import type {
 import type { SelectedFare, FareOption } from '@/lib/fare-types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
 import type { UnifiedFlight, FlightSegment } from '@/lib/types';
+import { airlinePnrLabel, fareMindRef } from '@/lib/booking-identifiers';
 
 // ─── Currency ─────────────────────────────────────────────────────────────────
 
@@ -447,7 +448,7 @@ export function generateItineraryHtml(p: ItineraryParams): string {
 <html lang="en">
 <head>
   <meta charset="UTF-8" /><meta name="viewport" content="width=device-width,initial-scale=1.0" />
-  <title>FAREMIND Itinerary — ${confirmation.masterBookingReference || confirmation.pnr}</title>
+  <title>FAREMIND Itinerary — ${fareMindRef(confirmation.masterBookingReference)}</title>
   <style>
     *{box-sizing:border-box;margin:0;padding:0}
     body{font-family:-apple-system,BlinkMacSystemFont,'Segoe UI',Arial,sans-serif;background:#f8fafc;color:#1e293b;padding:40px 20px}
@@ -486,8 +487,8 @@ export function generateItineraryHtml(p: ItineraryParams): string {
           <span style="font-size:11px;font-weight:700;color:#10b981;letter-spacing:0.5px;">Confirmed</span>
         </div>
         <div class="pnr-label"><span style="color:#ffffff;">FARE</span><span style="color:#009CA6;">MIND</span> <span style="color:#64748b;">BOOKING REFERENCE</span></div>
-        <div class="pnr">${confirmation.masterBookingReference || confirmation.pnr}</div>
-        ${(confirmation.pnrs && confirmation.pnrs.length > 0) ? `<div style="margin-top:14px;">${confirmation.pnrs.map((pnr: any) => `<div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;"><span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span><span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${pnr.pnrCode}</span></div>`).join('<br/>')}</div>` : ''}
+        <div class="pnr">${fareMindRef(confirmation.masterBookingReference)}</div>
+        <div style="margin-top:14px;"><div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;"><span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span><span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${airlinePnrLabel((confirmation as any).airlinePnr ?? confirmation.pnrs?.find((p: any) => p.airlinePnr)?.airlinePnr)}</span></div></div>
     </div>
     <div class="body">
       <div class="section">
@@ -500,7 +501,7 @@ export function generateItineraryHtml(p: ItineraryParams): string {
           ${airlineName ? `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Airline</td><td style="padding:5px 0;text-align:right;font-size:13px;">${airlineName}</td></tr>` : ''}
           ${selectedFare ? `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Fare</td><td style="padding:5px 0;text-align:right;font-size:13px;">${selectedFare.name} · ${selectedFare.cabin.replace(/_/g, ' ')}</td></tr>` : ''}
           <tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Status</td><td style="padding:5px 0;text-align:right;font-size:13px;" class="confirmed">Confirmed</td></tr>
-          ${(confirmation.pnrs && confirmation.pnrs.length > 0) ? confirmation.pnrs.map((pnr: any) => `<tr><td style="padding:5px 0;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:14px;font-weight:700;color:#1abc9c;">${pnr.pnrCode}</td></tr>`).join('') : ''}
+          <tr><td style="padding:5px 0;font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:14px;font-weight:700;color:#1abc9c;">${airlinePnrLabel((confirmation as any).airlinePnr ?? confirmation.pnrs?.find((p: any) => p.airlinePnr)?.airlinePnr)}</td></tr>
         </table>
       </div>
 
@@ -555,7 +556,7 @@ export function generateItineraryHtmlFromBooking(booking: any): string {
   } catch (err) {
     // Top-level safety net: return a minimal but valid HTML so the email
     // is ALWAYS sent, even if the detailed template generation crashes.
-    const ref = booking?.masterBookingReference || booking?.masterPnr || 'N/A';
+    const ref = fareMindRef(booking?.masterBookingReference, 'N/A');
     const name = booking?.passengers?.[0]?.firstName || 'Traveler';
     const route = `${booking?.originAirport || ''} → ${booking?.destinationAirport || ''}`;
     console.error('[fare-utils] ❌ generateItineraryHtmlFromBooking crashed — returning minimal fallback:', err instanceof Error ? `${err.message}\n${err.stack}` : err);
@@ -577,7 +578,7 @@ export function generateItineraryHtmlFromBooking(booking: any): string {
 function _generateItineraryHtmlFromBookingInner(booking: any): string {
   const cur = booking.currency || 'USD';
   const fmtCur = (n: number) => formatCurrency(n, cur);
-  const ref = booking.masterBookingReference || booking.masterPnr || 'N/A';
+  const ref = fareMindRef(booking.masterBookingReference, 'N/A');
   const isRT = (booking.tripType || '').toLowerCase().includes('round');
   const routeLabel = `${booking.originAirport || ''} ${isRT ? '⇄' : '→'} ${booking.destinationAirport || ''}`;
   const depDate = booking.departureDate ? formatDate(booking.departureDate) : '';
@@ -865,7 +866,7 @@ function _generateItineraryHtmlFromBookingInner(booking: any): string {
         </div>
         <div class="pnr-label"><span style="color:#ffffff;">FARE</span><span style="color:#009CA6;">MIND</span> <span style="color:#64748b;">BOOKING REFERENCE</span></div>
         <div class="pnr">${ref}</div>
-        ${(booking.pnrs || []).length > 0 ? `<div style="margin-top:14px;">${(booking.pnrs || []).map((pnr: any) => `<div style="display:inline-flex;align-items:center;gap:8px;margin:4px 0;"><span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span><span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${pnr.pnrCode}</span></div>`).join('<br/>')}</div>` : (booking.masterPnr && booking.masterPnr !== ref ? `<div style="margin-top:14px;"><div style="display:inline-flex;align-items:center;gap:8px;"><span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span><span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${booking.masterPnr}</span></div></div>` : '')}}
+        <div style="margin-top:14px;"><div style="display:inline-flex;align-items:center;gap:8px;"><span style="font-size:10px;color:#64748b;text-transform:uppercase;letter-spacing:3px;font-weight:700;">AIRLINE PNR</span><span style="font-family:'Courier New',monospace;font-size:16px;font-weight:900;color:#1abc9c;letter-spacing:3px;">${airlinePnrLabel(booking.airlinePnr ?? (booking.pnrs || []).find((p: any) => p.airlinePnr)?.airlinePnr)}</span></div></div>}
     </div>
     <div class="body">
       <div class="section">
@@ -878,7 +879,7 @@ function _generateItineraryHtmlFromBookingInner(booking: any): string {
           ${airlineName ? `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Airline</td><td style="padding:5px 0;text-align:right;font-size:13px;">${airlineName}</td></tr>` : ''}
           ${fareClass ? `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Fare</td><td style="padding:5px 0;text-align:right;font-size:13px;text-transform:capitalize;">${fareClass}</td></tr>` : ''}
           <tr><td style="padding:5px 0;color:#64748b;font-size:13px;">Status</td><td style="padding:5px 0;text-align:right;font-size:13px;" class="confirmed">${booking.bookingStatus === 'CANCELLED' ? 'Cancelled' : 'Confirmed'}</td></tr>
-          ${(booking.pnrs || []).map((pnr: any) => `<tr><td style="padding:5px 0;color:#64748b;font-size:13px;">AIRLINE PNR</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:14px;font-weight:700;color:#1abc9c;">${pnr.pnrCode}</td></tr>`).join('')}
+          <tr><td style="padding:5px 0;color:#64748b;font-size:13px;">AIRLINE PNR</td><td style="padding:5px 0;text-align:right;font-family:monospace;font-size:14px;font-weight:700;color:#1abc9c;">${airlinePnrLabel(booking.airlinePnr ?? (booking.pnrs || []).find((p: any) => p.airlinePnr)?.airlinePnr)}</td></tr>
         </table>
       </div>
 

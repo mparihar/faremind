@@ -513,11 +513,15 @@ function PaymentFormInner() {
           success: boolean; pnr?: string; bookingId?: string; error?: string;
           errorCode?: string;
           masterBookingReference?: string;
+          /** The AIRLINE's locator, when it had published one by book time. */
+          airlinePnr?: string | null;
+          /** Mystifly's reference, under its own name. Servicing calls only. */
+          mystiflyRef?: string | null;
           pnrStrategy?: string | null;
           isSplitTicket?: boolean;
           riskLabel?: string | null;
           riskExplanation?: string | null;
-          pnrs?: Array<{ pnrCode: string; pnrType: string; journeyDirection: 'ALL'|'OUTBOUND'|'RETURN'; isPrimary: boolean; airlineCode?: string|null; airlineName?: string|null; displayLabel: string }>;
+          pnrs?: Array<{ pnrCode: string; pnrType: string; journeyDirection: 'ALL'|'OUTBOUND'|'RETURN'; isPrimary: boolean; airlineCode?: string|null; airlineName?: string|null; airlinePnr?: string|null; displayLabel: string }>;
           isNewPlatformUser?: boolean;
           platformUserId?: string;
         };
@@ -538,9 +542,18 @@ function PaymentFormInner() {
         (p) => `${p.firstName} ${p.lastName}`.trim() || 'Traveler'
       );
       store.setPricing(pricing);
+      // `pnr` is the PROVIDER's reference (MF35534926). It is not our reference
+      // and it is not the airline's — falling back to it for either put an
+      // internal code in front of the customer.
+      const bookingReference = bookingRes.masterBookingReference ?? '';
       store.setConfirmation({
         pnr,
-        masterBookingReference: bookingRes.masterBookingReference ?? pnr,
+        masterBookingReference: bookingReference,
+        // Carried through so the confirmation screen can print it immediately.
+        // Absent here means the airline had not published it when we booked —
+        // the screen then asks the server, which fetches TripDetails.
+        airlinePnr: bookingRes.airlinePnr ?? null,
+        mystiflyRef: bookingRes.mystiflyRef ?? null,
         bookingId,
         status: 'confirmed',
         confirmedAt: new Date().toISOString(),
@@ -561,6 +574,11 @@ function PaymentFormInner() {
         method: 'POST',
         body: JSON.stringify({
           pnr,
+          // OUR reference, sent separately — the admin mail previously headed
+          // itself "New Booking Confirmed – MF35534926" because `pnr` was the
+          // only reference it received.
+          bookingReference,
+          airlinePnr: bookingRes.airlinePnr ?? null,
           bookingId,
           paymentIntentId,
           email: passengers[0]?.email,
