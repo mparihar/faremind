@@ -18,6 +18,9 @@ import { usePricingConfig, computeServiceFee } from '@/hooks/usePricingConfig';
 // itself and is never rewritten. Premium economy is a cabin the provider names
 // explicitly, so it gets its own tab; `other` is only for offers the classifier
 // genuinely could not place, which stay visible and bookable rather than hidden.
+/** Tab order. Every one is rendered, so the customer can see what exists. */
+const CABIN_ORDER = ['economy', 'premium_economy', 'business', 'first', 'other'] as const;
+
 const CABIN_LABELS: Record<string, string> = {
   economy: 'Economy',
   premium_economy: 'Premium Economy',
@@ -203,6 +206,23 @@ export default function FareSelectionPage() {
     [store.payload, activeCabin]
   );
 
+  /** How many fares each tab holds. Empty tabs render, but cannot be opened. */
+  const faresByCabin = useMemo(() => {
+    const m = new Map<string, number>();
+    for (const c of CABIN_ORDER) m.set(c, 0);
+    for (const g of store.payload?.fareGroups ?? []) m.set(g.cabin, g.fares.length);
+    return m;
+  }, [store.payload]);
+
+  // Economy is the default; it is only overridden when economy came back empty
+  // — a carrier that filed no cabin data puts every fare in Other — so the panel
+  // never opens on an empty tab.
+  useEffect(() => {
+    if (!store.payload) return;
+    const populated = CABIN_ORDER.filter(c => (faresByCabin.get(c) ?? 0) > 0);
+    if (populated.length && !populated.includes(activeCabin as any)) setActiveCabin(populated[0]);
+  }, [store.payload, faresByCabin, activeCabin]);
+
   // All fares flat for comparison strip
   const allFares = useMemo(
     () => store.payload?.fareGroups.flatMap(g => g.fares) ?? [],
@@ -364,24 +384,36 @@ export default function FareSelectionPage() {
           </div>
         </div>
 
-        {/* ── Cabin tabs — only when there is more than one cabin to pick ── */}
-        {payload.fareGroups.length > 1 && (
+        {/* ── Cabin tabs — all five, always ── */}
         <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-slim">
-          {payload.fareGroups.map(group => (
-            <button
-              key={group.cabin}
-              onClick={() => setActiveCabin(group.cabin)}
-              className={`flex-none px-5 py-2 rounded-xl text-sm font-semibold transition-all ${
-                activeCabin === group.cabin
-                  ? 'bg-slate-900 text-white shadow-sm'
-                  : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'
-              }`}
-            >
-              {CABIN_LABELS[group.cabin] || group.label}
-            </button>
-          ))}
+          {CABIN_ORDER.map(cabin => {
+            const count = faresByCabin.get(cabin) ?? 0;
+            const isActive = activeCabin === cabin;
+            return (
+              <button
+                key={cabin}
+                onClick={() => count > 0 && setActiveCabin(cabin)}
+                disabled={count === 0}
+                aria-current={isActive ? 'true' : undefined}
+                title={count === 0 ? `No ${CABIN_LABELS[cabin]} fares on this flight` : undefined}
+                className={`flex-none px-5 py-2 rounded-xl text-sm font-semibold transition-all ${
+                  isActive
+                    ? 'bg-slate-900 text-white shadow-sm'
+                    : count === 0
+                    ? 'bg-slate-50 border border-slate-100 text-slate-300 cursor-not-allowed'
+                    : 'bg-white border border-slate-200 text-slate-600 hover:border-slate-400'
+                }`}
+              >
+                {CABIN_LABELS[cabin]}
+                {count > 0 && (
+                  <span className={`ml-1.5 text-[11px] font-bold ${isActive ? 'text-white/70' : 'text-slate-400'}`}>
+                    {count}
+                  </span>
+                )}
+              </button>
+            );
+          })}
         </div>
-        )}
 
         {/* ── Fare cards ── */}
         <div className="space-y-4">
