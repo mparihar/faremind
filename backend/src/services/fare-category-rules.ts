@@ -66,7 +66,7 @@ function sanitize(raw: unknown, source: string): FareCategoryRule[] {
   for (const r of raw) {
     if (!r || typeof r !== 'object') continue;
     const category = (r as any).category;
-    if (!['economy', 'business', 'first', 'other'].includes(category)) {
+    if (!['economy', 'premium_economy', 'business', 'first', 'other'].includes(category)) {
       console.warn(`[fare-category] ${source}: skipping rule with invalid category ${JSON.stringify(category)}`);
       continue;
     }

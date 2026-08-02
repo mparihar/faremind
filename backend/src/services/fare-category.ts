@@ -1,9 +1,13 @@
 /**
  * Fare category — which FareMind UI tab an offer belongs in.
  *
- * FareMind shows four tabs: Economy, Business, First, Other. They are UI
- * buckets, NOT fare families. The airline keeps owning its brand name; this
- * module only decides which tab that brand appears under.
+ * FareMind shows five tabs: Economy, Premium Economy, Business, First, Other.
+ * They are UI buckets, NOT fare families. The airline keeps owning its brand
+ * name; this module only decides which tab that brand appears under.
+ *
+ * Premium economy is a real cabin the provider names explicitly (CabinType 'S'),
+ * so it gets its own tab. `other` is reserved for offers we genuinely cannot
+ * place — a named cabin must never share a tab with "we don't know".
  *
  * The governing rule is that no valid provider offer may disappear. Every offer
  * lands in exactly one category, and an offer we cannot confidently place goes
@@ -13,7 +17,7 @@
  *
  *   normalizeFareTier()   BASIC | STANDARD | FLEX | PREMIUM | BUSINESS | FIRST
  *                         internal, drives ranking/filters/analytics
- *   classifyFareCategory() economy | business | first | other
+ *   classifyFareCategory() economy | premium_economy | business | first | other
  *                         UI grouping only, never feeds scoring
  *
  * Changing one must not change the other. Ranking, badges and checkout read the
@@ -35,7 +39,7 @@
  */
 import { loadCategoryRules, type FareCategoryRule } from './fare-category-rules';
 
-export type FareCategory = 'economy' | 'business' | 'first' | 'other';
+export type FareCategory = 'economy' | 'premium_economy' | 'business' | 'first' | 'other';
 
 export type ClassificationMethod =
   | 'provider_cabin'
@@ -75,11 +79,12 @@ export interface FareCategoryResult {
 const MIN_CONFIDENCE = 0.7;
 
 // ── Cabin codes ──────────────────────────────────────────────────────────────
-// The provider's CabinType enum. J is a second business code; P is a premium
-// code some carriers use for first and others for premium economy — it is
-// therefore NOT mapped to a tab and falls through to `other`.
+// The provider's CabinType enum. J is a second business code. P is omitted on
+// purpose: some carriers file it as premium first and others as premium
+// economy, so it falls through rather than being guessed into either.
 const CABIN_CODE_TO_CATEGORY: Record<string, FareCategory> = {
   Y: 'economy',
+  S: 'premium_economy',
   C: 'business',
   J: 'business',
   F: 'first',
@@ -89,9 +94,14 @@ const CABIN_CODE_TO_CATEGORY: Record<string, FareCategory> = {
 function categoryFromCabinWord(value: string): FareCategory | null {
   const c = value.toLowerCase().replace(/[\s-]+/g, '_');
   if (!c) return null;
-  // Order matters: 'premium_economy' contains 'economy', and must NOT read as
-  // economy — premium economy has no tab and belongs in `other`.
-  if (c.includes('premium')) return 'other';
+  // Order matters: 'premium_economy' contains 'economy' and must be tested
+  // first, or it reads as plain economy.
+  if (c.includes('premium')) {
+    if (c.includes('econom')) return 'premium_economy';
+    // A bare "premium" names no cabin — premium first and premium economy both
+    // use it. Not guessed.
+    return 'other';
+  }
   if (c.includes('first')) return 'first';
   if (c.includes('business')) return 'business';
   if (c.includes('economy') || c === 'y') return 'economy';
@@ -118,6 +128,9 @@ const RBD_TO_CATEGORY: Record<string, FareCategory> = {
 // every cabin, and guessing is exactly what puts a business fare under Economy.
 const NAME_FIRST = /\b(first\s*class|first)\b/;
 const NAME_BUSINESS = /\b(business|executive)\b/;
+// "Premium Economy Flex" names a cabin and is classified; a bare "Premium" does
+// not — premium first and premium economy both use it — so it stays unplaced.
+const NAME_PREMIUM_ECONOMY = /\bpremium\s*(economy|eco)\b/;
 const NAME_PREMIUM = /\bpremium\b/;
 const NAME_ECONOMY = /\b(economy|coach)\b/;
 
@@ -128,7 +141,9 @@ function canonical(name: string): string {
 function categoryFromName(fareFamily: string): { category: FareCategory; evidence: string } | null {
   const name = canonical(fareFamily);
   if (!name) return null;
-  // Premium first: "Premium Economy Flex" must not match the economy test.
+  // Premium first, so "Premium Economy Flex" never matches the plain economy
+  // test below. A bare "Premium" names no cabin and stays unclassified.
+  if (NAME_PREMIUM_ECONOMY.test(name)) return { category: 'premium_economy', evidence: fareFamily };
   if (NAME_PREMIUM.test(name)) return { category: 'other', evidence: fareFamily };
   if (NAME_FIRST.test(name)) return { category: 'first', evidence: fareFamily };
   if (NAME_BUSINESS.test(name)) return { category: 'business', evidence: fareFamily };
@@ -282,10 +297,12 @@ export function classifyFareCategory(input: FareCategoryInput): FareCategoryResu
 }
 
 /** Tab order and labels. `other` sits last and only appears when populated. */
-export const FARE_CATEGORY_ORDER: FareCategory[] = ['economy', 'business', 'first', 'other'];
+export const FARE_CATEGORY_ORDER: FareCategory[] =
+  ['economy', 'premium_economy', 'business', 'first', 'other'];
 
 export const FARE_CATEGORY_LABELS: Record<FareCategory, string> = {
   economy: 'Economy',
+  premium_economy: 'Premium Economy',
   business: 'Business',
   first: 'First',
   other: 'Other',
@@ -303,7 +320,7 @@ export interface ClassificationDiagnostics {
 export function emptyDiagnostics(): ClassificationDiagnostics {
   return {
     totalOffers: 0,
-    byCategory: { economy: 0, business: 0, first: 0, other: 0 },
+    byCategory: { economy: 0, premium_economy: 0, business: 0, first: 0, other: 0 },
     byMethod: {
       provider_cabin: 0, segment_cabin: 0, booking_class: 0, fare_basis: 0,
       airline_mapping: 0, name_inference: 0, unclassified: 0,
@@ -327,7 +344,8 @@ export function formatDiagnostics(d: ClassificationDiagnostics): string {
   const c = d.byCategory, m = d.byMethod;
   return [
     `offers=${d.totalOffers}`,
-    `economy=${c.economy} business=${c.business} first=${c.first} other=${c.other}`,
+    `economy=${c.economy} premiumEconomy=${c.premium_economy} business=${c.business}`
+      + ` first=${c.first} other=${c.other}`,
     `via cabin=${m.provider_cabin} segment=${m.segment_cabin} rbd=${m.booking_class}`
       + ` fareBasis=${m.fare_basis} mapping=${m.airline_mapping} name=${m.name_inference}`
       + ` unclassified=${m.unclassified}`,

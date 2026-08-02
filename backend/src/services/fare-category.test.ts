@@ -34,13 +34,17 @@ test('provider cabin codes and words both decode', () => {
   }
 });
 
-test('premium economy has no tab, so it goes to Other rather than Economy', () => {
-  // 'premium_economy' contains 'economy' — it must not fall through to it.
-  for (const v of ['premium_economy', 'Premium Economy', 'S']) {
-    const r = classifyFareCategory({ cabinClass: v });
-    assert.notEqual(r.category, 'economy', `${v} must not read as economy`);
+test('premium economy is its own tab, never folded into Economy', () => {
+  // 'premium_economy' contains 'economy' and must not fall through to it.
+  for (const v of ['premium_economy', 'Premium Economy', 'premium-economy', 'S']) {
+    assert.equal(classifyFareCategory({ cabinClass: v }).category, 'premium_economy', `${v}`);
   }
-  assert.equal(classifyFareCategory({ cabinClass: 'premium_economy' }).category, 'other');
+});
+
+test('a bare "premium" cabin names no cabin and is not guessed', () => {
+  // Premium first and premium economy both use the word; picking one would be
+  // a guess, and the offer stays visible under Other instead.
+  assert.equal(classifyFareCategory({ cabinClass: 'premium' }).category, 'other');
 });
 
 // ── Priority 2: per-segment cabin ────────────────────────────────────────────
@@ -109,9 +113,10 @@ test('generic brands are NEVER inferred — they exist in every cabin', () => {
   }
 });
 
-test('"Premium Economy Flex" reads as premium, not economy', () => {
+test('"Premium Economy Flex" lands in Premium Economy, not Economy', () => {
   const r = classifyFareCategory({ fareFamily: 'Premium Economy Flex' });
-  assert.equal(r.category, 'other');
+  assert.equal(r.category, 'premium_economy');
+  assert.equal(r.method, 'name_inference');
 });
 
 // ── The governing invariant ──────────────────────────────────────────────────
@@ -146,6 +151,7 @@ test('diagnostics count every offer and report zero discarded', () => {
   const d = emptyDiagnostics();
   const offers = [
     { cabinClass: 'economy' }, { cabinClass: 'business' }, { cabinClass: 'first' },
+    { cabinClass: 'premium_economy' },
     { bookingClass: 'J' }, { fareFamily: 'Mystery' }, { segmentCabinCodes: ['Y', 'C'] },
   ];
   for (const o of offers) recordClassification(d, classifyFareCategory(o));
@@ -154,6 +160,6 @@ test('diagnostics count every offer and report zero discarded', () => {
   const summed = Object.values(d.byCategory).reduce((a, b) => a + b, 0);
   assert.equal(summed, offers.length, 'every offer lands in exactly one category');
   assert.equal(d.discarded, 0);
-  assert.match(formatDiagnostics(d), /offers=6/);
+  assert.match(formatDiagnostics(d), /offers=7/);
   assert.match(formatDiagnostics(d), /discarded=0/);
 });
