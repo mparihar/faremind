@@ -928,7 +928,13 @@ export default function PassengersPage() {
   // Only fills fields that are currently empty — does NOT overwrite user-edited values
   const handleAutoFill = useCallback(
     (paxId: string, data: Record<string, string>) => {
-      const pax = passengers.find(p => p.id === paxId);
+      // Read the passenger as they are RIGHT NOW, not as they were when the
+      // lookup started. The blur handler debounces 300ms and then waits on the
+      // network, and people carry on filling the form in that window — reading
+      // the closure's copy made every field they typed meanwhile look empty, so
+      // the recalled value silently overwrote it. A passport they had just
+      // corrected would revert to the one on the last booking.
+      const pax = useCheckoutStore.getState().passengers.find(p => p.id === paxId);
       if (!pax) return;
       const updates: Partial<PassengerInfo> = {};
       const fillable: (keyof PassengerInfo)[] = [
@@ -945,7 +951,7 @@ export default function PassengersPage() {
         updatePassenger(paxId, updates);
       }
     },
-    [passengers, updatePassenger],
+    [updatePassenger],
   );
 
   const handleSubmit = async () => {
