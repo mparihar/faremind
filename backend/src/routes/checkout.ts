@@ -92,6 +92,37 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   });
 
   // ── Passenger Lookup: by email (Primary Contact auto-fill) ────────────────
+
+// ─── Passenger lookup: who is asking? ─────────────────────────────────────────
+
+/**
+ * The signed-in user behind a request, or null.
+ *
+ * The passenger lookups return passport numbers and dates of birth. They were
+ * open: anyone could POST a name to the public endpoint and receive that
+ * person's passport number, DOB and phone, with no session and no booking
+ * reference. A name is guessable, so that is a disclosure of travel-document
+ * data to anyone who asks.
+ *
+ * They now require a live session, and only ever return passengers from the
+ * caller's OWN bookings.
+ */
+async function sessionUser(request: any): Promise<{ id: string; email: string } | null> {
+  const header = request.headers?.authorization;
+  const token = typeof header === 'string' && header.startsWith('Bearer ') ? header.slice(7) : null;
+  if (!token) return null;
+  try {
+    const session = await prisma.session.findFirst({
+      where: { token, expiresAt: { gt: new Date() } },
+      include: { user: { select: { id: true, email: true, isActive: true } } },
+    });
+    if (!session?.user?.isActive) return null;
+    return { id: session.user.id, email: session.user.email };
+  } catch {
+    return null;
+  }
+}
+
   fastify.post('/passengers/lookup-by-email', async (request, reply) => {
     try {
       const { email } = request.body as { email?: string };
@@ -99,11 +130,20 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'A valid email is required' });
       }
 
+      // Signed-in only. A guest gets `found: false`, not an error, so the
+      // checkout form and the AI bot simply collect the details by hand.
+      const caller = await sessionUser(request);
+      if (!caller) return { found: false };
+
       const emailLower = email.toLowerCase().trim();
 
-      // 1. Check BookingPassenger table (most detailed — has passport info)
+      // 1. Check BookingPassenger table (most detailed — has passport info),
+      //    restricted to bookings this user owns.
       const bookingPax = await prisma.bookingPassenger.findFirst({
-        where: { email: { equals: emailLower, mode: 'insensitive' } },
+        where: {
+          email: { equals: emailLower, mode: 'insensitive' },
+          booking: { userId: caller.id },
+        },
         orderBy: { createdAt: 'desc' },
       });
 
@@ -130,10 +170,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         };
       }
 
-      // 2. Fallback: check User table (has name + phone, but no passport)
-      const user = await prisma.user.findUnique({
-        where: { email: emailLower },
-      });
+      // 2. Fallback: the caller's OWN account record. Looking up any other
+      //    user by email would be the same disclosure through a smaller hole.
+      const user = caller.email.toLowerCase() === emailLower
+        ? await prisma.user.findUnique({ where: { email: emailLower } })
+        : null;
 
       if (user) {
         return {
@@ -169,10 +210,16 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         return reply.code(400).send({ error: 'firstName and lastName (min 2 chars each) are required' });
       }
 
+      // Signed-in only, and only this user's own travellers. A name is
+      // guessable — open, this returned a stranger's passport number.
+      const caller = await sessionUser(request);
+      if (!caller) return { found: false };
+
       const bookingPax = await prisma.bookingPassenger.findFirst({
         where: {
           firstName: { equals: firstName.trim(), mode: 'insensitive' },
           lastName: { equals: lastName.trim(), mode: 'insensitive' },
+          booking: { userId: caller.id },
         },
         orderBy: { createdAt: 'desc' },
       });

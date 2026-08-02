@@ -9,6 +9,7 @@
 import { useState, useRef, useEffect } from 'react';
 import { Check, AlertCircle, User, ChevronRight, ChevronLeft, Mic, Sparkles } from 'lucide-react';
 import { apiFetch } from '@/lib/api-client';
+import { useAuthStore } from '@/store/useAuthStore';
 import type { AiPassengerData } from '@/lib/ai-booking-types';
 import { PASSENGER_FIELD_ORDER, PASSENGER_FIELD_LABELS, SECONDARY_PASSENGER_FIELDS, COUNTRIES } from '@/lib/ai-booking-types';
 import {
@@ -186,15 +187,22 @@ function normalizeField(field: keyof AiPassengerData, value: string): string {
  */
 interface LookupResult { found?: boolean; data?: Record<string, string> }
 
-async function lookupTraveller(by: { email?: string; firstName?: string; lastName?: string }): Promise<Record<string, string> | null> {
+async function lookupTraveller(
+  by: { email?: string; firstName?: string; lastName?: string },
+  sessionToken: string | null,
+): Promise<Record<string, string> | null> {
+  // Signed-in only. Recall is for someone retrieving their OWN saved travellers;
+  // on the public site there is nobody to recall for, and asking would be asking
+  // the server to hand a stranger's passport details to an anonymous visitor.
+  if (!sessionToken) return null;
+  const headers = { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` };
   try {
     const res = by.email
       ? await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-email', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ email: by.email }),
+          method: 'POST', headers, body: JSON.stringify({ email: by.email }),
         })
       : await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-name', {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
+          method: 'POST', headers,
           body: JSON.stringify({ firstName: by.firstName, lastName: by.lastName }),
         });
     return res?.found && res.data ? res.data : null;
@@ -238,6 +246,7 @@ export default function AiPassengerDetailCollector({
   const [autoFilled, setAutoFilled] = useState<number>(0);   // how many fields we recalled
   const [lookingUp, setLookingUp] = useState(false);
   const lookedUpRef = useRef(false);                          // one lookup per passenger
+  const sessionToken = useAuthStore((st) => st.sessionToken);
   const [voiceSupported] = useState(() => typeof window !== 'undefined' && isSpeechRecognitionSupported());
 
   const currentField = fields[currentFieldIdx] as keyof AiPassengerData | undefined;
@@ -281,7 +290,7 @@ export default function AiPassengerDetailCollector({
     const identifiesTraveller =
       currentField === 'email'
       || (currentField === 'lastName' && !fields.includes('email'));
-    if (identifiesTraveller && !lookedUpRef.current) {
+    if (identifiesTraveller && !lookedUpRef.current && sessionToken) {
       lookedUpRef.current = true;
       const firstName = done.get('firstName') ?? passenger.firstName ?? '';
       const lastName = done.get('lastName') ?? passenger.lastName ?? '';
@@ -290,7 +299,7 @@ export default function AiPassengerDetailCollector({
         : { firstName, lastName };
       if (by.email || (firstName.trim().length >= 2 && lastName.trim().length >= 2)) {
         setLookingUp(true);
-        void lookupTraveller(by)
+        void lookupTraveller(by, sessionToken)
           .then((data) => {
             if (!data) return;
             // Fill only what is still blank. Anything already entered — in this

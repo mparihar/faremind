@@ -2,6 +2,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useAuthStore } from '@/store/useAuthStore';
 import { useRouter } from 'next/navigation';
 import Link from 'next/link';
 import {
@@ -434,11 +435,16 @@ interface LookupResult {
   data?: Record<string, string>;
 }
 
-async function lookupByEmail(email: string): Promise<LookupResult> {
+async function lookupByEmail(email: string, sessionToken: string | null): Promise<LookupResult> {
+  // Signed-in only. Recall exists so a returning customer does not retype their
+  // own passport; on the public site there is nobody to recall for, and the
+  // request would be asking the server to hand travel-document data to an
+  // anonymous visitor.
+  if (!sessionToken) return { found: false };
   try {
     const res = await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-email', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
       body: JSON.stringify({ email }),
     });
     return res;
@@ -447,11 +453,14 @@ async function lookupByEmail(email: string): Promise<LookupResult> {
   }
 }
 
-async function lookupByName(firstName: string, lastName: string): Promise<LookupResult> {
+async function lookupByName(firstName: string, lastName: string, sessionToken: string | null): Promise<LookupResult> {
+  // Signed-in only — see lookupByEmail. A name is guessable, so this is the
+  // more sensitive of the two.
+  if (!sessionToken) return { found: false };
   try {
     const res = await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-name', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
       body: JSON.stringify({ firstName, lastName }),
     });
     return res;
@@ -471,6 +480,7 @@ interface PrimaryContactProps {
 }
 
 function PrimaryContactBox({ pax, errors, touched, onChange, onAutoFill }: PrimaryContactProps) {
+  const sessionToken = useAuthStore((st) => st.sessionToken);
   const [lookingUp, setLookingUp] = useState(false);
   const [autoFilled, setAutoFilled] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -482,7 +492,7 @@ function PrimaryContactBox({ pax, errors, touched, onChange, onAutoFill }: Prima
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setLookingUp(true);
-      const result = await lookupByEmail(email);
+      const result = await lookupByEmail(email, sessionToken);
       setLookingUp(false);
       if (result.found && result.data) {
         onAutoFill(result.data);
@@ -490,7 +500,7 @@ function PrimaryContactBox({ pax, errors, touched, onChange, onAutoFill }: Prima
         setTimeout(() => setAutoFilled(false), 4000);
       }
     }, 300);
-  }, [pax.email, onAutoFill]);
+  }, [pax.email, onAutoFill, sessionToken]);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">
@@ -631,6 +641,7 @@ interface PassengerCardProps {
 }
 
 function PassengerCard({ pax, index, errors, touched, onChange, onAutoFill, departureDate }: PassengerCardProps) {
+  const sessionToken = useAuthStore((st) => st.sessionToken);
   const expectedTypeLabel = pax.type === 'adult' ? 'Adult' : pax.type === 'child' ? 'Child' : 'Infant';
   const [lookingUp, setLookingUp] = useState(false);
   const [autoFilled, setAutoFilled] = useState(false);
@@ -644,7 +655,7 @@ function PassengerCard({ pax, index, errors, touched, onChange, onAutoFill, depa
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setLookingUp(true);
-      const result = await lookupByName(fn, ln);
+      const result = await lookupByName(fn, ln, sessionToken);
       setLookingUp(false);
       if (result.found && result.data) {
         onAutoFill(result.data);
@@ -652,7 +663,7 @@ function PassengerCard({ pax, index, errors, touched, onChange, onAutoFill, depa
         setTimeout(() => setAutoFilled(false), 4000);
       }
     }, 300);
-  }, [pax.firstName, pax.lastName, onAutoFill]);
+  }, [pax.firstName, pax.lastName, onAutoFill, sessionToken]);
 
   // Check if DOB is a future date (show error immediately, no need for touched)
   const isFutureDob = (() => {
