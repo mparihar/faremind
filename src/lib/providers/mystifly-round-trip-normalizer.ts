@@ -186,6 +186,21 @@ function resplitOnLongGap(outSegs: any[], retSegs: any[]): { out: any[]; ret: an
 
     const out = outSegs.slice(0, i + 1);
     const ret = [...outSegs.slice(i + 1), ...retSegs];
+
+    // Hard invariant: this function REGROUPS the provider's segments and must
+    // never invent, drop, reorder or alter one. Both arrays are slices of the
+    // originals, so every element is the same object the provider sent, in the
+    // order it sent them. If that ever stops being true, keep the provider's
+    // own grouping — a wrong split is recoverable, a fabricated itinerary is
+    // not.
+    const before = [...outSegs, ...retSegs];
+    const after = [...out, ...ret];
+    const identical = before.length === after.length && before.every((seg, n) => seg === after[n]);
+    if (!identical) {
+      console.error('[Mystifly RT] re-split altered the segment list — keeping the provider grouping');
+      return { out: outSegs, ret: retSegs, moved: 0 };
+    }
+
     console.warn(
       `[Mystifly RT] Provider grouped a return segment into the outbound leg — `
       + `${Math.round(gapHours)}h gap at ${outSegs[i]?.ArrivalAirportLocationCode ?? '?'} is a destination stay, not a layover. `

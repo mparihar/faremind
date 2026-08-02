@@ -101,4 +101,37 @@ test('a same-day 8-hour connection is still a layover, not a boundary', () => {
   assert.equal(o!.outboundJourney.segments.length, 2, 'an 8h connection must not split the journey');
 });
 
+// ── The guarantee: we regroup the provider's segments, never author our own ──
+
+test('every segment is the one the provider sent, in the order it sent them', () => {
+  const providerOrder = [
+    ...misgrouped.OriginDestinationOptions[0].FlightSegments,
+    ...misgrouped.OriginDestinationOptions[1].FlightSegments,
+  ];
+  const o = normalizeMystiflyRoundTripOffer(misgrouped);
+  const ours: any[] = [...o!.outboundJourney.segments, ...o!.returnJourney.segments];
+
+  assert.equal(ours.length, providerOrder.length, 'no segment added or dropped');
+  ours.forEach((seg, i) => {
+    const p = providerOrder[i];
+    assert.ok(String(seg.flightNumber).includes(p.FlightNumber), `segment ${i} flight number`);
+    assert.equal(seg.departure.airport, p.DepartureAirportLocationCode, `segment ${i} origin`);
+    assert.equal(seg.arrival.airport, p.ArrivalAirportLocationCode, `segment ${i} destination`);
+    assert.equal(seg.departure.time, p.DepartureDateTime, `segment ${i} departure time`);
+    assert.equal(seg.arrival.time, p.ArrivalDateTime, `segment ${i} arrival time`);
+  });
+});
+
+test('no phantom segment is invented for the New York airport change', () => {
+  // JFK → LGA is covered on the ground by the passenger. It is not a flight and
+  // must never be rendered as one.
+  const o = normalizeMystiflyRoundTripOffer(misgrouped);
+  const all: any[] = [...o!.outboundJourney.segments, ...o!.returnJourney.segments];
+  assert.equal(all.length, 4, 'exactly the four segments the airline sold');
+  const ground = all.find((s) =>
+    (s.departure.airport === 'JFK' && s.arrival.airport === 'LGA')
+    || (s.departure.airport === 'LGA' && s.arrival.airport === 'JFK'));
+  assert.equal(ground, undefined, 'the ground transfer must not appear as a flight');
+});
+
 console.log(`\n${passed} passed${process.exitCode ? ' — FAILURES ABOVE' : ''}`);
