@@ -256,6 +256,15 @@ export const FALLBACK_FARE_CLASS_MULTIPLIERS: Record<AiFareClass, number> = {
 // FALLBACK_EXTRA_BAG_PRICE removed — live pricing only, no dummy fallback
 export const FALLBACK_INSURANCE_RATE = 0.04;     // 4% of fare — use DB PlatformFeeRule instead
 export const FALLBACK_SERVICE_FEE_RATE = 0.015;  // 1.5% of fare — use DB PlatformFeeRule instead
+/**
+ * Floor for the fallback service fee, per traveller.
+ *
+ * The DB rule is SERVICE_FEE / FIXED_PER_TRAVELER / $10, so a 2-passenger
+ * booking owes $20. The 1.5% fallback above only applies when the fee service
+ * cannot be reached, and on a cheap fare it lands well under the real rule —
+ * this stops the fallback from quietly undercharging a group.
+ */
+export const FALLBACK_SERVICE_FEE_PER_PAX = 10;
 export const FALLBACK_TAX_RATE = 0.156;          // ~15.6% — use DB SystemConfig.tax_rate instead
 export const MAX_PASSENGERS = 9;
 

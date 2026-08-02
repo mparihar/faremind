@@ -23,6 +23,7 @@ import {
 
   FALLBACK_INSURANCE_RATE,
   FALLBACK_SERVICE_FEE_RATE,
+  FALLBACK_SERVICE_FEE_PER_PAX,
 } from '@/lib/ai-booking-types';
 import { useCheckoutStore, makePassenger } from '@/store/useCheckoutStore';
 import type { SelectedFare, FareOption } from '@/lib/fare-types';
@@ -118,9 +119,22 @@ export function computePriceSummary(
   // Use DB-driven service fee if available, otherwise last-resort fallback
   // Service fee is based on the full fare (totalPrice), not just base
   const fullFare = fareDetails.totalPrice;
+  // Service fee — same chain as the page's buildLocalPricing.
+  //
+  // computedFees.serviceFee comes from /api/fees/compute and already reflects
+  // the DB rule for the passenger count it was asked about: SERVICE_FEE is
+  // FIXED_PER_TRAVELER at $10, so two travellers is $20. Used as-is, exactly as
+  // the page uses it.
+  //
+  // The percentage fallback applies only when the fee service cannot be reached.
+  // It does not follow the DB rule, so a per-traveller floor keeps a group from
+  // being charged one traveller's worth.
   const serviceFee = computedFees
     ? computedFees.serviceFee
-    : Math.round(fullFare * FALLBACK_SERVICE_FEE_RATE);
+    : Math.max(
+        Math.round(fullFare * FALLBACK_SERVICE_FEE_RATE),
+        FALLBACK_SERVICE_FEE_PER_PAX * paxCount,
+      );
 
   const protectedCount = protections.filter(p => p.selected).length;
   // Use DB-driven protection fee if available
@@ -328,6 +342,18 @@ interface AiBookingStore extends AiBookingSession {
   liveBaggagePrice: number | null;
 }
 
+/**
+ * Fee requests are fired from four places and can overlap. selectFareOption
+ * requests fees and THEN moves to the passenger-count step, which immediately
+ * requests them again with the real count — so two are in flight, and whichever
+ * lands last wins. When the first one landed last, a 2-passenger booking was
+ * charged one $10 service fee instead of two.
+ *
+ * Every request takes a ticket; a response is applied only if no newer request
+ * has been made since. Late arrivals are dropped.
+ */
+let feeRequestSeq = 0;
+
 // ─── Initial state ────────────────────────────────────────────────────────────
 
 const INITIAL_PRICE: AiPriceSummary = {
@@ -399,6 +425,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
 
     // Async: fetch DB-driven fees
     const paxCount = get().passengerCount;
+    const feeTicket = ++feeRequestSeq;
     fetchComputedFeesForContext({
       // Already the all-passenger total from the provider.
       fareTotal: flight.totalPrice,
@@ -406,6 +433,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
       cabin: flight.cabinClass || 'economy',
       currency: flight.currency || 'USD',
     }).then(fees => {
+      if (feeTicket !== feeRequestSeq) return;   // a newer request has since been made
       if (fees) {
         const s = get();
         set({
@@ -494,6 +522,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     // Re-fetch DB fees for the new fare total. fare.totalPrice is the
     // all-passenger total the fare-options API returns, not a per-head price.
     const totalFare = fare.totalPrice;
+    const feeTicket = ++feeRequestSeq;
     fetchComputedFeesForContext({
       fareTotal: totalFare,
       passengerCount,
@@ -501,6 +530,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
       fareClass: fare.name,
       currency: fare.currency || 'USD',
     }).then(fees => {
+      if (feeTicket !== feeRequestSeq) return;   // superseded by the passenger-count fetch
       if (fees) {
         const s = get();
         set({
@@ -542,12 +572,14 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     if (fareDetails) {
       // All-passenger total already — see computeAiPricing.
       const totalFare = fareDetails.totalPrice;
+      const feeTicket = ++feeRequestSeq;
       fetchComputedFeesForContext({
         fareTotal: totalFare,
         passengerCount: count,
         cabin: fareDetails.fareClass || 'economy',
         currency: fareDetails.currency || 'USD',
       }).then(fees => {
+        if (feeTicket !== feeRequestSeq) return;
         if (fees) {
           const s = get();
           set({
@@ -746,6 +778,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
   fetchComputedFees: async () => {
     const s = get();
     if (!s.fareDetails) return;
+    const feeTicket = ++feeRequestSeq;
     const fees = await fetchComputedFeesForContext({
       // Already the all-passenger total — see computeAiPricing.
       fareTotal: s.fareDetails.totalPrice,
@@ -753,6 +786,7 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
       cabin: s.fareDetails.fareClass || 'economy',
       currency: s.fareDetails.currency || 'USD',
     });
+    if (feeTicket !== feeRequestSeq) return;
     if (fees) {
       const current = get();
       set({

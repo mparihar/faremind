@@ -74,4 +74,34 @@ test('a single traveller is unaffected', () => {
   assert.equal(s.baseFare + s.taxes, 2053);
 });
 
+// ── Service fee: per traveller, as the DB rule states ────────────────────────
+
+test('the DB service fee is used exactly as computed, for any party size', () => {
+  // SERVICE_FEE / FIXED_PER_TRAVELER / $10 → two travellers is $20.
+  const fees: any = { serviceFee: 20, protectionFee: 0, insuranceFeeTotal: 0 };
+  const s = computePriceSummary(fareDetails, 2, [], 0, noAddOns, [], fees, null);
+  assert.equal(s.serviceFee, 20, 'a 2-passenger booking owes two service fees');
+  assert.equal(s.total, 2053 + 20);
+});
+
+test('two travellers never pay a single traveller\'s fee', () => {
+  // The reported bug: 2 passengers, $10 charged. A stale 1-passenger fee response
+  // is now dropped by the request-sequence guard in the store; this pins the
+  // summary that must result once the correct fees land.
+  const correct: any = { serviceFee: 20, protectionFee: 0, insuranceFeeTotal: 0 };
+  const s = computePriceSummary(fareDetails, 2, [], 0, noAddOns, [], correct, null);
+  assert.notEqual(s.serviceFee, 10);
+});
+
+test('with the fee service unreachable, the fallback still scales per traveller', () => {
+  // 1.5% of $2,053 is $31, comfortably over the $20 floor.
+  const rich = computePriceSummary(fareDetails, 2, [], 0, noAddOns, [], null, null);
+  assert.ok(rich.serviceFee >= 20, `expected at least $20, got $${rich.serviceFee}`);
+
+  // On a cheap fare the percentage lands under the rule — the floor holds it up.
+  const cheapFare = { ...fareDetails, totalPrice: 200, providerBaseFare: 150, providerTaxAmount: 50 };
+  const cheap = computePriceSummary(cheapFare, 3, [], 0, noAddOns, [], null, null);
+  assert.equal(cheap.serviceFee, 30, '3 travellers × $10 floor, not 1.5% of $200');
+});
+
 console.log(`\n${passed} passed${process.exitCode ? ' — FAILURES ABOVE' : ''}`);
