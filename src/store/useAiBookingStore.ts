@@ -81,7 +81,8 @@ function totalSeatFees(seats: PassengerSeatSelection[]): number {
 
 // ─── Compute price summary (multi-pax aware) ─────────────────────────────────
 
-function computePriceSummary(
+/** Exported for src/store/__tests__/ai-pricing-paxcount.test.ts. */
+export function computePriceSummary(
   fareDetails: AiFareDetails | null,
   passengerCount: number,
   protections: PassengerProtection[],
@@ -102,14 +103,21 @@ function computePriceSummary(
 
   // Always use actual provider base fare / tax breakdown (from Mystifly/Duffel API).
   // No estimated or cosmetic splits — only real provider data.
-  const baseFarePerPax = fareDetails.providerBaseFare ?? fareDetails.totalPrice;
-  const taxesPerPax = fareDetails.providerTaxAmount ?? 0;
-  const baseFare = baseFarePerPax * paxCount;
-  const taxes = taxesPerPax * paxCount;
+  //
+  // These are ALL-PASSENGER figures, not per-passenger. The provider prices a
+  // 3-passenger search as one total, our normalizers carry that through
+  // unchanged, and both fare-detail builders derive from it — so multiplying by
+  // the passenger count charged a family of three 3x the fare ($2,053 shown as
+  // $6,159). The page checkout flow reads the same field as an all-passenger
+  // total (buildLocalPricing: `allPaxFareTotal = selectedFare.totalPrice`),
+  // which is why only the AI bot was wrong.
+  const baseFare = fareDetails.providerBaseFare ?? fareDetails.totalPrice;
+  const taxes = fareDetails.providerTaxAmount ?? 0;
+  const baseFarePerPax = Math.round(baseFare / paxCount);
 
   // Use DB-driven service fee if available, otherwise last-resort fallback
   // Service fee is based on the full fare (totalPrice), not just base
-  const fullFare = fareDetails.totalPrice * paxCount;
+  const fullFare = fareDetails.totalPrice;
   const serviceFee = computedFees
     ? computedFees.serviceFee
     : Math.round(fullFare * FALLBACK_SERVICE_FEE_RATE);
@@ -129,7 +137,8 @@ function computePriceSummary(
   const insuranceFee = addOns.travelInsurance
     ? (computedFees
         ? computedFees.insuranceFeeTotal
-        : Math.round(fareDetails.totalPrice * FALLBACK_INSURANCE_RATE) * paxCount)
+        // totalPrice already covers every passenger — no paxCount multiplier.
+        : Math.round(fareDetails.totalPrice * FALLBACK_INSURANCE_RATE))
     : 0;
 
   const seatSelectionFee = totalSeatFees(passengerSeats);
@@ -375,8 +384,12 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
   setStatus: (status) => set({ status }),
 
   selectFlight: (flight, roundTrip) => {
-    // Start with hardcoded fallback, then fetch DB values
-    const protectionFee = Math.round(flight.totalPrice * 0.06);
+    // Start with hardcoded fallback, then fetch DB values.
+    // Protection is quoted PER PASSENGER, so it is 6% of the per-head fare —
+    // flight.totalPrice covers the whole party, which on a 3-passenger search
+    // made the fallback three times what it should be.
+    const paxForProtection = Math.max(1, get().passengerCount);
+    const protectionFee = Math.round((flight.totalPrice / paxForProtection) * 0.06);
     set({
       selectedFlight: flight,
       selectedRoundTrip: roundTrip ?? null,
@@ -387,7 +400,8 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     // Async: fetch DB-driven fees
     const paxCount = get().passengerCount;
     fetchComputedFeesForContext({
-      fareTotal: flight.totalPrice * paxCount,
+      // Already the all-passenger total from the provider.
+      fareTotal: flight.totalPrice,
       passengerCount: paxCount,
       cabin: flight.cabinClass || 'economy',
       currency: flight.currency || 'USD',
@@ -477,8 +491,9 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
       status: 'passenger_count',
     });
 
-    // Re-fetch DB fees for the new fare total
-    const totalFare = fare.totalPrice * passengerCount;
+    // Re-fetch DB fees for the new fare total. fare.totalPrice is the
+    // all-passenger total the fare-options API returns, not a per-head price.
+    const totalFare = fare.totalPrice;
     fetchComputedFeesForContext({
       fareTotal: totalFare,
       passengerCount,
@@ -525,7 +540,8 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
 
     // Re-fetch DB fees with updated passenger count & total fare
     if (fareDetails) {
-      const totalFare = fareDetails.totalPrice * count;
+      // All-passenger total already — see computeAiPricing.
+      const totalFare = fareDetails.totalPrice;
       fetchComputedFeesForContext({
         fareTotal: totalFare,
         passengerCount: count,
@@ -731,7 +747,8 @@ export const useAiBookingStore = create<AiBookingStore>((set, get) => ({
     const s = get();
     if (!s.fareDetails) return;
     const fees = await fetchComputedFeesForContext({
-      fareTotal: s.fareDetails.totalPrice * s.passengerCount,
+      // Already the all-passenger total — see computeAiPricing.
+      fareTotal: s.fareDetails.totalPrice,
       passengerCount: s.passengerCount,
       cabin: s.fareDetails.fareClass || 'economy',
       currency: s.fareDetails.currency || 'USD',
