@@ -342,6 +342,47 @@ export default function ConfirmPage() {
     }
   }, [confirmation, router]);
 
+  // The AIRLINE's record locator, when it arrives after we booked.
+  //
+  // This screen renders the checkout store's snapshot and never refetches, so a
+  // locator the airline publishes seconds after BookFlight would otherwise read
+  // "Not Available" forever — the customer has no code for check-in even though
+  // we hold one. Ask the server for it, which fetches TripDetails and persists
+  // it when we do not already have it.
+  //
+  // Stops on the first hit. Gives up quietly after ~1 min; the reconciliation
+  // poller keeps trying in the background and My Trips will show it.
+  const [latePnr, setLatePnr] = useState<string | null>(null);
+  useEffect(() => {
+    const ref = confirmation?.masterBookingReference;
+    const lastName = (confirmation?.passengerNames?.[0] ?? '').trim().split(/\s+/).pop();
+    if (!ref || !lastName || (confirmation as any)?.airlinePnr || latePnr) return;
+
+    let cancelled = false;
+    const delays = [0, 5000, 10000, 15000, 30000];
+    let i = 0;
+
+    const attempt = async () => {
+      if (cancelled || i >= delays.length) return;
+      try {
+        const res = await fetch('/api/checkout/bookings/airline-pnr', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ bookingRef: ref, lastName }),
+        });
+        const data = await res.json().catch(() => null);
+        if (!cancelled && data?.airlinePnr) { setLatePnr(data.airlinePnr); return; }
+      } catch { /* transient — the next attempt or the poller covers it */ }
+      i += 1;
+      if (!cancelled && i < delays.length) setTimeout(attempt, delays[i]);
+    };
+    const t = setTimeout(attempt, delays[0]);
+    return () => { cancelled = true; clearTimeout(t); };
+  }, [confirmation, latePnr]);
+
+  // Whichever we have: the value captured at confirm, or the one that landed after.
+  const displayAirlinePnr = (confirmation as any)?.airlinePnr ?? latePnr;
+
   if (!confirmation) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
@@ -419,7 +460,7 @@ export default function ConfirmPage() {
   };
 
   const handleShare = () => {
-    const text = `FAREMIND Booking ${confirmation.masterBookingReference} · Airline PNR: ${airlinePnrLabel((confirmation as any).airlinePnr)} · ${routeLabel}`;
+    const text = `FAREMIND Booking ${confirmation.masterBookingReference} · Airline PNR: ${airlinePnrLabel(displayAirlinePnr)} · ${routeLabel}`;
     if (navigator.share) navigator.share({ title: 'My FAREMIND Booking', text }).catch(() => {});
     else navigator.clipboard.writeText(text);
   };
@@ -482,7 +523,7 @@ export default function ConfirmPage() {
                 <div className="flex items-center justify-center gap-3">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.25em]">AIRLINE PNR</span>
                   <span className="font-mono font-black text-[#1ABC9C] tracking-widest text-lg">
-                    {airlinePnrLabel((confirmation as any).airlinePnr)}
+                    {airlinePnrLabel(displayAirlinePnr)}
                   </span>
                 </div>
               </div>

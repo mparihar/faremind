@@ -1,5 +1,7 @@
 import { NextRequest, NextResponse, after } from 'next/server';
 import prisma from '@/lib/db';
+import { airlinePnrFromTripDetails } from '@/lib/airline-pnr-from-trip-details';
+import { resolveAirlinePnr } from '@/lib/airline-pnr-resolve';
 import { fireNotification } from '@/lib/notify';
 import { determinePnrStrategy } from '@/lib/pnr-strategy';
 import {
@@ -132,47 +134,6 @@ function resolveFareFamily(input: {
     };
   } catch {
     return {};
-  }
-}
-
-/**
- * The AIRLINE's record locator from a Mystifly TripDetails payload.
- *
- * Lives at ReservationItems[].AirlinePNR. This is the code a customer quotes at
- * airline check-in — it is NOT the Mystifly booking reference (MF…), which
- * identifies the booking inside Mystifly and drives the servicing APIs.
- *
- * Returns null when the airline has not published one yet; the caller must show
- * "Not Available" rather than substituting the Mystifly reference. Rejects
- * anything shaped like a Mystifly reference as a guard against re-introducing
- * the substitution. Never throws.
- */
-function airlinePnrFromTripDetails(raw: any): string | null {
-  try {
-    const ti = raw?.Data?.TripDetailsResult?.TravelItinerary
-      || raw?.Data?.TravelItinerary
-      || raw?.TripDetailsResult?.TravelItinerary
-      || raw?.TravelItinerary
-      || raw;
-
-    const groups: any[] = [
-      ...(Array.isArray(ti?.Itineraries) ? ti.Itineraries.map((i: any) => i?.ItineraryInfo) : []),
-      ti?.ItineraryInfo,
-    ].filter(Boolean);
-
-    const counts = new Map<string, number>();
-    for (const g of groups) {
-      for (const item of (Array.isArray(g?.ReservationItems) ? g.ReservationItems : [])) {
-        const pnr = String(item?.AirlinePNR ?? '').trim();
-        if (!pnr || /^MF\d+$/i.test(pnr)) continue;
-        counts.set(pnr, (counts.get(pnr) ?? 0) + 1);
-      }
-    }
-    if (counts.size === 0) return null;
-    // Most segments wins — on a codeshare that is the operating carrier's.
-    return [...counts.entries()].sort((a, b) => b[1] - a[1])[0][0];
-  } catch {
-    return null;
   }
 }
 
@@ -2598,6 +2559,16 @@ export async function POST(req: NextRequest) {
     // Previously these were unawaited promises that got killed when the
     // response was returned — causing customers to never receive emails.
     after(async () => {
+      // The locator the CUSTOMER needs at the airport. BookFlight often returns
+      // without it — the airline publishes seconds later — so resolve it here
+      // rather than shipping the email with "Not Available" and never correcting
+      // it. This runs after the response, so a few seconds of waiting costs the
+      // customer nothing and the persisted value serves every later reader.
+      const resolvedAirlinePnr =
+        (mystiflyBookingResult as any)?.airlinePnr
+        ?? (await resolveAirlinePnr(masterBooking.id, { attempts: 3, delayMs: 5000 })
+              .catch(() => ({ airlinePnr: null }))).airlinePnr;
+
       try {
         await fireNotification({
           event_type: 'BOOKING_CONFIRMED',
@@ -2608,7 +2579,7 @@ export async function POST(req: NextRequest) {
             pnr: masterPnr,
             // The AIRLINE's locator — never the Mystifly reference. Null when the
             // airline has not published one; templates render "Not Available".
-            airline_pnr: (mystiflyBookingResult as any)?.airlinePnr ?? null,
+            airline_pnr: resolvedAirlinePnr ?? null,
             // Explicit key for INTERNAL (support/ops) emails — they need this to
             // make provider calls. Never rendered in a customer "Airline PNR" field.
             mystifly_ref: mystiflyBookingResult?.uniqueId ?? null,
@@ -2650,7 +2621,7 @@ export async function POST(req: NextRequest) {
             pnr: masterPnr,
             // The AIRLINE's locator — never the Mystifly reference. Null when the
             // airline has not published one; templates render "Not Available".
-            airline_pnr: (mystiflyBookingResult as any)?.airlinePnr ?? null,
+            airline_pnr: resolvedAirlinePnr ?? null,
             // Explicit key for INTERNAL (support/ops) emails — they need this to
             // make provider calls. Never rendered in a customer "Airline PNR" field.
             mystifly_ref: mystiflyBookingResult?.uniqueId ?? null,
@@ -2692,6 +2663,15 @@ export async function POST(req: NextRequest) {
       bookingId: masterBooking.id,
       masterBookingReference: masterBooking.masterBookingReference,
       status: 'confirmed',
+      // The AIRLINE's own record locator, so the confirmation screen can print it
+      // immediately. It IS persisted on the MasterBooking above, but the response
+      // never carried it — so the page, which renders this payload straight out of
+      // the checkout store and never refetches, showed "Not Available" for a
+      // booking whose locator we already held. Null when the airline has not
+      // published one yet; never the Mystifly reference.
+      airlinePnr: (mystiflyBookingResult as any)?.airlinePnr ?? null,
+      // Mystifly's reference, under its own name. Servicing calls only.
+      mystiflyRef: (mystiflyBookingResult as any)?.uniqueId ?? null,
       // Ticketing may still be resolving (Mystifly ERBUK082 "awaiting carrier",
       // hold OrderTicket in process, or webfare TripDetails pending). The booking
       // is valid and paid; the reconciliation worker finalizes ticket issuance.
@@ -2714,6 +2694,7 @@ export async function POST(req: NextRequest) {
         isPrimary:        e.isPrimary,
         airlineCode:      e.airlineCode ?? null,
         airlineName:      e.airlineName ?? null,
+        airlinePnr:       (mystiflyBookingResult as any)?.airlinePnr ?? null,
         displayLabel:     e.displayLabel,
       })),
     });
