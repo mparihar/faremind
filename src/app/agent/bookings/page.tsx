@@ -36,7 +36,11 @@ interface AgentBooking {
   totalAmount: number;
   currency: string;
   createdAt: string;
-  pnrs: { pnrCode: string; pnrType: string; isPrimary: boolean; airlineCode?: string }[];
+  /** The airline's own locator — what the passenger quotes at check-in. */
+  airlinePnr?: string | null;
+  /** Mystifly's reference. Internal; drives our provider servicing calls. */
+  mystiflyMfRef?: string | null;
+  pnrs: { pnrCode: string; pnrType: string; isPrimary: boolean; airlineCode?: string; airlinePnr?: string | null }[];
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -165,9 +169,20 @@ export default function AgentBookingsPage() {
                 <div className="flex-1 min-w-0">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="text-xs font-mono font-bold text-[#1ABC9C]">{b.masterBookingReference}</span>
-                    {b.pnrs?.[0] && (
-                      <span className="text-[10px] font-mono text-slate-500 bg-slate-800 px-1.5 py-0.5 rounded">
-                        PNR: {b.pnrs[0].pnrCode}
+                    {/* Two codes, labelled apart. This chip used to read
+                        "PNR: MF35498526" — Mystifly's reference under the
+                        airline's name. */}
+                    {(() => {
+                      const airlinePnr = b.airlinePnr || b.pnrs?.find((p) => p.airlinePnr)?.airlinePnr;
+                      return airlinePnr ? (
+                        <span className="text-[10px] font-mono text-slate-300 bg-slate-800 px-1.5 py-0.5 rounded">
+                          Airline PNR: {airlinePnr}
+                        </span>
+                      ) : null;
+                    })()}
+                    {b.mystiflyMfRef && (
+                      <span className="text-[10px] font-mono text-slate-500 bg-slate-800/60 px-1.5 py-0.5 rounded" title="Mystifly reference — internal">
+                        MF: {b.mystiflyMfRef}
                       </span>
                     )}
                     <span className={cn(

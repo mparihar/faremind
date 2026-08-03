@@ -1,6 +1,6 @@
 'use client';
 import { useState, useEffect } from 'react';
-import { airlinePnrLabel } from '@/lib/booking-identifiers';
+import { airlinePnr, airlinePnrLabel } from '@/lib/booking-identifiers';
 import { useParams, useRouter } from 'next/navigation';
 import { motion, AnimatePresence } from 'framer-motion';
 import { Plane, ArrowLeft, Loader2, AlertCircle, User, MapPin, Calendar, ChevronDown, ChevronUp, X, Check, XCircle, Luggage, CreditCard, Ticket, Mail, Download, Printer, Shield, RefreshCw, Clock } from 'lucide-react';
@@ -263,20 +263,29 @@ function ETicketModal({ bookingId, onClose }: { bookingId: string; onClose: () =
                   ))}
                 </div>
               </div>
-              {/* PNRs */}
-              {(eticket.pnrs || []).length > 0 && (
-                <div>
-                  <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Airline PNRs</p>
-                  <div className="flex flex-wrap gap-2">
-                    {eticket.pnrs.map((p: any, i: number) => (
-                      <div key={i} className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
-                        <span className="text-white font-mono font-bold text-sm">{p.pnrCode}</span>
-                        <span className="text-slate-500 text-xs ml-1.5 capitalize">{p.provider}</span>
-                      </div>
-                    ))}
+              {/* Airline PNRs — the locator, never the provider reference.
+                  pnrCode holds Mystifly's code on MASTER_AIRLINE_PNR rows, so
+                  printing it here handed the customer a code no airline desk
+                  recognises. airlinePnr() rejects it outright. */}
+              {(() => {
+                const locators = (eticket.pnrs || [])
+                  .map((p: any) => ({ code: airlinePnr(p.airlinePnr) ?? airlinePnr(p.pnrCode), provider: p.provider }))
+                  .filter((p: any) => p.code);
+                if (locators.length === 0) return null;
+                return (
+                  <div>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-2">Airline PNRs</p>
+                    <div className="flex flex-wrap gap-2">
+                      {locators.map((p: any, i: number) => (
+                        <div key={i} className="px-3 py-1.5 rounded-lg bg-white/[0.04] border border-white/[0.06]">
+                          <span className="text-white font-mono font-bold text-sm">{p.code}</span>
+                          <span className="text-slate-500 text-xs ml-1.5 capitalize">{p.provider}</span>
+                        </div>
+                      ))}
+                    </div>
                   </div>
-                </div>
-              )}
+                );
+              })()}
               <p className="text-slate-600 text-xs text-center">Issued {eticket.issuedAt ? new Date(eticket.issuedAt).toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' }) : ''} · FAREMIND Travel</p>
             </div>
           )}

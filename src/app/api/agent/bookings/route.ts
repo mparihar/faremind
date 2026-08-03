@@ -52,6 +52,10 @@ export const GET = withAgentServicing(async (req: NextRequest, { agent }) => {
         id: true,
         masterBookingReference: true,
         masterPnr: true,
+        // The two locators, kept apart: the airline's is what a passenger quotes,
+        // mystiflyMfRef is ours and internal.
+        airlinePnr: true,
+        mystiflyMfRef: true,
         customerName: true,
         customerEmail: true,
         originAirport: true,
@@ -69,7 +73,7 @@ export const GET = withAgentServicing(async (req: NextRequest, { agent }) => {
         primaryProvider: true,
         createdAt: true,
         pnrs: {
-          select: { pnrCode: true, pnrType: true, isPrimary: true, airlineCode: true },
+          select: { pnrCode: true, pnrType: true, isPrimary: true, airlineCode: true, airlinePnr: true },
           orderBy: { isPrimary: 'desc' },
           take: 3,
         },

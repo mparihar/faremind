@@ -101,7 +101,7 @@ export const GET = withAdmin(async (req: NextRequest) => {
           passengers: { select: { id: true, passengerType: true }, orderBy: { passengerOrder: 'asc' } },
           payments:   { take: 1, orderBy: { createdAt: 'desc' }, select: { status: true, amount: true, currency: true } },
           journeys:   { where: { direction: 'OUTBOUND' }, take: 1, select: { cabinSummary: true } },
-          pnrs:       { orderBy: { createdAt: 'asc' }, select: { id: true, pnrCode: true, journeyDirection: true, isPrimary: true, pnrType: true, airlineCode: true, airlineName: true, provider: true } },
+          pnrs:       { orderBy: { createdAt: 'asc' }, select: { id: true, pnrCode: true, airlinePnr: true, journeyDirection: true, isPrimary: true, pnrType: true, airlineCode: true, airlineName: true, provider: true } },
           segments:   { take: 1, orderBy: { segmentOrder: 'asc' }, select: { airlineCode: true, airlineName: true } },
         },
       }),
@@ -121,11 +121,13 @@ export const GET = withAdmin(async (req: NextRequest) => {
       return {
         id:                     mb.id,
         pnr:                    mb.masterPnr ?? mb.masterBookingReference,
+        // The airline's own locator, kept distinct from the provider reference.
+        airlinePnr:             mb.airlinePnr ?? null,
         masterBookingReference: mb.masterBookingReference,
         pnrStrategy:            mb.pnrStrategy ?? null,
         isSplitTicket:          mb.isSplitTicket,
         pnrCount:               mb.pnrCount,
-        pnrs:                   mb.pnrs.map(p => ({ id: p.id, pnrCode: p.pnrCode, journeyDirection: p.journeyDirection, isPrimary: p.isPrimary, pnrType: p.pnrType, airlineCode: p.airlineCode, airlineName: p.airlineName, provider: p.provider })),
+        pnrs:                   mb.pnrs.map(p => ({ id: p.id, pnrCode: p.pnrCode, airlinePnr: p.airlinePnr, journeyDirection: p.journeyDirection, isPrimary: p.isPrimary, pnrType: p.pnrType, airlineCode: p.airlineCode, airlineName: p.airlineName, provider: p.provider })),
         status:                 mb.bookingStatus,
         paymentStatus:          mb.paymentStatus,
         ticketingStatus:        mb.ticketingStatus,

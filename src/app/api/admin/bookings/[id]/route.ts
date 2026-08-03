@@ -228,6 +228,10 @@ export const GET = withAdmin(async (_req: NextRequest, { params }: any) => {
       id:               p.id,
       pnrCode:          p.pnrCode,
       pnrType:          p.pnrType,
+      // The airline's own locator for this carrier. pnrCode holds Mystifly's
+      // reference, so without this the console has no way to show the code a
+      // passenger actually quotes at check-in.
+      airlinePnr:       p.airlinePnr ?? null,
       journeyDirection: p.journeyDirection,
       isPrimary:        p.isPrimary,
       status:           p.status,

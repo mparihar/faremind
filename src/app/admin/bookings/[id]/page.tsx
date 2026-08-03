@@ -732,7 +732,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                     {/* Two different identifiers. masterPnr is MYSTIFLY's booking
                         reference and drives every servicing call; the airline's own
                         locator is what a customer quotes at check-in. */}
-                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Master PROVIDER REF (Mystifly)</label>
+                    <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Master MF Ref (Mystifly)</label>
                     <input className={inp} value={editBookingData.masterPnr ?? ''} onChange={e => setEditBookingData(d => ({ ...d, masterPnr: e.target.value }))} placeholder="e.g. ABC123" />
                   </div>
                   <div>
@@ -753,7 +753,11 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
               </div>
             )}
             <InfoRow label="Master Booking Ref" value={booking.masterBookingReference} mono />
-            <InfoRow label="Master PNR" value={booking.pnr} mono />
+            {/* Two different codes. The airline's locator is what a passenger
+                quotes at check-in; the MF Ref is Mystifly's and is internal. This
+                row used to show the MF Ref under the label "Master PNR". */}
+            <InfoRow label="Airline PNR" value={booking.airlinePnr ?? 'Not issued by the airline yet'} mono={!!booking.airlinePnr} />
+            <InfoRow label="MF Ref (Mystifly · internal)" value={booking.mystiflyBookingReference} mono />
             <InfoRow label="Booking Status" value={booking.status} />
             <InfoRow label="Payment Status" value={booking.paymentStatus} />
             <InfoRow label="Ticketing Status" value={booking.ticketingStatus} />
@@ -871,10 +875,18 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                         <div className="space-y-1">
                           <div className="flex items-center gap-1.5">
                             <span className={`text-[10px] font-bold px-1.5 py-0.5 rounded ${STATUS_COLORS[pnr.pnrType] ?? 'bg-slate-400/15 text-slate-400'}`}>
-                              {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'PROVIDER REF' : pnr.pnrType.replace(/_/g, ' ')}
+                              {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'MF REF' : pnr.pnrType.replace(/_/g, ' ')}
                             </span>
                             <span className="text-slate-500 text-[10px] font-semibold">{dirIcon}</span>
                           </div>
+                          {/* The airline's own locator for this carrier, kept
+                              distinct from the provider reference above it. */}
+                          <p className="text-xs">
+                            <span className="text-slate-500">Airline PNR </span>
+                            {pnr.airlinePnr
+                              ? <span className="font-mono font-bold text-white">{pnr.airlinePnr}</span>
+                              : <span className="text-slate-600">not issued yet</span>}
+                          </p>
                           {(pnr.airlineName || pnr.airlineCode) && (
                             <p className="text-slate-400 text-xs">
                               {pnr.airlineName ?? ''}{pnr.airlineCode ? ` (${pnr.airlineCode})` : ''}
@@ -890,7 +902,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                         {/* Active indicator */}
                         {isActive && (
                           <p className="mt-2.5 text-[#1ABC9C] text-[10px] font-bold uppercase tracking-wider">
-                            ● Tabs scoped to this PROVIDER REF
+                            ● Tabs scoped to this MF Ref
                           </p>
                         )}
                       </button>
@@ -1180,7 +1192,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                     <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">PROVIDER REF Type</label>
                     <select className={sel} value={addRefData.pnrType} onChange={e => setAddRefData(d => ({ ...d, pnrType: e.target.value }))}>
                       {['MASTER_AIRLINE_PNR','AIRLINE_PNR','PROVIDER_PNR','SPLIT_TICKET_PNR','SUB_PNR'].map(t => (
-                        <option key={t} value={t} className="bg-slate-800">{t === 'MASTER_AIRLINE_PNR' ? 'PROVIDER REF' : t.replace(/_/g, ' ')}</option>
+                        <option key={t} value={t} className="bg-slate-800">{t === 'MASTER_AIRLINE_PNR' ? 'MF REF' : t.replace(/_/g, ' ')}</option>
                       ))}
                     </select>
                   </div>
@@ -1224,7 +1236,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 {booking.pnrs?.map((pnr: any) => (
                   <div key={pnr.id} className="flex items-center gap-4 p-3 bg-slate-900/40 rounded-xl">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold w-40 text-center ${STATUS_COLORS[pnr.pnrType] ?? 'bg-slate-400/15 text-slate-400'}`}>
-                      {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'PROVIDER REF' : pnr.pnrType.replace(/_/g, ' ')}
+                      {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'MF REF' : pnr.pnrType.replace(/_/g, ' ')}
                     </span>
                     <span className="font-mono text-white font-black text-sm flex-1">{pnr.pnrCode}</span>
                     {pnr.isPrimary && (
@@ -1903,7 +1915,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/50 bg-slate-900/30">
-                {['Master Ref', 'PROVIDER REF', 'Type', 'Direction', 'Airline', 'Provider', 'Provider Order ID', 'Primary', 'Status'].map(h => (
+                {['Master Ref', 'MF Ref', 'Airline PNR', 'Type', 'Direction', 'Airline', 'Provider', 'Provider Order ID', 'Primary', 'Status'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -1922,9 +1934,14 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                     {i === 0 ? (booking.masterBookingReference ?? booking.pnr ?? '—') : <span className="text-slate-600">↳</span>}
                   </td>
                   <td className="px-4 py-3 font-mono text-white font-black">{pnr.pnrCode}</td>
+                  {/* The airline's locator, in its own column — it is not the
+                      provider reference and must not read as one. */}
+                  <td className="px-4 py-3 font-mono text-white font-bold">
+                    {pnr.airlinePnr ?? <span className="text-slate-600 font-normal">—</span>}
+                  </td>
                   <td className="px-4 py-3">
                     <span className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${STATUS_COLORS[pnr.pnrType] ?? 'bg-slate-400/15 text-slate-400'}`}>
-                      {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'PROVIDER REF' : pnr.pnrType.replace(/_/g, ' ')}
+                      {pnr.pnrType === 'MASTER_AIRLINE_PNR' ? 'MF REF' : pnr.pnrType.replace(/_/g, ' ')}
                     </span>
                   </td>
                   <td className="px-4 py-3 text-slate-400">{pnr.journeyDirection}</td>

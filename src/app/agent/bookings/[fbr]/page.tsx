@@ -6,6 +6,7 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
 import { apiUrl } from '@/lib/api-client';
 import { DateChangeModal } from '@/components/manage-booking/BookingModals';
+import StaffPnrPanel from '@/components/booking/StaffPnrPanel';
 
 import {
   ArrowLeft,
@@ -388,18 +389,17 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                 {booking.returnDate && <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Return</p><p className="text-white">{new Date(booking.returnDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' })}</p></div>}
               </div>
 
-              {booking.pnrs?.length > 0 && (
-                <div className="pt-3 border-t border-white/[0.06]">
-                  <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">PNR Codes</p>
-                  <div className="flex flex-wrap gap-2">
-                    {booking.pnrs.map((pnr: any, i: number) => (
-                      <span key={i} className="px-3 py-1.5 rounded-lg bg-slate-800/60 text-xs font-mono text-white border border-white/[0.06]">
-                        {pnr.pnrCode} <span className="text-slate-500 text-[10px]">({pnr.pnrType?.replace(/_/g, ' ')})</span>
-                      </span>
-                    ))}
-                  </div>
-                </div>
-              )}
+              {/* Airline PNR and MF Ref are different codes and are shown as such.
+                  This list previously printed Mystifly's reference under the label
+                  "MASTER AIRLINE PNR", which is the one thing it is not. */}
+              <StaffPnrPanel
+                className="pt-3 border-t border-white/[0.06]"
+                booking={{
+                  airlinePnr: booking.airlinePnr,
+                  mfRef: booking.mystiflyMfRef ?? booking.masterPnr,
+                  pnrs: booking.pnrs,
+                }}
+              />
 
               {/* Fare Policy Indicators */}
               {booking.pnrs?.length > 0 && (() => {

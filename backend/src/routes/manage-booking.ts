@@ -2100,7 +2100,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           ticketNumber: p.ticketNumber,
           seatNumber: (booking as any).seats?.find((s: any) => s.passengerId === p.id)?.seatNumber,
         })),
-        pnrs: (booking.pnrs || []).map((p: any) => ({ pnrCode: p.pnrCode, provider: p.provider })),
+        // pnrCode holds Mystifly's reference on MASTER_AIRLINE_PNR rows, so the
+        // airline's own locator has to travel with it — the e-ticket view labels
+        // this section "Airline PNRs" and must have a real one to print.
+        pnrs: (booking.pnrs || []).map((p: any) => ({ pnrCode: p.pnrCode, airlinePnr: p.airlinePnr ?? null, provider: p.provider })),
       };
       return { eticket };
     } catch (e) { fastify.log.error(e, '[manage-booking/eticket]'); reply.code(500).send({ error: 'Server error' }); }

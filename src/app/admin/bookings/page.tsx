@@ -16,7 +16,10 @@ import { format } from 'date-fns';
 
 interface BookingPnrRow {
   id: string;
+  /** Holds Mystifly's reference on MASTER_AIRLINE_PNR rows. Internal. */
   pnrCode: string;
+  /** The airline's own locator for this carrier. Null until published. */
+  airlinePnr?: string | null;
   journeyDirection: string;
   isPrimary: boolean;
   pnrType: string;
@@ -28,6 +31,8 @@ interface BookingPnrRow {
 interface BookingRow {
   id: string;
   pnr: string | null;
+  /** Trip-level airline locator — what a passenger quotes at check-in. */
+  airlinePnr: string | null;
   masterBookingReference: string;
   pnrStrategy: string | null;
   isSplitTicket: boolean;
@@ -122,7 +127,7 @@ function PnrPopover({ pnrs, onClick }: { pnrs: BookingPnrRow[]; onClick: (pnr: s
         onClick={(e) => { e.stopPropagation(); setOpen(!open); }}
         className="inline-flex items-center gap-1 px-2 py-0.5 rounded-lg bg-slate-700/50 text-slate-300 text-xs font-bold hover:bg-slate-600/50 transition-all"
       >
-        {pnrs.length} PROVIDER REFs
+        {pnrs.length} MF Refs
         <ChevronDown size={10} className={`transition-transform ${open ? 'rotate-180' : ''}`} />
       </button>
       {open && (
@@ -134,6 +139,7 @@ function PnrPopover({ pnrs, onClick }: { pnrs: BookingPnrRow[]; onClick: (pnr: s
               className="w-full flex items-center gap-2 px-2.5 py-1.5 rounded-lg text-left hover:bg-slate-700/50 transition-all"
             >
               <span className="font-mono text-sm text-white font-bold">{p.pnrCode}</span>
+              {p.airlinePnr && <span className="font-mono text-xs text-slate-300">{p.airlinePnr}</span>}
               <span className="text-xs text-slate-500">{p.journeyDirection}</span>
               {p.airlineCode && <span className="text-xs text-slate-500">{p.airlineCode}</span>}
             </button>
@@ -167,9 +173,22 @@ const DATA_COLUMNS = [
       );
     },
   }),
+  // The airline's locator first: it is the code staff are asked for, and the one
+  // a passenger can actually read off a ticket.
+  col.display({
+    id: 'airlinePnrDisplay',
+    header: 'Airline PNR',
+    cell: ({ row }) => {
+      const r = row.original;
+      const code = r.airlinePnr || (r.pnrs ?? []).find(p => p.airlinePnr)?.airlinePnr;
+      return code
+        ? <span className="font-mono text-sm text-white font-semibold">{code}</span>
+        : <span className="text-slate-600 text-sm">—</span>;
+    },
+  }),
   col.display({
     id: 'pnrDisplay',
-    header: 'PROVIDER REF(s)',
+    header: 'MF Ref(s)',
     cell: ({ row, table }) => {
       const pnrs = row.original.pnrs ?? [];
       if (pnrs.length === 0) return <span className="text-slate-600 text-sm">—</span>;
