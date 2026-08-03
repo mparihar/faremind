@@ -435,7 +435,11 @@ interface LookupResult {
   data?: Record<string, string>;
 }
 
-async function lookupByEmail(email: string, sessionToken: string | null): Promise<LookupResult> {
+async function lookupByEmail(
+  email: string,
+  sessionToken: string | null,
+  who?: { firstName?: string; lastName?: string },
+): Promise<LookupResult> {
   // Signed-in only. Recall exists so a returning customer does not retype their
   // own passport; on the public site there is nobody to recall for, and the
   // request would be asking the server to hand travel-document data to an
@@ -445,7 +449,9 @@ async function lookupByEmail(email: string, sessionToken: string | null): Promis
     const res = await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-email', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
-      body: JSON.stringify({ email }),
+      // The name disambiguates: a parent booking for a child puts one contact
+      // email on every passenger, so email alone can return the child's record.
+      body: JSON.stringify({ email, firstName: who?.firstName, lastName: who?.lastName }),
     });
     return res;
   } catch {
@@ -492,7 +498,9 @@ function PrimaryContactBox({ pax, errors, touched, onChange, onAutoFill }: Prima
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setLookingUp(true);
-      const result = await lookupByEmail(email, sessionToken);
+      const result = await lookupByEmail(email, sessionToken, {
+        firstName: pax.firstName, lastName: pax.lastName,
+      });
       setLookingUp(false);
       if (result.found && result.data) {
         onAutoFill(result.data);
@@ -500,7 +508,7 @@ function PrimaryContactBox({ pax, errors, touched, onChange, onAutoFill }: Prima
         setTimeout(() => setAutoFilled(false), 4000);
       }
     }, 300);
-  }, [pax.email, onAutoFill, sessionToken]);
+  }, [pax.email, pax.firstName, pax.lastName, onAutoFill, sessionToken]);
 
   return (
     <div className="bg-white rounded-2xl border border-slate-200 shadow-sm p-6 mb-6">

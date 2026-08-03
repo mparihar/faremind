@@ -199,7 +199,10 @@ async function lookupTraveller(
   try {
     const res = by.email
       ? await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-email', {
-          method: 'POST', headers, body: JSON.stringify({ email: by.email }),
+          // Name included so the email cannot pull back a fellow traveller who
+          // shares it — a child on the same contact address, typically.
+          method: 'POST', headers,
+          body: JSON.stringify({ email: by.email, firstName: by.firstName, lastName: by.lastName }),
         })
       : await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-name', {
           method: 'POST', headers,
@@ -319,7 +322,7 @@ export default function AiPassengerDetailCollector({
       const firstName = done.get('firstName') ?? passenger.firstName ?? '';
       const lastName = done.get('lastName') ?? passenger.lastName ?? '';
       const by = currentField === 'email'
-        ? { email: normalized }
+        ? { email: normalized, firstName, lastName }
         : { firstName, lastName };
       if (by.email || (firstName.trim().length >= 2 && lastName.trim().length >= 2)) {
         setLookingUp(true);

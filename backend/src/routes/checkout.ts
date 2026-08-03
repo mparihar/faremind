@@ -125,7 +125,8 @@ async function sessionUser(request: any): Promise<{ id: string; email: string } 
 
   fastify.post('/passengers/lookup-by-email', async (request, reply) => {
     try {
-      const { email } = request.body as { email?: string };
+      const { email, firstName, lastName } = request.body as
+        { email?: string; firstName?: string; lastName?: string };
       if (!email || !email.includes('@')) {
         return reply.code(400).send({ error: 'A valid email is required' });
       }
@@ -139,10 +140,28 @@ async function sessionUser(request: any): Promise<{ id: string; email: string } 
 
       // 1. Check BookingPassenger table (most detailed — has passport info),
       //    restricted to bookings this user owns.
+      //
+      //    Match the NAME too when the caller has one. A parent booking for a
+      //    child puts one contact email on every passenger, so email alone
+      //    returns whichever row is newest — on FMBABQ3P that was the 8-year-old,
+      //    and the adult's form filled with the child's date of birth and
+      //    passport. Better to recall nothing than to recall another person.
+      const name = {
+        first: String(firstName ?? '').trim(),
+        last: String(lastName ?? '').trim(),
+      };
+      const nameFilter = name.first && name.last
+        ? {
+            firstName: { equals: name.first, mode: 'insensitive' as const },
+            lastName: { equals: name.last, mode: 'insensitive' as const },
+          }
+        : {};
+
       const bookingPax = await prisma.bookingPassenger.findFirst({
         where: {
           email: { equals: emailLower, mode: 'insensitive' },
           booking: { userId: caller.id },
+          ...nameFilter,
         },
         orderBy: { createdAt: 'desc' },
       });
