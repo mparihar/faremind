@@ -99,45 +99,64 @@ export default function StaffPnrPanel({
 
   return (
     <div className={className}>
-      {booking.fareMindRef && (
-        <div className="mb-3">
-          <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">FareMind Reference</p>
-          <span className={`${CHIP} text-[#1ABC9C]`}>{booking.fareMindRef}</span>
-        </div>
-      )}
-
-      <div>
-        <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Airline PNR</p>
-        {airline.length > 0 ? (
-          <div className="flex flex-wrap gap-2">
-            {airline.map((c) => (
-              <span key={c.code} className={CHIP}>
-                {c.code}
-                {c.label && <span className="text-slate-500 text-[10px] ml-1.5">({c.label})</span>}
-              </span>
-            ))}
+      {/* Three short codes read as one set, so they sit side by side rather than
+          stacked — stacking spent a third of the card on thirty characters.
+          Falls back to a column on narrow viewports, where three columns would
+          break the codes across lines. */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3">
+        {booking.fareMindRef && (
+          <div className="min-w-0">
+            <p className="text-[10px] text-slate-500 uppercase font-bold mb-1.5">FareMind Reference</p>
+            <span className={`${CHIP} text-[#1ABC9C]`}>{booking.fareMindRef}</span>
           </div>
-        ) : (
-          // Its absence is information: the airline has not published a locator
-          // yet, which is normal before ticketing settles.
-          <p className="text-slate-500 text-xs">Not issued by the airline yet</p>
+        )}
+
+        <div className="min-w-0">
+          <p className="text-[10px] text-slate-500 uppercase font-bold mb-1.5">Airline PNR</p>
+          {airline.length > 0 ? (
+            <div className="flex flex-wrap gap-1.5">
+              {airline.map((c) => (
+                <span key={c.code} className={CHIP} title={c.label ?? undefined}>
+                  {c.code}
+                  {/* Carrier name only when there is more than one locator — on a
+                      single-airline trip it just crowds the row. */}
+                  {c.label && airline.length > 1 && (
+                    <span className="text-slate-500 text-[10px] ml-1.5">({c.label})</span>
+                  )}
+                </span>
+              ))}
+            </div>
+          ) : (
+            // Its absence is information: the airline has not published a locator
+            // yet, which is normal before ticketing settles.
+            <p className="text-slate-500 text-xs py-1.5">Not issued yet</p>
+          )}
+        </div>
+
+        {mf.length > 0 && (
+          <div className="min-w-0">
+            <p className="text-[10px] text-slate-500 uppercase font-bold mb-1.5">
+              MF Ref <span className="text-slate-600 font-semibold">· internal</span>
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {mf.map((code) => (
+                <span
+                  key={code}
+                  className={`${CHIP} text-slate-400`}
+                  title="Mystifly's booking reference. Internal — never quote it to a customer or an airline desk."
+                >
+                  {code}
+                </span>
+              ))}
+            </div>
+          </div>
         )}
       </div>
 
       {mf.length > 0 && (
-        <div className="mt-3">
-          <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">
-            MF Ref <span className="text-slate-600 font-semibold">· Mystifly, internal</span>
-          </p>
-          <div className="flex flex-wrap gap-2">
-            {mf.map((code) => (
-              <span key={code} className={CHIP}>{code}</span>
-            ))}
-          </div>
-          <p className="text-[10px] text-slate-600 mt-1.5">
-            Our provider reference. Never quote it to a customer or an airline desk.
-          </p>
-        </div>
+        <p className="text-[10px] text-slate-600 mt-2">
+          MF Ref is our provider reference — never quote it to a customer or an airline desk.
+        </p>
       )}
     </div>
   );
