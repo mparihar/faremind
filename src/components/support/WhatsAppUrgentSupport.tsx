@@ -338,7 +338,7 @@ export default function WhatsAppUrgentSupport({ defaultName, defaultEmail }: Pro
                   {/* Booking Reference & PNR */}
                   <div className="grid grid-cols-2 gap-3">
                     <div>
-                      <label className="text-xs text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">FareMind Booking Ref</label>
+                      <label className="text-xs text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">FM Ref</label>
                       <input value={fbr} onChange={e => setFbr(e.target.value)} placeholder="e.g. FM-XXXXXXXX" className={iCls} />
                     </div>
                     <div>

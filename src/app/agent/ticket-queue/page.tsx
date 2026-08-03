@@ -156,7 +156,7 @@ export default function AgentTicketQueuePage() {
                   <div className="flex-1 grid grid-cols-1 md:grid-cols-5 gap-3">
                     {/* Reference */}
                     <div>
-                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Reference</p>
+                      <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">FM Ref</p>
                       <p className="text-sm font-black text-white">{ticket.bookingReference}</p>
                       <p className="text-[10px] text-slate-500 font-mono">{ticket.pnrs?.[0]?.providerPnr || '—'}</p>
                     </div>

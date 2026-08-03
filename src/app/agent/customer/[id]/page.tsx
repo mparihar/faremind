@@ -123,7 +123,7 @@ export default function AgentCustomerPage() {
               <div className="flex items-center justify-between">
                 <div className="grid grid-cols-1 md:grid-cols-5 gap-3 flex-1">
                   <div>
-                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Reference</p>
+                    <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">FM Ref</p>
                     <p className="text-sm font-black text-white">{b.bookingReference}</p>
                     {/* The code the customer on the phone can actually read out. */}
                     <p className="text-[10px] font-mono text-slate-400 mt-0.5">

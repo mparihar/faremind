@@ -138,7 +138,7 @@ export default function ProviderSupportCard({ booking }: ProviderSupportCardProp
       <div className="p-5 space-y-4">
         {/* Booking context info */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <ContextField label="Booking Ref" value={booking.masterBookingReference} mono />
+          <ContextField label="FM Ref" value={booking.masterBookingReference} mono />
           <ContextField label="Duffel Order ID" value={booking.providerOrderId} mono />
           <ContextField label="PNR" value={booking.masterPnr} mono />
           <ContextField label="Passenger" value={booking.customerName} />

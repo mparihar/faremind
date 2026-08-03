@@ -328,12 +328,26 @@ export default function BookingDetailPage() {
               <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
                 <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Booking Details</p>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  {[['Reference', b.masterBookingReference], ['Airline PNR', airlinePnrLabel((b as any).airlinePnr, '—')], ['Departure', depDate], ['Trip Type', (b.tripType || '').replace(/_/g, ' ')],
-                    ['Provider', b.primaryProvider], ['Passengers', `${b.passengers?.length || 1}`], ['Payment', (b.paymentStatus || '').replace(/_/g, ' ')], ['Ticketing', (b.ticketingStatus || '').replace(/_/g, ' ')]
-                  ].map(([label, val]) => (
-                    <div key={label as string} className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                  {/* `code: true` renders the value exactly as issued. Lower-casing
+                      everything and letting CSS re-capitalise it turned FMMC6BDI
+                      into "Fmmc6bdi" and VBDGNDZ into "Vbdgndz" — neither of which
+                      is the customer's reference. Only the enum-ish values get
+                      prettified. The provider is ours to know, not the
+                      customer's: it is staff-only and no longer listed here. */}
+                  {[
+                    { label: 'FM Ref', value: b.masterBookingReference, code: true },
+                    { label: 'Airline PNR', value: airlinePnrLabel((b as any).airlinePnr, '—'), code: true },
+                    { label: 'Departure', value: depDate, code: true },
+                    { label: 'Trip Type', value: (b.tripType || '').replace(/_/g, ' ') },
+                    { label: 'Passengers', value: `${b.passengers?.length || 1}`, code: true },
+                    { label: 'Payment', value: (b.paymentStatus || '').replace(/_/g, ' ') },
+                    { label: 'Ticketing', value: (b.ticketingStatus || '').replace(/_/g, ' ') },
+                  ].map(({ label, value, code }) => (
+                    <div key={label} className="flex justify-between py-1.5 border-b border-white/[0.03]">
                       <span className="text-slate-500">{label}</span>
-                      <span className="text-white font-medium capitalize text-right">{(val as string).toLowerCase()}</span>
+                      <span className={`text-white font-medium text-right ${code ? 'font-mono' : 'capitalize'}`}>
+                        {code ? value : String(value ?? '').toLowerCase()}
+                      </span>
                     </div>
                   ))}
                 </div>
@@ -355,19 +369,25 @@ export default function BookingDetailPage() {
                 <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
                   <p className="text-[11px] font-bold text-slate-500 uppercase tracking-wider mb-3">Itinerary Summary</p>
                   <div className="grid grid-cols-2 gap-x-6 gap-y-2 text-sm">
+                    {/* Same rule as Booking Details: airport codes and locators
+                        are shown as issued. "DEL ⇄ BOM" was rendering as
+                        "Del ⇄ Bom". Airline falls back to the carrier name, never
+                        to the provider — which the customer has no reason to see. */}
                     {[
-                      ['Route', `${b.originAirport} ${(b.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} ${b.destinationAirport}`],
-                      ['Trip type', (b.tripType || '').replace(/_/g, ' ')],
-                      ['Departure', fmtDate(b.departureDate)],
-                      ['Return', b.returnDate ? fmtDate(b.returnDate) : '—'],
-                      ['Airline', allSegs[0]?.airlineName || b.primaryProvider],
-                      ['Class', allSegs[0]?.cabin ? allSegs[0].cabin.charAt(0).toUpperCase() + allSegs[0].cabin.slice(1).toLowerCase() : '—'],
-                      ['Status', (b.bookingStatus || '').replace(/_/g, ' ')],
-                      ['Airline PNR', airlinePnrLabel((b as any).airlinePnr, '—')],
-                    ].map(([label, val]) => (
-                      <div key={label as string} className="flex justify-between py-1.5 border-b border-white/[0.03]">
+                      { label: 'Route', value: `${b.originAirport} ${(b.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} ${b.destinationAirport}`, code: true },
+                      { label: 'Trip type', value: (b.tripType || '').replace(/_/g, ' ') },
+                      { label: 'Departure', value: fmtDate(b.departureDate), code: true },
+                      { label: 'Return', value: b.returnDate ? fmtDate(b.returnDate) : '—', code: true },
+                      { label: 'Airline', value: allSegs[0]?.airlineName || '—', code: true },
+                      { label: 'Class', value: allSegs[0]?.cabin ? allSegs[0].cabin.charAt(0).toUpperCase() + allSegs[0].cabin.slice(1).toLowerCase() : '—', code: true },
+                      { label: 'Status', value: (b.bookingStatus || '').replace(/_/g, ' ') },
+                      { label: 'Airline PNR', value: airlinePnrLabel((b as any).airlinePnr, '—'), code: true },
+                    ].map(({ label, value, code }) => (
+                      <div key={label} className="flex justify-between py-1.5 border-b border-white/[0.03]">
                         <span className="text-slate-500">{label}</span>
-                        <span className="text-white font-medium capitalize text-right">{(val as string).toLowerCase()}</span>
+                        <span className={`text-white font-medium text-right ${code ? '' : 'capitalize'}`}>
+                          {code ? value : String(value ?? '').toLowerCase()}
+                        </span>
                       </div>
                     ))}
                   </div>

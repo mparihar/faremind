@@ -265,22 +265,22 @@ export default function TicketDetailPage({ params }: { params: Promise<{ ticketI
               <div className="p-5 space-y-4">
                 {/* Primary Booking Details */}
                 <div className="grid grid-cols-2 lg:grid-cols-3 gap-3">
-                  {/* FareMind Reference */}
-                  {(ticket.bookingRef || parsed['Reference'] || parsed['Master Booking Ref']) && (
+                  {/* FM Ref */}
+                  {(ticket.bookingRef || parsed['FM Ref'] || parsed['Reference'] || parsed['Master Booking Ref']) && (
                     <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/30">
-                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">FareMind Ref</p>
+                      <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">FM Ref</p>
                       <p className="text-white text-sm font-bold font-mono">
-                        {ticket.bookingRef || parsed['Reference'] || parsed['Master Booking Ref']}
+                        {ticket.bookingRef || parsed['FM Ref'] || parsed['Reference'] || parsed['Master Booking Ref']}
                       </p>
                     </div>
                   )}
 
                   {/* Airline PNR */}
-                  {(ticket.airlinePnr || parsed['Provider Ref'] || parsed['PNR (Airline)']) && (
+                  {(ticket.airlinePnr || parsed['Airline PNR'] || parsed['Provider Ref'] || parsed['PNR (Airline)']) && (
                     <div className="p-3 bg-slate-800/60 rounded-xl border border-slate-700/30">
                       <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Airline PNR</p>
                       <p className="text-[#1ABC9C] text-sm font-bold font-mono">
-                        {ticket.airlinePnr || parsed['Provider Ref'] || parsed['PNR (Airline)']}
+                        {ticket.airlinePnr || parsed['Airline PNR'] || parsed['Provider Ref'] || parsed['PNR (Airline)']}
                       </p>
                     </div>
                   )}
@@ -565,10 +565,10 @@ export default function TicketDetailPage({ params }: { params: Promise<{ ticketI
                   </div>
                 )}
 
-                {/* Booking Ref */}
+                {/* FM Ref */}
                 {ticket.bookingRef && (
                   <div className="flex items-center justify-between">
-                    <span className="text-xs font-bold text-slate-400">Booking Ref</span>
+                    <span className="text-xs font-bold text-slate-400">FM Ref</span>
                     <button
                       onClick={() => router.push(`/admin/bookings/${ticket.bookingRef}`)}
                       className="text-sm font-bold text-[#1ABC9C] hover:underline cursor-pointer"

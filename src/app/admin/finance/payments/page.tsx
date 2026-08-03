@@ -102,7 +102,7 @@ export default function PaymentsPage() {
           <table className="w-full">
             <thead>
               <tr className="border-b border-slate-700/50">
-                {['Booking Ref', 'Amount', 'Method', 'Status', 'Stripe PI', 'Paid At'].map(h => (
+                {['FM Ref', 'Amount', 'Method', 'Status', 'Stripe PI', 'Paid At'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[10px] font-bold text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>

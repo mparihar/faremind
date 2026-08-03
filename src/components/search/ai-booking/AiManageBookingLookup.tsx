@@ -54,7 +54,7 @@ export default function AiManageBookingLookup({ onFound, onSignIn, loading, erro
       <form onSubmit={handleSubmit} className="space-y-2.5">
         <div>
           <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">
-            Booking Reference or Airline PNR
+            FM Ref or Airline PNR
           </label>
           <input
             type="text"

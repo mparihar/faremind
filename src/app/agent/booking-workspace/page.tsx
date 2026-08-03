@@ -292,7 +292,7 @@ export default function BookingWorkspacePage() {
                       // Three identifiers, each under its own name. This row used
                       // to read "PNR" against a field that is never populated,
                       // with Mystifly's reference beside it as the only real code.
-                      { label: 'FareMind Ref', value: lookupResult.booking?.masterBookingReference },
+                      { label: 'FM Ref', value: lookupResult.booking?.masterBookingReference },
                       { label: 'Airline PNR', value: lookupResult.booking?.airlinePnr || lookupResult.booking?.pnrs?.find((p: any) => p.airlinePnr)?.airlinePnr },
                       { label: 'MF Ref (internal)', value: lookupResult.booking?.mystiflyMfRef },
                       { label: 'Provider', value: lookupResult.booking?.primaryProvider },

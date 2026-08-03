@@ -864,7 +864,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                         <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl overflow-hidden">
                           <div className="px-4 py-3 space-y-2 text-sm">
                             <div className="flex justify-between">
-                              <span className="text-slate-400">FareMind Reference</span>
+                              <span className="text-slate-400">FM Ref</span>
                               <span className="text-white font-bold font-mono">{cancelQuote.bookingReference}</span>
                             </div>
                             <div className="flex justify-between">

@@ -513,7 +513,7 @@ export default function ConfirmPage() {
                 <div className="w-1.5 h-1.5 rounded-full bg-emerald-400 animate-pulse" />
                 <span className="text-xs font-bold text-emerald-400 tracking-wide">Confirmed</span>
               </div>
-              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.25em] mb-1"><span className="text-white">FARE</span><span className="text-[#009CA6]">MIND</span> Booking Reference</p>
+              <p className="text-[10px] font-bold text-slate-400 uppercase tracking-[0.25em] mb-1">FM Ref</p>
               <p className="text-3xl sm:text-4xl font-black text-white tracking-[0.2em] font-mono mb-1">{confirmation.masterBookingReference}</p>
               {/* Airline confirmation codes */}
               {/* The AIRLINE's own record locator — what the customer quotes at

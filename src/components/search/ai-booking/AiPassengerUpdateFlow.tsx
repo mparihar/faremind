@@ -336,7 +336,7 @@ export default function AiPassengerUpdateFlow({
           </div>
 
           <div className="pt-1.5 border-t border-slate-100">
-            <InfoRow label="FareMind Reference" value={bookingReference} />
+            <InfoRow label="FM Ref" value={bookingReference} />
             <InfoRow label="Airline PNR" value={airlinePnrLabel(airlinePnr)} />
           </div>
         </div>
@@ -400,7 +400,7 @@ export default function AiPassengerUpdateFlow({
               })}
             </div>
             <div className="pt-1.5 border-t border-slate-100">
-              <InfoRow label="FareMind Reference" value={bookingReference} />
+              <InfoRow label="FM Ref" value={bookingReference} />
               <InfoRow label="Airline PNR" value={airlinePnrLabel(airlinePnr)} />
               <InfoRow label="Status" value="Updated with provider" highlight />
             </div>

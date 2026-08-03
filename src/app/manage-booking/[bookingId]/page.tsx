@@ -63,7 +63,7 @@ function SeatMapModal({ bookingId, onClose, provider }: { bookingId: string; onC
               </div>
               <p className="text-white font-bold text-lg mb-2">Post-Booking Seat Changes Unavailable</p>
               <p className="text-slate-400 text-sm mb-4 max-w-sm mx-auto">
-                Your booking was made through Duffel (NDC), which does not support online seat changes after booking.
+                This booking does not support online seat changes after ticketing.
               </p>
               <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4 mb-4 text-left">
                 <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold mb-2">How to change your seat</p>
@@ -217,7 +217,7 @@ function ETicketModal({ bookingId, onClose }: { bookingId: string; onClose: () =
               <div className="bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 rounded-xl p-4">
                 <div className="flex justify-between items-start">
                   <div>
-                    <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">Booking Reference</p>
+                    <p className="text-[10px] text-slate-500 uppercase tracking-wider font-bold">FM Ref</p>
                     <p className="text-white font-black text-xl">{eticket.bookingReference}</p>
                     <p className="text-slate-400 text-xs font-mono mt-0.5">Airline PNR: {airlinePnrLabel((eticket as any).airlinePnr)}</p>
                   </div>
@@ -584,8 +584,6 @@ export default function BookingDetailPage() {
                 <span>{b.customerName}</span>
                 <span>·</span>
                 <span className="capitalize">{(b.tripType || '').replace('_', ' ').toLowerCase()}</span>
-                <span>·</span>
-                <span className="capitalize">{b.primaryProvider}</span>
                 {b.ticketingStatus && <><span>·</span><span className="capitalize">{(b.ticketingStatus || '').replace('_', ' ').toLowerCase()}</span></>}
                 {b.createdAt && <><span>·</span><span>{new Date(b.createdAt).toLocaleString()}</span></>}
               </div>

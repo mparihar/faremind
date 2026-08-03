@@ -289,18 +289,13 @@ export default function MyTripsPage() {
                           })}
                         </div>
 
-                        {/* Meta: Pax + Provider */}
+                        {/* Passenger count only. The content provider is an
+                            internal detail and is shown to staff, not customers. */}
                         <div className="flex items-center gap-3 text-sm text-slate-400">
                           <span className="flex items-center gap-1.5">
                             <User size={13} />
                             {paxCount} pax
                           </span>
-                          {b.primaryProvider && (
-                            <>
-                              <span className="text-slate-500">·</span>
-                              <span className="capitalize">{b.primaryProvider}</span>
-                            </>
-                          )}
                         </div>
                       </div>
 

@@ -141,7 +141,7 @@ export default function AgentProviderSupportCard({ booking }: AgentProviderSuppo
       <div className="p-5 space-y-4">
         {/* Booking context */}
         <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-          <CtxField label="Booking Ref" value={booking.masterBookingReference} mono />
+          <CtxField label="FM Ref" value={booking.masterBookingReference} mono />
           <CtxField label="Duffel Order ID" value={booking.providerOrderId} mono />
           <CtxField label="PNR" value={booking.masterPnr} mono />
           <CtxField label="Passenger" value={booking.customerName} />

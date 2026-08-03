@@ -172,7 +172,7 @@ export default function AdminPaymentsPage() {
           <table className="w-full text-sm">
             <thead className="bg-slate-800/70 text-[10px] uppercase tracking-wider text-slate-400">
               <tr>
-                <th className="text-left px-4 py-3">Reference</th><th className="text-left px-4 py-3">Payer</th>
+                <th className="text-left px-4 py-3">FM Ref</th><th className="text-left px-4 py-3">Payer</th>
                 <th className="text-right px-4 py-3">Amount</th><th className="text-left px-4 py-3">Note</th>
                 <th className="text-center px-4 py-3">Status</th><th className="text-left px-4 py-3">Created</th>
               </tr>

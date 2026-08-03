@@ -508,11 +508,11 @@ export default function AiContactSupportFlow({ onExit }: Props) {
           </>
         )}
 
-        {/* ── Step: Booking Reference ─────────────────────────────────────── */}
+        {/* ── Step: FM Ref ─────────────────────────────────────── */}
         {step === 'booking_ref' && (
           <>
             <AiBubble>
-              If this issue is related to an existing booking, please enter your FareMind Booking Reference or Airline PNR.
+              If this issue is related to an existing booking, please enter your FM Ref or airline PNR.
               <span className="text-orange-300 text-[12px] block mt-1">
                 You can also type &quot;skip&quot; or press Enter to continue without one.
               </span>
@@ -520,7 +520,7 @@ export default function AiContactSupportFlow({ onExit }: Props) {
             <div className="flex items-start gap-2 px-3 py-2 rounded-lg bg-amber-50 border border-amber-200">
               <AlertCircle className="w-3.5 h-3.5 text-amber-500 shrink-0 mt-0.5" />
               <p className="text-[10px] text-amber-700 leading-snug">
-                Providing your FareMind Booking Reference or Airline PNR helps us resolve booking issues faster.
+                Providing your FM Ref or airline PNR helps us resolve booking issues faster.
               </p>
             </div>
             <InputRow placeholder="e.g. FM-XXXXXXXX or ABC123" />
@@ -633,8 +633,8 @@ export default function AiContactSupportFlow({ onExit }: Props) {
                 ['Name', `${firstName} ${lastName}`.trim()],
                 ['Email', email],
                 ['Phone', phone],
-                ...(fbr ? [['FareMind Booking Ref', fbr]] : []),
-                ...(pnr ? [['Booking Reference', pnr]] : []),
+                ...(fbr ? [['FM Ref', fbr]] : []),
+                ...(pnr ? [['Airline PNR', pnr]] : []),
               ].map(([label, value]) => (
                 <div key={label as string} className="flex justify-between text-[11px]">
                   <span className="text-slate-400 font-medium">{label}</span>

@@ -4,6 +4,7 @@ import { useState, useEffect, Suspense } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { motion } from 'framer-motion';
 import { apiUrl } from '@/lib/api-client';
+import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import {
   Plane, User, CreditCard, Check, ChevronRight, Shield, Lock,
   Loader2, ArrowLeft, Sparkles, AlertCircle, X, Package,
@@ -876,8 +877,11 @@ function ConfirmStep({ result, protection, routeLabel, total, currency }: {
 
         <div className="bg-slate-50 rounded-xl border border-slate-200 p-5 mb-6 text-left">
           <div className="flex items-center justify-between mb-3">
-            <span className="text-xs text-slate-400 uppercase tracking-wider">Booking Reference (Airline PNR)</span>
-            <span className="text-sm font-mono font-bold text-[#1ABC9C]">{result?.pnr ?? 'N/A'}</span>
+            {/* One label, one identifier. This read "Booking Reference (Airline
+                PNR)" over a field that can hold the provider reference, so it
+                named two different codes at once and could print neither. */}
+            <span className="text-xs text-slate-400 uppercase tracking-wider">Airline PNR</span>
+            <span className="text-sm font-mono font-bold text-[#1ABC9C]">{airlinePnrLabel(result?.pnr)}</span>
           </div>
           <div className="flex items-center justify-between">
             <span className="text-sm font-medium text-slate-900">{routeLabel}</span>

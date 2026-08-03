@@ -170,7 +170,7 @@ export default function AdminServicePaymentsPage() {
                   <div className="mx-4 mt-1 mb-2 px-4 py-4 bg-white/[0.03] border border-white/[0.06] rounded-xl">
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                       <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Service</p><p className="text-white font-semibold">{svc.label}</p></div>
-                      <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Booking Ref</p><p className="text-white font-mono">{p.booking?.masterBookingReference || 'N/A'}</p></div>
+                      <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">FM Ref</p><p className="text-white font-mono">{p.booking?.masterBookingReference || 'N/A'}</p></div>
                       <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Airline PNR</p><p className="text-white font-mono">{p.booking?.airlinePnr || 'N/A'}</p></div>
                       <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">MF Ref</p><p className="text-slate-400 font-mono text-xs">{p.pnrCode || 'N/A'}</p></div>
                       <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Ticket #</p><p className="text-white font-mono">{p.ticketNumber || 'N/A'}</p></div>

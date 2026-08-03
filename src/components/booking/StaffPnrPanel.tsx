@@ -106,7 +106,7 @@ export default function StaffPnrPanel({
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-x-4 gap-y-3">
         {booking.fareMindRef && (
           <div className="min-w-0">
-            <p className="text-[10px] text-slate-500 uppercase font-bold mb-1.5">FareMind Reference</p>
+            <p className="text-[10px] text-slate-500 uppercase font-bold mb-1.5">FM Ref</p>
             <span className={`${CHIP} text-[#1ABC9C]`}>{booking.fareMindRef}</span>
           </div>
         )}

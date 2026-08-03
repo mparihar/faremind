@@ -149,7 +149,7 @@ export default function AiCancelBookingFlow({
           </div>
 
           <div className="space-y-2 bg-white rounded-lg border border-emerald-200/50 px-3 py-2.5">
-            <InfoRow label="FareMind Reference" value={cancelSuccess.bookingReference} />
+            <InfoRow label="FM Ref" value={cancelSuccess.bookingReference} />
             <InfoRow label="Airline PNR" value={airlinePnrLabel((cancelSuccess as any)?.airlinePnr)} />
             <InfoRow label="Cancellation Type" value={cancelSuccess.cancellationMethod === 'VOID' ? 'Immediate Void' : 'Refund'} highlight />
             <InfoRow label="Status" value={cancelSuccess.cancellationMethod === 'VOID' ? 'Ticket voided' : 'Cancellation submitted'} highlight />
@@ -203,7 +203,7 @@ export default function AiCancelBookingFlow({
 
         {/* Summary Card */}
         <div className="px-3 py-3 rounded-xl border border-slate-200 bg-white space-y-2.5">
-          <InfoRow label="FareMind Reference" value={q.bookingReference} />
+          <InfoRow label="FM Ref" value={q.bookingReference} />
           <InfoRow label="Airline PNR" value={airlinePnrLabel((q as any).airlinePnr)} />
           <InfoRow label="Route" value={q.route || route} />
           <InfoRow label="Departure" value={formatBookingDate(q.departureDate || departureDate)} />

@@ -752,7 +752,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                 </div>
               </div>
             )}
-            <InfoRow label="Master Booking Ref" value={booking.masterBookingReference} mono />
+            <InfoRow label="FM Ref" value={booking.masterBookingReference} mono />
             {/* Two different codes. The airline's locator is what a passenger
                 quotes at check-in; the MF Ref is Mystifly's and is internal. This
                 row used to show the MF Ref under the label "Master PNR". */}

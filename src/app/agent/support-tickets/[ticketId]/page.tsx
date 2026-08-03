@@ -264,7 +264,7 @@ export default function AgentTicketDetailPage({ params }: { params: Promise<{ ti
               </div>
               {ticket.bookingRef && (
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Booking Ref</span>
+                  <span className="text-slate-400">FM Ref</span>
                   <button
                     onClick={() => router.push(`/agent/bookings/${ticket.bookingRef}`)}
                     className="text-[#1ABC9C] font-bold hover:underline"

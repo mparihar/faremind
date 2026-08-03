@@ -228,7 +228,7 @@ export default function PublicSupportPage() {
                     </select>
                   </div>
                   <div>
-                    <label className="text-xs text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">Booking Reference (optional)</label>
+                    <label className="text-xs text-slate-500 uppercase font-bold mb-1.5 block tracking-wide">FM Ref (optional)</label>
                     <input value={bookingRef} onChange={e => setBookingRef(e.target.value)}
                       placeholder="e.g. FM-XXXXXXXX" className={iCls} />
                   </div>

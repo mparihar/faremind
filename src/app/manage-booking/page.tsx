@@ -299,11 +299,11 @@ export default function ManageBookingPage() {
                           <Search size={22} className="text-[#1ABC9C]" />
                         </div>
                         <h2 className="text-white font-bold text-lg">Find Your Booking</h2>
-                        <p className="text-slate-500 text-xs mt-1">Enter your booking reference and last name</p>
+                        <p className="text-slate-500 text-xs mt-1">Enter your FM Ref or airline PNR, and your last name</p>
                       </div>
 
                       <div>
-                        <label className={labelCls}>Booking Reference</label>
+                        <label className={labelCls}>FM Ref or Airline PNR</label>
                         <input type="text" value={store.lookupRef} onChange={e => store.setLookupRef(e.target.value.toUpperCase())}
                           placeholder="e.g. FM2AX9K3" className={inputCls} autoFocus />
                       </div>
