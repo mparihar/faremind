@@ -401,6 +401,15 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
           refundTimeline: data.refundTimeline || '5–10 business days',
           refundMethod: data.refundMethod || 'ORIGINAL_PAYMENT',
           cancellationMethod: data.cancellationMethod,
+          // Dropping `queued` here is what let the confirmation say "Booking
+          // Cancelled — ticket voided" directly above "refunded once the airline
+          // issues the ticket": the flag that distinguishes the two never
+          // reached the component, while refundTimeline did.
+          queued: data.queued ?? data.pendingIssuance ?? false,
+          message: data.message,
+          refundability: data.refundability,
+          fareRefundable: data.fareRefundable,
+          airlinePnr: data.airlinePnr ?? null,
         },
       });
       return true;

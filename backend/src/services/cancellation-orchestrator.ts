@@ -996,6 +996,17 @@ export async function queueCancellationForIssuance(
   } else {
     await prisma.cancellationRecord.create({ data: { bookingId, ...data } });
   }
+
+  // The customer has asked to cancel and is waiting on us. Leaving the booking
+  // CONFIRMED meant anyone checking it later — the customer, an agent, support —
+  // saw no sign a cancellation was in flight. CANCEL_REQUESTED says it is
+  // pending; only the executed void sets CANCELLED. ticketingStatus is left
+  // alone: the airline is still issuing, and that is a separate fact.
+  await prisma.masterBooking.update({
+    where: { id: bookingId },
+    data: { bookingStatus: 'CANCEL_REQUESTED' },
+  }).catch((e) => console.error('[Cancel][Queued] could not mark the booking CANCEL_REQUESTED:', e?.message));
+
   await mbq.createBookingEvent({
     bookingId,
     eventType: 'CANCEL_QUEUED',

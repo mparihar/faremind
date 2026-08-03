@@ -26,6 +26,7 @@ const STATUS_MAP: Record<string, { cls: string; dot: string; label: string }> = 
   TICKETED:  { cls: 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20', dot: 'bg-emerald-400', label: 'Ticketed' },
   CREATED:   { cls: 'bg-amber-500/10 text-amber-400 border-amber-500/20', dot: 'bg-amber-400', label: 'Processing' },
   CANCELLED: { cls: 'bg-red-500/10 text-red-400 border-red-500/20', dot: 'bg-red-400', label: 'Cancelled' },
+  CANCEL_REQUESTED: { cls: 'bg-amber-500/10 text-amber-400 border-amber-500/20', dot: 'bg-amber-400', label: 'Cancellation Pending' },
   COMPLETED: { cls: 'bg-blue-500/10 text-blue-400 border-blue-500/20', dot: 'bg-blue-400', label: 'Completed' },
   FAILED:    { cls: 'bg-red-500/10 text-red-400 border-red-500/20', dot: 'bg-red-400', label: 'Failed' },
 };
@@ -35,6 +36,7 @@ const STATUS_BORDER: Record<string, string> = {
   TICKETED:  'border-l-emerald-400/60',
   CREATED:   'border-l-amber-400/60',
   CANCELLED: 'border-l-red-400/60',
+  CANCEL_REQUESTED: 'border-l-amber-400/60',
   COMPLETED: 'border-l-blue-400/60',
   FAILED:    'border-l-red-400/60',
 };

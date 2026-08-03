@@ -13,7 +13,7 @@ import { apiFetch } from '@/lib/api-client';
 import { canAddBaggage } from '@/lib/booking-capabilities';
 import CouponStatusPanel from '@/components/booking/CouponStatusPanel';
 function StatusBadge({ status }: { status: string }) {
-  const m: Record<string, [string, string]> = { CONFIRMED: ['bg-emerald-500/10 text-emerald-400', 'Confirmed'], TICKETED: ['bg-emerald-500/10 text-emerald-400', 'Ticketed'], CANCELLED: ['bg-red-500/10 text-red-400', 'Cancelled'], CREATED: ['bg-amber-500/10 text-amber-400', 'Processing'], COMPLETED: ['bg-blue-500/10 text-blue-400', 'Completed'] };
+  const m: Record<string, [string, string]> = { CONFIRMED: ['bg-emerald-500/10 text-emerald-400', 'Confirmed'], TICKETED: ['bg-emerald-500/10 text-emerald-400', 'Ticketed'], CANCELLED: ['bg-red-500/10 text-red-400', 'Cancelled'], CANCEL_REQUESTED: ['bg-amber-500/10 text-amber-400', 'Cancellation Pending'], CREATED: ['bg-amber-500/10 text-amber-400', 'Processing'], COMPLETED: ['bg-blue-500/10 text-blue-400', 'Completed'] };
   const [cls, label] = m[status] || ['bg-slate-500/10 text-slate-400', status];
   return <span className={`px-2.5 py-1 rounded-full text-[11px] font-bold uppercase tracking-wider ${cls}`}>{label}</span>;
 }

@@ -364,9 +364,11 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                   or returned yet. Saying "Booking Cancelled" or "Amount Returned"
                   would claim something that has not happened. */}
               <h3 className="text-white font-black text-xl mb-1">
-                {cancelSuccess.cancellationMethod === 'VOID' && !cancelSuccess.queued
-                  ? 'Booking Cancelled'
-                  : 'Cancellation Submitted'}
+                {cancelSuccess.queued
+                  ? 'Cancellation Pending'
+                  : cancelSuccess.cancellationMethod === 'VOID'
+                    ? 'Booking Cancelled'
+                    : 'Cancellation Submitted'}
               </h3>
               <p className="text-slate-400 text-sm">
                 FM Ref: <span className="font-mono font-bold text-white">{cancelSuccess.bookingReference || '—'}</span>

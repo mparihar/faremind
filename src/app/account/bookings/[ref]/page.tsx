@@ -21,6 +21,7 @@ function StatusBadge({ status }: { status: string }) {
     CONFIRMED: ['bg-emerald-500/10 text-emerald-400 border border-emerald-500/20', 'Confirmed'],
     TICKETED: ['bg-emerald-500/10 text-emerald-400 border border-emerald-500/20', 'Ticketed'],
     CANCELLED: ['bg-red-500/10 text-red-400 border border-red-500/20', 'Cancelled'],
+    CANCEL_REQUESTED: ['bg-amber-500/10 text-amber-400 border border-amber-500/20', 'Cancellation Pending'],
     CREATED: ['bg-amber-500/10 text-amber-400 border border-amber-500/20', 'Processing'],
     COMPLETED: ['bg-blue-500/10 text-blue-400 border border-blue-500/20', 'Completed'],
   };
