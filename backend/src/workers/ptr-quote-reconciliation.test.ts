@@ -7,7 +7,7 @@
  * fixed for — so the empty cases matter more than the populated ones.
  */
 import assert from 'node:assert';
-import { extractQuoteRows } from './ptr-quote-reconciliation';
+import { extractQuoteRows, ptrIdFromStoredResponse } from './ptr-quote-reconciliation';
 
 let passed = 0;
 function test(name: string, fn: () => void) {

@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { CheckCircle2, XCircle, Clock } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock, RefreshCw, Loader2 } from 'lucide-react';
 
 /**
  * The result of a void / refund / reissue quote.
@@ -20,9 +20,15 @@ export interface PtrQuoteResultProps {
   quoteResult: any;
   /** Currency formatter supplied by the host page. */
   fmt: (n: number, c?: string) => string;
+  /**
+   * Re-read a quote already raised at the provider. Distinct from quoting
+   * again, which would raise a second PTR just to see a number.
+   */
+  onRefresh?: () => void;
+  refreshing?: boolean;
 }
 
-export default function PtrQuoteResult({ quoteResult, fmt }: PtrQuoteResultProps) {
+export default function PtrQuoteResult({ quoteResult, fmt, onRefresh, refreshing }: PtrQuoteResultProps) {
   if (!quoteResult) return null;
 
   // A reissue that could not be auto-charged is parked, not failed: the customer has been
@@ -77,6 +83,19 @@ export default function PtrQuoteResult({ quoteResult, fmt }: PtrQuoteResultProps
           Provider PTR {quoteResult.providerPtrId ?? '—'}
           {quoteResult.ptrStatus ? ` · ${quoteResult.ptrStatus}` : ''}
           {quoteResult.resolution ? ` · ${quoteResult.resolution}` : ''}
+        </p>
+        {onRefresh && quoteResult.ptrId && (
+          <button
+            onClick={onRefresh}
+            disabled={refreshing}
+            className="mt-3 flex items-center gap-2 px-4 py-2 rounded-xl bg-amber-400/15 border border-amber-400/25 text-amber-300 text-xs font-bold hover:bg-amber-400/25 disabled:opacity-50"
+          >
+            {refreshing ? <Loader2 size={13} className="animate-spin" /> : <RefreshCw size={13} />}
+            Check for the airline&apos;s price
+          </button>
+        )}
+        <p className="text-[10px] text-slate-500 mt-2">
+          This re-reads the quote already raised — it does not create another one. It is also checked automatically every couple of minutes.
         </p>
       </div>
     );

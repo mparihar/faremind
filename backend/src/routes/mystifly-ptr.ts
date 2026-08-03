@@ -32,6 +32,7 @@ import { initiateReissue } from '../services/reissue-orchestrator';
 import { toUsd } from '../services/fx';
 import * as mbq from '../lib/manage-booking-queries';
 import { summariseCoupons, couponSummaryLabel } from '../services/coupon-eligibility';
+import { reconcilePtrQuoteById } from '../workers/ptr-quote-reconciliation';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -1244,6 +1245,54 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
     } catch (error: any) {
       console.error('[PTR] ReIssue error:', error.message);
       return reply.code(502).send({ error: `ReIssue failed: ${error.message}` });
+    }
+  });
+
+  // ── Quote Refresh ──────────────────────────────
+  //
+  // Re-read a quote we already raised. The console keeps its quote in React
+  // state, so once the reconciler fills the amounts in there was no way to see
+  // them short of running the quote again — and that raises a SECOND PTR at the
+  // provider. This reads the stored record, polls the provider once if it is
+  // still outstanding, and answers in the same shape the quote endpoints use so
+  // the page can swap it straight in.
+
+  fastify.post('/quote-refresh', async (request, reply) => {
+    try {
+      const { ptrId } = request.body as { ptrId?: string };
+      if (!ptrId) return reply.code(400).send({ error: 'ptrId is required', errorCode: 'MISSING_PTR_ID' });
+
+      const existing = await prisma.postTicketingRequest.findUnique({ where: { id: ptrId } });
+      if (!existing) return reply.code(404).send({ error: 'No quote found for that id.' });
+
+      if (existing.status === 'QUOTE_PENDING') await reconcilePtrQuoteById(ptrId);
+
+      const rec = await prisma.postTicketingRequest.findUnique({ where: { id: ptrId } });
+      if (!rec) return reply.code(404).send({ error: 'No quote found for that id.' });
+
+      const pending = rec.status === 'QUOTE_PENDING';
+      const isVoid = rec.requestType === 'VOID_QUOTE';
+      const refund = rec.quoteRefundAmount != null ? Number(rec.quoteRefundAmount) : 0;
+      const penalty = rec.quotePenaltyAmount != null ? Number(rec.quotePenaltyAmount) : 0;
+      const currency = rec.quoteCurrency || 'USD';
+
+      return {
+        success: rec.status !== 'FAILED',
+        ptrId: rec.id,
+        providerPtrId: rec.providerRequestId ? Number(rec.providerRequestId) : null,
+        ptrStatus: rec.providerStatus,
+        quotePending: pending,
+        pendingMessage: pending
+          ? 'The airline still has not priced this. It is checked automatically every couple of minutes.'
+          : undefined,
+        error: rec.status === 'FAILED' ? (rec.failureReason || 'This quote could not be priced.') : undefined,
+        quote: pending || rec.status === 'FAILED' ? null : (isVoid
+          ? { TotalRefundAmount: refund, TotalVoidingFee: penalty, Currency: currency }
+          : { TotalRefundAmount: refund, TotalRefundCharges: penalty, Currency: currency }),
+      };
+    } catch (error: any) {
+      console.error('[PTR] quote-refresh error:', error.message);
+      return reply.code(502).send({ error: `Could not refresh the quote: ${error.message}` });
     }
   });
 

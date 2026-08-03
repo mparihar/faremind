@@ -51,18 +51,33 @@ export function extractQuoteRows(res: any): any[] {
   return [];
 }
 
+/** The provider PTR id as stored in a quote response we already hold. */
+export function ptrIdFromStoredResponse(raw: any): number | null {
+  const v = raw?.Data?.PTRId ?? raw?.Data?.PtrId ?? raw?.PTRId ?? raw?.PtrId ?? null;
+  const n = Number(v);
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
 const sum = (rows: any[], pick: (r: any) => any) =>
   rows.reduce((s, r) => s + (parseFloat(pick(r)) || 0), 0);
 
 async function reconcileOne(rec: any): Promise<PtrQuoteReconResult> {
   const mfRef = rec.providerUniqueId;
-  const providerPtrId = rec.providerRequestId ? Number(rec.providerRequestId) : null;
+  let providerPtrId = rec.providerRequestId ? Number(rec.providerRequestId) : null;
   const isVoid = rec.requestType === 'VOID_QUOTE';
   const base: PtrQuoteReconResult = { ptrId: rec.id, providerPtrId: rec.providerRequestId, outcome: 'still_pending' };
 
+  // Quotes raised before providerRequestId was persisted still carry the id in
+  // the response we stored at the time. Recover it rather than abandoning them,
+  // and write it back so this only happens once.
   if (!providerPtrId) {
-    // Requested before the id was persisted; nothing to poll against.
-    return { ...base, outcome: 'unreadable' };
+    const recovered = ptrIdFromStoredResponse(rec.providerQuoteResponse);
+    if (!recovered) return { ...base, outcome: 'unreadable' };
+    providerPtrId = recovered;
+    base.providerPtrId = String(recovered);
+    await prisma.postTicketingRequest.update({
+      where: { id: rec.id }, data: { providerRequestId: String(recovered) },
+    }).catch(() => {});
   }
 
   try {
@@ -149,7 +164,26 @@ async function reconcileOne(rec: any): Promise<PtrQuoteReconResult> {
   }
 }
 
+/**
+ * Reconcile one quote on demand.
+ *
+ * The console holds its quote in memory, so once the cron fills the amounts in
+ * there is no way for an operator to see them — except by running the quote
+ * again, which raises a SECOND PTR at the provider. This lets the page re-read
+ * the one it already has.
+ */
+export async function reconcilePtrQuoteById(recordId: string): Promise<PtrQuoteReconResult | null> {
+  const rec = await prisma.postTicketingRequest.findUnique({ where: { id: recordId } });
+  if (!rec) return null;
+  if (rec.status !== 'QUOTE_PENDING') return { ptrId: rec.id, providerPtrId: rec.providerRequestId, outcome: 'still_pending' };
+  return reconcileOne(rec);
+}
+
 export async function runPtrQuoteReconciliation(): Promise<PtrQuoteReconResult[]> {
+  // QUOTE_PENDING is exactly what a new unanswered quote is written as, so that
+  // is the whole queue. Records from before that status existed are left alone
+  // deliberately: re-polling settled rows to repair historical test data would
+  // add a branch that can touch legitimate quotes, for no benefit going forward.
   const pending = await prisma.postTicketingRequest.findMany({
     where: {
       provider: 'MYSTIFLY',

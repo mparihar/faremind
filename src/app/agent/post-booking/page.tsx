@@ -84,6 +84,7 @@ export default function AgentPostBookingPage() {
   const [statusResult, setStatusResult] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [execLoading, setExecLoading] = useState(false);
+  const [refreshingQuote, setRefreshingQuote] = useState(false);
   const [copied, setCopied] = useState(false);
 
   // DB records
@@ -192,6 +193,28 @@ export default function AgentPostBookingPage() {
       setExecResult({ error: e.message });
     }
     setExecLoading(false);
+  }
+
+  // Re-read a quote already raised at the provider. Quoting again would create
+  // a second PTR for the same booking just to see the amount.
+  async function refreshQuote() {
+    if (!quoteResult?.ptrId) return;
+    setRefreshingQuote(true);
+    try {
+      const res = await fetch(`${BACKEND_URL}/api/mystifly-ptr/quote-refresh`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ptrId: quoteResult.ptrId }),
+      });
+      const data = await res.json();
+      // Keep the identifiers from the original quote; the refresh only carries
+      // the parts that can change.
+      setQuoteResult({ ...quoteResult, ...data });
+      if (bookingId) loadPtrRecords();
+    } catch (e: any) {
+      setQuoteResult({ ...quoteResult, error: e.message });
+    }
+    setRefreshingQuote(false);
   }
 
   const fcTarget = () => bookingId;
@@ -476,7 +499,7 @@ export default function AgentPostBookingPage() {
           )}
 
           {/* Quote figures + coupon advice — shared with the admin console. */}
-          <PtrQuoteResult quoteResult={quoteResult} fmt={fmt} />
+          <PtrQuoteResult quoteResult={quoteResult} fmt={fmt} onRefresh={refreshQuote} refreshing={refreshingQuote} />
 
 
           {/* Execution outcome — shared, so both consoles read it the same way. */}
