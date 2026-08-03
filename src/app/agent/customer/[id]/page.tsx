@@ -125,6 +125,10 @@ export default function AgentCustomerPage() {
                   <div>
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Reference</p>
                     <p className="text-sm font-black text-white">{b.bookingReference}</p>
+                    {/* The code the customer on the phone can actually read out. */}
+                    <p className="text-[10px] font-mono text-slate-400 mt-0.5">
+                      <span className="text-slate-500">Airline PNR </span>{b.airlinePnr || '—'}
+                    </p>
                   </div>
                   <div>
                     <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Route</p>

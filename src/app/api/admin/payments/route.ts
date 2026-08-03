@@ -36,7 +36,7 @@ export const GET = withAdmin(async (req) => {
   const [rows, totals] = await Promise.all([
     prisma.servicePayment.findMany({
       where, orderBy: { createdAt: 'desc' }, take: 300,
-      include: { booking: { select: { masterBookingReference: true } } },
+      include: { booking: { select: { masterBookingReference: true, airlinePnr: true } } },
     }),
     prisma.servicePayment.groupBy({ by: ['paymentPurpose', 'status'], where, _count: { _all: true }, _sum: { amount: true } }),
   ]);
@@ -46,7 +46,7 @@ export const GET = withAdmin(async (req) => {
       id: p.id, purpose: p.paymentPurpose, status: p.status, amount: n(p.amount), currency: p.currency,
       serviceType: p.serviceType, description: p.description,
       customerName: p.customerName, customerEmail: p.customerEmail, requestedBy: p.requestedBy,
-      bookingRef: p.booking?.masterBookingReference || null, agentId: p.agentId, walletId: p.walletId,
+      bookingRef: p.booking?.masterBookingReference || null, airlinePnr: p.booking?.airlinePnr || null, agentId: p.agentId, walletId: p.walletId,
       paymentRequestId: p.paymentRequestId, supportCaseId: p.supportCaseId, autoRecharge: p.autoRecharge,
       stripePaymentIntentId: p.stripePaymentIntentId, paidAt: p.paidAt, failedAt: p.failedAt,
       failureReason: p.failureReason, createdAt: p.createdAt,

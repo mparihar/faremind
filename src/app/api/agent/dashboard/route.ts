@@ -53,6 +53,9 @@ export const GET = withAgentServicing(async (_req: NextRequest, { agent }) => {
         id: true,
         masterBookingReference: true,
         masterPnr: true,
+        // The airline's locator. pnrCode / masterPnr hold Mystifly's reference,
+        // so without this a staff screen has no code a passenger would recognise.
+        airlinePnr: true,
         customerName: true,
         customerEmail: true,
         originAirport: true,
@@ -67,7 +70,7 @@ export const GET = withAgentServicing(async (_req: NextRequest, { agent }) => {
         primaryProvider: true,
         createdAt: true,
         pnrs: {
-          select: { pnrCode: true, pnrType: true, isPrimary: true },
+          select: { pnrCode: true, pnrType: true, isPrimary: true, airlinePnr: true },
           orderBy: { isPrimary: 'desc' },
           take: 2,
         },

@@ -110,7 +110,10 @@ export default function PaymentsPage() {
             <tbody>
               {payments.map((p, i) => (
                 <tr key={p.id} className="border-b border-slate-700/30 hover:bg-slate-800/40 transition-all">
-                  <td className="px-4 py-3 text-sm font-bold text-white">{p.bookingRef || '—'}</td>
+                  <td className="px-4 py-3 text-sm font-bold text-white">
+                    {p.bookingRef || '—'}
+                    {p.airlinePnr && <div className="text-[10px] font-mono text-slate-500">PNR {p.airlinePnr}</div>}
+                  </td>
                   <td className="px-4 py-3 text-sm font-black text-[#1ABC9C]">{fmt(Number(p.amount), p.currency)}</td>
                   <td className="px-4 py-3 text-xs text-slate-400">{p.paymentMethodType || '—'} {p.cardLast4 ? `····${p.cardLast4}` : ''}</td>
                   <td className="px-4 py-3">

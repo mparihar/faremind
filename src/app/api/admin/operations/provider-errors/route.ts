@@ -18,6 +18,8 @@ export const GET = withAdmin(async (req: NextRequest) => {
         booking: {
           select: {
             masterBookingReference: true,
+            // The airline's locator — the code staff and passengers quote.
+            airlinePnr: true,
             customerEmail: true,
           },
         },

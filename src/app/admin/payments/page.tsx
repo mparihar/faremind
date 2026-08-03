@@ -10,6 +10,8 @@ import { adminFetch } from '@/store/useAdminStore';
 import { CreditCard, RefreshCw, Search, Plus, X, Wallet, Ticket, HelpCircle } from 'lucide-react';
 
 interface PayRow {
+  /** The airline's record locator. Null until the airline publishes one. */
+  airlinePnr?: string | null;
   id: string; purpose: string; status: string; amount: number; currency: string; serviceType: string;
   description: string; customerName: string; customerEmail: string; requestedBy: string; bookingRef: string | null;
   autoRecharge: boolean; stripePaymentIntentId: string | null; paidAt: string | null; failedAt: string | null;
@@ -156,7 +158,10 @@ export default function AdminPaymentsPage() {
                     <td className="px-4 py-3"><p className="text-white">{r.customerName}</p><p className="text-[11px] text-slate-500">{r.customerEmail}</p></td>
                     <td className="px-4 py-3 text-right text-white font-semibold">{fmt(r.amount, r.currency)}</td>
                     <td className="px-4 py-3 text-center"><span className={`text-[10px] font-bold px-2 py-0.5 rounded-full border ${STATUS_PILL[r.status] || 'bg-slate-500/15 text-slate-400 border-slate-500/25'}`}>{r.status}</span></td>
-                    <td className="px-4 py-3 text-[11px] text-slate-400">{r.bookingRef || r.stripePaymentIntentId?.slice(0, 14) || '—'}</td>
+                    <td className="px-4 py-3 text-[11px] text-slate-400">
+                      {r.bookingRef || r.stripePaymentIntentId?.slice(0, 14) || '—'}
+                      {r.airlinePnr && <div className="text-[10px] font-mono text-slate-500">PNR {r.airlinePnr}</div>}
+                    </td>
                     <td className="px-4 py-3 text-[11px] text-slate-400">{new Date(r.createdAt).toLocaleString()}</td>
                   </tr>
                 );

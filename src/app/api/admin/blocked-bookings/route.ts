@@ -13,7 +13,7 @@ export const GET = withAdmin(async () => {
   const rows = await prisma.masterBooking.findMany({
     where: { walletOverLimit: true },
     select: {
-      id: true, masterBookingReference: true, masterPnr: true, customerName: true, customerEmail: true,
+      id: true, masterBookingReference: true, masterPnr: true, airlinePnr: true, customerName: true, customerEmail: true,
       originAirport: true, destinationAirport: true, departureDate: true, totalAmount: true, currency: true,
       bookingStatus: true, walletBlockStatus: true, blockedAgentUserId: true, createdAt: true,
     },
@@ -37,7 +37,7 @@ export const GET = withAdmin(async () => {
       const remaining = w ? Math.round((n(w.walletAmount) - n(w.utilizedAmount)) * 100) / 100 : null;
       const amount = n(r.totalAmount);
       return {
-        id: r.id, reference: r.masterBookingReference, pnr: r.masterPnr,
+        id: r.id, reference: r.masterBookingReference, pnr: r.masterPnr, airlinePnr: r.airlinePnr,
         customerName: r.customerName, customerEmail: r.customerEmail,
         route: `${r.originAirport} → ${r.destinationAirport}`, departureDate: r.departureDate,
         amount, currency: r.currency, blockStatus: r.walletBlockStatus || 'BLOCKED_WALLET_LIMIT', createdAt: r.createdAt,

@@ -51,6 +51,7 @@ interface CustomerDetail {
     id: string;
     masterBookingReference: string;
     masterPnr: string;
+    airlinePnr?: string | null;
     bookingStatus: string;
     tripType: string;
     originAirport: string;
@@ -212,6 +213,11 @@ function CustomerDetailModal({
                       <div>
                         <div className="flex items-center gap-2">
                           <span className="font-mono text-[#1ABC9C] text-sm font-bold">{b.masterBookingReference}</span>
+                          {b.airlinePnr && (
+                            <span className="font-mono text-slate-400 text-[11px]">
+                              <span className="text-slate-500">PNR </span>{b.airlinePnr}
+                            </span>
+                          )}
                           <span className={`px-1.5 py-0.5 rounded-full text-[9px] font-bold ${STATUS_COLORS[b.bookingStatus] ?? 'bg-slate-400/15 text-slate-400'}`}>
                             {b.bookingStatus}
                           </span>

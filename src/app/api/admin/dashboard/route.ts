@@ -81,7 +81,7 @@ export const GET = withAdmin(async (_req: NextRequest) => {
       include: {
         user: { select: { firstName: true, lastName: true, email: true } },
         payments: { take: 1, orderBy: { createdAt: 'desc' }, select: { status: true, amount: true, currency: true } },
-        pnrs: { where: { isPrimary: true }, take: 1, select: { pnrCode: true } }
+        pnrs: { where: { isPrimary: true }, take: 1, select: { pnrCode: true, airlinePnr: true } }
       },
     }),
     prisma.priceAlert.count({ where: { status: 'NEW' } }),
@@ -96,6 +96,10 @@ export const GET = withAdmin(async (_req: NextRequest) => {
     return {
       id: mb.id,
       pnr: mb.masterPnr ?? mb.pnrs[0]?.pnrCode ?? mb.masterBookingReference,
+      masterBookingReference: mb.masterBookingReference,
+      // The airline's locator, so the table can lead with our reference and
+      // the airline's rather than with Mystifly's.
+      airlinePnr: mb.airlinePnr ?? mb.pnrs[0]?.airlinePnr ?? null,
       status: mb.bookingStatus,
       originAirport: mb.originAirport,
       destinationAirport: mb.destinationAirport,

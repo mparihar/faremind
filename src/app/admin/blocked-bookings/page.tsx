@@ -10,6 +10,8 @@ import { adminFetch } from '@/store/useAdminStore';
 import { Ban, RefreshCw, UserCheck, AlertTriangle } from 'lucide-react';
 
 interface Row {
+  /** The airline's record locator. Null until the airline publishes one. */
+  airlinePnr?: string | null;
   id: string; reference: string; pnr: string | null; customerName: string; customerEmail: string;
   route: string; amount: number; currency: string; blockStatus: string; createdAt: string;
   agent: { id: string; name: string; email: string; active: boolean } | null;
@@ -68,7 +70,7 @@ export default function BlockedBookingsPage() {
             : rows.length === 0 ? <tr><td colSpan={6} className="px-4 py-10 text-center text-slate-500">No blocked bookings 🎉</td></tr>
             : rows.map((r) => (
               <tr key={r.id} className="hover:bg-white/[0.02] bg-red-500/[0.03]">
-                <td className="px-4 py-3"><p className="text-[#1ABC9C] font-mono font-bold">{r.reference}</p><p className="text-[11px] text-slate-500">{r.route} · PNR {r.pnr || '—'}</p><span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">{r.blockStatus}</span></td>
+                <td className="px-4 py-3"><p className="text-[#1ABC9C] font-mono font-bold">{r.reference}</p><p className="text-[11px] text-slate-500">{r.route} · Airline PNR {r.airlinePnr || '—'}</p><span className="text-[9px] font-bold px-1.5 py-0.5 rounded bg-red-500/15 text-red-400">{r.blockStatus}</span></td>
                 <td className="px-4 py-3"><p className="text-white">{r.customerName}</p><p className="text-[11px] text-slate-500">{r.customerEmail}</p></td>
                 <td className="px-4 py-3 text-right text-white font-bold">{fmt(r.amount, r.currency)}</td>
                 <td className="px-4 py-3">{r.agent ? <><p className="text-white">{r.agent.name}</p><p className="text-[11px] text-slate-500">{r.agent.email} · {r.agent.active ? <span className="text-emerald-400">active</span> : <span className="text-red-400">disabled</span>}</p></> : <span className="text-slate-500">—</span>}</td>

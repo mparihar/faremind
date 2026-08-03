@@ -1999,7 +1999,7 @@ export default function BookingDetailPage({ params }: { params: Promise<{ id: st
                   {fcQuote && (
                     <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-300 space-y-1">
                       <div className="flex justify-between"><span className="text-slate-500">Route</span><span>{fcQuote.route}</span></div>
-                      <div className="flex justify-between"><span className="text-slate-500">Provider Ref</span><span className="font-mono">{fcQuote.airlinePnr ?? '—'}</span></div>
+                      <div className="flex justify-between"><span className="text-slate-500">Airline PNR</span><span className="font-mono">{fcQuote.airlinePnr ?? '—'}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Method</span><span className="font-bold">{fcQuote.method}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">PTR #</span><span className="font-mono">{fcQuote.ptrNumber}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Provider refund</span><span>{fcQuote.providerRefund} {fcQuote.refundCurrency}</span></div>

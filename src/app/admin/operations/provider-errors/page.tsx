@@ -20,6 +20,7 @@ interface ProviderError {
   booking?: {
     masterBookingReference: string;
     customerEmail: string;
+    airlinePnr?: string | null;
   } | null;
 }
 
@@ -135,6 +136,11 @@ export default function ProviderErrorsPage() {
                         >
                           {err.booking.masterBookingReference} →
                         </button>
+                      )}
+                      {err.booking?.airlinePnr && (
+                        <span className="text-slate-400 text-xs font-mono">
+                          <span className="text-slate-500">Airline PNR </span>{err.booking.airlinePnr}
+                        </span>
                       )}
                       <span className="text-slate-500 text-xs">
                         {format(new Date(err.createdAt), 'dd MMM yyyy, HH:mm:ss')}

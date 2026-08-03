@@ -59,6 +59,8 @@ export async function GET(req: NextRequest) {
           select: {
             id: true,
             pnrCode: true,
+            // The airline's locator for this carrier. pnrCode holds Mystifly's.
+            airlinePnr: true,
             pnrType: true,
             journeyDirection: true,
             isPrimary: true,
@@ -165,11 +167,13 @@ export async function GET(req: NextRequest) {
         bookingId: b.id,
         bookingRef: b.masterBookingReference,
         masterPnr: b.masterPnr,
+        airlinePnr: b.airlinePnr ?? b.pnrs.find(p => p.airlinePnr)?.airlinePnr ?? null,
 
         // PNR details — all PNRs with their individual data
         pnrs: b.pnrs.map(p => ({
           id: p.id,
           pnrCode: p.pnrCode,
+          airlinePnr: p.airlinePnr,
           direction: p.journeyDirection,
           isPrimary: p.isPrimary,
           status: p.status,

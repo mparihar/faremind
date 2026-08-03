@@ -33,6 +33,8 @@ export async function GET(
       select: {
         id: true,
         masterBookingReference: true,
+        // The airline's locator — what a customer on the phone can actually read out.
+        airlinePnr: true,
         bookingStatus: true,
         ticketingStatus: true,
         primaryProvider: true,
@@ -55,6 +57,7 @@ export async function GET(
       bookings: bookings.map(b => ({
         id: b.id,
         bookingReference: b.masterBookingReference,
+        airlinePnr: b.airlinePnr,
         status: b.bookingStatus,
         ticketingStatus: b.ticketingStatus,
         primaryProvider: b.primaryProvider,

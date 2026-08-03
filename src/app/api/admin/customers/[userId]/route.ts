@@ -18,7 +18,7 @@ export const GET = withAdmin(async (_req: NextRequest, { params }) => {
       createdAt: true, updatedAt: true, lastLoginAt: true,
       masterBookings: {
         select: {
-          id: true, masterBookingReference: true, masterPnr: true,
+          id: true, masterBookingReference: true, masterPnr: true, airlinePnr: true,
           bookingStatus: true, tripType: true,
           originAirport: true, destinationAirport: true,
           totalAmount: true, currency: true, createdAt: true,

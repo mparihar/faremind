@@ -275,7 +275,7 @@ export default function AgentTicketDetailPage({ params }: { params: Promise<{ ti
               )}
               {ticket.airlinePnr && (
                 <div className="flex items-center justify-between">
-                  <span className="text-slate-400">Provider Ref</span>
+                  <span className="text-slate-400">Airline PNR</span>
                   <span className="text-white font-bold font-mono">{ticket.airlinePnr}</span>
                 </div>
               )}

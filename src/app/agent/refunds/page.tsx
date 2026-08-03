@@ -148,8 +148,10 @@ export default function AgentRefundsPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1 flex-wrap">
                     <span className="text-white font-bold text-sm font-mono">{r.bookingRef}</span>
-                    {r.pnrCode && r.pnrCode !== r.bookingRef && (
-                      <span className="text-slate-500 text-xs font-mono">PNR: {r.pnrCode}</span>
+                    {/* The airline's locator. pnrCode is Mystifly's reference,
+                        which this line used to print as "PNR:". */}
+                    {r.airlinePnr && (
+                      <span className="text-slate-400 text-xs font-mono">Airline PNR: {r.airlinePnr}</span>
                     )}
                     <RefundStatusBadge status={r.refundStatus} />
                   </div>

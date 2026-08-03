@@ -154,14 +154,17 @@ export default function AgentRefundDetailPage({ params }: { params: Promise<{ bo
           {/* PNR Details */}
           <div className="bg-white/[0.04] border border-white/[0.08] rounded-2xl p-5">
             <p className="text-white font-bold text-base mb-4 flex items-center gap-2">
-              <Hash size={16} className="text-[#1ABC9C]" /> Cancelled PNR Details
+              <Hash size={16} className="text-[#1ABC9C]" /> Cancelled Airline PNR Details
             </p>
             <div className="space-y-3">
               {r.pnrs?.length > 0 ? r.pnrs.map((pnr: any) => (
                 <div key={pnr.id} className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-4">
                   <div className="flex items-center justify-between mb-2">
                     <div className="flex items-center gap-2">
-                      <span className="text-[#1ABC9C] font-mono font-bold text-sm">{pnr.pnrCode}</span>
+                      {/* Lead with the airline's locator; the provider reference
+                          sits behind it, labelled, rather than standing in for it. */}
+                      <span className="text-[#1ABC9C] font-mono font-bold text-sm">{pnr.airlinePnr || '—'}</span>
+                      <span className="text-slate-600 font-mono text-[10px]">MF {pnr.pnrCode}</span>
                       <PnrStatusBadge status={pnr.status} />
                       {pnr.isPrimary && <span className="text-[8px] bg-white/[0.06] text-slate-400 font-bold px-1.5 py-0.5 rounded uppercase">Primary</span>}
                     </div>

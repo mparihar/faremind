@@ -27,6 +27,8 @@ interface DashStats {
 }
 
 interface AgentBooking {
+  /** The airline's record locator. Null until the airline publishes one. */
+  airlinePnr?: string | null;
   id: string;
   masterBookingReference: string;
   masterPnr: string | null;
@@ -41,7 +43,7 @@ interface AgentBooking {
   totalAmount: number;
   currency: string;
   createdAt: string;
-  pnrs: { pnrCode: string; pnrType: string; isPrimary: boolean }[];
+  pnrs: { pnrCode: string; pnrType: string; isPrimary: boolean; airlinePnr?: string | null }[];
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -217,8 +219,12 @@ export default function AgentDashboardPage() {
                 <div className="min-w-0 flex-1">
                   <div className="flex items-center gap-2 mb-1">
                     <span className="text-xs font-mono font-bold text-[#1ABC9C]">{b.masterBookingReference}</span>
-                    {b.pnrs?.[0] && (
-                      <span className="text-[10px] font-mono text-slate-500">PNR: {b.pnrs[0].pnrCode}</span>
+                    {/* The airline's locator, not pnrCode — that holds Mystifly's
+                        reference, which this line used to print as "PNR:". */}
+                    {(b.airlinePnr || b.pnrs?.find((p: any) => p.airlinePnr)?.airlinePnr) && (
+                      <span className="text-[10px] font-mono text-slate-400">
+                        Airline PNR: {b.airlinePnr || b.pnrs?.find((p: any) => p.airlinePnr)?.airlinePnr}
+                      </span>
                     )}
                   </div>
                   <p className="text-sm font-semibold text-white">

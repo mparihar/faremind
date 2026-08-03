@@ -313,7 +313,7 @@ export default function BookingWorkspacePage() {
                 <div className="flex flex-wrap gap-2">
                   {lookupResult.booking?.mystiflyMfRef && (
                     <button
-                      onClick={() => { setTripMFRef(lookupResult.booking.mystiflyMfRef); setActiveTab('trip-details'); }}
+                      onClick={() => { setTripMFRef(lookupResult.booking.masterBookingReference); setActiveTab('trip-details'); }}
                       className="flex items-center gap-2 px-3 py-2 bg-blue-500/10 border border-blue-400/20 rounded-xl text-blue-400 text-xs font-bold hover:bg-blue-500/20"
                     >
                       <Eye size={12} /> Trip Details
@@ -321,7 +321,7 @@ export default function BookingWorkspacePage() {
                   )}
                   {lookupResult.booking?.mystiflyMfRef && (
                     <button
-                      onClick={() => { setTicketUniqueId(lookupResult.booking.mystiflyMfRef); setActiveTab('ticket-status'); }}
+                      onClick={() => { setTicketUniqueId(lookupResult.booking.masterBookingReference); setActiveTab('ticket-status'); }}
                       className="flex items-center gap-2 px-3 py-2 bg-violet-500/10 border border-violet-400/20 rounded-xl text-violet-400 text-xs font-bold hover:bg-violet-500/20"
                     >
                       <Ticket size={12} /> Ticket Status
@@ -329,7 +329,7 @@ export default function BookingWorkspacePage() {
                   )}
                   {lookupResult.booking?.mystiflyMfRef && (
                     <button
-                      onClick={() => { setNotesUniqueId(lookupResult.booking.mystiflyMfRef); setActiveTab('notes'); }}
+                      onClick={() => { setNotesUniqueId(lookupResult.booking.masterBookingReference); setActiveTab('notes'); }}
                       className="flex items-center gap-2 px-3 py-2 bg-amber-500/10 border border-amber-400/20 rounded-xl text-amber-400 text-xs font-bold hover:bg-amber-500/20"
                     >
                       <StickyNote size={12} /> Add Note
@@ -382,9 +382,9 @@ export default function BookingWorkspacePage() {
         {activeTab === 'trip-details' && (
           <div>
             <h3 className="text-white font-black text-lg mb-1">Trip Details</h3>
-            <p className="text-slate-400 text-sm mb-4">Fetch booking details from Mystifly by MFRef</p>
+            <p className="text-slate-400 text-sm mb-4">Fetch the provider&apos;s booking record. Enter the FareMind reference or the airline PNR — the Mystifly reference is looked up from the booking.</p>
             <div className="flex gap-3 mb-4">
-              <input value={tripMFRef} onChange={e => setTripMFRef(e.target.value)} placeholder="Mystifly MFRef (UniqueID)..."
+              <input value={tripMFRef} onChange={e => setTripMFRef(e.target.value)} placeholder="e.g. FM7E9VNW or EGWZ85"
                 className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-[#1ABC9C]" />
               <button onClick={handleTripDetails} disabled={tripLoading || !tripMFRef.trim()}
                 className="px-6 py-3 bg-[#1ABC9C] rounded-xl text-white text-sm font-bold hover:bg-[#16a085] disabled:opacity-50 flex items-center gap-2">
@@ -403,9 +403,9 @@ export default function BookingWorkspacePage() {
         {activeTab === 'ticket-status' && (
           <div>
             <h3 className="text-white font-black text-lg mb-1">Ticket Status</h3>
-            <p className="text-slate-400 text-sm mb-4">Check Mystifly ticketing status by UniqueID</p>
+            <p className="text-slate-400 text-sm mb-4">Check provider ticketing status. Enter the FareMind reference or the airline PNR.</p>
             <div className="flex gap-3 mb-4">
-              <input value={ticketUniqueId} onChange={e => setTicketUniqueId(e.target.value)} placeholder="Mystifly UniqueID..."
+              <input value={ticketUniqueId} onChange={e => setTicketUniqueId(e.target.value)} placeholder="e.g. FM7E9VNW or EGWZ85"
                 className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-[#1ABC9C]" />
               <button onClick={handleTicketStatus} disabled={ticketLoading || !ticketUniqueId.trim()}
                 className="px-6 py-3 bg-[#1ABC9C] rounded-xl text-white text-sm font-bold hover:bg-[#16a085] disabled:opacity-50 flex items-center gap-2">
@@ -493,9 +493,9 @@ export default function BookingWorkspacePage() {
         {activeTab === 'notes' && (
           <div>
             <h3 className="text-white font-black text-lg mb-1">Booking Notes</h3>
-            <p className="text-slate-400 text-sm mb-4">Add internal remarks to a Mystifly booking</p>
+            <p className="text-slate-400 text-sm mb-4">Add internal remarks to the provider booking. Enter the FareMind reference or the airline PNR.</p>
             <div className="space-y-3 mb-4">
-              <input value={notesUniqueId} onChange={e => setNotesUniqueId(e.target.value)} placeholder="Mystifly UniqueID..."
+              <input value={notesUniqueId} onChange={e => setNotesUniqueId(e.target.value)} placeholder="e.g. FM7E9VNW or EGWZ85"
                 className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-[#1ABC9C]" />
               <textarea value={noteText} onChange={e => setNoteText(e.target.value)} placeholder="Enter note text..."
                 rows={3} className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] resize-none" />

@@ -171,7 +171,8 @@ export default function AdminServicePaymentsPage() {
                     <div className="grid grid-cols-2 md:grid-cols-3 gap-4 text-sm">
                       <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Service</p><p className="text-white font-semibold">{svc.label}</p></div>
                       <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Booking Ref</p><p className="text-white font-mono">{p.booking?.masterBookingReference || 'N/A'}</p></div>
-                      <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">PNR</p><p className="text-white font-mono">{p.pnrCode || 'N/A'}</p></div>
+                      <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Airline PNR</p><p className="text-white font-mono">{p.booking?.airlinePnr || 'N/A'}</p></div>
+                      <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">MF Ref</p><p className="text-slate-400 font-mono text-xs">{p.pnrCode || 'N/A'}</p></div>
                       <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Ticket #</p><p className="text-white font-mono">{p.ticketNumber || 'N/A'}</p></div>
                       <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Customer</p><p className="text-white">{p.customerName}</p><p className="text-slate-500 text-xs">{p.customerEmail}</p>{p.customerPhone && <p className="text-slate-500 text-xs">{p.customerPhone}</p>}</div>
                       <div><p className="text-[10px] text-slate-500 uppercase font-bold mb-0.5">Requested By</p><p className="text-white font-semibold">{p.requestedBy}</p></div>

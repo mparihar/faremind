@@ -14,6 +14,8 @@ import { format, formatDistanceToNow } from 'date-fns';
 type EmailStatus = 'SENT' | 'DELIVERED' | 'OPENED' | 'FAILED' | 'BOUNCED';
 
 interface EmailRecord {
+  /** The airline's record locator. Null until the airline publishes one. */
+  airlinePnr?: string | null;
   id: string;
   recipient: string;
   recipientName: string;
@@ -303,7 +305,12 @@ export default function EmailHistoryPage() {
                       </td>
                       <td className="px-5 py-3.5">
                         {email.bookingRef ? (
-                          <span className="text-[#1ABC9C] text-xs font-semibold">{email.bookingRef}</span>
+                          <>
+                            <span className="text-[#1ABC9C] text-xs font-semibold">{email.bookingRef}</span>
+                            {email.airlinePnr && (
+                              <div className="text-[10px] font-mono text-slate-500">PNR {email.airlinePnr}</div>
+                            )}
+                          </>
                         ) : (
                           <span className="text-slate-600 text-xs">—</span>
                         )}

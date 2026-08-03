@@ -24,6 +24,9 @@ interface Stats {
 }
 
 interface RecentBooking {
+  masterBookingReference?: string | null;
+  /** The airline's record locator. Null until the airline publishes one. */
+  airlinePnr?: string | null;
   id: string;
   pnr: string | null;
   status: string;
@@ -184,7 +187,7 @@ export default function AdminDashboardPage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/50">
-                {['PROVIDER REF', 'Passenger', 'Route', 'Departure', 'Amount', 'Status'].map(h => (
+                {['Booking Ref', 'Airline PNR', 'Passenger', 'Route', 'Departure', 'Amount', 'Status'].map(h => (
                   <th key={h} className="px-6 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -196,7 +199,10 @@ export default function AdminDashboardPage() {
                   className="hover:bg-white/2 cursor-pointer transition-colors"
                   onClick={() => router.push(`/admin/bookings/${b.id}`)}
                 >
-                  <td className="px-6 py-3.5 font-mono text-[#1ABC9C] font-bold text-sm">{b.pnr ?? b.id.slice(0, 8)}</td>
+                  {/* Our reference, then the airline's. This column used to show
+                      Mystifly's under the heading "PROVIDER REF". */}
+                  <td className="px-6 py-3.5 font-mono text-[#1ABC9C] font-bold text-sm">{b.masterBookingReference ?? b.pnr ?? b.id.slice(0, 8)}</td>
+                  <td className="px-6 py-3.5 font-mono text-white text-sm">{b.airlinePnr ?? <span className="text-slate-600">—</span>}</td>
                   <td className="px-6 py-3.5">
                     <p className="text-white font-semibold text-sm">{b.user.firstName} {b.user.lastName}</p>
                     <p className="text-slate-500 text-xs">{b.user.email}</p>

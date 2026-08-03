@@ -434,7 +434,9 @@ export default function AgentMakePaymentPage() {
                 <div className="flex items-center justify-between">
                   <div>
                     <span className="text-white font-bold text-sm font-mono">{b.masterBookingReference}</span>
-                    {b.masterPnr && <span className="text-slate-500 text-xs ml-2">PNR: {b.masterPnr}</span>}
+                    {/* masterPnr holds Mystifly's reference; the airline's locator
+                        is the one worth showing beside our own. */}
+                    {(b as any).airlinePnr && <span className="text-slate-400 text-xs ml-2 font-mono">Airline PNR: {(b as any).airlinePnr}</span>}
                   </div>
                   <span className={`text-xs font-semibold ${b.bookingStatus === 'CONFIRMED' ? 'text-emerald-400' : 'text-amber-400'}`}>{b.bookingStatus}</span>
                 </div>

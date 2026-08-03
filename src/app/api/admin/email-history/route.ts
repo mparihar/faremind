@@ -31,15 +31,19 @@ export const GET = withAdmin(async (req: NextRequest) => {
     // Collect unique booking refs to look up their flight data provider
     const bookingRefs = [...new Set(emails.map(e => e.bookingRef).filter(Boolean))] as string[];
     const providerMap = new Map<string, string>();
+    // The airline's locator per booking ref, so a support person reading the
+    // log has the code the recipient would quote back.
+    const airlinePnrMap = new Map<string, string | null>();
 
     if (bookingRefs.length > 0) {
       // Look up in MasterBooking (new system — refs like FM5M9UOV)
       const masterBookings = await prisma.masterBooking.findMany({
         where: { masterBookingReference: { in: bookingRefs } },
-        select: { masterBookingReference: true, primaryProvider: true },
+        select: { masterBookingReference: true, primaryProvider: true, airlinePnr: true },
       });
       for (const b of masterBookings) {
         providerMap.set(b.masterBookingReference, b.primaryProvider);
+        airlinePnrMap.set(b.masterBookingReference, b.airlinePnr);
       }
 
       // For any refs not found in MasterBooking, look up in legacy Booking table
@@ -59,6 +63,7 @@ export const GET = withAdmin(async (req: NextRequest) => {
     const enriched = emails.map(e => ({
       ...e,
       provider: e.bookingRef ? (providerMap.get(e.bookingRef) ?? 'N/A') : 'N/A',
+      airlinePnr: e.bookingRef ? (airlinePnrMap.get(e.bookingRef) ?? null) : null,
     }));
 
     return NextResponse.json({ emails: enriched });

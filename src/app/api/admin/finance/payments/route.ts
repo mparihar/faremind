@@ -22,6 +22,9 @@ export const GET = withAdmin(async (req: NextRequest) => {
       booking: {
         select: {
           masterBookingReference: true,
+          // The airline's locator, so finance can tie a payment to the code a
+          // customer quotes when they call about it.
+          airlinePnr: true,
           primaryProvider: true,
         },
       },
@@ -35,6 +38,7 @@ export const GET = withAdmin(async (req: NextRequest) => {
       id: p.id,
       bookingId: p.bookingId,
       bookingRef: p.booking?.masterBookingReference || '',
+      airlinePnr: p.booking?.airlinePnr || null,
       provider: p.booking?.primaryProvider || '',
       stripePaymentIntentId: p.stripePaymentIntentId,
       amount: Number(p.amount),
