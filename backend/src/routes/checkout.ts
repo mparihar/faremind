@@ -150,18 +150,17 @@ async function sessionUser(request: any): Promise<{ id: string; email: string } 
         first: String(firstName ?? '').trim(),
         last: String(lastName ?? '').trim(),
       };
-      const nameFilter = name.first && name.last
-        ? {
-            firstName: { equals: name.first, mode: 'insensitive' as const },
-            lastName: { equals: name.last, mode: 'insensitive' as const },
-          }
-        : {};
+      // Strict: all three must match. Without a name this would fall back to
+      // email alone, which is the bug — the caller simply gets nothing until
+      // they have typed a name, and the name-blur lookup then fills the form.
+      if (!name.first || !name.last) return { found: false };
 
       const bookingPax = await prisma.bookingPassenger.findFirst({
         where: {
           email: { equals: emailLower, mode: 'insensitive' },
           booking: { userId: caller.id },
-          ...nameFilter,
+          firstName: { equals: name.first, mode: 'insensitive' },
+          lastName: { equals: name.last, mode: 'insensitive' },
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -190,9 +189,16 @@ async function sessionUser(request: any): Promise<{ id: string; email: string } 
       }
 
       // 2. Fallback: the caller's OWN account record. Looking up any other
-      //    user by email would be the same disclosure through a smaller hole.
-      const user = caller.email.toLowerCase() === emailLower
+      //    user by email would be the same disclosure through a smaller hole,
+      //    and it only applies when the form names the account holder — someone
+      //    booking for a friend must not get their own phone number back.
+      const account = caller.email.toLowerCase() === emailLower
         ? await prisma.user.findUnique({ where: { email: emailLower } })
+        : null;
+      const user = account
+        && account.firstName?.toLowerCase() === name.first.toLowerCase()
+        && account.lastName?.toLowerCase() === name.last.toLowerCase()
+        ? account
         : null;
 
       if (user) {
