@@ -33,8 +33,8 @@ async function main() {
   for (let i = 0; i < rows; i++) {
     const s = storedSorted[i];
     const p = provider[i];
-    const L = s ? `${s.airlineCode}${s.flightNumber} ${s.originAirport}->${s.destinationAirport} ${s.departureDateTime.toISOString()}` : '—';
-    const R = p ? `${p.airlineCode}${p.flightNumber} ${p.originAirport}->${p.destinationAirport} ${p.departureDateTime?.toISOString()}` : '—';
+    const L = s ? `${s.flightNumber} ${s.originAirport}->${s.destinationAirport} ${s.departureDateTime.toISOString()}` : '—';
+    const R = p ? `${p.flightNumber} ${p.originAirport}->${p.destinationAirport} ${p.departureDateTime?.toISOString()}` : '—';
     const same = L === R;
     console.log(`${String(i).padEnd(4)} ${L.padEnd(40)} ${R}${same ? '' : '   <-- differs'}`);
   }
