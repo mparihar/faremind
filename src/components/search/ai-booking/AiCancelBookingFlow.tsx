@@ -142,18 +142,34 @@ export default function AiCancelBookingFlow({
             <div className="w-6 h-6 rounded-full bg-emerald-500 flex items-center justify-center">
               <Check className="w-3.5 h-3.5 text-white" />
             </div>
+            {/* Queued means the airline is still issuing — nothing is voided or
+                refunded yet, so neither may be claimed here. */}
             <span className="text-[13px] font-bold text-emerald-700">
-              {cancelSuccess.cancellationMethod === 'VOID'
-                ? 'Booking Cancelled Successfully'
-                : 'Cancellation & Refund Submitted'}
+              {(cancelSuccess as any).queued
+                ? 'Cancellation Submitted'
+                : cancelSuccess.cancellationMethod === 'VOID'
+                  ? 'Booking Cancelled Successfully'
+                  : 'Cancellation & Refund Submitted'}
             </span>
           </div>
 
           <div className="space-y-2 bg-white rounded-lg border border-emerald-200/50 px-3 py-2.5">
             <InfoRow label="FM Ref" value={cancelSuccess.bookingReference} />
             <InfoRow label="Airline PNR" value={airlinePnrLabel((cancelSuccess as any)?.airlinePnr)} />
-            <InfoRow label="Cancellation Type" value={cancelSuccess.cancellationMethod === 'VOID' ? 'Immediate Void' : 'Refund'} highlight />
-            <InfoRow label="Status" value={cancelSuccess.cancellationMethod === 'VOID' ? 'Ticket voided' : 'Cancellation submitted'} highlight />
+            <InfoRow
+              label="Cancellation Type"
+              value={(cancelSuccess as any).queued
+                ? refundabilityLabel((cancelSuccess as any).refundability)
+                : cancelSuccess.cancellationMethod === 'VOID' ? 'Immediate Void' : 'Refund'}
+              highlight
+            />
+            <InfoRow
+              label="Status"
+              value={(cancelSuccess as any).queued
+                ? 'Queued — voids when the airline issues the ticket'
+                : cancelSuccess.cancellationMethod === 'VOID' ? 'Ticket voided' : 'Cancellation submitted'}
+              highlight
+            />
             <InfoRow
               label="Estimated Refund"
               value={cancelSuccess.refundAmount > 0 
@@ -248,7 +264,7 @@ export default function AiCancelBookingFlow({
             {(q.supplierFee ?? 0) > 0 && (
               <div className="flex justify-between text-[11px]">
                 <span className="text-slate-500">Supplier Fee</span>
-                <span className="font-semibold text-red-500">-{fmtCurrency(q.supplierFee, q.currency)}</span>
+                <span className="font-semibold text-red-500">-{fmtCurrency(q.supplierFee ?? 0, q.currency)}</span>
               </div>
             )}
             {q.fareMindFee > 0 && (

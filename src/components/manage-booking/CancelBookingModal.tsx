@@ -259,7 +259,7 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                     {(cancelQuote.supplierFee ?? 0) > 0 && (
                       <div className="flex justify-between">
                         <span className="text-slate-400">Supplier Fee</span>
-                        <span className="text-red-400 font-medium">−{fmt(cancelQuote.supplierFee, cancelQuote.currency)}</span>
+                        <span className="text-red-400 font-medium">−{fmt(cancelQuote.supplierFee ?? 0, cancelQuote.currency)}</span>
                       </div>
                     )}
                     {cancelQuote.fareMindFee > 0 && (
@@ -360,23 +360,32 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
               <div className="w-16 h-16 rounded-full bg-[#1ABC9C]/10 border border-[#1ABC9C]/30 flex items-center justify-center mx-auto mb-4">
                 <Check size={30} className="text-[#1ABC9C]" />
               </div>
+              {/* Queued: the airline is still issuing, so nothing has been voided
+                  or returned yet. Saying "Booking Cancelled" or "Amount Returned"
+                  would claim something that has not happened. */}
               <h3 className="text-white font-black text-xl mb-1">
-                {cancelSuccess.cancellationMethod === 'VOID'
+                {cancelSuccess.cancellationMethod === 'VOID' && !cancelSuccess.queued
                   ? 'Booking Cancelled'
                   : 'Cancellation Submitted'}
               </h3>
               <p className="text-slate-400 text-sm">
-                Ref: <span className="font-mono font-bold text-white">{cancelSuccess.bookingReference}</span>
+                FM Ref: <span className="font-mono font-bold text-white">{cancelSuccess.bookingReference || '—'}</span>
               </p>
-              {cancelSuccess.cancellationMethod === 'VOID' && (
+              {cancelSuccess.queued ? (
+                <p className="text-amber-400 text-xs mt-1 font-semibold">
+                  We&apos;ll void it the moment the airline issues the ticket
+                </p>
+              ) : cancelSuccess.cancellationMethod === 'VOID' ? (
                 <p className="text-[#1ABC9C] text-xs mt-1 font-semibold">Ticket voided — immediate cancellation</p>
-              )}
+              ) : null}
             </div>
 
             {/* Refund card */}
             <div className="mx-5 mb-4 bg-[#1ABC9C]/5 border border-[#1ABC9C]/20 rounded-2xl p-4 text-center">
               <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1">
-                {cancelSuccess.cancellationMethod === 'VOID' ? 'Amount Returned' : 'Estimated Refund'}
+                {cancelSuccess.cancellationMethod === 'VOID' && !cancelSuccess.queued
+                  ? 'Amount Returned'
+                  : 'Estimated Refund'}
               </p>
               <p className="text-3xl font-black text-[#1ABC9C]">
                 {cancelSuccess.refundAmount > 0 ? fmt(cancelSuccess.refundAmount, cancelSuccess.refundCurrency) : 'Non-refundable'}
@@ -388,6 +397,11 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                   <span>·</span>
                   <span>{cancelSuccess.refundMethod === 'AIRLINE_CREDIT' ? 'Airline Credit' : 'Original Payment Method'}</span>
                 </div>
+              )}
+              {cancelSuccess.queued && (
+                <p className="text-[11px] text-slate-500 mt-2">
+                  {refundabilityLabel(cancelSuccess.refundability)} · final amount is confirmed when the void is executed
+                </p>
               )}
             </div>
 

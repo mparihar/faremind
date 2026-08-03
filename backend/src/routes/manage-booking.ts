@@ -921,17 +921,44 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Record the intent — the reconciliation cron voids + refunds once the
       // carrier issues the ticket. Never Stripe-refund here (no provider void).
       if (quoteId.startsWith('mystifly_cancel_pending_')) {
+        const queuedOriginal = Number(booking.totalAmount) || 0;
+        const queuedCcy = booking.currency || 'USD';
         await queueCancellationForIssuance(bookingId, {
           requestedBy: booking.customerEmail || booking.userId || 'CUSTOMER',
           refundMethod,
-          originalAmount: Number(booking.totalAmount) || 0,
+          originalAmount: queuedOriginal,
           currency: 'USD',
         });
         releaseCancelLock(bookingId);
+
+        // The confirmation screen reads the same fields a completed cancellation
+        // returns. Sending only {success, queued, status, message} left it with no
+        // reference and no amount, so it rendered a blank "Ref:" and printed
+        // "Non-refundable" — the one thing that cannot be known yet, and the
+        // opposite of what will happen: the ticket is voidable at no fee.
+        const queuedFee = await getCancelServiceFee(booking);
+        const queuedRefund = Math.max(0, queuedOriginal - queuedFee);
+        const queuedPnr = booking.pnrs?.find((p: any) => p.isPrimary) ?? booking.pnrs?.[0];
         return {
           success: true,
           queued: true,
+          pendingIssuance: true,
           status: 'CANCEL_AWAITING_TICKETING',
+          bookingReference: booking.masterBookingReference,
+          airlinePnr: booking.airlinePnr ?? queuedPnr?.airlinePnr ?? null,
+          cancellationMethod: 'VOID',
+          cancellationType: 'VOID',
+          refundability: queuedRefund > 0 ? 'VOIDABLE' : 'NON_REFUNDABLE',
+          fareRefundable: queuedPnr?.refundable ?? false,
+          originalAmount: queuedOriginal,
+          currency: queuedCcy,
+          refundCurrency: queuedCcy,
+          estimatedRefund: queuedRefund,
+          refundAmount: queuedRefund,
+          fareMindFee: queuedFee,
+          airlinePenalty: 0,
+          refundMethod: refundMethod || 'ORIGINAL_PAYMENT',
+          refundTimeline: 'Refunded once the airline issues the ticket and it is voided (usually shortly)',
           message: 'Cancellation in progress — the airline is still issuing your ticket. We\'ll void it and refund you (minus the service fee) automatically once issuance completes. No further action is needed.',
         };
       }

@@ -56,7 +56,22 @@ export interface CancelQuoteData {
   cancellationAllowed: boolean;
   cancelAnywayAllowed?: boolean;
   airlinePermitted: boolean | null;
-  refundability: 'FULL_REFUND' | 'PARTIAL_REFUND' | 'NON_REFUNDABLE';
+  /**
+   * VOIDABLE is a pre-issuance/in-window void: the full fare comes back even on
+   * a non-refundable fare, because the ticket is voided rather than refunded.
+   * See lib/refundability.ts.
+   */
+  refundability: 'FULL_REFUND' | 'PARTIAL_REFUND' | 'VOIDABLE' | 'NON_REFUNDABLE';
+  /** The airline's verdict on the fare itself — separate from voidability. */
+  fareRefundable?: boolean;
+  /** True while the airline is still issuing; the void is queued until it is. */
+  pendingIssuance?: boolean;
+  cancellationMethod?: string;
+  cancellationType?: string;
+  airlinePnr?: string | null;
+  route?: string;
+  departureDate?: string;
+  supplierFee?: number;
   originalAmount: number;
   airlinePenalty: number;
   fareMindFee: number;
@@ -81,6 +96,18 @@ export interface CancelSuccessData {
   refundTimeline: string;
   refundMethod: string;
   cancellationMethod?: string;
+  /**
+   * True when the airline was still issuing the ticket, so the cancellation is
+   * recorded and voids automatically on issuance. Nothing has been voided or
+   * refunded yet — the confirmation must not claim otherwise.
+   */
+  queued?: boolean;
+  message?: string;
+  /** 'VOIDABLE' on a queued cancellation; see lib/refundability.ts. */
+  refundability?: string;
+  /** The airline's own verdict on the fare, distinct from voidability. */
+  fareRefundable?: boolean;
+  airlinePnr?: string | null;
 }
 
 export interface SeatMapData {
