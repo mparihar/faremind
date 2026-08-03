@@ -408,13 +408,22 @@ export default function BookingDetailPage() {
   const primaryPnr = b.pnrs?.find((p: any) => p.isPrimary) ?? b.pnrs?.[0];
   const isNonRefundable = fareRules ? !fareRules.refundable : (primaryPnr?.refundable === false);
 
+  // The server decides when a booking is locked — a queued void, an unfinished
+  // refund, a void/refund PTR still running. This page built its buttons purely
+  // from fare rules and never asked, so a cancellation in flight left Change
+  // Flight and Change Seat live.
+  const serverLock = (key: string): string | undefined => {
+    const a: any = (actions || []).find((x: any) => x.key === key);
+    return a?.disabled ? (a.disabledReason || 'Locked while a cancellation is in progress') : undefined;
+  };
+
   // ── Action configs ──
   const manageActions = isCancelled ? [
     { key: 'refund_status', label: 'View Refund Status', icon: CreditCard, color: 'text-blue-400 border-blue-400/20 bg-blue-400/5', hoverColor: 'hover:bg-blue-400/10' },
   ] : [
     { key: 'cancel', label: 'Cancel Booking', icon: XCircle, color: 'text-red-400 border-red-400/20 bg-red-400/5', hoverColor: 'hover:bg-red-400/10', hide: isPast, badge: isNonRefundable ? 'Non-refundable' : null, badgeColor: 'text-red-400' },
-    { key: 'date_change', label: 'Change Flight', icon: Calendar, color: 'text-purple-400 border-purple-400/20 bg-purple-400/5', hoverColor: 'hover:bg-purple-400/10', hide: isPast, disabled: fareRules ? !fareRules.changeable : false, disabledReason: 'Not allowed per fare rules' },
-    { key: 'seat_change', label: 'Change Seat', icon: Ticket, color: 'text-blue-400 border-blue-400/20 bg-blue-400/5', hoverColor: 'hover:bg-blue-400/10', hide: isPast, disabled: (b.primaryProvider || '').toLowerCase() === 'duffel', disabledReason: 'Not supported by airline' },
+    { key: 'date_change', label: 'Change Flight', icon: Calendar, color: 'text-purple-400 border-purple-400/20 bg-purple-400/5', hoverColor: 'hover:bg-purple-400/10', hide: isPast, disabled: (fareRules ? !fareRules.changeable : false) || !!serverLock('date_change'), disabledReason: serverLock('date_change') ?? 'Not allowed per fare rules' },
+    { key: 'seat_change', label: 'Change Seat', icon: Ticket, color: 'text-blue-400 border-blue-400/20 bg-blue-400/5', hoverColor: 'hover:bg-blue-400/10', hide: isPast, disabled: (b.primaryProvider || '').toLowerCase() === 'duffel' || !!serverLock('seat_change'), disabledReason: serverLock('seat_change') ?? 'Not supported by airline' },
     { key: 'add_baggage', label: 'Add Baggage', icon: Luggage, color: 'text-orange-400 border-orange-400/20 bg-orange-400/5', hoverColor: 'hover:bg-orange-400/10', hide: isPast, disabled: !canAddBaggage(b), disabledReason: `Baggage changes for this booking are not available through FareMind. Please contact the airline directly using your airline PNR. Airline PNR: ${airlinePnrLabel((b as any).airlinePnr)}` },
     { key: 'passenger_update', label: 'Update Passenger', icon: User, color: 'text-amber-400 border-amber-400/20 bg-amber-400/5', hoverColor: 'hover:bg-amber-400/10' },
   ].filter(a => !a.hide);

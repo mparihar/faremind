@@ -565,10 +565,26 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       const isFlightChangeable = resolvedChangeable;
       const isSeatChangeable = primaryPnr ? (primaryPnr.seatSelection !== null && primaryPnr.seatSelection !== 'false' && primaryPnr.seatSelection !== 'none' && primaryPnr.seatSelection !== 'unavailable') : false;
 
+      // Once a cancellation is under way the itinerary must not move underneath
+      // it: a seat or flight change while a void is queued would be applied to a
+      // ticket about to be destroyed, and could push the booking out of the void
+      // window. pendingRefundBlock is the same guard the change endpoints use —
+      // an open cancellation, an unfinished refund, or a void/refund PTR still
+      // executing — so the buttons and the server agree on when it is locked.
+      const changeLock = await pendingRefundBlock(bookingId);
+
       const actions = [];
       if (!isCancelled && !isPast && !existingCancel) actions.push({ key: 'cancel', label: 'Cancel Booking', available: true });
-      if (!isCancelled && !isPast) actions.push({ key: 'date_change', label: 'Change Flight', available: true, disabled: !isFlightChangeable });
-      if (!isCancelled && !isPast) actions.push({ key: 'seat_change', label: 'Change Seat', available: true, disabled: !isSeatChangeable });
+      if (!isCancelled && !isPast) actions.push({
+        key: 'date_change', label: 'Change Flight', available: true,
+        disabled: !isFlightChangeable || !!changeLock,
+        disabledReason: changeLock ?? (!isFlightChangeable ? 'This fare cannot be changed' : undefined),
+      });
+      if (!isCancelled && !isPast) actions.push({
+        key: 'seat_change', label: 'Change Seat', available: true,
+        disabled: !isSeatChangeable || !!changeLock,
+        disabledReason: changeLock ?? (!isSeatChangeable ? 'Seat selection is not available on this fare' : undefined),
+      });
       if (!isCancelled) actions.push({ key: 'passenger_update', label: 'Update Passenger Details', available: true });
       actions.push({ key: 'download_eticket', label: 'Download E-Ticket', available: booking.ticketingStatus === 'ISSUED' });
       actions.push({ key: 'contact_support', label: 'Contact Support', available: true });
@@ -1276,6 +1292,13 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (!passengerId || !seatDesignator) return reply.code(400).send({ error: 'passengerId and seatDesignator required' });
       const booking = await mbq.getMasterBookingFull(bookingId);
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
+
+      // The flight-change endpoints have carried this guard; seat selection did
+      // not, so a disabled button was the only thing stopping a seat change on a
+      // booking with a cancellation in flight — and a disabled button stops
+      // nobody holding the URL.
+      const seatChangeBlock = await pendingRefundBlock(bookingId);
+      if (seatChangeBlock) return reply.code(409).send({ error: seatChangeBlock, code: 'CANCELLATION_IN_PROGRESS' });
 
       // Check if the provider supports post-booking seat changes
       const provider = getProvider(booking.primaryProvider);

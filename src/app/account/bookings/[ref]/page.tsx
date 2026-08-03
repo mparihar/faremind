@@ -725,9 +725,12 @@ export default function BookingDetailPage() {
                 const Icon = cfg.icon;
                 return (
                   <button key={a.key} onClick={() => !(a as any).disabled && setActiveModal(a.key)}
+                    disabled={!!(a as any).disabled}
+                    title={(a as any).disabled ? (a as any).disabledReason : undefined}
                     className={`w-full flex items-center gap-3 py-4 px-4 rounded-xl border transition-all text-left ${cfg.cls} ${(a as any).disabled ? 'opacity-40 cursor-not-allowed grayscale' : ''}`}>
                     <Icon size={15} />
                     <span className="text-sm font-semibold flex-1">{a.label}</span>
+                    {(a as any).disabled && <span className="text-[10px] text-slate-500 font-medium">Locked</span>}
                     {!(a as any).disabled && (a as any).badge && <span className={`text-[10px] font-semibold ${(a as any).badgeColor || 'text-slate-500'}`}>{(a as any).badge}</span>}
                     <ChevronRight size={12} className="opacity-40" />
                   </button>
