@@ -109,13 +109,19 @@ export default function CouponStatusPanel({
           ? <CheckCircle2 size={15} className="text-emerald-400 mt-0.5 shrink-0" />
           : <AlertTriangle size={15} className="text-amber-400 mt-0.5 shrink-0" />}
         <div>
+          {/* Three states, not two: open, closed, and not reported. "N/A" used to
+              be counted as closed, so an unreported ticket read as ineligible. */}
           <p className={`text-sm font-bold ${eligible ? 'text-emerald-300' : 'text-amber-300'}`}>
-            {eligible
-              ? 'All coupons are open — this ticket can be refunded, voided or changed.'
-              : 'Some coupons are no longer open.'}
+            {data.couponsUnreported
+              ? 'The airline did not report coupon status for this booking.'
+              : eligible
+                ? 'All coupons are open — this ticket can be refunded, voided or changed.'
+                : 'Some coupons are no longer open.'}
           </p>
           <p className="text-[11px] text-slate-400 mt-0.5">
-            {data.openSegmentCount} of {data.segmentCount} segment{data.segmentCount === 1 ? '' : 's'} open.
+            {data.couponsUnreported
+              ? 'Eligibility could not be checked from coupon data — the fare rules still apply.'
+              : `${data.openSegmentCount} of ${data.segmentCount} segment${data.segmentCount === 1 ? '' : 's'} open.`}
           </p>
           {!eligible && (data.warnings || []).map((w: string, i: number) => (
             <p key={i} className="text-[11px] text-amber-300/90 mt-1">{w}</p>
@@ -133,6 +139,7 @@ export default function CouponStatusPanel({
           </div>
           <div className="space-y-1.5">
             {t.segments.map((sg, i) => {
+              const unreported = !sg.couponStatus || /^(n\/?a|unknown|none|-)$/i.test(sg.couponStatus.trim());
               const open = /open/i.test(sg.couponStatus);
               return (
                 <div key={i} className="flex items-center justify-between gap-3 text-sm">
@@ -144,7 +151,7 @@ export default function CouponStatusPanel({
                     </span>
                   </span>
                   <span className={`text-xs font-bold px-2 py-0.5 rounded-lg ${open ? 'bg-emerald-400/15 text-emerald-300' : 'bg-slate-700/50 text-slate-400'}`}>
-                    {sg.couponStatus || 'UNKNOWN'}
+                    {unreported ? 'NOT REPORTED' : sg.couponStatus}
                   </span>
                 </div>
               );

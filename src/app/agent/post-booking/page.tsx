@@ -382,7 +382,7 @@ export default function AgentPostBookingPage() {
                   className="flex items-center gap-2 px-5 py-3 bg-amber-500/15 border border-amber-400/20 rounded-xl text-amber-400 text-sm font-bold hover:bg-amber-500/25 disabled:opacity-50">
                   {loading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Get Void Quote
                 </button>
-                <button onClick={() => handleExecute('void')} disabled={execLoading || !ready || !quoteResult?.success}
+                <button onClick={() => handleExecute('void')} disabled={execLoading || !ready || !quoteResult?.success || !!quoteResult?.quotePending}
                   className="flex items-center gap-2 px-5 py-3 bg-red-500/15 border border-red-400/20 rounded-xl text-red-400 text-sm font-bold hover:bg-red-500/25 disabled:opacity-50">
                   {execLoading ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />} Execute Void
                 </button>
@@ -403,7 +403,7 @@ export default function AgentPostBookingPage() {
                   className="flex items-center gap-2 px-5 py-3 bg-amber-500/15 border border-amber-400/20 rounded-xl text-amber-400 text-sm font-bold hover:bg-amber-500/25 disabled:opacity-50">
                   {loading ? <Loader2 size={14} className="animate-spin" /> : <DollarSign size={14} />} Get Refund Quote
                 </button>
-                <button onClick={() => handleExecute('refund')} disabled={execLoading || !ready || !quoteResult?.success}
+                <button onClick={() => handleExecute('refund')} disabled={execLoading || !ready || !quoteResult?.success || !!quoteResult?.quotePending}
                   className="flex items-center gap-2 px-5 py-3 bg-emerald-500/15 border border-emerald-400/20 rounded-xl text-emerald-400 text-sm font-bold hover:bg-emerald-500/25 disabled:opacity-50">
                   {execLoading ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Execute Refund
                 </button>
@@ -426,7 +426,7 @@ export default function AgentPostBookingPage() {
                 </button>
                 {/* Gated on a priced quote: the card is charged before the change is sent
                     to the airline, so the agent must have seen the amount first. */}
-                <button onClick={() => handleExecute('reissue')} disabled={execLoading || !ready || !quoteResult?.success || !quoteResult?.priced}
+                <button onClick={() => handleExecute('reissue')} disabled={execLoading || !ready || !quoteResult?.success || !!quoteResult?.quotePending || !quoteResult?.priced}
                   title={!quoteResult?.priced ? 'Get a reissue quote first — the fare difference and service fee must be priced before charging.' : undefined}
                   className="flex items-center gap-2 px-5 py-3 bg-blue-500/15 border border-blue-400/20 rounded-xl text-blue-400 text-sm font-bold hover:bg-blue-500/25 disabled:opacity-50">
                   {execLoading ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}

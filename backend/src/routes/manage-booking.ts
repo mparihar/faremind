@@ -17,6 +17,7 @@ import { acceptScheduleChange, refundScheduleChange, reissueScheduleChange } fro
 import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
 import * as mystifly from '../services/mystifly';
 import * as mbq from '../lib/manage-booking-queries';
+import { summariseCoupons, couponSummaryLabel } from '../services/coupon-eligibility';
 import * as emails from '../lib/manage-booking-emails';
 import { prisma } from '../lib/db';
 import { createHash, randomBytes } from 'crypto';
@@ -2233,10 +2234,13 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // A coupon that is not OPEN cannot be refunded, voided or reissued — surface that
       // as one flag rather than making every caller parse the provider's warning text.
       const allSegments = tickets.flatMap((t) => t.segments);
-      const openSegments = allSegments.filter((sg) => /open/i.test(sg.couponStatus));
-      const blockingWarnings = Array.from(new Set(
-        allSegments.map((sg) => sg.warning).filter((w): w is string => !!w),
-      ));
+      // "N/A" is silence, not a refusal — see services/coupon-eligibility.ts.
+      // Counting it as closed reported "0 of 2 coupons open" for a refundable
+      // ticket the airline had simply not commented on.
+      const couponSummary = summariseCoupons(allSegments);
+      const blockingWarnings = couponSummary.closed > 0
+        ? Array.from(new Set(allSegments.map((sg) => sg.warning).filter((w): w is string => !!w)))
+        : [];
 
       await prisma.bookingProviderPayload.create({
         data: {
@@ -2248,8 +2252,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       return {
         supported: true, provider: 'mystifly', mfRef, tickets,
         segmentCount: allSegments.length,
-        openSegmentCount: openSegments.length,
-        eligibleForServicing: allSegments.length > 0 && openSegments.length === allSegments.length,
+        openSegmentCount: couponSummary.open,
+        closedSegmentCount: couponSummary.closed,
+        unknownSegmentCount: couponSummary.unknown,
+        couponsUnreported: couponSummary.unreported,
+        couponSummary: couponSummaryLabel(couponSummary),
+        eligibleForServicing: couponSummary.eligible,
         warnings: blockingWarnings,
       };
     } catch (e) {

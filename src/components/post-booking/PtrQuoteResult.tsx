@@ -1,7 +1,7 @@
 'use client';
 
 import React from 'react';
-import { CheckCircle2, XCircle } from 'lucide-react';
+import { CheckCircle2, XCircle, Clock } from 'lucide-react';
 
 /**
  * The result of a void / refund / reissue quote.
@@ -60,6 +60,28 @@ export default function PtrQuoteResult({ quoteResult, fmt }: PtrQuoteResultProps
   const advice = quoteResult.couponAdvice;
   const q = quoteResult.quote;
 
+  // Mystifly prices a void/refund asynchronously. Until it answers there are no
+  // amounts — and summing the empty array to 0 printed "$0.00 refund" on a fare
+  // the airline had said was refundable. An unanswered quote says so.
+  if (quoteResult.quotePending) {
+    return (
+      <div className="p-4 rounded-xl border mb-3 bg-amber-400/10 border-amber-400/25">
+        <p className="text-amber-300 text-sm font-bold flex items-center gap-2 mb-1">
+          <Clock size={14} /> Quote requested — awaiting the airline
+        </p>
+        <p className="text-slate-300 text-[13px]">
+          {quoteResult.pendingMessage
+            || 'The airline has not priced this yet. Re-check the PTR status shortly; do not execute until an amount is returned.'}
+        </p>
+        <p className="text-[11px] text-slate-400 mt-2">
+          Provider PTR {quoteResult.providerPtrId ?? '—'}
+          {quoteResult.ptrStatus ? ` · ${quoteResult.ptrStatus}` : ''}
+          {quoteResult.resolution ? ` · ${quoteResult.resolution}` : ''}
+        </p>
+      </div>
+    );
+  }
+
   return (
     <div className="p-4 rounded-xl border mb-3 bg-emerald-400/10 border-emerald-400/20">
       <p className="text-emerald-400 text-sm font-bold flex items-center gap-2 mb-2">
@@ -97,10 +119,13 @@ export default function PtrQuoteResult({ quoteResult, fmt }: PtrQuoteResultProps
       {/* The airline's own verdict on whether these coupons can still be serviced.
           Advisory — the provider quotes regardless, and the demo environment reports
           every coupon as N/A. */}
-      {advice?.checked && !advice.eligible && (
+      {/* A coupon the airline did not report is unknown, not closed. Presenting
+          "0 of N open · NOT valid for REFUND" for an unreported ticket read as a
+          refusal the airline never gave. Only a genuinely closed coupon warns. */}
+      {advice?.checked && advice.closedSegments > 0 && (
         <div className="mb-3 rounded-xl border border-amber-400/30 bg-amber-400/10 p-3">
           <p className="text-amber-300 text-xs font-bold">
-            Airline reports {advice.openSegments} of {advice.totalSegments} coupons open
+            {advice.summary || `${advice.closedSegments} of ${advice.totalSegments} coupons are no longer open`}
           </p>
           {(advice.warnings || []).map((w: string, i: number) => (
             <p key={i} className="text-[11px] text-amber-200/80 mt-1">{w}</p>
@@ -109,6 +134,11 @@ export default function PtrQuoteResult({ quoteResult, fmt }: PtrQuoteResultProps
             The quote above may still be accepted by the provider, but fulfilment can fail. Verify before charging the customer.
           </p>
         </div>
+      )}
+      {advice?.checked && advice.unreported && (
+        <p className="text-[11px] text-slate-400 mb-3">
+          The airline did not report coupon status for this booking, so eligibility could not be checked.
+        </p>
       )}
 
       {/* Void / refund figures. These are the keys the provider actually returns —

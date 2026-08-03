@@ -31,6 +31,7 @@ import { getAdminServiceFee } from '../services/cancellation-orchestrator';
 import { initiateReissue } from '../services/reissue-orchestrator';
 import { toUsd } from '../services/fx';
 import * as mbq from '../lib/manage-booking-queries';
+import { summariseCoupons, couponSummaryLabel } from '../services/coupon-eligibility';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -193,6 +194,22 @@ function extractPtrError(result: any): { hasError: boolean; message: string; cod
 }
 
 /**
+ * Has the airline actually priced this quote yet?
+ *
+ * A void/refund quote returns immediately, but the numbers do not: the first
+ * response carries PTRStatus=InProcess and Resolution=QuoteRequested with an
+ * empty quotes array, and the amounts arrive later (Resolution=QuoteUpdated,
+ * PTRStatus=Completed — the shape the ReIssueQuote PTRs on the same booking
+ * show). Treating that empty array as zero turned "not answered" into "nothing
+ * back", on a fare the airline had said was refundable.
+ */
+function isQuoteUnanswered(quotes: any[]): boolean {
+  // The presence of priced rows is the whole test. PTRStatus/Resolution only
+  // explain why they are missing, so checking them as well would be decoration.
+  return !Array.isArray(quotes) || quotes.length === 0;
+}
+
+/**
  * Does this provider message mean the e-ticket we sent is not the one the airline holds?
  * Mystifly phrases it "Eticket number is wrong"; keep the match loose enough to catch
  * the neighbouring wordings without swallowing unrelated ticket errors.
@@ -249,18 +266,40 @@ async function withEticketRetry<T>(
  */
 async function couponServicingAdvice(uniqueId: string): Promise<{
   checked: boolean; eligible: boolean; warnings: string[]; openSegments: number; totalSegments: number;
+  closedSegments: number; unknownSegments: number; unreported: boolean; summary: string;
 }> {
+  const silent = {
+    checked: false, eligible: true, warnings: [] as string[], openSegments: 0, totalSegments: 0,
+    closedSegments: 0, unknownSegments: 0, unreported: false,
+    summary: 'No coupon information has been issued for this booking yet.',
+  };
   try {
     const { tickets } = await mystifly.getCouponStatus(uniqueId);
     const segs = tickets.flatMap((t) => t.segments);
-    if (segs.length === 0) return { checked: false, eligible: true, warnings: [], openSegments: 0, totalSegments: 0 };
-    const open = segs.filter((s) => /open/i.test(s.couponStatus)).length;
-    const warnings = Array.from(new Set(segs.map((s) => s.warning).filter((w): w is string => !!w)));
-    return { checked: true, eligible: open === segs.length, warnings, openSegments: open, totalSegments: segs.length };
+    if (segs.length === 0) return silent;
+    const s = summariseCoupons(segs);
+    // A warning the provider attaches to an UNREPORTED coupon is describing the
+    // absence of data, not a refusal — surfacing it as a blocking warning is
+    // what made an unpriced refund look forbidden. Keep warnings only where the
+    // airline actually reported a closed coupon.
+    const warnings = s.closed > 0
+      ? Array.from(new Set(segs.map((x) => x.warning).filter((w): w is string => !!w)))
+      : [];
+    return {
+      checked: true,
+      eligible: s.eligible,
+      warnings,
+      openSegments: s.open,
+      totalSegments: s.total,
+      closedSegments: s.closed,
+      unknownSegments: s.unknown,
+      unreported: s.unreported,
+      summary: couponSummaryLabel(s),
+    };
   } catch (e) {
     // Never let an advisory check block a servicing request.
     console.warn(`[PTR] coupon-status advice failed for ${uniqueId}:`, (e as Error).message);
-    return { checked: false, eligible: true, warnings: [], openSegments: 0, totalSegments: 0 };
+    return silent;
   }
 }
 
@@ -684,12 +723,15 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       const totalRefund = vq.reduce((s: number, q: any) => s + (parseFloat(q?.TotalRefundAmount) || 0), 0);
       const totalVoidingFee = vq.reduce((s: number, q: any) => s + (parseFloat(q?.TotalVoidingFee) || 0), 0);
       const currency = vq[0]?.Currency || quoteData?.Currency || 'USD';
+      // Same asynchronous contract as the refund quote — an empty VoidQuotes[]
+      // means the airline has not priced it, not that nothing comes back.
+      const quotePending = isQuoteUnanswered(vq);
       if (ptrRecord) {
         await updatePtrRecord(ptrRecord.id, {
-          status: 'QUOTE_RECEIVED',
-          quoteTotalAmount: totalRefund || null,
-          quotePenaltyAmount: totalVoidingFee || null,
-          quoteRefundAmount: totalRefund || null,
+          status: quotePending ? 'QUOTE_PENDING' : 'QUOTE_RECEIVED',
+          quoteTotalAmount: quotePending ? null : (totalRefund || null),
+          quotePenaltyAmount: quotePending ? null : (totalVoidingFee || null),
+          quoteRefundAmount: quotePending ? null : (totalRefund || null),
           quoteCurrency: currency,
           providerQuoteResponse: result,
         });
@@ -699,7 +741,12 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       return {
         success: true, booking: publicRef(resolved.ref), ptrId: ptrRecord?.id, providerPtrId,
         ptrStatus: quoteData?.PTRStatus, voidingWindow: quoteData?.VoidingWindow,
-        quote: { TotalRefundAmount: totalRefund, TotalVoidingFee: totalVoidingFee, Currency: currency, VoidQuotes: vq },
+        quotePending,
+        resolution: quoteData?.Resolution ?? null,
+        pendingMessage: quotePending
+          ? 'The airline has not priced this void yet. Re-check the PTR status shortly; do not execute until an amount is returned.'
+          : undefined,
+        quote: quotePending ? null : { TotalRefundAmount: totalRefund, TotalVoidingFee: totalVoidingFee, Currency: currency, VoidQuotes: vq },
         couponAdvice: voidAdvice,
         raw: result,
       };
@@ -814,12 +861,18 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       const totalCharges = rq.reduce((s: number, q: any) => s + (parseFloat(q?.TotalRefundCharges) || 0), 0);
       const cancellationCharge = rq.reduce((s: number, q: any) => s + (parseFloat(q?.CancellationCharge) || 0), 0);
       const currency = rq[0]?.Currency || quoteData?.Currency || 'USD';
+      // Mystifly answers a RefundQuote asynchronously: the first response comes
+      // back PTRStatus=InProcess / Resolution=QuoteRequested with an EMPTY
+      // RefundQuotes[]. Summing that array gives 0, which was then shown as a
+      // settled "$0.00 refund" on a fare the airline had said is refundable —
+      // an unanswered quote rendered as an answer of nothing.
+      const quotePending = isQuoteUnanswered(rq);
       if (ptrRecord) {
         await updatePtrRecord(ptrRecord.id, {
-          status: 'QUOTE_RECEIVED',
-          quoteTotalAmount: totalRefund || null,
-          quotePenaltyAmount: totalCharges || null,
-          quoteRefundAmount: totalRefund || null,
+          status: quotePending ? 'QUOTE_PENDING' : 'QUOTE_RECEIVED',
+          quoteTotalAmount: quotePending ? null : (totalRefund || null),
+          quotePenaltyAmount: quotePending ? null : (totalCharges || null),
+          quoteRefundAmount: quotePending ? null : (totalRefund || null),
           quoteCurrency: currency,
           providerQuoteResponse: result,
         });
@@ -829,7 +882,12 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       return {
         success: true, booking: publicRef(resolved.ref), ptrId: ptrRecord?.id, providerPtrId,
         ptrStatus: quoteData?.PTRStatus,
-        quote: { TotalRefundAmount: totalRefund, TotalRefundCharges: totalCharges, CancellationCharge: cancellationCharge, Currency: currency, RefundQuotes: rq },
+        quotePending,
+        resolution: quoteData?.Resolution ?? null,
+        pendingMessage: quotePending
+          ? 'The airline has not priced this refund yet. Re-check the PTR status shortly; do not execute until an amount is returned.'
+          : undefined,
+        quote: quotePending ? null : { TotalRefundAmount: totalRefund, TotalRefundCharges: totalCharges, CancellationCharge: cancellationCharge, Currency: currency, RefundQuotes: rq },
         couponAdvice: refundAdvice,
         raw: result,
       };
