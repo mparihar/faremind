@@ -11,6 +11,7 @@ import {
   Shield, Armchair, UtensilsCrossed, AlertTriangle,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { flightDesignator } from '@/lib/flight-designator';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -123,7 +124,7 @@ function SegmentCard({ seg, index, total }: { seg: any; index: number; total: nu
           </span>
           <div className="flex items-center gap-2">
             <span className="text-[#1ABC9C] font-mono text-xs font-black">
-              {seg.airlineCode}{seg.flightNumber}
+              {flightDesignator(seg.airlineCode, seg.flightNumber)}
             </span>
             {seg.aircraftType && (
               <span className="text-slate-500 text-xs">{seg.aircraftType}</span>

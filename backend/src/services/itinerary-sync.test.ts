@@ -47,13 +47,14 @@ console.log('a reissued booking');
 test('only the current itinerary is returned', () => {
   const segs = mapProviderSegments(REISSUED);
   assert.equal(segs.length, 2, 'the exchanged pair must not be included');
-  assert.deepEqual(segs.map((s) => s.flightNumber), ['1745', '2422']);
+  // Prefixed, matching what book time persists — see mapProviderSegments.
+  assert.deepEqual(segs.map((s) => s.flightNumber), ['AI1745', 'AI2422']);
 });
 
 test('the superseded flights are never produced', () => {
   const numbers = mapProviderSegments(REISSUED).map((s) => s.flightNumber);
-  assert.ok(!numbers.includes('1785'), '1785 is the exchanged flight');
-  assert.ok(!numbers.includes('1851'), '1851 is the exchanged flight');
+  assert.ok(!numbers.includes('AI1785'), '1785 is the exchanged flight');
+  assert.ok(!numbers.includes('AI1851'), '1851 is the exchanged flight');
 });
 
 test('dates come from the current itinerary, not the replaced one', () => {
@@ -79,14 +80,14 @@ test('a single untyped itinerary group is taken as-is', () => {
   const plain = { Data: { TripDetailsResult: { TravelItinerary: { Itineraries: [
     { ItineraryInfo: { ReservationItems: [seg('1735', 'DEL', 'PNQ', '2026-08-19T13:10:00', '2026-08-19T15:15:00')] } },
   ] } } } };
-  assert.deepEqual(mapProviderSegments(plain).map((s) => s.flightNumber), ['1735']);
+  assert.deepEqual(mapProviderSegments(plain).map((s) => s.flightNumber), ['AI1735']);
 });
 
 test('the legacy bare ItineraryInfo shape still works', () => {
   const legacy = { Data: { TripDetailsResult: { TravelItinerary: {
     ItineraryInfo: { ReservationItems: [seg('1735', 'DEL', 'PNQ', '2026-08-19T13:10:00', '2026-08-19T15:15:00')] },
   } } } };
-  assert.deepEqual(mapProviderSegments(legacy).map((s) => s.flightNumber), ['1735']);
+  assert.deepEqual(mapProviderSegments(legacy).map((s) => s.flightNumber), ['AI1735']);
 });
 
 test('an itinerary of only exchanged groups yields nothing rather than the old flights', () => {
@@ -112,7 +113,7 @@ test('items missing a flight number or airports are dropped', () => {
       { ...seg('9999', '', 'BOM', '2026-12-02T05:25:00', '2026-12-02T07:50:00') },
     ] } },
   ] } } } };
-  assert.deepEqual(mapProviderSegments(partial).map((s) => s.flightNumber), ['1745']);
+  assert.deepEqual(mapProviderSegments(partial).map((s) => s.flightNumber), ['AI1745']);
 });
 
 console.log('\npairing stored segments to the provider\'s');
@@ -155,6 +156,23 @@ test('a repeated route consumes each stored row once', () => {
   const pairs = pairByRoute(stored, twice);
   assert.equal(pairs!.length, 2);
   assert.notEqual(pairs![0][0], pairs![1][0], 'a stored row must not be paired twice');
+});
+
+console.log('\nthe carrier prefix');
+
+test('a bare provider number gains the carrier, matching what book time stores', () => {
+  assert.deepEqual(mapProviderSegments(REISSUED).map((s) => s.flightNumber), ['AI1745', 'AI2422']);
+});
+
+test('a provider number that already carries the code is not doubled', () => {
+  // This is the AIAI1735 defect at its source: prefixing unconditionally would
+  // store "AIAI1745" and the screens would render it verbatim.
+  const prefixed = { Data: { TripDetailsResult: { TravelItinerary: { Itineraries: [
+    { Type: 'TravelItinerary', ItineraryInfo: { ReservationItems: [
+      seg('AI1745', 'DEL', 'BOM', '2026-12-02T05:25:00', '2026-12-02T07:50:00'),
+    ] } },
+  ] } } } };
+  assert.deepEqual(mapProviderSegments(prefixed).map((s) => s.flightNumber), ['AI1745']);
 });
 
 console.log(`\n${passed} passed${process.exitCode ? ' — FAILURES ABOVE' : ''}`);

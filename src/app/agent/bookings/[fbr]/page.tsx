@@ -29,6 +29,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { refundabilityLabel, refundabilityTone } from '@/lib/refundability';
+import { flightDesignator } from '@/lib/flight-designator';
 
 const STATUS_COLORS: Record<string, string> = {
   CONFIRMED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
@@ -510,7 +511,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                             </div>
                             <div className="shrink-0 text-right min-w-[90px]">
                               <p className="text-xs text-slate-400 font-medium">{seg.airlineName}</p>
-                              <p className="text-[10px] font-mono text-slate-500">{seg.airlineCode}{seg.flightNumber}</p>
+                              <p className="text-[10px] font-mono text-slate-500">{flightDesignator(seg.airlineCode, seg.flightNumber)}</p>
                             </div>
                           </div>
                         ))}
@@ -535,7 +536,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="text-xs text-slate-400">{seg.airlineName}</p>
-                          <p className="text-[10px] font-mono text-slate-500">{seg.airlineCode}{seg.flightNumber}</p>
+                          <p className="text-[10px] font-mono text-slate-500">{flightDesignator(seg.airlineCode, seg.flightNumber)}</p>
                         </div>
                       </div>
                     ))}

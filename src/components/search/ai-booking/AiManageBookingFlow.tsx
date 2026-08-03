@@ -16,6 +16,7 @@ import AiManageBookingLookup from './AiManageBookingLookup';
 import AiManageBookingTiles from './AiManageBookingTiles';
 import AiCancelBookingFlow from './AiCancelBookingFlow';
 import AiPassengerUpdateFlow from './AiPassengerUpdateFlow';
+import { flightDesignator } from '@/lib/flight-designator';
 
 // Chat bubble matching AiBookFlightFlow's AiBubble
 function AiBubble({ children }: { children: React.ReactNode }) {
@@ -670,7 +671,7 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
                           </p>
                           {(dcSelectedOffer.newItinerary?.flightNumber || dcSelectedOffer.newItinerary?.airline) && (
                             <p className="text-slate-400 text-[10px]">
-                              {dcSelectedOffer.newItinerary.airlineCode}{dcSelectedOffer.newItinerary.flightNumber}
+                              {flightDesignator(dcSelectedOffer.newItinerary.airlineCode, dcSelectedOffer.newItinerary.flightNumber)}
                               {dcSelectedOffer.newItinerary.airline ? ` · ${dcSelectedOffer.newItinerary.airline}` : ''}
                             </p>
                           )}

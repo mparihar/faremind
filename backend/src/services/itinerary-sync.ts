@@ -102,8 +102,19 @@ function toDate(v: unknown): Date | null {
 }
 
 export function mapProviderSegments(trip: any): ProviderSegment[] {
-  return reservationItems(trip).map((r: any) => ({
-    flightNumber: String(r?.FlightNumber ?? '').trim(),
+  return reservationItems(trip).map((r: any) => {
+    // Stored flightNumber carries the carrier: the normalizer writes
+    // `${marketingCode}${FlightNumber}`, so book time persists "AI1735" rather
+    // than "1735". TripDetails gives the bare number, so prefix it here — a
+    // resynced segment must be indistinguishable from a freshly booked one, or
+    // the two disagree about what the column means.
+    const marketing = String(r?.MarketingAirlineCode ?? r?.OperatingAirlineCode ?? '').trim();
+    const bare = String(r?.FlightNumber ?? '').trim().replace(/\s+/g, '');
+    const flightNumber = bare && marketing && !bare.toUpperCase().startsWith(marketing.toUpperCase())
+      ? `${marketing}${bare}`
+      : bare;
+    return ({
+    flightNumber,
     airlineCode: String(r?.MarketingAirlineCode ?? r?.OperatingAirlineCode ?? '').trim(),
     operatingAirlineCode: String(r?.OperatingAirlineCode ?? '').trim() || null,
     originAirport: String(r?.DepartureAirportLocationCode ?? '').trim(),
@@ -111,7 +122,8 @@ export function mapProviderSegments(trip: any): ProviderSegment[] {
     departureDateTime: toDate(r?.DepartureDateTime),
     arrivalDateTime: toDate(r?.ArrivalDateTime),
     cabin: String(r?.CabinClass ?? '').trim() || null,
-  })).filter((s) => s.flightNumber && s.originAirport && s.destinationAirport);
+  });
+  }).filter((s) => s.flightNumber && s.originAirport && s.destinationAirport);
 }
 
 const sameTime = (a: Date | null | undefined, b: Date | null) =>

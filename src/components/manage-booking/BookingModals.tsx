@@ -5,6 +5,7 @@ import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import { motion } from 'framer-motion';
 import { X, Loader2, AlertCircle, Check, Plane, Printer, User, Calendar, Mail } from 'lucide-react';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
+import { flightDesignator } from '@/lib/flight-designator';
 
 // ── Seat Map Modal ──
 export function SeatMapModal({ bookingId, onClose, provider }: { bookingId: string; onClose: () => void; provider?: string }) {
@@ -291,7 +292,7 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
                   </div>
                   {(selectedOffer.newItinerary?.flightNumber || selectedOffer.newItinerary?.airline) && (
                     <p className="text-slate-500 text-xs mt-0.5">
-                      {selectedOffer.newItinerary.airlineCode}{selectedOffer.newItinerary.flightNumber}
+                      {flightDesignator(selectedOffer.newItinerary.airlineCode, selectedOffer.newItinerary.flightNumber)}
                       {selectedOffer.newItinerary.airline ? ` · ${selectedOffer.newItinerary.airline}` : ''}
                       {selectedOffer.newItinerary.departureDateTime && selectedOffer.newItinerary.departureDateTime !== `${depDate}T00:00:00`
                         ? ` · ${fmtTime(selectedOffer.newItinerary.departureDateTime)}`
