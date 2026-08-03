@@ -145,7 +145,7 @@ export default function BookingFinder({
           {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Find Booking
         </button>
         <p className="text-[11px] text-slate-500">
-          Enter either code — or both. The provider reference is resolved internally.
+          Enter either code — or both. The Mystifly reference is not a search field; it is resolved internally.
         </p>
       </div>
 

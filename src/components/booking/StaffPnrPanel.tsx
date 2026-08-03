@@ -3,19 +3,23 @@
 import React from 'react';
 
 /**
- * The two booking codes, told apart — staff surfaces only.
+ * The three booking codes, told apart — staff surfaces only.
  *
- * A booking carries two record locators, and they had been collapsed into one
+ * A booking carries three identifiers, and they had been collapsed into one
  * "PNR Codes" list that printed Mystifly's reference under the label "MASTER
- * AIRLINE PNR". They are not the same thing and are not interchangeable:
+ * AIRLINE PNR". They are not interchangeable:
  *
- *   Airline PNR   EOROKA        the airline's own locator. What the passenger
+ *   FareMind Ref  FM7E9VNW      ours. On the confirmation, in every email, and
+ *                               what support and servicing search by.
+ *
+ *   Airline PNR   EGWZ85        the airline's own locator. What the passenger
  *                               quotes at check-in and what airline support
  *                               recognises. Null until the airline publishes it.
  *
  *   MF Ref        MF35498526    Mystifly's booking reference. Internal: it drives
  *                               our provider servicing calls and means nothing to
- *                               a passenger or an airline desk.
+ *                               a passenger or an airline desk. Shown to staff
+ *                               for reference, never accepted as a search term.
  *
  * Render this on agent and admin screens only. Nothing customer-facing should
  * show the MF Ref — see src/lib/booking-identifiers.ts, which strips it from
@@ -32,6 +36,8 @@ export interface StaffPnrRow {
 }
 
 export interface StaffPnrBooking {
+  /** masterBookingReference — ours. Omit where the screen already headlines it. */
+  fareMindRef?: string | null;
   /** MasterBooking.airlinePnr — the trip-level airline locator. */
   airlinePnr?: string | null;
   /** mystiflyMfRef / masterPnr / mystiflyBookingReference. */
@@ -93,6 +99,13 @@ export default function StaffPnrPanel({
 
   return (
     <div className={className}>
+      {booking.fareMindRef && (
+        <div className="mb-3">
+          <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">FareMind Reference</p>
+          <span className={`${CHIP} text-[#1ABC9C]`}>{booking.fareMindRef}</span>
+        </div>
+      )}
+
       <div>
         <p className="text-[10px] text-slate-500 uppercase font-bold mb-2">Airline PNR</p>
         {airline.length > 0 ? (

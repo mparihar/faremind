@@ -30,6 +30,7 @@ interface ReconRecord {
   createdAt: string;
   booking: {
     masterBookingReference: string;
+    airlinePnr?: string | null;
     customerEmail: string;
     customerName: string;
     totalAmount: number;
@@ -204,7 +205,7 @@ export default function TicketQueuePage() {
           <table className="w-full text-sm">
             <thead>
               <tr className="border-b border-slate-700/50">
-                {['Status', 'MFRef', 'Booking', 'Customer', 'Amount', 'Polls', 'Last Poll', 'Provider Status', 'Actions'].map(h => (
+                {['Status', 'MF Ref', 'Airline PNR', 'Booking', 'Customer', 'Amount', 'Polls', 'Last Poll', 'Provider Status', 'Actions'].map(h => (
                   <th key={h} className="px-4 py-3 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider">{h}</th>
                 ))}
               </tr>
@@ -223,11 +224,18 @@ export default function TicketQueuePage() {
                       </span>
                     </td>
 
-                    {/* MFRef */}
+                    {/* MF Ref — ours to the provider, internal */}
                     <td className="px-4 py-3">
                       <code className="text-xs font-mono text-[#1ABC9C] bg-[#1ABC9C]/10 px-2 py-0.5 rounded">
                         {r.providerUniqueId}
                       </code>
+                    </td>
+
+                    {/* Airline PNR — what the passenger quotes at check-in */}
+                    <td className="px-4 py-3">
+                      {r.booking.airlinePnr
+                        ? <code className="text-xs font-mono text-white bg-white/5 px-2 py-0.5 rounded">{r.booking.airlinePnr}</code>
+                        : <span className="text-slate-600 text-xs">—</span>}
                     </td>
 
                     {/* Booking */}

@@ -13,6 +13,9 @@ export const GET = withAdmin(async (req: NextRequest) => {
         booking: {
           select: {
             masterBookingReference: true,
+            // The airline's locator, so the queue can show the code staff and
+            // customers actually quote rather than only the provider reference.
+            airlinePnr: true,
             customerEmail: true,
             customerName: true,
             totalAmount: true,

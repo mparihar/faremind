@@ -395,6 +395,7 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
               <StaffPnrPanel
                 className="pt-3 border-t border-white/[0.06]"
                 booking={{
+                  fareMindRef: booking.masterBookingReference,
                   airlinePnr: booking.airlinePnr,
                   mfRef: booking.mystiflyMfRef ?? booking.masterPnr,
                   pnrs: booking.pnrs,

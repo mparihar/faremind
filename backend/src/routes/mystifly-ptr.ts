@@ -318,15 +318,22 @@ function publicRef(ref: ServicingRef) {
 /**
  * Resolve a servicing request to the provider reference the Mystifly APIs need.
  *
- * The consoles send the FareMind reference and/or the airline PNR. Both are
- * codes the customer and the agent genuinely hold; Mystifly's is not, and asking
- * for it was the reason servicing could stall on a code nobody had. Whichever
- * arrives, we map it here and the rest of the route works in MFRef.
+ * Servicing is searched by exactly two codes, and the Mystifly reference is not
+ * one of them:
  *
- * When both codes are given they must describe the same booking. Two
- * half-remembered codes pasted together must not void somebody else's ticket.
+ *   reference    FM9IPA4E    the FareMind reference
+ *   airlinePnr   EOROKA      the airline's record locator
+ *
+ * Either finds the booking; both together are cross-checked. The provider
+ * reference is then read off the booking we found and used for the call — that
+ * mapping is the whole point, and accepting an MF code as a search term would
+ * quietly put it back into circulation as something staff are expected to hold.
+ * So an MF-shaped input is refused with an explanation rather than resolved.
+ *
+ * `uniqueId` / `bookingId` remain accepted as aliases of `reference` for older
+ * callers, under the same rule.
  */
-async function resolveServicingRef(body: {
+export async function resolveServicingRef(body: {
   reference?: string; airlinePnr?: string; uniqueId?: string; bookingId?: string;
 }): Promise<ServicingRefResult> {
   const clean = (v: unknown) => String(v ?? '').trim();
@@ -339,6 +346,15 @@ async function resolveServicingRef(body: {
     return {
       status: 400, errorCode: 'MISSING_REFERENCE',
       error: 'Enter the FareMind reference or the airline PNR.',
+    };
+  }
+
+  // The Mystifly reference is not a search field here.
+  const mfShaped = candidates.find(looksLikeMystiflyRef);
+  if (mfShaped) {
+    return {
+      status: 400, errorCode: 'MYSTIFLY_REF_NOT_SEARCHABLE',
+      error: `"${mfShaped}" is the Mystifly reference, which is not a search field. Search by the FareMind reference (FM…) or the airline PNR from the ticket; the provider reference is resolved from those.`,
     };
   }
 
@@ -373,14 +389,6 @@ async function resolveServicingRef(body: {
         airlinePnr: found.airlinePnr,
       },
     };
-  }
-
-  // Nothing matched a booking of ours. An MF-shaped code still goes through:
-  // support occasionally services a provider booking we hold no row for, and a
-  // hard failure there is worse than a permissive lookup.
-  const mfShaped = candidates.find(looksLikeMystiflyRef);
-  if (mfShaped) {
-    return { ref: { mfRef: mfShaped, bookingId: null, fareMindRef: null, airlinePnr: null } };
   }
 
   return {

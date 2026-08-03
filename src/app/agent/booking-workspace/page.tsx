@@ -246,13 +246,13 @@ export default function BookingWorkspacePage() {
         {activeTab === 'lookup' && (
           <div>
             <h3 className="text-white font-black text-lg mb-1">Booking Lookup</h3>
-            <p className="text-slate-400 text-sm mb-4">Search by booking reference, PNR, or Mystifly MFRef</p>
+            <p className="text-slate-400 text-sm mb-4">Search by FareMind reference or airline PNR</p>
             <div className="flex gap-3 mb-4">
               <input
                 value={lookupQuery}
                 onChange={e => setLookupQuery(e.target.value)}
                 onKeyDown={e => e.key === 'Enter' && handleLookup()}
-                placeholder="Enter booking reference, PNR, or MFRef..."
+                placeholder="e.g. FM7E9VNW or EGWZ85"
                 className="flex-1 px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-semibold focus:outline-none focus:border-[#1ABC9C]"
               />
               <button
@@ -289,9 +289,13 @@ export default function BookingWorkspacePage() {
                   </div>
                   <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
                     {[
+                      // Three identifiers, each under its own name. This row used
+                      // to read "PNR" against a field that is never populated,
+                      // with Mystifly's reference beside it as the only real code.
+                      { label: 'FareMind Ref', value: lookupResult.booking?.masterBookingReference },
+                      { label: 'Airline PNR', value: lookupResult.booking?.airlinePnr || lookupResult.booking?.pnrs?.find((p: any) => p.airlinePnr)?.airlinePnr },
+                      { label: 'MF Ref (internal)', value: lookupResult.booking?.mystiflyMfRef },
                       { label: 'Provider', value: lookupResult.booking?.primaryProvider },
-                      { label: 'PNR', value: lookupResult.booking?.pnrs?.[0]?.providerPnr },
-                      { label: 'MFRef', value: lookupResult.booking?.mystiflyMfRef },
                       { label: 'Total', value: lookupResult.booking?.totalAmount ? `$${lookupResult.booking.totalAmount}` : '—' },
                       { label: 'Passengers', value: lookupResult.booking?.passengers?.length },
                       { label: 'Created', value: lookupResult.booking?.createdAt ? new Date(lookupResult.booking.createdAt).toLocaleDateString() : '—' },

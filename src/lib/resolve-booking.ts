@@ -149,6 +149,17 @@ export async function resolveServicingTarget(input: {
     return { found: false, error: 'Enter the FareMind reference or the airline PNR.' };
   }
 
+  // Servicing is searched by our reference and the airline's, and by nothing
+  // else. Accepting an MF code here would put it back into circulation as a
+  // thing staff are expected to hold — which is what this path removed.
+  const mfShaped = [ref, pnr].find(looksLikeMystiflyRef);
+  if (mfShaped) {
+    return {
+      found: false,
+      error: `"${mfShaped}" is the Mystifly reference, which is not a search field. Search by the FareMind reference (FM…) or the airline PNR from the ticket.`,
+    };
+  }
+
   const primary = ref || pnr;
   const booking = await resolveBookingByAnyRef(primary);
   if (!booking) {

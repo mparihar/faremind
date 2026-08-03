@@ -15,6 +15,7 @@ interface PendingTicket {
   id: string;
   bookingReference: string;
   mystiflyMfRef: string | null;
+  airlinePnr?: string | null;
   status: string;
   ticketingStatus: string;
   primaryProvider: string;
@@ -175,7 +176,14 @@ export default function AgentTicketQueuePage() {
                     <div>
                       <p className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">Provider</p>
                       <p className="text-sm font-semibold text-white">{ticket.primaryProvider}</p>
-                      <p className="text-[10px] text-slate-500 font-mono">{ticket.mystiflyMfRef || '—'}</p>
+                      {/* Both codes, named. This line used to show only the
+                          Mystifly reference, with nothing to say what it was. */}
+                      <p className="text-[10px] text-slate-400 font-mono">
+                        <span className="text-slate-500">PNR </span>{ticket.airlinePnr || '—'}
+                      </p>
+                      <p className="text-[10px] text-slate-600 font-mono">
+                        <span className="text-slate-600">MF </span>{ticket.mystiflyMfRef || '—'}
+                      </p>
                     </div>
 
                     {/* Amount */}

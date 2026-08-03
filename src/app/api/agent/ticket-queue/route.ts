@@ -20,7 +20,8 @@ export async function GET(request: NextRequest) {
           take: 5,
         },
         pnrs: {
-          select: { pnrCode: true },
+          // airlinePnr is the airline's locator; pnrCode holds Mystifly's.
+          select: { pnrCode: true, airlinePnr: true },
           take: 1,
         },
       },
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
       id: t.id,
       bookingReference: t.masterBookingReference,
       mystiflyMfRef: t.mystiflyMfRef,
+      airlinePnr: t.airlinePnr ?? t.pnrs[0]?.airlinePnr ?? null,
       status: t.bookingStatus,
       ticketingStatus: t.ticketingStatus,
       primaryProvider: t.primaryProvider,
@@ -40,7 +42,7 @@ export async function GET(request: NextRequest) {
       currency: t.currency,
       createdAt: t.createdAt.toISOString(),
       passengers: t.passengers,
-      pnrs: t.pnrs.map((p: any) => ({ providerPnr: p.pnrCode })),
+      pnrs: t.pnrs.map((p: any) => ({ providerPnr: p.pnrCode, airlinePnr: p.airlinePnr })),
     }));
 
     return NextResponse.json({ tickets: normalized });
