@@ -577,7 +577,10 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                     );
                   })()}
                 </div>
-                {editingPassenger !== pax.id && (
+                {/* Change Date and Cancel already exclude CANCEL_REQUESTED; passenger
+                    edit did not, so an agent could still amend a booking queued
+                    to be voided. The backend rejects it with 409 either way. */}
+                {editingPassenger !== pax.id && !['CANCELLED', 'CANCEL_REQUESTED'].includes(booking.bookingStatus) && (
                   <button
                     onClick={() => {
                       setEditingPassenger(pax.id);

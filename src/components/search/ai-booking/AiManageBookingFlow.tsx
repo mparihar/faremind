@@ -292,6 +292,14 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
 
   const meta = getBookingMeta();
 
+  // A cancellation already in flight locks the itinerary, exactly as it does on
+  // the account pages: nothing may be changed on a ticket queued to be voided.
+  // Gating on 'CANCELLED' alone missed the queued state, which is precisely the
+  // window this needs to cover. This component serves the public guest-lookup
+  // path as well as the signed-in one, so both are covered here.
+  const cancelInFlight = !!selectedBooking
+    && ['CANCELLED', 'CANCEL_REQUESTED'].includes(selectedBooking.bookingStatus);
+
   // ── Render ─────────────────────────────────────────────────────────────────
   return (
     <div className="flex flex-col flex-1 min-h-0 overflow-hidden">
@@ -472,8 +480,17 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
             </AiBubble>
 
             <div className="space-y-2">
+              {cancelInFlight && selectedBooking.bookingStatus === 'CANCEL_REQUESTED' && (
+                <div className="px-4 py-3 rounded-xl border border-amber-200 bg-amber-50/60">
+                  <p className="text-[12px] font-bold text-amber-700">Cancellation in progress</p>
+                  <p className="text-[10px] text-amber-600 mt-0.5">
+                    This booking is being cancelled, so it can&apos;t be changed. We&apos;ll email you once it completes.
+                  </p>
+                </div>
+              )}
+
               {/* Cancel Booking */}
-              {selectedBooking.bookingStatus !== 'CANCELLED' && (
+              {!cancelInFlight && (
                 <button
                   onClick={() => {
                     mbStore.setCancelSuccess(null);
@@ -491,7 +508,7 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
               )}
 
               {/* Change Flight Date */}
-              {selectedBooking.bookingStatus !== 'CANCELLED' && (
+              {!cancelInFlight && (
                 <button
                   onClick={() => {
                     setDcDate('');
@@ -513,11 +530,17 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
 
               {/* Update Passenger */}
               <button
-                onClick={() => setStep('update_passenger')}
-                className="w-full text-left px-4 py-3 rounded-xl border border-[#1ABC9C]/30 bg-[#1ABC9C]/5 hover:bg-[#1ABC9C]/10 hover:border-[#1ABC9C]/50 transition-all group"
+                onClick={() => !cancelInFlight && setStep('update_passenger')}
+                disabled={cancelInFlight}
+                title={cancelInFlight ? 'Locked while this booking is being cancelled' : undefined}
+                className={`w-full text-left px-4 py-3 rounded-xl border transition-all group ${
+                  cancelInFlight
+                    ? 'border-slate-200 bg-slate-50 opacity-50 cursor-not-allowed'
+                    : 'border-[#1ABC9C]/30 bg-[#1ABC9C]/5 hover:bg-[#1ABC9C]/10 hover:border-[#1ABC9C]/50'
+                }`}
               >
                 <p className="text-[12px] font-bold text-slate-700 group-hover:text-slate-800">
-                  Update Passenger Details
+                  Update Passenger Details{cancelInFlight ? ' — locked' : ''}
                 </p>
                 <p className="text-[10px] text-slate-400 mt-0.5">
                   Email, phone, passport, nationality

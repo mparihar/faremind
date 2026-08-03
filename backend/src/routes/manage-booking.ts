@@ -585,7 +585,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         disabled: !isSeatChangeable || !!changeLock,
         disabledReason: changeLock ?? (!isSeatChangeable ? 'Seat selection is not available on this fare' : undefined),
       });
-      if (!isCancelled) actions.push({ key: 'passenger_update', label: 'Update Passenger Details', available: true });
+      if (!isCancelled) actions.push({
+        key: 'passenger_update', label: 'Update Passenger Details', available: true,
+        disabled: !!changeLock, disabledReason: changeLock ?? undefined,
+      });
       actions.push({ key: 'download_eticket', label: 'Download E-Ticket', available: booking.ticketingStatus === 'ISSUED' });
       actions.push({ key: 'contact_support', label: 'Contact Support', available: true });
       if (existingCancel) actions.push({ key: 'refund_status', label: 'View Refund Status', available: true, data: existingCancel });
@@ -1443,6 +1446,14 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       if (!booking) return reply.code(404).send({ error: 'Booking not found' });
       const passenger = booking.passengers.find(p => p.id === passengerId);
       if (!passenger) return reply.code(404).send({ error: 'Passenger not found' });
+
+      // Every surface writes here — the customer page, the AI bot, and the agent
+      // console through its proxy — so this is the one place the lock has to
+      // hold. A name correction goes to the airline as a live request; sending
+      // one for a ticket queued to be voided asks the airline to amend something
+      // we are about to destroy.
+      const paxUpdateBlock = await pendingRefundBlock(bookingId);
+      if (paxUpdateBlock) return reply.code(409).send({ error: paxUpdateBlock, code: 'CANCELLATION_IN_PROGRESS' });
 
       // Try to update via Duffel if we have a provider order
       const providerPnr = booking.pnrs.find(p => p.providerOrderId);
