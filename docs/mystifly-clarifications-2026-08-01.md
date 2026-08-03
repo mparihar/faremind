@@ -143,6 +143,40 @@ rather than treating the initial absence as an error.
 
 ---
 
+## RefundQuote rejected on a multi-segment ticket
+
+`MF35472426` / airline PNR `DQIECN`, a ticketed 4-coupon return
+(BOM–SIN–HKG / HKG–SIN–BOM, e-ticket `TKT528314`). A `RefundQuote` is rejected
+outright — no PTR is created:
+
+> Refund quote request cannot be processed as the refund details are missing
+> from the request.
+
+The request body is the same shape that succeeds elsewhere:
+
+```json
+{ "ptrType": "RefundQuote", "mFRef": "MF35472426",
+  "passengers": [{ "firstName": "Rishi", "lastName": "Parihar",
+                   "title": "Mr", "eTicket": "TKT528314", "passengerType": "ADT" }] }
+```
+
+The same body against `MF35498426` (2 coupons, DEL–PNQ nonstop each way) is
+accepted and returns `PTRId 22897`. TripDetails for `MF35472426` reports
+`IsRefundableBeforeDeparture: "Yes"` with a $150.22 charge, and Search/CouponStatus
+returns the e-ticket and all four segments, so the ticket itself looks refundable
+and the e-ticket is known to your system.
+
+**Please confirm** what "refund details" the request is missing. Specifically:
+does `RefundQuote` require a segment- or OND-level structure for multi-coupon
+tickets — the way `ReIssueQuote` requires `originDestinations` — and if so, what
+is the field and its shape? A sample request for a connecting itinerary would
+settle it.
+
+Related: `VoidQuote` on the same booking returns "Voiding window expired", which
+we read as a normal business answer rather than a fault.
+
+---
+
 ## Reference
 
 Bookings available for inspection on our account:
@@ -151,7 +185,7 @@ Bookings available for inspection on our account:
 |---|---|---|---|
 | MF35532626 | EMBV6D7 | DEL–BOM 20 Nov / 5 Dec 2026 | Ticketed |
 | MF35531926 | 2E0YLBL | DEL–BOM 18 Nov / 2 Dec 2026 | Ticketed |
-| MF35472426 | DQIECN | — | Ticketed |
+| MF35472426 | DQIECN | BOM–SIN–HKG / HKG–SIN–BOM | Ticketed (RefundQuote rejected) |
 
 Happy to supply full request/response captures for any of the above.
 

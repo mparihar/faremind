@@ -709,7 +709,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
-        if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date() });
+        if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date(), providerQuoteResponse: result });
         const notEligible = /verify the request|not eligible|not allowed|not permitted|window|invalid/i.test(message);
         const friendly = notEligible
           ? `Void was rejected by the airline (${message}). Void is only possible within the airline's void window and while the ticket is in a voidable state. If this is a fresh booking, ticketing may still be settling — retry in a moment; otherwise use "Get Refund Quote" or "Force Cancel + Refund".`
@@ -845,9 +845,17 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
-        if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date() });
+        if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date(), providerQuoteResponse: result });
         // The airline refused a refund PTR (non-refundable, still in void window, or
         // already processed). Point staff at the right alternative instead of a dead end.
+        const contractGap = /details? (are|is) missing|missing from the request/i.test(message);
+        if (contractGap) {
+          return reply.code(422).send({
+            error: `The airline could not price a refund for this ticket (${message}). This is a provider-side request limitation, not something missing from your input — it has been seen on multi-segment itineraries. Use "Force Cancel + Refund" to cancel and refund manually.`,
+            errorCode: 'MYSTIFLY_REFUND_QUOTE_UNSUPPORTED',
+            raw: result,
+          });
+        }
         const notEligible = /not eligible|non.?refundable|no refund|not allowed|not permitted|verify the request/i.test(message);
         const friendly = notEligible
           ? `This ticket cannot be refunded through the airline's refund process (${message}). If it is still within the void window use "Get Void Quote"; otherwise use "Force Cancel + Refund" to cancel and issue a manual refund.`
@@ -1028,7 +1036,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
-        if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date() });
+        if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date(), providerQuoteResponse: result });
         return reply.code(422).send({ error: message, errorCode: 'MYSTIFLY_REISSUE_QUOTE_FAILED', raw: result, couponAdvice });
       }
 
