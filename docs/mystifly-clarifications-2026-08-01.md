@@ -177,6 +177,53 @@ we read as a normal business answer rather than a fault.
 
 ---
 
+## RefundQuote is never priced; VoidQuote is priced immediately
+
+Across four bookings, **every** `RefundQuote` we have raised comes back accepted
+but unpriced, and stays that way:
+
+| Booking | MFRef | PTR | PTRStatus | Resolution | Quote rows |
+|---|---|---|---|---|---|
+| FM25OCTM | MF35498426 | 22897 | InProcess | QuoteRequested | 0 |
+| FM7E9VNW | MF35498526 | — | InProcess | QuoteRequested | 0 |
+| FMVTT9ZQ | MF35472726 | 22796, 22753, 22752, 22751 | Completed | **RefundQuoteRejected** | 0 |
+| FMRRNII3 | — | — | InProcess | QuoteRequested | 0 |
+
+A `VoidQuote` on the same account answers in the same response, with populated
+`Data.VoidQuotes[]`:
+
+```json
+{ "PassengerType": "ADT", "ETicket": "TKT528650", "Currency": "USD",
+  "TotalVoidingFee": "0.00", "TotalRefundAmount": "…", "AdminCharges": "0.00" }
+```
+
+So the difference is the request type, not our parsing.
+
+Two further observations:
+
+- The `ReIssueQuote` PTRs carry `"ProcessingMethod": "Auto"` and reach
+  `Resolution: QuoteUpdated`. The `RefundQuote` PTRs carry no `ProcessingMethod`
+  at all, which suggests they are queued for manual handling.
+- A targeted read of an outstanding refund PTR returns nothing, even though the
+  list shows it exists:
+
+  ```
+  POST /api/Search/PostTicketingRequest { ptrType: "Refund", MFRef: "MF35498426", PTRId: 22897 }
+  → { "Data": null, "Success": false, "Message": "No records found." }
+  ```
+
+**Please confirm:**
+1. Is `RefundQuote` expected to be priced asynchronously by your back office on
+   this (demo) account, and if so what is the normal turnaround?
+2. Once priced, where do the amounts appear — in `Search/PostTicketingRequest`,
+   or must the `RefundQuote` be re-raised? Re-raising creates a second PTR, which
+   we would rather not do merely to read a number.
+3. `RefundQuoteRejected` was returned four times on MF35472726, whose TripDetails
+   reports `IsRefundableBeforeDeparture: "Yes"` with a $51.89 charge. What causes
+   the rejection when the fare rules say the ticket is refundable?
+
+---
+
 ## Reference
 
 Bookings available for inspection on our account:

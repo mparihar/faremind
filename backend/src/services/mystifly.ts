@@ -1433,8 +1433,13 @@ export async function executeVoid(
  * Used when void is not available (outside void window).
  */
 export async function refundQuote(mfRef: string, passengers: PtrPassenger[] = []): Promise<any> {
-  // RefundQuote returns synchronously with PTRStatus=Completed + Data.RefundQuotes[]
-  // (TotalRefundAmount / TotalRefundCharges / CancellationCharge / Currency) + PTRId.
+  // NOT synchronous, despite what this comment used to claim. Every RefundQuote
+  // raised on this account has come back PTRStatus=InProcess,
+  // Resolution=QuoteRequested with an EMPTY RefundQuotes[] — 4 of 4, none ever
+  // priced. A VoidQuote by contrast answers in the same response with populated
+  // Data.VoidQuotes[] (see FMRRNII3), so the difference is the request type, not
+  // our parsing. Callers must treat an empty array as "not priced yet", never as
+  // zero; see isQuoteUnanswered in routes/mystifly-ptr.ts.
   return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
