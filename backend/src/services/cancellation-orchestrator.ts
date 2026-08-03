@@ -1020,30 +1020,150 @@ export async function executeQueuedCancellation(bookingId: string): Promise<void
   const providerPnr = booking.pnrs.find((p: any) => p.providerOrderId);
   if (!providerPnr?.providerOrderId) return;
 
-  // Make sure the e-ticket is persisted, then reload so buildPtrPassengers sees it.
-  try {
-    const r = await backfillEticketsFromTripDetails(bookingId, providerPnr.providerOrderId);
-    if (r.updated > 0) booking = (await mbq.getMasterBookingFull(bookingId)) || booking;
-  } catch (e) {
-    console.warn(`[Cancel][Queued] eTicket backfill failed for ${bookingId}:`, (e as Error).message);
-  }
-
-  const provider = getProvider(booking.primaryProvider);
-  const quote = await provider.getCancellationQuote(providerPnr.providerOrderId, {
-    ticketingStatus: booking.ticketingStatus,
-    bookingAmount: Number(booking.totalAmount) || 0,
-    passengers: buildPtrPassengers(booking),
-  });
-
-  // initiateCancellation re-creates the CancellationRecord (unique bookingId), so
-  // remove the queued marker first. Preserve the original requester/refund method.
   const requestedBy = rec.requestedBy;
   const refundMethod = (rec.refundMethod as string) || 'ORIGINAL_PAYMENT';
-  await prisma.cancellationRecord.delete({ where: { bookingId } }).catch(() => {});
+  const originalAmount = Number(rec.originalAmount) || Number(booking.totalAmount) || 0;
+  const attempt = queuedAttemptCount(rec.notes) + 1;
 
-  console.log(`[Cancel][Queued] Executing queued cancellation for ${bookingId} — quoteId=${quote.quoteId} method=${quote.method}`);
-  await initiateCancellation(
-    { bookingId, quoteId: quote.quoteId, refundMethod, forcedBy: `QUEUED:${requestedBy}` },
-    booking,
+  try {
+    // Make sure the e-ticket is persisted, then reload so buildPtrPassengers sees it.
+    try {
+      const r = await backfillEticketsFromTripDetails(bookingId, providerPnr.providerOrderId);
+      if (r.updated > 0) booking = (await mbq.getMasterBookingFull(bookingId)) || booking;
+    } catch (e) {
+      console.warn(`[Cancel][Queued] eTicket backfill failed for ${bookingId}:`, (e as Error).message);
+    }
+
+    const provider = getProvider(booking.primaryProvider);
+    const quote = await provider.getCancellationQuote(providerPnr.providerOrderId, {
+      ticketingStatus: booking.ticketingStatus,
+      bookingAmount: Number(booking.totalAmount) || 0,
+      passengers: buildPtrPassengers(booking),
+    });
+
+    // initiateCancellation re-creates the CancellationRecord (unique bookingId), so
+    // remove the queued marker first. Preserve the original requester/refund method.
+    await prisma.cancellationRecord.delete({ where: { bookingId } }).catch(() => {});
+
+    console.log(`[Cancel][Queued] Executing queued cancellation for ${bookingId} (attempt ${attempt}/${MAX_QUEUED_CANCEL_ATTEMPTS}) — quoteId=${quote.quoteId} method=${quote.method}`);
+    await initiateCancellation(
+      { bookingId, quoteId: quote.quoteId, refundMethod, forcedBy: `QUEUED:${requestedBy}` },
+      booking,
+    );
+  } catch (err) {
+    // The customer was told "we'll void it once the ticket is issued" and their
+    // card is still charged. Losing this quietly leaves a live ticket, a charged
+    // customer, and nobody aware — and the queued marker was already deleted, so
+    // nothing would retry. Put it back, or escalate once retries are exhausted.
+    await handleQueuedCancellationFailure({
+      bookingId, booking, rec, attempt, requestedBy, refundMethod, originalAmount, err: err as Error,
+    });
+  }
+}
+
+/** How many times the queued void may be retried before a human is asked. */
+const MAX_QUEUED_CANCEL_ATTEMPTS = 3;
+
+/**
+ * Attempts are tracked in `notes` rather than a new column — this path runs
+ * against production and a schema migration is a heavier change than the fix
+ * warrants.
+ */
+function queuedAttemptCount(notes?: string | null): number {
+  const m = /\[void-attempt (\d+)\]/.exec(notes ?? '');
+  return m ? Number(m[1]) : 0;
+}
+
+/**
+ * Re-queue a failed void so the next reconciliation cycle retries it, or — once
+ * retries are exhausted — mark it FAILED and raise a support ticket.
+ *
+ * Never silent either way: a booking event is written on every attempt so the
+ * timeline shows what happened.
+ */
+async function handleQueuedCancellationFailure(p: {
+  bookingId: string;
+  booking: any;
+  rec: any;
+  attempt: number;
+  requestedBy: string;
+  refundMethod: string;
+  originalAmount: number;
+  err: Error;
+}): Promise<void> {
+  const { bookingId, booking, attempt, requestedBy, refundMethod, originalAmount, err } = p;
+  const reason = err?.message || 'unknown error';
+  const exhausted = attempt >= MAX_QUEUED_CANCEL_ATTEMPTS;
+  const ref = booking.masterBookingReference;
+
+  console.error(
+    `[Cancel][Queued] CRITICAL: void failed for ${ref} (attempt ${attempt}/${MAX_QUEUED_CANCEL_ATTEMPTS}): ${reason}` +
+    (exhausted ? ' — retries exhausted, escalating' : ' — will retry on the next cycle'),
   );
+
+  // Restore the record. upsert, not create: initiateCancellation may have written
+  // one of its own before throwing.
+  await prisma.cancellationRecord.upsert({
+    where: { bookingId },
+    create: {
+      bookingId,
+      status: exhausted ? 'FAILED' : 'CANCEL_AWAITING_TICKETING',
+      requestedBy,
+      originalAmount,
+      currency: booking.currency || 'USD',
+      refundMethod: refundMethod as any,
+      notes: `[void-attempt ${attempt}] Queued void failed: ${reason}`,
+      ...(exhausted ? { failedAt: new Date(), failureReason: reason } : {}),
+    },
+    update: {
+      status: exhausted ? 'FAILED' : 'CANCEL_AWAITING_TICKETING',
+      notes: `[void-attempt ${attempt}] Queued void failed: ${reason}`,
+      ...(exhausted ? { failedAt: new Date(), failureReason: reason } : {}),
+    },
+  }).catch((e) => console.error('[Cancel][Queued] could not restore the cancellation record:', e?.message));
+
+  await mbq.createBookingEvent({
+    bookingId,
+    eventType: exhausted ? 'CANCELLATION_FAILED' : 'CANCELLATION_RETRY',
+    eventTitle: exhausted ? 'Queued void failed — manual action required' : 'Queued void failed — retrying',
+    eventDescription: exhausted
+      ? `The queued void could not be executed after ${attempt} attempts: ${reason}. The ticket is still live and the customer is still charged. A support ticket has been raised.`
+      : `The queued void failed on attempt ${attempt}: ${reason}. It will be retried on the next reconciliation cycle.`,
+    actorType: 'system',
+    actorName: 'Queued Cancellation',
+  }).catch(() => {});
+
+  if (!exhausted) return;
+
+  // One open ticket per booking — the retries would otherwise file three.
+  const existing = await prisma.supportTicket.findFirst({
+    where: { bookingRef: ref, queue: 'CANCELLATION_SUPPORT' as any, status: { in: ['OPEN', 'IN_PROGRESS'] as any } },
+    select: { id: true },
+  }).catch(() => null);
+  if (existing) return;
+
+  await prisma.supportTicket.create({
+    data: {
+      subject: `Queued void FAILED: ${ref} — ticket live, customer still charged`,
+      description: [
+        `${ref} was cancelled by the customer while the airline was still issuing the ticket.`,
+        'The ticket has since been issued, but the automatic void failed every time.',
+        '',
+        `Attempts: ${attempt}`,
+        `Last error: ${reason}`,
+        `Amount charged: ${originalAmount} ${booking.currency || 'USD'}`,
+        `Airline PNR: ${booking.airlinePnr ?? 'n/a'}`,
+        '',
+        'The customer was told the booking would be voided and refunded automatically.',
+        'Void it manually from Post-Booking Servicing while the void window is open —',
+        'once it closes this fare can only be refunded, and it is likely non-refundable.',
+      ].join('\n'),
+      priority: 'URGENT', status: 'OPEN', category: 'Cancellation Request', channel: 'SYSTEM',
+      customerName: booking.customerName ?? '',
+      customerEmail: booking.customerEmail ?? '',
+      bookingRef: ref,
+      airlinePnr: booking.airlinePnr ?? undefined,
+      ticketType: 'BOOKING_CANCELLATION', queue: 'CANCELLATION_SUPPORT',
+    } as any,
+  }).catch((e) => console.error('[Cancel][Queued] support ticket creation failed:', e?.message));
 }

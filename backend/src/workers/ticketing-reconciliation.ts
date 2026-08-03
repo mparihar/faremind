@@ -81,6 +81,33 @@ export async function runTicketingReconciliation(): Promise<ReconciliationResult
     console.error('[TicketRecon] Re-queue step failed:', (err as Error).message);
   }
 
+  // ── Queued voids whose booking is already ticketed ──
+  // Case A below fires executeQueuedCancellation the moment a booking resolves,
+  // but only then — a resolved record is never polled again. So a void that
+  // failed and was re-queued, or one requested after the ticket had already
+  // issued, would sit forever with the customer charged and the ticket live.
+  // This sweep is the retry path: it is driven by the cancellation record, not
+  // by the reconciliation record.
+  try {
+    const awaiting = await prisma.cancellationRecord.findMany({
+      where: {
+        status: 'CANCEL_AWAITING_TICKETING',
+        booking: { ticketingStatus: { in: ['ISSUED', 'PARTIALLY_ISSUED'] } },
+      },
+      select: { bookingId: true, booking: { select: { masterBookingReference: true } } },
+      take: 25,
+    });
+    for (const c of awaiting) {
+      console.log(`[TicketRecon] Retrying queued void for ${c.booking?.masterBookingReference ?? c.bookingId}`);
+      // Escalation and re-queueing live inside executeQueuedCancellation; this
+      // catch only stops one booking's failure ending the sweep.
+      try { await executeQueuedCancellation(c.bookingId); }
+      catch (err) { console.error(`[TicketRecon] queued void retry threw for ${c.bookingId}:`, (err as Error).message); }
+    }
+  } catch (err) {
+    console.error('[TicketRecon] Queued-void sweep failed:', (err as Error).message);
+  }
+
   // Find records that are due for polling
   const pendingRecords = await prisma.ticketingReconciliation.findMany({
     where: {
@@ -247,9 +274,12 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     catch (err) { console.warn(`[TicketRecon] eTicket persist failed for ${mfRef}:`, (err as Error).message); }
 
     // If a cancellation was queued while the ticket was still issuing, execute it
-    // now (void within the window + refund). Best-effort — never fail reconciliation.
+    // now (void within the window + refund). Never fail reconciliation on it —
+    // but a throw here is not "best effort" any more: executeQueuedCancellation
+    // re-queues and escalates internally, and the sweep above retries. This catch
+    // exists only so one booking cannot stop the rest of the cycle.
     try { await executeQueuedCancellation(record.bookingId); }
-    catch (err) { console.warn(`[TicketRecon] queued cancellation failed for ${mfRef}:`, (err as Error).message); }
+    catch (err) { console.error(`[TicketRecon] queued cancellation threw for ${mfRef}:`, (err as Error).message); }
 
     // Log timeline event
     await prisma.bookingEvent.create({
