@@ -1,8 +1,6 @@
 /**
  * Mystifly Post-Ticketing Request (PTR) Routes
  *
- * NEW route plugin — does NOT modify any existing routes.
- *
  * Endpoints:
  *   POST /api/mystifly-ptr/void-quote     — Get void quote
  *   POST /api/mystifly-ptr/void           — Execute void
@@ -12,6 +10,13 @@
  *   POST /api/mystifly-ptr/reissue        — Execute reissue
  *   POST /api/mystifly-ptr/status         — Check PTR status
  *   POST /api/mystifly-ptr/mark-read      — Mark PTR as read
+ *
+ * IDENTIFIERS
+ * Every endpoint takes `{ reference, airlinePnr }` — the FareMind reference and
+ * the airline's record locator, the only two codes a person actually holds. The
+ * Mystifly reference is resolved from them internally (resolveServicingRef) and
+ * never has to be typed. `uniqueId` is still accepted so older callers keep
+ * working, but it is treated as "any reference", not as an MFRef.
  */
 
 import { FastifyPluginAsync } from 'fastify';
@@ -278,6 +283,112 @@ async function resolveMasterBookingId(input?: string): Promise<string | null> {
   return found?.bookingId ?? null;
 }
 
+/** The identifiers one servicing request needs, resolved once at the top. */
+interface ServicingRef {
+  /** Mystifly's reference. Internal only — resolved, never asked for. */
+  mfRef: string;
+  /** MasterBooking.id, null when the MFRef matched no booking of ours. */
+  bookingId: string | null;
+  fareMindRef: string | null;
+  airlinePnr: string | null;
+}
+
+/** `ref` present means resolved; otherwise the route replies with the failure. */
+interface ServicingRefResult {
+  ref?: ServicingRef;
+  status?: number;
+  error?: string;
+  errorCode?: string;
+}
+
+/** `MF` + digits is Mystifly's shape — used to classify input, never to display. */
+function looksLikeMystiflyRef(v: string): boolean {
+  return /^MF\d+$/i.test(v);
+}
+
+/**
+ * The identifiers a response may echo: ours and the airline's. The provider
+ * reference is deliberately absent — echoing it would put back on screen the
+ * code this whole path exists to keep off it.
+ */
+function publicRef(ref: ServicingRef) {
+  return { bookingId: ref.bookingId, fareMindRef: ref.fareMindRef, airlinePnr: ref.airlinePnr };
+}
+
+/**
+ * Resolve a servicing request to the provider reference the Mystifly APIs need.
+ *
+ * The consoles send the FareMind reference and/or the airline PNR. Both are
+ * codes the customer and the agent genuinely hold; Mystifly's is not, and asking
+ * for it was the reason servicing could stall on a code nobody had. Whichever
+ * arrives, we map it here and the rest of the route works in MFRef.
+ *
+ * When both codes are given they must describe the same booking. Two
+ * half-remembered codes pasted together must not void somebody else's ticket.
+ */
+async function resolveServicingRef(body: {
+  reference?: string; airlinePnr?: string; uniqueId?: string; bookingId?: string;
+}): Promise<ServicingRefResult> {
+  const clean = (v: unknown) => String(v ?? '').trim();
+  const reference = clean(body.reference);
+  const airlinePnr = clean(body.airlinePnr);
+  const legacy = [clean(body.uniqueId), clean(body.bookingId)].filter(Boolean);
+
+  const candidates = [reference, airlinePnr, ...legacy].filter(Boolean);
+  if (candidates.length === 0) {
+    return {
+      status: 400, errorCode: 'MISSING_REFERENCE',
+      error: 'Enter the FareMind reference or the airline PNR.',
+    };
+  }
+
+  // Both supplied: they must agree before anything touches the provider.
+  if (reference && airlinePnr) {
+    const [a, b] = await Promise.all([
+      resolveBookingByAnyReference(reference),
+      resolveBookingByAnyReference(airlinePnr),
+    ]);
+    if (a && b && a.bookingId !== b.bookingId) {
+      return {
+        status: 409, errorCode: 'REFERENCE_MISMATCH',
+        error: `"${reference}" and airline PNR "${airlinePnr}" belong to different bookings. Clear one of the two and search again.`,
+      };
+    }
+  }
+
+  for (const input of candidates) {
+    const found = await resolveBookingByAnyReference(input);
+    if (!found) continue;
+    if (!found.mystiflyRef) {
+      return {
+        status: 422, errorCode: 'NO_PROVIDER_REFERENCE',
+        error: `Booking ${found.masterBookingReference} carries no provider reference, so it cannot be serviced through Post-Ticketing Requests.`,
+      };
+    }
+    return {
+      ref: {
+        mfRef: found.mystiflyRef,
+        bookingId: found.bookingId,
+        fareMindRef: found.masterBookingReference,
+        airlinePnr: found.airlinePnr,
+      },
+    };
+  }
+
+  // Nothing matched a booking of ours. An MF-shaped code still goes through:
+  // support occasionally services a provider booking we hold no row for, and a
+  // hard failure there is worse than a permissive lookup.
+  const mfShaped = candidates.find(looksLikeMystiflyRef);
+  if (mfShaped) {
+    return { ref: { mfRef: mfShaped, bookingId: null, fareMindRef: null, airlinePnr: null } };
+  }
+
+  return {
+    status: 404, errorCode: 'BOOKING_NOT_FOUND',
+    error: `No booking found for "${candidates[0]}". Check the FareMind reference (FM…) or the airline PNR from the ticket.`,
+  };
+}
+
 async function createPtrRecord(params: {
   bookingId: string;
   providerUniqueId: string;
@@ -524,10 +635,15 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/void-quote', async (request, reply) => {
     try {
-      const { uniqueId, bookingId, requestedBy, notes } = request.body as {
-        uniqueId: string; bookingId?: string; requestedBy?: string; notes?: string;
+      const body = request.body as {
+        reference?: string; airlinePnr?: string; uniqueId?: string; bookingId?: string;
+        requestedBy?: string; notes?: string;
       };
-      if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
+      const { requestedBy, notes } = body;
+
+      const resolved = await resolveServicingRef(body);
+      if (!resolved.ref) return reply.code(resolved.status || 400).send({ error: resolved.error, errorCode: resolved.errorCode });
+      const { mfRef: uniqueId, bookingId } = resolved.ref;
 
       // Create DB record
       let ptrRecord = null;
@@ -573,7 +689,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
       const voidAdvice = await couponServicingAdvice(uniqueId);
       return {
-        success: true, ptrId: ptrRecord?.id, providerPtrId,
+        success: true, booking: publicRef(resolved.ref), ptrId: ptrRecord?.id, providerPtrId,
         ptrStatus: quoteData?.PTRStatus, voidingWindow: quoteData?.VoidingWindow,
         quote: { TotalRefundAmount: totalRefund, TotalVoidingFee: totalVoidingFee, Currency: currency, VoidQuotes: vq },
         couponAdvice: voidAdvice,
@@ -589,10 +705,15 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/void', async (request, reply) => {
     try {
-      const { uniqueId, ptrId, bookingId, requestedBy } = request.body as {
-        uniqueId: string; ptrId?: string; bookingId?: string; requestedBy?: string;
+      const body = request.body as {
+        reference?: string; airlinePnr?: string; uniqueId?: string; bookingId?: string;
+        ptrId?: string; requestedBy?: string;
       };
-      if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
+      const { ptrId, requestedBy } = body;
+
+      const resolved = await resolveServicingRef(body);
+      if (!resolved.ref) return reply.code(resolved.status || 400).send({ error: resolved.error, errorCode: resolved.errorCode });
+      const { mfRef: uniqueId, bookingId } = resolved.ref;
 
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 
@@ -619,6 +740,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
       return {
         success: true,
+        booking: publicRef(resolved.ref),
         ptrId, providerPtrId, ptrStatus,
         customerRefund,
         // The void succeeded at the provider but the customer may still be charged —
@@ -640,10 +762,15 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/refund-quote', async (request, reply) => {
     try {
-      const { uniqueId, bookingId, requestedBy, notes } = request.body as {
-        uniqueId: string; bookingId?: string; requestedBy?: string; notes?: string;
+      const body = request.body as {
+        reference?: string; airlinePnr?: string; uniqueId?: string; bookingId?: string;
+        requestedBy?: string; notes?: string;
       };
-      if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
+      const { requestedBy, notes } = body;
+
+      const resolved = await resolveServicingRef(body);
+      if (!resolved.ref) return reply.code(resolved.status || 400).send({ error: resolved.error, errorCode: resolved.errorCode });
+      const { mfRef: uniqueId, bookingId } = resolved.ref;
 
       let ptrRecord = null;
       if (bookingId) {
@@ -692,7 +819,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
       const refundAdvice = await couponServicingAdvice(uniqueId);
       return {
-        success: true, ptrId: ptrRecord?.id, providerPtrId,
+        success: true, booking: publicRef(resolved.ref), ptrId: ptrRecord?.id, providerPtrId,
         ptrStatus: quoteData?.PTRStatus,
         quote: { TotalRefundAmount: totalRefund, TotalRefundCharges: totalCharges, CancellationCharge: cancellationCharge, Currency: currency, RefundQuotes: rq },
         couponAdvice: refundAdvice,
@@ -708,12 +835,16 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/refund', async (request, reply) => {
     try {
-      const { uniqueId, ptrId, providerPtrId, bookingId, refundAmount, requestedBy } = request.body as {
-        uniqueId: string; ptrId?: string; providerPtrId?: number; bookingId?: string;
-        refundAmount?: number; requestedBy?: string;
+      const body = request.body as {
+        reference?: string; airlinePnr?: string; uniqueId?: string; bookingId?: string;
+        ptrId?: string; providerPtrId?: number; refundAmount?: number; requestedBy?: string;
       };
-      if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
+      const { ptrId, providerPtrId, refundAmount, requestedBy } = body;
       if (!providerPtrId) return reply.code(400).send({ error: 'providerPtrId (the RefundQuote PTR id) is required — run Get Refund Quote first.', errorCode: 'MISSING_PTR_ID' });
+
+      const resolved = await resolveServicingRef(body);
+      if (!resolved.ref) return reply.code(resolved.status || 400).send({ error: resolved.error, errorCode: resolved.errorCode });
+      const { mfRef: uniqueId, bookingId } = resolved.ref;
 
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 
@@ -748,6 +879,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
       return {
         success: true,
+        booking: publicRef(resolved.ref),
         ptrId, providerPtrId, ptrStatus,
         quotedRefundAmount,
         customerRefund,
@@ -768,12 +900,17 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/reissue-quote', async (request, reply) => {
     try {
-      const { uniqueId, bookingId, newFareSourceCode, originDestinations, preferenceOption, requestedBy, notes } = request.body as {
-        uniqueId: string; bookingId?: string; newFareSourceCode?: string;
+      const body = request.body as {
+        reference?: string; airlinePnr?: string; uniqueId?: string; bookingId?: string;
+        newFareSourceCode?: string;
         originDestinations?: mystifly.MystiflyReissueOriginDestination[];
         preferenceOption?: number; requestedBy?: string; notes?: string;
       };
-      if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
+      const { newFareSourceCode, originDestinations, preferenceOption, requestedBy, notes } = body;
+
+      const resolved = await resolveServicingRef(body);
+      if (!resolved.ref) return reply.code(resolved.status || 400).send({ error: resolved.error, errorCode: resolved.errorCode });
+      const { mfRef: uniqueId, bookingId } = resolved.ref;
 
       let ptrRecord = null;
       if (bookingId) {
@@ -890,6 +1027,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
       return {
         success: true,
+        booking: publicRef(resolved.ref),
         ptrId: ptrRecord?.id,
         providerPtrId,
         // Same shape the Reissue + Collect modal renders, so the console can show the
@@ -914,16 +1052,21 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/reissue', async (request, reply) => {
     try {
-      const {
-        uniqueId, ptrId, providerPtrId, preferenceOption, bookingId, requestedBy,
-        newFareSourceCode, collectDifference, expectedTotalCollect,
-      } = request.body as {
-        uniqueId: string; ptrId?: string; providerPtrId?: number; preferenceOption?: number;
-        bookingId?: string; requestedBy?: string; newFareSourceCode?: string;
+      const body = request.body as {
+        reference?: string; airlinePnr?: string; uniqueId?: string; bookingId?: string;
+        ptrId?: string; providerPtrId?: number; preferenceOption?: number;
+        requestedBy?: string; newFareSourceCode?: string;
         collectDifference?: boolean; expectedTotalCollect?: number;
       };
-      if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
+      const {
+        ptrId, providerPtrId, preferenceOption, requestedBy,
+        newFareSourceCode, collectDifference, expectedTotalCollect,
+      } = body;
       if (!providerPtrId) return reply.code(400).send({ error: 'providerPtrId (the ReIssueQuote PTR id) is required — run Get Reissue Quote first.', errorCode: 'MISSING_PTR_ID' });
+
+      const resolved = await resolveServicingRef(body);
+      if (!resolved.ref) return reply.code(resolved.status || 400).send({ error: resolved.error, errorCode: resolved.errorCode });
+      const { mfRef: uniqueId, bookingId } = resolved.ref;
 
       if (ptrId) await updatePtrRecord(ptrId, { status: 'EXECUTING', approvedBy: requestedBy, approvedAt: new Date() });
 
@@ -949,7 +1092,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
           }, full);
           // initiateReissue quotes, charges, executes, enqueues settlement and refunds on
           // provider failure — nothing further to do here.
-          return { success: true, collected: true, ...out };
+          return { success: true, booking: publicRef(resolved.ref), collected: true, ...out };
         } catch (e: any) {
           const code = e?.code || 'REISSUE_FAILED';
 
@@ -1013,6 +1156,7 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
       return {
         success: true,
+        booking: publicRef(resolved.ref),
         ptrId,
         providerPtrId,
         ptrStatus,
@@ -1035,17 +1179,21 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/status', async (request, reply) => {
     try {
-      const { uniqueId } = request.body as { uniqueId: string };
-      if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
+      const body = request.body as {
+        reference?: string; airlinePnr?: string; uniqueId?: string; bookingId?: string;
+      };
 
-      const result = await mystifly.searchPtrStatus(uniqueId);
+      const resolved = await resolveServicingRef(body);
+      if (!resolved.ref) return reply.code(resolved.status || 400).send({ error: resolved.error, errorCode: resolved.errorCode });
+
+      const result = await mystifly.searchPtrStatus(resolved.ref.mfRef);
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
         return reply.code(422).send({ error: message, errorCode: 'MYSTIFLY_PTR_STATUS_FAILED', raw: result });
       }
 
-      return { success: true, ...result };
+      return { success: true, booking: publicRef(resolved.ref), ...result };
     } catch (error: any) {
       console.error('[PTR] Status search error:', error.message);
       return reply.code(502).send({ error: `PTR status search failed: ${error.message}` });
@@ -1056,16 +1204,20 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/mark-read', async (request, reply) => {
     try {
-      const { uniqueId, providerPtrId, requestType } = request.body as {
-        uniqueId: string; providerPtrId?: number; requestType?: mystifly.MarkAsReadPtrType;
+      const body = request.body as {
+        reference?: string; airlinePnr?: string; uniqueId?: string; bookingId?: string;
+        providerPtrId?: number; requestType?: mystifly.MarkAsReadPtrType;
       };
-      if (!uniqueId) return reply.code(400).send({ error: 'uniqueId is required' });
+      const { providerPtrId, requestType } = body;
       // `id` is the provider PTRId and must be > 0 — the endpoint 400s without it.
       if (!providerPtrId || providerPtrId <= 0) {
         return reply.code(400).send({ error: 'providerPtrId (the Mystifly PTR id) is required and must be greater than 0.', errorCode: 'MISSING_PTR_ID' });
       }
 
-      const result = await mystifly.markPtrAsRead(uniqueId, providerPtrId, requestType || 'None');
+      const resolved = await resolveServicingRef(body);
+      if (!resolved.ref) return reply.code(resolved.status || 400).send({ error: resolved.error, errorCode: resolved.errorCode });
+
+      const result = await mystifly.markPtrAsRead(resolved.ref.mfRef, providerPtrId, requestType || 'None');
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {

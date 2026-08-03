@@ -11,6 +11,7 @@ import { adminFetch } from '@/store/useAdminStore';
 import CouponStatusPanel from '@/components/booking/CouponStatusPanel';
 import PtrQuoteResult from '@/components/post-booking/PtrQuoteResult';
 import PtrExecResult from '@/components/post-booking/PtrExecResult';
+import BookingFinder, { type ServicingTarget } from '@/components/post-booking/BookingFinder';
 
 /**
  * Admin Post-Booking Servicing Page — MYSTIFLY ONLY
@@ -30,6 +31,11 @@ import PtrExecResult from '@/components/post-booking/PtrExecResult';
  * Admin-gated flows (force-cancel, reissue, PTR history) go through the admin
  * API proxies (adminFetch); raw Mystifly PTR quote/execute call the backend
  * directly like the agent console.
+ *
+ * IDENTIFIERS
+ * The booking is found by the FareMind reference or the airline PNR - the two
+ * codes a person actually holds. Mystifly's reference is never typed and never
+ * shown; the backend maps to it from whichever code was given.
  */
 
 const BACKEND_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:3001';
@@ -56,9 +62,18 @@ export default function AdminPostBookingPage() {
   const searchParams = useSearchParams();
   const [activeTab, setActiveTab] = useState<PtrTab>('void');
 
-  // Inputs
-  const [uniqueId, setUniqueId] = useState(searchParams.get('mfRef') || '');
-  const [bookingId, setBookingId] = useState(searchParams.get('bookingId') || '');
+  // The booking being serviced, found by FareMind reference or airline PNR.
+  const [target, setTarget] = useState<ServicingTarget | null>(null);
+  const bookingId = target?.bookingId || '';
+  const ready = Boolean(target);
+
+  /** Identifiers for a servicing call. Ours and the airline's, never the provider's. */
+  const refBody = () => ({
+    reference: target?.fareMindRef,
+    airlinePnr: target?.airlinePnr ?? undefined,
+    bookingId: target?.bookingId,
+  });
+
   const [notes, setNotes] = useState('');
   const [newFSC, setNewFSC] = useState('');
 
@@ -93,16 +108,18 @@ export default function AdminPostBookingPage() {
 
   useEffect(() => {
     if (bookingId) loadPtrRecords();
+    else setPtrRecords([]);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [bookingId]);
 
-  // A quote belongs to the MFRef/booking it was taken against, and handleExecute reuses
-  // its providerPtrId. Drop it when the target changes so a quote taken for one booking
-  // can never be executed against another. Parity with the agent console.
+  // A quote belongs to the booking it was taken against, and handleExecute reuses
+  // its providerPtrId. Drop it when the target changes so a quote taken for one
+  // booking can never be executed against another. Parity with the agent console.
   useEffect(() => {
     setQuoteResult(null);
     setExecResult(null);
-  }, [uniqueId, bookingId]);
+    setStatusResult(null);
+  }, [bookingId]);
 
   async function loadPtrRecords() {
     setRecordsLoading(true);
@@ -117,13 +134,12 @@ export default function AdminPostBookingPage() {
   }
 
   async function handleQuote(type: 'void-quote' | 'refund-quote' | 'reissue-quote') {
-    if (!uniqueId.trim()) return;
+    if (!ready) return;
     setLoading(true);
     setQuoteResult(null);
     setExecResult(null);
     try {
-      const body: any = { uniqueId: uniqueId.trim(), requestedBy: 'admin' };
-      if (bookingId) body.bookingId = bookingId;
+      const body: any = { ...refBody(), requestedBy: 'admin' };
       if (notes) body.notes = notes;
       if (type === 'reissue-quote' && newFSC) body.newFareSourceCode = newFSC;
 
@@ -142,14 +158,13 @@ export default function AdminPostBookingPage() {
   }
 
   async function handleExecute(type: 'void' | 'refund' | 'reissue') {
-    if (!uniqueId.trim()) return;
+    if (!ready) return;
     setExecLoading(true);
     setExecResult(null);
     try {
-      const body: any = { uniqueId: uniqueId.trim(), requestedBy: 'admin' };
+      const body: any = { ...refBody(), requestedBy: 'admin' };
       if (quoteResult?.ptrId) body.ptrId = quoteResult.ptrId;
-      if (quoteResult?.providerPtrId) body.providerPtrId = quoteResult.providerPtrId; // Mystifly PTR id (required to accept refund)
-      if (bookingId) body.bookingId = bookingId;
+      if (quoteResult?.providerPtrId) body.providerPtrId = quoteResult.providerPtrId; // provider PTR id (required to accept refund)
       if (type === 'reissue') {
         if (newFSC) body.newFareSourceCode = newFSC;
         // Send back the option and the total that was displayed, so the backend aborts
@@ -174,10 +189,10 @@ export default function AdminPostBookingPage() {
     setExecLoading(false);
   }
 
-  const fcTarget = () => (bookingId.trim() || uniqueId.trim());
+  const fcTarget = () => bookingId;
 
   function openForceCancel() {
-    if (!fcTarget()) { setExecResult({ error: 'Enter a Booking ID (or MFRef) first.' }); return; }
+    if (!fcTarget()) { setExecResult({ error: 'Find the booking first - enter the FareMind reference or the airline PNR.' }); return; }
     setFcOpen(true); setFcQuote(null); setFcResult(null); setFcError(null); setFcAmount(''); setFcReason('');
     loadForceCancelQuote();
   }
@@ -216,7 +231,7 @@ export default function AdminPostBookingPage() {
   }
 
   function openReissue() {
-    if (!fcTarget()) { setExecResult({ error: 'Enter a Booking ID (or MFRef) first.' }); return; }
+    if (!fcTarget()) { setExecResult({ error: 'Find the booking first - enter the FareMind reference or the airline PNR.' }); return; }
     if (!newFSC.trim()) { setExecResult({ error: 'Enter the new FareSourceCode above first.' }); return; }
     setRiOpen(true); setRiQuote(null); setRiResult(null); setRiError(null);
     loadReissueQuote();
@@ -255,14 +270,14 @@ export default function AdminPostBookingPage() {
   }
 
   async function handleStatusSearch() {
-    if (!uniqueId.trim()) return;
+    if (!ready) return;
     setLoading(true);
     setStatusResult(null);
     try {
       const res = await fetch(`${BACKEND_URL}/api/mystifly-ptr/status`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ uniqueId: uniqueId.trim() }),
+        body: JSON.stringify(refBody()),
       });
       setStatusResult(await res.json());
     } catch (e: any) {
@@ -318,21 +333,16 @@ export default function AdminPostBookingPage() {
         {/* Main Panel */}
         <div className="lg:col-span-2 bg-slate-800/30 border border-slate-700/50 rounded-2xl p-6">
 
-          {/* Common inputs */}
-          <div className="space-y-3 mb-4">
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Mystifly UniqueID (MFRef) *</label>
-              <input value={uniqueId} onChange={e => setUniqueId(e.target.value)}
-                placeholder="Enter Mystifly booking UniqueID..."
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-[#1ABC9C]" />
-            </div>
-            <div>
-              <label className="text-[10px] font-bold text-slate-500 uppercase tracking-wider mb-1 block">Booking ID or Reference (optional — links PTR to database)</label>
-              <input value={bookingId} onChange={e => setBookingId(e.target.value)}
-                placeholder="FareMind booking ID / reference (for tracking)..."
-                className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-[#1ABC9C]" />
-            </div>
-          </div>
+          {/* Find the booking - FareMind reference or airline PNR, never the provider's. */}
+          <BookingFinder
+            target={target}
+            onTarget={setTarget}
+            initialReference={searchParams.get('ref') || searchParams.get('bookingId') || ''}
+            initialAirlinePnr={searchParams.get('pnr') || ''}
+            resolve={(body) => adminFetch('/api/admin/post-booking/resolve', {
+              method: 'POST', body: JSON.stringify(body),
+            })}
+          />
 
           {/* ── Force Cancel + Refund (one-click: provider PTR → Stripe refund → cancel) ── */}
           <div className="mb-5 rounded-xl border border-red-500/30 bg-red-500/5 p-4">
@@ -343,7 +353,7 @@ export default function AdminPostBookingPage() {
               </div>
               <button
                 onClick={openForceCancel}
-                disabled={!bookingId.trim() && !uniqueId.trim()}
+                disabled={!ready}
                 className="shrink-0 px-4 py-2.5 rounded-xl bg-red-600 hover:bg-red-500 disabled:opacity-40 text-white text-sm font-bold"
               >
                 Force Cancel + Refund
@@ -357,11 +367,11 @@ export default function AdminPostBookingPage() {
               <h3 className="text-white font-black text-lg mb-1">Void Mystifly Ticket</h3>
               <p className="text-slate-400 text-sm mb-4">Step 1: Get void quote → Step 2: Execute void</p>
               <div className="flex gap-3 mb-4">
-                <button onClick={() => handleQuote('void-quote')} disabled={loading || !uniqueId.trim()}
+                <button onClick={() => handleQuote('void-quote')} disabled={loading || !ready}
                   className="flex items-center gap-2 px-5 py-3 bg-amber-500/15 border border-amber-400/20 rounded-xl text-amber-400 text-sm font-bold hover:bg-amber-500/25 disabled:opacity-50">
                   {loading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Get Void Quote
                 </button>
-                <button onClick={() => handleExecute('void')} disabled={execLoading || !uniqueId.trim() || !quoteResult?.success}
+                <button onClick={() => handleExecute('void')} disabled={execLoading || !ready || !quoteResult?.success}
                   className="flex items-center gap-2 px-5 py-3 bg-red-500/15 border border-red-400/20 rounded-xl text-red-400 text-sm font-bold hover:bg-red-500/25 disabled:opacity-50">
                   {execLoading ? <Loader2 size={14} className="animate-spin" /> : <Ban size={14} />} Execute Void
                 </button>
@@ -378,11 +388,11 @@ export default function AdminPostBookingPage() {
                 placeholder="Refund reason / notes (optional)..."
                 className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C] resize-none mb-3" />
               <div className="flex gap-3 mb-4">
-                <button onClick={() => handleQuote('refund-quote')} disabled={loading || !uniqueId.trim()}
+                <button onClick={() => handleQuote('refund-quote')} disabled={loading || !ready}
                   className="flex items-center gap-2 px-5 py-3 bg-amber-500/15 border border-amber-400/20 rounded-xl text-amber-400 text-sm font-bold hover:bg-amber-500/25 disabled:opacity-50">
                   {loading ? <Loader2 size={14} className="animate-spin" /> : <DollarSign size={14} />} Get Refund Quote
                 </button>
-                <button onClick={() => handleExecute('refund')} disabled={execLoading || !uniqueId.trim() || !quoteResult?.success}
+                <button onClick={() => handleExecute('refund')} disabled={execLoading || !ready || !quoteResult?.success}
                   className="flex items-center gap-2 px-5 py-3 bg-emerald-500/15 border border-emerald-400/20 rounded-xl text-emerald-400 text-sm font-bold hover:bg-emerald-500/25 disabled:opacity-50">
                   {execLoading ? <Loader2 size={14} className="animate-spin" /> : <RotateCcw size={14} />} Execute Refund
                 </button>
@@ -399,13 +409,13 @@ export default function AdminPostBookingPage() {
                 placeholder="New FareSourceCode (for exchange to new fare)..."
                 className="w-full px-4 py-3 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm font-mono focus:outline-none focus:border-[#1ABC9C] mb-3" />
               <div className="flex gap-3 mb-4">
-                <button onClick={() => handleQuote('reissue-quote')} disabled={loading || !uniqueId.trim()}
+                <button onClick={() => handleQuote('reissue-quote')} disabled={loading || !ready}
                   className="flex items-center gap-2 px-5 py-3 bg-amber-500/15 border border-amber-400/20 rounded-xl text-amber-400 text-sm font-bold hover:bg-amber-500/25 disabled:opacity-50">
                   {loading ? <Loader2 size={14} className="animate-spin" /> : <FileText size={14} />} Get Reissue Quote
                 </button>
                 {/* Gated on a priced quote: the card is charged before the change is sent
                     to the airline, so the operator must have seen the amount first. */}
-                <button onClick={() => handleExecute('reissue')} disabled={execLoading || !uniqueId.trim() || !quoteResult?.success || !quoteResult?.priced}
+                <button onClick={() => handleExecute('reissue')} disabled={execLoading || !ready || !quoteResult?.success || !quoteResult?.priced}
                   title={!quoteResult?.priced ? 'Get a reissue quote first — the fare difference and service fee must be priced before charging.' : undefined}
                   className="flex items-center gap-2 px-5 py-3 bg-blue-500/15 border border-blue-400/20 rounded-xl text-blue-400 text-sm font-bold hover:bg-blue-500/25 disabled:opacity-50">
                   {execLoading ? <Loader2 size={14} className="animate-spin" /> : <ArrowLeftRight size={14} />}
@@ -418,7 +428,7 @@ export default function AdminPostBookingPage() {
                     <p className="text-sm font-bold text-emerald-300">Reissue + Collect Difference</p>
                     <p className="text-[11px] text-slate-400 mt-0.5">One click: quote (fare difference + service fee) → charge the customer&apos;s card → execute the reissue. Enter the new FareSourceCode above first.</p>
                   </div>
-                  <button onClick={openReissue} disabled={!newFSC.trim() || (!bookingId.trim() && !uniqueId.trim())}
+                  <button onClick={openReissue} disabled={!ready || !newFSC.trim()}
                     className="shrink-0 px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 disabled:opacity-40 text-white text-sm font-bold">
                     Reissue + Collect
                   </button>
@@ -431,8 +441,8 @@ export default function AdminPostBookingPage() {
           {activeTab === 'status' && (
             <div>
               <h3 className="text-white font-black text-lg mb-1">PTR Status Search</h3>
-              <p className="text-slate-400 text-sm mb-4">Check Mystifly Post-Ticketing Request status by UniqueID</p>
-              <button onClick={handleStatusSearch} disabled={loading || !uniqueId.trim()}
+              <p className="text-slate-400 text-sm mb-4">Check the Post-Ticketing Request status for this booking</p>
+              <button onClick={handleStatusSearch} disabled={loading || !ready}
                 className="flex items-center gap-2 px-5 py-3 bg-[#1ABC9C]/15 border border-[#1ABC9C]/20 rounded-xl text-[#1ABC9C] text-sm font-bold hover:bg-[#1ABC9C]/25 disabled:opacity-50 mb-4">
                 {loading ? <Loader2 size={14} className="animate-spin" /> : <Search size={14} />} Search PTR Status
               </button>
@@ -440,14 +450,14 @@ export default function AdminPostBookingPage() {
               {/* Same panel and endpoints the agent console and the customer see. Coupon
                   state is the airline's own verdict on whether a refund / void / reissue
                   is still possible, so it is worth checking before quoting one. */}
-              {bookingId.trim() ? (
+              {bookingId ? (
                 <div className="mt-2 border-t border-slate-700/50 pt-4">
                   <h4 className="text-white font-bold text-sm mb-3">Ticket &amp; Coupon Status</h4>
-                  <CouponStatusPanel bookingId={bookingId.trim()} showCreditNotes />
+                  <CouponStatusPanel bookingId={bookingId} showCreditNotes />
                 </div>
               ) : (
                 <p className="text-slate-500 text-xs mt-2 border-t border-slate-700/50 pt-4">
-                  Enter a Booking ID above to see per-segment coupon status and provider credit notes.
+                  Find a booking above to see per-segment coupon status and provider credit notes.
                 </p>
               )}
             </div>
@@ -464,7 +474,22 @@ export default function AdminPostBookingPage() {
           {/* Status Result */}
           {statusResult && (
             <div className="bg-slate-800/50 border border-slate-700/50 rounded-xl p-4">
-              <pre className="text-xs text-slate-400 font-mono overflow-x-auto max-h-80">{JSON.stringify(statusResult, null, 2)}</pre>
+              {statusResult.error ? (
+                <p className="text-red-300 text-sm">{statusResult.error}</p>
+              ) : (
+                <p className="text-slate-300 text-sm mb-2">
+                  Post-Ticketing Requests for <span className="font-bold text-white">{target?.fareMindRef}</span>
+                  {target?.airlinePnr ? <> · airline PNR <span className="font-mono">{target.airlinePnr}</span></> : null}
+                </p>
+              )}
+              {/* The provider payload carries internal identifiers, so it stays folded
+                  away: it is a diagnostic, not something an operator works from. */}
+              <details>
+                <summary className="text-[11px] text-slate-500 font-bold uppercase tracking-wider cursor-pointer select-none">
+                  Provider response (diagnostics)
+                </summary>
+                <pre className="text-xs text-slate-400 font-mono overflow-x-auto max-h-80 mt-2">{JSON.stringify(statusResult, null, 2)}</pre>
+              </details>
             </div>
           )}
         </div>
@@ -479,7 +504,7 @@ export default function AdminPostBookingPage() {
             <div className="flex justify-center py-8"><Loader2 size={16} className="animate-spin text-slate-500" /></div>
           ) : ptrRecords.length === 0 ? (
             <p className="text-slate-500 text-xs text-center py-8">
-              {bookingId ? 'No PTR records for this booking' : 'Enter a Booking ID to see history'}
+              {bookingId ? 'No PTR records for this booking' : 'Find a booking to see its history'}
             </p>
           ) : (
             <div className="space-y-2">
@@ -492,7 +517,7 @@ export default function AdminPostBookingPage() {
                     </span>
                   </div>
                   <div className="text-[10px] text-slate-500 space-y-0.5">
-                    <p>MFRef: <span className="text-slate-400 font-mono">{r.providerUniqueId}</span></p>
+                    <p>Booking: <span className="text-slate-400 font-mono">{target?.fareMindRef || '—'}</span></p>
                     {r.quoteTotalAmount && <p>Quote: <span className="text-amber-400 font-bold">{fmt(Number(r.quoteTotalAmount), r.quoteCurrency)}</span></p>}
                     {r.quoteRefundAmount && <p>Refund: <span className="text-emerald-400 font-bold">{fmt(Number(r.quoteRefundAmount), r.quoteCurrency)}</span></p>}
                     <p>By: {r.requestedBy} · {new Date(r.createdAt).toLocaleDateString()}</p>
