@@ -51,6 +51,72 @@ export function extractQuoteRows(res: any): any[] {
   return [];
 }
 
+/**
+ * Give up on a quote the airline never priced — visibly.
+ *
+ * Writes the outcome onto the booking timeline and raises one ticket carrying
+ * every reference support needs to ask Mystifly why this PNR returns no price.
+ * Without this the polling simply stops and nobody learns the request died.
+ */
+async function escalateUnpricedQuote(
+  rec: any, mfRef: string, providerPtrId: number, isVoid: boolean, providerStatus: string,
+): Promise<void> {
+  const booking = await prisma.masterBooking.findUnique({
+    where: { id: rec.bookingId },
+    select: {
+      masterBookingReference: true, airlinePnr: true, customerName: true,
+      customerEmail: true, totalAmount: true, currency: true,
+    },
+  }).catch(() => null);
+  if (!booking) return;
+  const kind = isVoid ? 'void' : 'refund';
+
+  await mbq.createBookingEvent({
+    bookingId: rec.bookingId,
+    eventType: 'QUOTE_NOT_PRICED',
+    eventTitle: `Airline did not price the ${kind} quote`,
+    eventDescription: `The ${kind} quote (provider PTR ${providerPtrId}) was accepted but never priced — last provider status ${providerStatus || 'unknown'}. Automatic polling has stopped. This booking can still be settled through Force Cancel + Refund.`,
+    actorType: 'system', actorName: 'PTR Quote Reconciliation',
+    payloadJson: { providerPtrId, mfRef, providerStatus },
+  }).catch(() => {});
+
+  // One ticket per booking — a second unpriced quote should join the first.
+  const open = await prisma.supportTicket.findFirst({
+    where: { bookingRef: booking.masterBookingReference, ticketType: 'REFUND_QUOTE_UNPRICED', status: { in: ['OPEN', 'IN_PROGRESS'] } },
+    select: { id: true },
+  }).catch(() => null);
+  if (open) return;
+
+  await prisma.supportTicket.create({
+    data: {
+      subject: `Airline returned no priced ${kind} quote: ${booking.masterBookingReference}`,
+      description: [
+        `The ${kind} quote for ${booking.masterBookingReference} was accepted by the provider but never priced.`,
+        '',
+        `FareMind ref:  ${booking.masterBookingReference}`,
+        `Airline PNR:   ${booking.airlinePnr ?? 'n/a'}`,
+        `Provider ref:  ${mfRef}`,
+        `Provider PTR:  ${providerPtrId}`,
+        `Last status:   ${providerStatus || 'unknown'}`,
+        `Booking value: ${booking.totalAmount} ${booking.currency}`,
+        '',
+        'Polling ran for 24 hours and has stopped. No refund has been issued and',
+        'none will be issued automatically — there is no amount to issue.',
+        '',
+        'Please ask Mystifly support why this reference returns no priced quote,',
+        'then settle it through Post-Booking Servicing → Force Cancel + Refund.',
+      ].join('\n'),
+      priority: 'HIGH', status: 'OPEN', category: 'Refund', channel: 'SYSTEM',
+      customerName: booking.customerName ?? '',
+      customerEmail: booking.customerEmail ?? '',
+      bookingRef: booking.masterBookingReference,
+      airlinePnr: booking.airlinePnr ?? undefined,
+      providerPnr: mfRef, providerBookingRef: mfRef,
+      ticketType: 'REFUND_QUOTE_UNPRICED', queue: 'CANCELLATION_SUPPORT',
+    } as any,
+  }).catch((e) => console.error('[PtrQuoteRecon] unpriced-quote ticket failed:', e?.message));
+}
+
 /** The provider PTR id as stored in a quote response we already hold. */
 export function ptrIdFromStoredResponse(raw: any): number | null {
   const v = raw?.Data?.PTRId ?? raw?.Data?.PtrId ?? raw?.PTRId ?? raw?.PtrId ?? null;
@@ -101,13 +167,18 @@ async function reconcileOne(rec: any): Promise<PtrQuoteReconResult> {
 
     if (!mine || !ANSWERED.test(resolution + ' ' + status)) {
       if (Date.now() - new Date(rec.createdAt).getTime() > MAX_AGE_MS) {
+        // Stop polling, and do not let it end in silence: the operator asked for
+        // a price a day ago and the airline has not given one. Say so on the
+        // booking and hand someone the detail needed to chase the provider.
+        const reason = 'The airline did not return a priced quote within 24 hours.';
         await prisma.postTicketingRequest.update({
           where: { id: rec.id },
           data: {
             status: 'FAILED', failedAt: new Date(), providerStatus: status || null,
-            failureReason: 'The airline did not price this quote within 24 hours. Request a fresh quote.',
+            failureReason: `${reason} This booking can still be settled through Force Cancel + Refund.`,
           },
         });
+        await escalateUnpricedQuote(rec, mfRef, providerPtrId, isVoid, status || resolution);
         return { ...base, outcome: 'expired' };
       }
       if (status && status !== rec.providerStatus) {

@@ -868,6 +868,28 @@ export class MystiflyAdapter implements IBookingProvider {
       });
     }
 
+    // ── The quote was accepted but not priced ──
+    // Mystifly answers a RefundQuote asynchronously: PTRStatus=InProcess,
+    // Resolution=QuoteRequested, RefundQuotes[] empty. Every reduce below then
+    // sums to zero — and because the fallback is `originalAmount - deductions`
+    // with deductions of zero, an unpriced quote produced a FULL refund and the
+    // customer flow would have Stripe-refunded the entire booking while the
+    // airline refunded less, or nothing.
+    //
+    // There is no safe number to infer here, so none is invented. Raising this
+    // routes the caller to its support-ticket path; Force Cancel + Refund remains
+    // available, where a human sets the amount.
+    if (refundQuotes.length === 0) {
+      throw new MystiflyCancellationError(
+        'The airline has accepted the refund request but has not returned a priced quote yet, so the refund amount is not yet known.',
+        {
+          errorType: 'UNKNOWN',
+          providerErrorCode: 'QUOTE_NOT_PRICED',
+          rawResponse: refundResult,
+        },
+      );
+    }
+
     // Extract refund breakdown from PTR response — Data.RefundQuotes[] carries
     // TotalRefundAmount / TotalRefundCharges / CancellationCharge in native currency.
     const refundCcy = refundQuotes[0]?.Currency || refundData?.Currency || refundData?.currency;

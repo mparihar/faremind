@@ -724,6 +724,35 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           .replace(/Request Cancellation to\s+\S+@\S+/gi, '')
           .replace(/\s+/g, ' ')
           .trim();
+        // ── The airline accepted the request but has not priced it ──
+        // Distinct from "not refundable": the ticket may well be refundable, we
+        // simply do not have an amount. Auto-refunding on a guess is the one
+        // thing that must not happen, so this ends the automated path and hands
+        // it to a person with the detail they need to chase the provider.
+        if (classified.providerErrorCode === 'QUOTE_NOT_PRICED') {
+          await createCancellationSupportTicket(
+            booking,
+            [
+              'The airline accepted the refund request but returned an EMPTY quote (PTRStatus InProcess, Resolution QuoteRequested), so no refund amount is available.',
+              '',
+              `FareMind ref: ${booking.masterBookingReference}`,
+              `Airline PNR: ${booking.airlinePnr ?? 'n/a'}`,
+              `Provider ref: ${providerPnr.providerOrderId}`,
+              `Fare rules say refundable: ${isRefundable} (cancellation fee ${primaryPnr?.cancellationFee ?? 'n/a'})`,
+              '',
+              'No Stripe refund has been issued and none will be issued automatically.',
+              'Please ask Mystifly support why this reference returns no priced refund quote,',
+              'then settle it through Post-Booking Servicing → Force Cancel + Refund.',
+            ].join('\n'),
+          );
+          return reply.code(422).send({
+            error: 'The airline has not returned a refund amount for this booking yet, so we cannot cancel it automatically. A support ticket has been raised and our team will confirm the refund with the airline and complete the cancellation for you.',
+            code: 'PROVIDER_QUOTE_NOT_PRICED',
+            supportTicketCreated: true,
+            isRetryable: false,
+          });
+        }
+
         const isNonRefundable = /not eligible for refund|non.?refundable|no refund/i.test(cleanMsg);
 
         if (isNonRefundable) {
