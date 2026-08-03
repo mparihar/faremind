@@ -206,7 +206,7 @@ async function lookupTraveller(
         })
       : await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-name', {
           method: 'POST', headers,
-          body: JSON.stringify({ firstName: by.firstName, lastName: by.lastName }),
+          body: JSON.stringify({ firstName: by.firstName, lastName: by.lastName, email: by.email }),
         });
     return res?.found && res.data ? res.data : null;
   } catch {
@@ -223,6 +223,13 @@ interface Props {
   passengerCount?: number;      // total count
   passengerType?: 'adult' | 'child' | 'infant';  // for age validation
   fieldOrder?: (keyof AiPassengerData)[];
+  /**
+   * The booker's email. Checkout stores it on every passenger of a booking,
+   * children included, so it is the family key: together with a first and last
+   * name it names exactly one person. A secondary traveller has no email field
+   * of their own, so recall for them needs this passed in.
+   */
+  contactEmail?: string;
   onFieldUpdate: (field: keyof AiPassengerData, value: string) => void;
   onComplete: () => void;
 }
@@ -236,6 +243,7 @@ export default function AiPassengerDetailCollector({
   passengerCount = 1,
   passengerType = 'adult',
   fieldOrder,
+  contactEmail,
   onFieldUpdate,
   onComplete,
 }: Props) {
@@ -323,8 +331,11 @@ export default function AiPassengerDetailCollector({
       const lastName = done.get('lastName') ?? passenger.lastName ?? '';
       const by = currentField === 'email'
         ? { email: normalized, firstName, lastName }
-        : { firstName, lastName };
-      if (by.email || (firstName.trim().length >= 2 && lastName.trim().length >= 2)) {
+        : { firstName, lastName, email: contactEmail };
+      const canLookUp = currentField === 'email'
+        ? !!by.email
+        : !!by.email && firstName.trim().length >= 2 && lastName.trim().length >= 2;
+      if (canLookUp) {
         setLookingUp(true);
         void lookupTraveller(by, sessionToken)
           .then((data) => {

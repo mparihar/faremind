@@ -459,15 +459,24 @@ async function lookupByEmail(
   }
 }
 
-async function lookupByName(firstName: string, lastName: string, sessionToken: string | null): Promise<LookupResult> {
-  // Signed-in only — see lookupByEmail. A name is guessable, so this is the
-  // more sensitive of the two.
+async function lookupByName(
+  firstName: string,
+  lastName: string,
+  sessionToken: string | null,
+  contactEmail?: string,
+): Promise<LookupResult> {
+  // Signed-in only — see lookupByEmail.
+  //
+  // The booker's email is the family key: it is stored on every passenger of a
+  // booking, children included, so email + first + last names exactly one
+  // person. Without it a name alone can collide across two different people.
   if (!sessionToken) return { found: false };
+  if (!contactEmail || !contactEmail.includes('@')) return { found: false };
   try {
     const res = await apiFetch<LookupResult>('/api/checkout/passengers/lookup-by-name', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', Authorization: `Bearer ${sessionToken}` },
-      body: JSON.stringify({ firstName, lastName }),
+      body: JSON.stringify({ firstName, lastName, email: contactEmail }),
     });
     return res;
   } catch {
@@ -646,9 +655,11 @@ interface PassengerCardProps {
   onChange: (field: keyof PassengerInfo, value: string) => void;
   onAutoFill: (data: Record<string, string>) => void;
   departureDate?: string;
+  /** The booker's email — the family key every passenger row carries. */
+  contactEmail?: string;
 }
 
-function PassengerCard({ pax, index, errors, touched, onChange, onAutoFill, departureDate }: PassengerCardProps) {
+function PassengerCard({ pax, index, errors, touched, onChange, onAutoFill, departureDate, contactEmail }: PassengerCardProps) {
   const sessionToken = useAuthStore((st) => st.sessionToken);
   const expectedTypeLabel = pax.type === 'adult' ? 'Adult' : pax.type === 'child' ? 'Child' : 'Infant';
   const [lookingUp, setLookingUp] = useState(false);
@@ -663,7 +674,7 @@ function PassengerCard({ pax, index, errors, touched, onChange, onAutoFill, depa
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setLookingUp(true);
-      const result = await lookupByName(fn, ln, sessionToken);
+      const result = await lookupByName(fn, ln, sessionToken, contactEmail);
       setLookingUp(false);
       if (result.found && result.data) {
         onAutoFill(result.data);
@@ -671,7 +682,7 @@ function PassengerCard({ pax, index, errors, touched, onChange, onAutoFill, depa
         setTimeout(() => setAutoFilled(false), 4000);
       }
     }, 300);
-  }, [pax.firstName, pax.lastName, onAutoFill, sessionToken]);
+  }, [pax.firstName, pax.lastName, onAutoFill, sessionToken, contactEmail]);
 
   // Check if DOB is a future date (show error immediately, no need for touched)
   const isFutureDob = (() => {
@@ -1043,6 +1054,7 @@ export default function PassengersPage() {
             onChange={(field, value) => handleChange(pax.id, field, value)}
             onAutoFill={(data) => handleAutoFill(pax.id, data)}
             departureDate={departureDate}
+            contactEmail={primaryPax?.email}
           />
         ))}
 

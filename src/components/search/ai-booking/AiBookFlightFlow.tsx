@@ -1110,6 +1110,10 @@ export default function AiBookFlightFlow({ flights, roundTripOptions, searchPass
               passengerCount={store.passengerCount}
               passengerType={store.passengerTypes?.[store.currentPassengerIndex] ?? 'adult'}
               fieldOrder={store.currentPassengerIndex > 0 ? SECONDARY_PASSENGER_FIELDS : undefined}
+              // Traveller 1's email — the family key every passenger row carries,
+              // so travellers 2+ (who have no email field) can be recalled by it
+              // plus their own name.
+              contactEmail={store.passengers[0]?.email}
               onFieldUpdate={handlePassengerFieldUpdate}
               onComplete={handlePassengerComplete}
             />

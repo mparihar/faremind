@@ -230,7 +230,8 @@ async function sessionUser(request: any): Promise<{ id: string; email: string } 
   // ── Passenger Lookup: by name (Traveler 2+ auto-fill) ─────────────────────
   fastify.post('/passengers/lookup-by-name', async (request, reply) => {
     try {
-      const { firstName, lastName } = request.body as { firstName?: string; lastName?: string };
+      const { firstName, lastName, email } = request.body as
+        { firstName?: string; lastName?: string; email?: string };
       if (!firstName || !lastName || firstName.length < 2 || lastName.length < 2) {
         return reply.code(400).send({ error: 'firstName and lastName (min 2 chars each) are required' });
       }
@@ -240,10 +241,22 @@ async function sessionUser(request: any): Promise<{ id: string; email: string } 
       const caller = await sessionUser(request);
       if (!caller) return { found: false };
 
+      // The booker's email is the family key: checkout writes it onto EVERY
+      // passenger on the booking, children included, because they have no
+      // address of their own. So one email plus a first and last name names
+      // exactly one person within that family, and every traveller — the booker
+      // and each child — is retrieved independently by the same three fields.
+      //
+      // Without it, a name alone can collide across two different people the
+      // caller has booked. Required, like the email lookup: no email, no recall.
+      const contactEmail = String(email ?? '').trim().toLowerCase();
+      if (!contactEmail || !contactEmail.includes('@')) return { found: false };
+
       const bookingPax = await prisma.bookingPassenger.findFirst({
         where: {
           firstName: { equals: firstName.trim(), mode: 'insensitive' },
           lastName: { equals: lastName.trim(), mode: 'insensitive' },
+          email: { equals: contactEmail, mode: 'insensitive' },
           booking: { userId: caller.id },
         },
         orderBy: { createdAt: 'desc' },
