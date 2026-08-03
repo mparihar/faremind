@@ -19,6 +19,7 @@ import { prisma } from '../lib/db';
 import { getProvider } from './provider-adapter';
 import { refundCollectionWithAudit } from './customer-collect';
 import { getTripDetailsResilient } from './mystifly';
+import { syncItineraryFromTripDetails } from './itinerary-sync';
 import * as mbq from '../lib/manage-booking-queries';
 import { fireNotification } from '../lib/notify';
 
@@ -85,6 +86,12 @@ export async function checkReissueSettlement(changeRequestId: string): Promise<v
             payloadJson: trip as any,
           },
         }).catch(() => null);
+
+        // Archiving the payload was the whole of the "refresh" — the stored
+        // segments still held the flights booked originally, so a settled
+        // reissue left the customer looking at flights that were no longer on
+        // their ticket. Apply it.
+        await syncItineraryFromTripDetails(cr.bookingId, cr.providerMfRef, trip);
       } catch (err) {
         console.error(`[reissue-settlement] TripDetails refresh failed for ${cr.providerMfRef}:`, err instanceof Error ? err.message : err);
       }
