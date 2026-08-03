@@ -28,6 +28,7 @@ import {
   Ticket,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { refundabilityLabel, refundabilityTone } from '@/lib/refundability';
 
 const STATUS_COLORS: Record<string, string> = {
   CONFIRMED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
@@ -912,17 +913,13 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                               {cancelQuote.cancellationMethod === 'VOID' ? 'Cancellation Summary' : 'Refund Estimate'}
                             </span>
                             <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                              cancelQuote.refundability === 'FULL_REFUND'
+                              refundabilityTone(cancelQuote.refundability) === 'good'
                                 ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                                : cancelQuote.refundability === 'PARTIAL_REFUND'
+                                : refundabilityTone(cancelQuote.refundability) === 'warn'
                                   ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                                   : 'bg-red-500/10 text-red-400 border border-red-500/20'
                             }`}>
-                              {cancelQuote.refundability === 'FULL_REFUND'
-                                ? 'Fully Refundable'
-                                : cancelQuote.refundability === 'PARTIAL_REFUND'
-                                  ? 'Partially Refundable'
-                                  : 'Non-refundable'}
+                              {refundabilityLabel(cancelQuote.refundability)}
                             </span>
                           </div>
                           <div className="px-4 py-3 space-y-2.5 text-sm">

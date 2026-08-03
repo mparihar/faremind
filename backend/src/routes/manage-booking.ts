@@ -638,13 +638,20 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         const serviceFee = await getCancelServiceFee(booking);
         const estRefund = Math.max(0, originalAmount - serviceFee);
         const ccy = booking.currency || 'USD';
+        // A VOID is not a REFUND. An unissued ticket comes back in full whatever
+        // the fare rules say, so the amount here is right — but reporting it as
+        // "FULL_REFUND" described the FARE, and on a non-refundable fare that is
+        // simply untrue. It also hid the downside: if the void cannot be
+        // completed, what remains is a refund the airline may not honour.
+        // fareRefundable is the provider's own verdict, snapshotted at book time.
+        const fareRefundable = primaryPnr?.refundable ?? false;
         return {
           success: true,
           pendingIssuance: true,
           cancellationAllowed: true,
           cancelAnywayAllowed: false,
-          // Voidable fare in-window (VoidingFee 0) → full refund minus FareMind fee.
-          refundability: estRefund > 0 ? 'FULL_REFUND' : 'NON_REFUNDABLE',
+          refundability: estRefund > 0 ? 'VOIDABLE' : 'NON_REFUNDABLE',
+          fareRefundable,
           cancellationType: 'VOID',
           originalAmount,
           currency: ccy,
@@ -665,7 +672,12 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           refundTo: 'ORIGINAL_PAYMENT',
           refundMethod: 'ORIGINAL_PAYMENT',
           refundTimeline: 'Refunded once the airline issues the ticket and it is voided (usually shortly)',
-          warningMessage: 'This ticket is still being issued by the airline, so it can\'t be voided this instant. If you confirm, we\'ll void it and refund you automatically as soon as issuance completes. Amounts are estimates until the void is executed.',
+          warningMessage: [
+            'This ticket is still being issued by the airline, so it can\'t be voided this instant. If you confirm, we\'ll void it and refund you automatically as soon as issuance completes. Amounts are estimates until the void is executed.',
+            fareRefundable
+              ? null
+              : 'This fare is non-refundable. The full amount comes back because the ticket is being voided rather than refunded — if the void cannot be completed in the airline\'s void window, the airline may return little or nothing.',
+          ].filter(Boolean).join(' '),
           pnrs,
           expiresAt: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
         };

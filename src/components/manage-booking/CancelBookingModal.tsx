@@ -8,6 +8,7 @@ import {
   Shield, ShieldAlert, CreditCard, Clock, ChevronRight,
 } from 'lucide-react';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
+import { refundabilityLabel, refundabilityTone } from '@/lib/refundability';
 
 interface Props {
   bookingId: string;
@@ -234,17 +235,13 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                     </p>
                     {cancelQuote.refundability && (
                       <span className={`text-[10px] font-bold px-2 py-0.5 rounded-full ${
-                        cancelQuote.refundability === 'FULL_REFUND'
+                        refundabilityTone(cancelQuote.refundability) === 'good'
                           ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20'
-                          : cancelQuote.refundability === 'PARTIAL_REFUND'
+                          : refundabilityTone(cancelQuote.refundability) === 'warn'
                             ? 'bg-amber-500/10 text-amber-400 border border-amber-500/20'
                             : 'bg-red-500/10 text-red-400 border border-red-500/20'
                       }`}>
-                        {cancelQuote.refundability === 'FULL_REFUND'
-                          ? 'Fully Refundable'
-                          : cancelQuote.refundability === 'PARTIAL_REFUND'
-                            ? 'Partially Refundable'
-                            : 'Non-refundable'}
+                        {refundabilityLabel(cancelQuote.refundability)}
                       </span>
                     )}
                   </div>

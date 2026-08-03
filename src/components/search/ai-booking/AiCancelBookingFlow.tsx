@@ -15,6 +15,7 @@ import {
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 import type { CancelQuoteData, CancelSuccessData } from '@/store/useManageBookingStore';
 import { fmtCurrency, formatBookingDate } from '@/lib/ai-manage-booking-utils';
+import { refundabilityLabel, refundabilityTone } from '@/lib/refundability';
 
 interface Props {
   bookingId: string;
@@ -224,17 +225,13 @@ export default function AiCancelBookingFlow({
               </p>
               {q.refundability && (
                 <span className={`text-[9px] font-bold px-1.5 py-0.5 rounded-full ${
-                  q.refundability === 'FULL_REFUND'
-                    ? 'bg-emerald-100 text-emerald-600'
-                    : q.refundability === 'PARTIAL_REFUND'
-                      ? 'bg-amber-100 text-amber-600'
-                      : 'bg-red-100 text-red-500'
-                }`}>
-                  {q.refundability === 'FULL_REFUND'
-                    ? 'Fully Refundable'
-                    : q.refundability === 'PARTIAL_REFUND'
-                      ? 'Partially Refundable'
-                      : 'Non-refundable'}
+                    refundabilityTone(q.refundability) === 'good'
+                      ? 'bg-emerald-100 text-emerald-600'
+                      : refundabilityTone(q.refundability) === 'warn'
+                        ? 'bg-amber-100 text-amber-600'
+                        : 'bg-red-100 text-red-500'
+                  }`}>
+                  {refundabilityLabel(q.refundability)}
                 </span>
               )}
             </div>
