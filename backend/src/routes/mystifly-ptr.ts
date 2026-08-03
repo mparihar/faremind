@@ -729,6 +729,8 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       if (ptrRecord) {
         await updatePtrRecord(ptrRecord.id, {
           status: quotePending ? 'QUOTE_PENDING' : 'QUOTE_RECEIVED',
+          providerRequestId: providerPtrId != null ? String(providerPtrId) : null,
+          providerStatus: quoteData?.PTRStatus ?? null,
           quoteTotalAmount: quotePending ? null : (totalRefund || null),
           quotePenaltyAmount: quotePending ? null : (totalVoidingFee || null),
           quoteRefundAmount: quotePending ? null : (totalRefund || null),
@@ -870,6 +872,10 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       if (ptrRecord) {
         await updatePtrRecord(ptrRecord.id, {
           status: quotePending ? 'QUOTE_PENDING' : 'QUOTE_RECEIVED',
+          // The provider PTR id is how the reconciler finds this quote again
+          // once the airline prices it.
+          providerRequestId: providerPtrId != null ? String(providerPtrId) : null,
+          providerStatus: quoteData?.PTRStatus ?? null,
           quoteTotalAmount: quotePending ? null : (totalRefund || null),
           quotePenaltyAmount: quotePending ? null : (totalCharges || null),
           quoteRefundAmount: quotePending ? null : (totalRefund || null),

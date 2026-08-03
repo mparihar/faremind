@@ -48,6 +48,7 @@ import adminCancellationQueuePlugin from './routes/admin-cancellation-queue';
 import { startLimitOrderScheduler, stopLimitOrderScheduler } from './workers/limit-order-cron';
 import { startRefundReconciliationScheduler, stopRefundReconciliationScheduler } from './workers/refund-reconciliation-cron';
 import { startTicketingReconciliationScheduler, stopTicketingReconciliationScheduler } from './workers/ticketing-reconciliation-cron';
+import { startPtrQuoteReconciliationScheduler, stopPtrQuoteReconciliationScheduler } from './workers/ptr-quote-reconciliation-cron';
 import { startReissueReconciliationScheduler, stopReissueReconciliationScheduler } from './workers/reissue-reconciliation-cron';
 import { startScheduleChangeScheduler, stopScheduleChangeScheduler } from './workers/schedule-change-cron';
 
@@ -190,12 +191,13 @@ async function main() {
       startLimitOrderScheduler();
       startRefundReconciliationScheduler();
       startTicketingReconciliationScheduler();
+      startPtrQuoteReconciliationScheduler();
       startReissueReconciliationScheduler();
       startScheduleChangeScheduler();
     }
 
     // Graceful shutdown
-    const shutdown = () => { stopLimitOrderScheduler(); stopRefundReconciliationScheduler(); stopTicketingReconciliationScheduler(); stopReissueReconciliationScheduler(); stopScheduleChangeScheduler(); fastify.close(); };
+    const shutdown = () => { stopLimitOrderScheduler(); stopRefundReconciliationScheduler(); stopTicketingReconciliationScheduler(); stopPtrQuoteReconciliationScheduler(); stopReissueReconciliationScheduler(); stopScheduleChangeScheduler(); fastify.close(); };
     process.on('SIGTERM', shutdown);
     process.on('SIGINT', shutdown);
   } catch (err) {
