@@ -10,7 +10,7 @@
  * live ones.
  */
 import assert from 'node:assert';
-import { mapProviderSegments } from './itinerary-sync';
+import { mapProviderSegments, pairByRoute } from './itinerary-sync';
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -60,7 +60,9 @@ test('dates come from the current itinerary, not the replaced one', () => {
   const [out] = mapProviderSegments(REISSUED);
   // The stored row says 14 Nov; the live ticket is 2 Dec. Getting this backwards
   // would send a passenger to the airport three weeks early.
-  assert.equal(out.departureDateTime!.getTime(), new Date('2026-12-02T05:25:00').getTime());
+  // Pinned to UTC: `new Date('2026-12-02T05:25:00')` would resolve against the
+  // runner's zone, so this assertion would pass in CI and drift in production.
+  assert.equal(out.departureDateTime!.toISOString(), '2026-12-02T05:25:00.000Z');
 });
 
 test('fields map across', () => {
@@ -111,6 +113,48 @@ test('items missing a flight number or airports are dropped', () => {
     ] } },
   ] } } } };
   assert.deepEqual(mapProviderSegments(partial).map((s) => s.flightNumber), ['1745']);
+});
+
+console.log('\npairing stored segments to the provider\'s');
+
+const st = (o: string, d: string, order = 0) =>
+  ({ originAirport: o, destinationAirport: d, segmentOrder: order });
+
+test('routes match regardless of the order rows come back in', () => {
+  // FMVTT9ZQ carries segmentOrder 0 on BOTH rows, so the query order is
+  // arbitrary — positional pairing would put the return flight on the outbound
+  // leg. Route matching does not care what order they arrive in.
+  const stored = [st('BOM', 'DEL'), st('DEL', 'BOM')];
+  const pairs = pairByRoute(stored, mapProviderSegments(REISSUED));
+  assert.ok(pairs, 'same routing must pair');
+  for (const [s, p] of pairs!) {
+    assert.equal(s.originAirport, p.originAirport);
+    assert.equal(s.destinationAirport, p.destinationAirport);
+  }
+});
+
+test('a genuine re-routing declines to match, so the caller falls back', () => {
+  const stored = [st('DEL', 'BOM'), st('BOM', 'DEL')];
+  const rerouted = mapProviderSegments({ Data: { TripDetailsResult: { TravelItinerary: { Itineraries: [
+    { Type: 'TravelItinerary', ItineraryInfo: { ReservationItems: [
+      seg('900', 'DEL', 'GOI', '2026-12-02T05:25:00', '2026-12-02T07:50:00'),
+      seg('901', 'GOI', 'DEL', '2026-12-10T01:00:00', '2026-12-10T03:15:00'),
+    ] } },
+  ] } } } });
+  assert.equal(pairByRoute(stored, rerouted), null);
+});
+
+test('a repeated route consumes each stored row once', () => {
+  const stored = [st('DEL', 'BOM', 0), st('DEL', 'BOM', 1)];
+  const twice = mapProviderSegments({ Data: { TripDetailsResult: { TravelItinerary: { Itineraries: [
+    { Type: 'TravelItinerary', ItineraryInfo: { ReservationItems: [
+      seg('11', 'DEL', 'BOM', '2026-12-02T05:25:00', '2026-12-02T07:50:00'),
+      seg('22', 'DEL', 'BOM', '2026-12-05T05:25:00', '2026-12-05T07:50:00'),
+    ] } },
+  ] } } } });
+  const pairs = pairByRoute(stored, twice);
+  assert.equal(pairs!.length, 2);
+  assert.notEqual(pairs![0][0], pairs![1][0], 'a stored row must not be paired twice');
 });
 
 console.log(`\n${passed} passed${process.exitCode ? ' — FAILURES ABOVE' : ''}`);

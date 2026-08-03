@@ -86,7 +86,18 @@ function reservationItems(trip: any): any[] {
 function toDate(v: unknown): Date | null {
   const s = String(v ?? '').trim();
   if (!s) return null;
-  const d = new Date(s);
+  // The provider sends naive local airport time with no offset. Stored rows were
+  // written by `new Date(s)` on a UTC server, so the numerals landed as UTC —
+  // "2026-11-14T12:00:00" is stored 12:00Z. Repeating `new Date(s)` here would
+  // instead resolve against whatever zone the process runs in, and a resync run
+  // from a UTC-6 machine would move every departure six hours. Pin it to UTC so
+  // the same numerals are produced wherever this runs.
+  //
+  // Display-side timezone correctness is a separate concern and already handled
+  // by services/airport-timezones + journey-time; this only has to reproduce the
+  // convention the stored rows use.
+  const iso = /[zZ]|[+-]\d{2}:\d{2}$/.test(s) ? s : `${s}Z`;
+  const d = new Date(iso);
   return Number.isNaN(d.getTime()) ? null : d;
 }
 
@@ -121,9 +132,13 @@ export async function syncItineraryFromTripDetails(
     const providerSegs = mapProviderSegments(payload);
     if (providerSegs.length === 0) return { ...none, reason: 'provider returned no segments' };
 
+    // segmentOrder is not always distinct — FMVTT9ZQ carries 0 on both rows — so
+    // ordering by it alone returns an arbitrary sequence and positional pairing
+    // becomes a coin toss. Break the tie on departure so the order is at least
+    // deterministic, then prefer matching on route below.
     const stored = await prisma.bookingSegment.findMany({
       where: { bookingId },
-      orderBy: { segmentOrder: 'asc' },
+      orderBy: [{ segmentOrder: 'asc' }, { departureDateTime: 'asc' }],
     });
     if (stored.length === 0) return { ...none, reason: 'no stored segments' };
 
@@ -142,10 +157,15 @@ export async function syncItineraryFromTripDetails(
       return { ...none, reason };
     }
 
+    // Pair on route where the two sides describe the same set of legs — a
+    // reissue usually moves the dates and leaves the routing alone, and route
+    // matching is immune to the ordering problem above. Positional pairing is
+    // the fallback, for a genuine re-routing.
+    const pairs = pairByRoute(stored, providerSegs)
+      ?? stored.map((s, i) => [s, providerSegs[i]] as const);
+
     const diffs: SegmentDiff[] = [];
-    for (let i = 0; i < stored.length; i++) {
-      const s = stored[i];
-      const p = providerSegs[i];
+    for (const [s, p] of pairs) {
       const data: Record<string, unknown> = {};
 
       if (p.flightNumber && p.flightNumber !== s.flightNumber) {
@@ -205,6 +225,36 @@ export async function syncItineraryFromTripDetails(
     console.error(`[itinerary-sync] ${mfRef} failed:`, (err as Error).message);
     return { ...none, reason: (err as Error).message };
   }
+}
+
+/**
+ * Match provider segments to stored ones by route.
+ *
+ * Returns null when the two sides do not describe the same multiset of legs —
+ * i.e. the trip really was re-routed — leaving the caller to fall back to
+ * position.
+ */
+export function pairByRoute(
+  stored: any[],
+  provider: ProviderSegment[],
+): Array<readonly [any, ProviderSegment]> | null {
+  const key = (o: string, d: string) => `${o}->${d}`;
+  const pool = new Map<string, any[]>();
+  for (const s of stored) {
+    const k = key(s.originAirport, s.destinationAirport);
+    if (!pool.has(k)) pool.set(k, []);
+    pool.get(k)!.push(s);
+  }
+
+  const pairs: Array<readonly [any, ProviderSegment]> = [];
+  for (const p of provider) {
+    const bucket = pool.get(key(p.originAirport, p.destinationAirport));
+    if (!bucket || bucket.length === 0) return null;   // route not present — re-routed
+    pairs.push([bucket.shift()!, p] as const);
+  }
+  // Every stored segment must have been consumed, or the sides disagree.
+  for (const remaining of pool.values()) if (remaining.length > 0) return null;
+  return pairs;
 }
 
 /** Keep journey-level origin/destination/times aligned with their segments. */

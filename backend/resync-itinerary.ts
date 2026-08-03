@@ -20,13 +20,18 @@ async function main() {
   if (!b?.mystiflyMfRef) { console.log(`${ref}: not found or no provider reference`); return; }
 
   const trip = await getTripDetailsResilient(b.mystiflyMfRef);
-  const provider = mapProviderSegments(trip);
+  // Both sides sorted by departure: segmentOrder is not always distinct, so the
+  // stored order alone made an in-sync booking read as mismatched.
+  const provider = [...mapProviderSegments(trip)].sort(
+    (x, y) => (x.departureDateTime?.getTime() ?? 0) - (y.departureDateTime?.getTime() ?? 0));
+  const storedSorted = [...b.segments].sort(
+    (x, y) => x.departureDateTime.getTime() - y.departureDateTime.getTime());
 
   console.log(`${ref}  MF=${b.mystiflyMfRef}  pnr=${b.airlinePnr}\n`);
   console.log('ord  STORED                                  PROVIDER');
-  const rows = Math.max(b.segments.length, provider.length);
+  const rows = Math.max(storedSorted.length, provider.length);
   for (let i = 0; i < rows; i++) {
-    const s = b.segments[i];
+    const s = storedSorted[i];
     const p = provider[i];
     const L = s ? `${s.airlineCode}${s.flightNumber} ${s.originAirport}->${s.destinationAirport} ${s.departureDateTime.toISOString()}` : '—';
     const R = p ? `${p.airlineCode}${p.flightNumber} ${p.originAirport}->${p.destinationAirport} ${p.departureDateTime?.toISOString()}` : '—';
