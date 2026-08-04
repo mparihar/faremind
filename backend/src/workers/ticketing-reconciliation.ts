@@ -28,10 +28,10 @@ import {
   mapProviderBookingStatus,
   mapProviderTicketingStatus,
   shouldPollStatus,
-  getNextPollIntervalMs,
   SLOW_ALERT_AGE_MS,
   MAX_POLL_AGE_MS,
 } from '../providers/mystifly';
+import { getTicketingPollFrequencyMs } from '../lib/ticketing-poll-config';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -149,7 +149,7 @@ export async function runTicketingReconciliation(): Promise<ReconciliationResult
           errorMessage: error.message,
           pollCount: record.pollCount + 1,
           lastPollAt: now,
-          nextPollAt: new Date(now.getTime() + getNextPollIntervalMs(record.pollCount + 1)),
+          nextPollAt: new Date(now.getTime() + await getTicketingPollFrequencyMs()),
         },
       });
     }
@@ -422,8 +422,8 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     }).catch(() => {});
   }
 
-  // ── Case D: Schedule next poll (fixed 20s); keep the record active ──
-  const nextInterval = getNextPollIntervalMs(newPollCount);
+  // ── Case D: Schedule next poll (admin-configurable frequency); keep the record active ──
+  const nextInterval = await getTicketingPollFrequencyMs();
   const nextPollAt = new Date(now.getTime() + nextInterval);
 
   await prisma.ticketingReconciliation.update({

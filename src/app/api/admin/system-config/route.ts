@@ -45,6 +45,17 @@ export const PUT = withAdmin(async (req: NextRequest, { admin }) => {
       }
     }
 
+    // Validate ticketing reconciliation poll frequency (minutes)
+    if (key === 'ticketing_poll_frequency_minutes') {
+      const minutes = parseInt(value, 10);
+      if (isNaN(minutes) || minutes < 1 || minutes > 1440) {
+        return NextResponse.json(
+          { error: 'ticketing_poll_frequency_minutes must be between 1 and 1440 (24h)' },
+          { status: 400 },
+        );
+      }
+    }
+
     // Validate rate limit config keys
     if (key === 'rate_limit_enabled') {
       if (value !== 'true' && value !== 'false') {

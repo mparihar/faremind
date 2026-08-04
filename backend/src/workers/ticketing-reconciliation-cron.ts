@@ -6,37 +6,50 @@
  * TripDetails) for bookings left in TICKETING_PENDING and resolves them to
  * TICKETED / NOT_BOOKED, or escalates to manual review after MAX_AUTO_POLLS.
  *
- * Per-record cadence (backoff: 0s → 15s → 30s → 60s → 2m → 5m → 10m) is managed
- * inside the worker via each record's nextPollAt; this cron just fires often
- * enough to pick up records that are due.
+ * Cadence is admin-configurable via SystemConfig `ticketing_poll_frequency_minutes`
+ * (default 3 hours; see lib/ticketing-poll-config.ts). The cron self-schedules at
+ * that interval — it re-reads the config after every cycle, so a change from the
+ * admin console takes effect on the next cycle without a redeploy. Each record's
+ * nextPollAt uses the same value inside the worker.
  *
  * Registered in the Fastify startup lifecycle alongside the other schedulers.
  * Opt out with DISABLE_SCHEDULERS=true (e.g. local runs against the prod DB).
  */
 import { runTicketingReconciliation } from './ticketing-reconciliation';
+import { getTicketingPollFrequencyMs } from '../lib/ticketing-poll-config';
 
-let schedulerInterval: ReturnType<typeof setInterval> | null = null;
-const DEFAULT_INTERVAL_MS = 20 * 1000; // 20 seconds — poll TripDetails every 20s
+let schedulerTimeout: ReturnType<typeof setTimeout> | null = null;
+let stopped = false;
 
-export function startTicketingReconciliationScheduler(intervalMs: number = DEFAULT_INTERVAL_MS): void {
-  if (schedulerInterval) {
+export function startTicketingReconciliationScheduler(): void {
+  if (schedulerTimeout || (stopped === false && schedulerTimeout)) {
     console.log('[ticketing-reconciliation-cron] Scheduler already running.');
     return;
   }
+  stopped = false;
 
-  console.log(`[ticketing-reconciliation-cron] Starting scheduler (interval: ${intervalMs / 1000}s)`);
+  console.log('[ticketing-reconciliation-cron] Starting scheduler (interval: admin-configurable, default 3h)');
 
-  // First run shortly after boot (don't block startup).
-  setTimeout(runCycle, 20_000);
+  // First run shortly after boot (don't block startup), then self-reschedule
+  // at the configured interval.
+  schedulerTimeout = setTimeout(runAndReschedule, 30_000);
+}
 
-  // Then poll on the interval.
-  schedulerInterval = setInterval(runCycle, intervalMs);
+async function runAndReschedule(): Promise<void> {
+  if (stopped) return;
+  await runCycle();
+  if (stopped) return;
+
+  const intervalMs = await getTicketingPollFrequencyMs();
+  console.log(`[ticketing-reconciliation-cron] Next cycle in ${Math.round(intervalMs / 60_000)} min`);
+  schedulerTimeout = setTimeout(runAndReschedule, intervalMs);
 }
 
 export function stopTicketingReconciliationScheduler(): void {
-  if (schedulerInterval) {
-    clearInterval(schedulerInterval);
-    schedulerInterval = null;
+  stopped = true;
+  if (schedulerTimeout) {
+    clearTimeout(schedulerTimeout);
+    schedulerTimeout = null;
     console.log('[ticketing-reconciliation-cron] Scheduler stopped.');
   }
 }

@@ -192,6 +192,163 @@ function BookingTimerConfig() {
   );
 }
 
+// ─── TripDetails Poll Frequency Card ─────────────────────────────────────────
+
+function TicketingPollConfig() {
+  const DEFAULT_MIN = 180; // 3 hours
+  const [minutes, setMinutes] = useState(DEFAULT_MIN);
+  const [originalMinutes, setOriginalMinutes] = useState(DEFAULT_MIN);
+  const [updatedBy, setUpdatedBy] = useState<string | null>(null);
+  const [updatedAt, setUpdatedAt] = useState<string | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [saved, setSaved] = useState(false);
+  const [error, setError] = useState('');
+
+  async function loadConfig() {
+    setLoading(true);
+    try {
+      const res = await adminFetch('/api/admin/system-config');
+      if (!res.ok) { setLoading(false); return; }
+      const data = await res.json();
+      const config = data.configs?.find((c: any) => c.key === 'ticketing_poll_frequency_minutes');
+      if (config) {
+        const val = parseInt(config.value, 10);
+        setMinutes(isNaN(val) ? DEFAULT_MIN : val);
+        setOriginalMinutes(isNaN(val) ? DEFAULT_MIN : val);
+        setUpdatedBy(config.updatedBy ?? null);
+        setUpdatedAt(config.updatedAt ?? null);
+      }
+    } catch {
+      // ignore
+    }
+    setLoading(false);
+  }
+
+  useEffect(() => { loadConfig(); }, []);
+
+  async function saveConfig() {
+    setError('');
+    setSaving(true);
+    setSaved(false);
+    try {
+      const res = await adminFetch('/api/admin/system-config', {
+        method: 'PUT',
+        body: JSON.stringify({
+          key: 'ticketing_poll_frequency_minutes',
+          value: String(minutes),
+          description: 'How often the reconciliation worker polls Mystifly (AirTicketOrderStatus + TripDetails) for pending-ticket bookings, in minutes',
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setError(data.error ?? 'Failed to save');
+        setSaving(false);
+        return;
+      }
+      setOriginalMinutes(minutes);
+      setUpdatedBy(data.config?.updatedBy ?? null);
+      setUpdatedAt(data.config?.updatedAt ?? null);
+      setSaved(true);
+      setTimeout(() => setSaved(false), 3000);
+    } catch (err: any) {
+      setError(err.message ?? 'Failed to save');
+    }
+    setSaving(false);
+  }
+
+  const hasChanged = minutes !== originalMinutes;
+  const hoursLabel = (minutes / 60).toFixed(minutes % 60 === 0 ? 0 : 1);
+
+  if (loading) {
+    return (
+      <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl p-6">
+        <div className="flex items-center justify-center py-6">
+          <RefreshCw size={20} className="text-[#1ABC9C] animate-spin" />
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
+      <div className="px-5 py-4 border-b border-slate-700/50 flex items-center gap-3">
+        <RefreshCw size={16} className="text-sky-400" />
+        <h2 className="text-white font-bold text-sm">TripDetails Poll Frequency</h2>
+      </div>
+
+      <div className="px-5 py-5 space-y-5">
+        <p className="text-xs text-slate-400 leading-relaxed">
+          How often the reconciliation worker polls the airline (AirTicketOrderStatus + TripDetails)
+          for bookings still awaiting ticketing. Lower values ticket faster but call TripDetails much
+          more often. Changes take effect on the next cycle without a redeploy.
+        </p>
+
+        <div className="flex items-end gap-4">
+          <div className="flex-1 max-w-xs">
+            <label className="block text-xs font-bold text-slate-300 mb-2">
+              Poll Interval
+            </label>
+            <div className="flex items-center gap-3">
+              <input
+                type="number"
+                min={1}
+                max={1440}
+                value={minutes}
+                onChange={e => {
+                  const v = parseInt(e.target.value, 10);
+                  if (!isNaN(v)) setMinutes(Math.min(1440, Math.max(1, v)));
+                }}
+                className="w-24 px-3 py-2.5 bg-slate-700 border border-slate-600 rounded-xl text-white text-sm font-bold text-center focus:outline-none focus:border-[#1ABC9C] transition-all tabular-nums"
+              />
+              <span className="text-slate-400 text-sm font-medium">minutes</span>
+              <span className="text-slate-500 text-xs">≈ {hoursLabel} h</span>
+            </div>
+            <p className="text-[10px] text-slate-500 mt-1.5">
+              Min: 1 min · Max: 1440 min (24h) · Default: 180 min (3h)
+            </p>
+          </div>
+
+          <button
+            onClick={saveConfig}
+            disabled={saving || !hasChanged}
+            className={`flex items-center gap-2 px-4 py-2.5 rounded-xl text-sm font-bold transition-all ${
+              saved
+                ? 'bg-emerald-500/15 text-emerald-400 border border-emerald-500/30'
+                : hasChanged
+                  ? 'bg-[#1ABC9C] hover:bg-[#1ABC9C]/90 text-white'
+                  : 'bg-slate-700 text-slate-500 cursor-not-allowed'
+            }`}
+          >
+            {saved ? (
+              <><Check size={14} /> Saved</>
+            ) : saving ? (
+              <><RefreshCw size={14} className="animate-spin" /> Saving…</>
+            ) : (
+              <><Save size={14} /> Save</>
+            )}
+          </button>
+        </div>
+
+        {error && (
+          <p className="text-red-400 text-sm bg-red-400/10 border border-red-400/20 rounded-lg px-3 py-2">
+            {error}
+          </p>
+        )}
+
+        {updatedBy && (
+          <div className="flex items-center gap-2 text-[11px] text-slate-500 pt-1">
+            <span>Last updated by <span className="text-slate-400 font-medium">{updatedBy}</span></span>
+            {updatedAt && (
+              <span>· {new Date(updatedAt).toLocaleString()}</span>
+            )}
+          </div>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── Rate Limit Config Card ──────────────────────────────────────────────────
 
 /**
@@ -515,6 +672,11 @@ export default function SettingsPage() {
       {/* Booking Timer Configuration */}
       <div className="mb-6">
         <BookingTimerConfig />
+      </div>
+
+      {/* TripDetails Poll Frequency */}
+      <div className="mb-6">
+        <TicketingPollConfig />
       </div>
 
       {/* Rate Limit Configuration */}

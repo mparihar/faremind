@@ -158,8 +158,10 @@ export function shouldPollStatus(rawStatus: string | null | undefined): boolean 
 }
 
 /**
- * Fixed 20-second poll cadence — poll aggressively (AirTicketOrderStatus +
- * TripDetails) every 20s until MAX_POLL_AGE_MS (24h). No backoff.
+ * @deprecated Superseded by the admin-configurable poll frequency in
+ * `lib/ticketing-poll-config.ts` (`getTicketingPollFrequencyMs`, default 3h).
+ * The reconciliation worker and cron now read that value; this constant is
+ * retained only for backward compatibility with any external callers.
  */
 export function getNextPollIntervalMs(_pollCount: number): number {
   return 20_000; // 20 seconds
