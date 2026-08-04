@@ -54,7 +54,12 @@ export type MystiflyRequestOptions = 'Fifty' | 'Hundred' | 'TwoHundred' | 'FiveH
 
 export type MystiflyGender = 'M' | 'F' | 'U';
 
-export type MystiflyPassengerTitle = 'MR' | 'SIR' | 'LORD' | 'MRS' | 'LADY' | 'MISS' | 'MSTR' | 'INF' | 'MS';
+// Titles used on booking passenger tickets (Title-case, matching the servicing/
+// PTR path in lib/ptr-passengers.ts):
+//   Adult:  Mr / Mrs / Ms / Miss   (we derive Mr | Ms from gender)
+//   Child:  Mstr (male) / Miss (female)
+//   Infant: Mstr (male) / Miss (female)
+export type MystiflyPassengerTitle = 'Mr' | 'Mrs' | 'Ms' | 'Miss' | 'Mstr';
 
 // ── Search Request ──
 

@@ -83,21 +83,23 @@ function toMystiflyGender(gender: string): MystiflyGender {
 }
 
 /**
- * Derive Mystifly passenger title (honorific) from gender and type.
+ * Derive the Mystifly passenger title (honorific) from gender and type.
+ * Title-case, to match the servicing/PTR path (lib/ptr-passengers.ts) so a
+ * booking and its later reissue/cancel carry identical titles.
  *
- * Infants and children are both minors and use the SAME gender-based
- * honorifics: MSTR (Master) for male, MISS for female.
- *
- * 'INF' is a passenger *type* code (see toMystiflyPaxType) — it is NOT a valid
- * title. Sending it as PassengerTitle puts an incorrect title on the infant's
- * ticket, so infants fall through to the same MSTR/MISS mapping as children.
+ *   Adult:  Mr (male) / Ms (female)   — Mrs/Miss need marital status we don't
+ *                                        collect, so Ms is the neutral female title
+ *   Child:  Mstr (male) / Miss (female)
+ *   Infant: Mstr (male) / Miss (female)  — infants use the same honorifics as
+ *           children; 'INF' is a passenger *type* code, NOT a valid title.
  */
 function toMystiflyTitle(gender: string, type: string): MystiflyPassengerTitle {
   const t = type?.toLowerCase();
+  const female = gender?.toLowerCase() === 'female';
   if (t === 'infant' || t === 'child') {
-    return gender?.toLowerCase() === 'female' ? 'MISS' : 'MSTR';
+    return female ? 'Miss' : 'Mstr';
   }
-  return gender?.toLowerCase() === 'female' ? 'MS' : 'MR';
+  return female ? 'Ms' : 'Mr';
 }
 
 /**
