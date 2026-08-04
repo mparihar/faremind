@@ -1,3 +1,5 @@
+import { passengerTitleCased } from './passenger-title';
+
 /**
  * Build the `passengers` array required by every Mystifly Post-Ticketing Request
  * (VoidQuote / Void / RefundQuote / Refund / ReIssueQuote). Per Mystifly's PTR
@@ -24,10 +26,9 @@ function paxType(raw?: string): 'ADT' | 'CHD' | 'INF' {
 }
 
 function titleFor(p: any, type: 'ADT' | 'CHD' | 'INF'): string {
-  // BookingPassenger has no title; derive from gender (child/infant → Mstr/Miss).
-  const g = (p.gender || '').toLowerCase();
-  if (type !== 'ADT') return g === 'female' || g === 'f' ? 'Miss' : 'Mstr';
-  return g === 'female' || g === 'f' ? 'Ms' : 'Mr';
+  // BookingPassenger has no title; derive it. Shared with the booking path so a
+  // PTR cannot address a passenger differently from how they were ticketed.
+  return passengerTitleCased(p.gender, type);
 }
 
 export function buildPtrPassengers(booking: any): PtrPassenger[] {

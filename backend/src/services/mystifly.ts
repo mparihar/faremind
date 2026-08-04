@@ -22,6 +22,7 @@
 
 import type { PtrPassenger } from '../lib/ptr-passengers';
 import * as crypto from 'crypto';
+import { passengerTitleCased } from '../lib/passenger-title';
 
 // ═══════════════════════════════════════════════
 // Configuration
@@ -1370,7 +1371,8 @@ export async function reissueQuote(
       firstName: p.firstName,
       lastName: p.lastName,
       passengerType: p.passengerType,
-      title: (p as any).title || 'Mr',
+      // Defaulting to 'Mr' addressed every child and infant as an adult male.
+      title: (p as any).title || passengerTitleCased((p as any).gender, p.passengerType),
     })),
     PaymentCardInfo: null,
     PreferenceOption: 0,

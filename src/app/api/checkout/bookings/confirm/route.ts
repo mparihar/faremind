@@ -350,6 +350,18 @@ async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
   }
 }
 
+/**
+ * Duffel passenger title. Its enum is mr | ms | mrs | miss | dr — there is no
+ * "mstr", so a male child or infant falls back to "mr"; a female one is "miss".
+ */
+function duffelTitle(gender?: string | null, type?: string | null): 'mr' | 'ms' | 'miss' {
+  const t = String(type ?? 'adult').trim().toLowerCase();
+  const female = String(gender ?? '').trim().toLowerCase().startsWith('f');
+  const isMinor = t.startsWith('child') || t.startsWith('chd') || t.startsWith('inf');
+  if (isMinor) return female ? 'miss' : 'mr';
+  return female ? 'ms' : 'mr';
+}
+
 export async function POST(req: NextRequest) {
   try {
     const body = await req.json();
@@ -887,7 +899,12 @@ export async function POST(req: NextRequest) {
             gender: p.gender === 'female' ? 'f' : 'm',
             email: paxEmail,
             phone_number: paxPhone,
-            title: p.gender === 'female' ? 'ms' : 'mr',
+            // Duffel's title enum is mr/ms/mrs/miss/dr — it has no "mstr", so a
+            // male child or infant can only be "mr". A female one must still be
+            // "miss", not "ms": deriving from gender alone addressed every child
+            // and infant as an adult. Mystifly's equivalent lives in
+            // backend/src/lib/passenger-title.ts.
+            title: duffelTitle(p.gender, p.type),
           };
         });
 

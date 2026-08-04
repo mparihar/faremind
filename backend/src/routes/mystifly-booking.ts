@@ -20,6 +20,7 @@ import { FastifyPluginAsync } from 'fastify';
 import * as crypto from 'crypto';
 import * as mystifly from '../services/mystifly';
 import { resolveMystiflyRef } from '../lib/booking-lookup';
+import { passengerTitle } from '../lib/passenger-title';
 import type {
   MystiflyAirTraveler,
   MystiflyPassengerType,
@@ -93,13 +94,14 @@ function toMystiflyGender(gender: string): MystiflyGender {
  *   Infant: Mstr (male) / Miss (female)  — infants use the same honorifics as
  *           children; 'INF' is a passenger *type* code, NOT a valid title.
  */
+/**
+ * Returning the literal `INF` for an infant was wrong: Mystifly accepts it and
+ * then stores a title of its own choosing, so FM83B9T2's female infant was
+ * ticketed `MS` when she should be `MISS`. An infant takes a child's title.
+ * See lib/passenger-title.ts — the single source for all four call sites.
+ */
 function toMystiflyTitle(gender: string, type: string): MystiflyPassengerTitle {
-  const t = type?.toLowerCase();
-  const female = gender?.toLowerCase() === 'female';
-  if (t === 'infant' || t === 'child') {
-    return female ? 'Miss' : 'Mstr';
-  }
-  return female ? 'Ms' : 'Mr';
+  return passengerTitle(gender, type);
 }
 
 /**
