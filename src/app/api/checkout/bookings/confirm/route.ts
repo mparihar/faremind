@@ -1233,7 +1233,9 @@ export async function POST(req: NextRequest) {
           const res = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ fareSourceCode: candidate }),
+            // skipCache:true — the final revalidation before BookFlight must always
+            // be a fresh Mystifly call so the FSC is guaranteed non-expired.
+            body: JSON.stringify({ fareSourceCode: candidate, skipCache: true, source: 'confirm' }),
           });
           const data = await res.json().catch(() => ({}));
 
@@ -1568,7 +1570,7 @@ export async function POST(req: NextRequest) {
           const tripRes = await fetch(`${BACKEND_URL}/api/mystifly/trip-details`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ uniqueId: mystiflyBookingResult.uniqueId }),
+            body: JSON.stringify({ uniqueId: mystiflyBookingResult.uniqueId, source: 'confirm' }),
           });
           const tripData = await tripRes.json();
 

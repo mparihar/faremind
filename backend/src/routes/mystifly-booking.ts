@@ -83,11 +83,18 @@ function toMystiflyGender(gender: string): MystiflyGender {
 }
 
 /**
- * Derive Mystifly passenger title from gender and type.
+ * Derive Mystifly passenger title (honorific) from gender and type.
+ *
+ * Infants and children are both minors and use the SAME gender-based
+ * honorifics: MSTR (Master) for male, MISS for female.
+ *
+ * 'INF' is a passenger *type* code (see toMystiflyPaxType) — it is NOT a valid
+ * title. Sending it as PassengerTitle puts an incorrect title on the infant's
+ * ticket, so infants fall through to the same MSTR/MISS mapping as children.
  */
 function toMystiflyTitle(gender: string, type: string): MystiflyPassengerTitle {
-  if (type?.toLowerCase() === 'infant') return 'INF';
-  if (type?.toLowerCase() === 'child') {
+  const t = type?.toLowerCase();
+  if (t === 'infant' || t === 'child') {
     return gender?.toLowerCase() === 'female' ? 'MISS' : 'MSTR';
   }
   return gender?.toLowerCase() === 'female' ? 'MS' : 'MR';
@@ -224,6 +231,55 @@ function unknownReference(reply: any, input: string) {
 }
 
 // ═══════════════════════════════════════════════
+// Revalidation Cache
+// ═══════════════════════════════════════════════
+// Revalidate mints a fresh FareSourceCode with a short TTL. The checkout hits
+// this endpoint at multiple stages (meal step, payment-page load) for the SAME
+// FSC. We briefly cache a successful, still-valid revalidation keyed by the
+// input FSC so those stages share ONE Mystifly call instead of one each.
+//
+// TTL is 3 min — comfortably shorter than the ~5 min private-fare TTL, so a
+// cache hit is always still bookable, and a payment-load more than ~3 min after
+// the meal step re-revalidates automatically.
+//
+// Confirm (the final step immediately before BookFlight) passes skipCache:true
+// so it ALWAYS gets a fresh FSC — its behaviour is unchanged.
+
+const REVALIDATION_CACHE_TTL_MS = 3 * 60 * 1000;
+const REVALIDATION_CACHE_MAX_ENTRIES = 1000;
+
+interface RevalidationCacheEntry {
+  data: Record<string, unknown>;
+  expiresAt: number;
+}
+
+const revalidationCache = new Map<string, RevalidationCacheEntry>();
+
+function getCachedRevalidation(fareSourceCode: string): Record<string, unknown> | null {
+  const entry = revalidationCache.get(fareSourceCode);
+  if (!entry) return null;
+  if (Date.now() > entry.expiresAt) {
+    revalidationCache.delete(fareSourceCode);
+    return null;
+  }
+  return entry.data;
+}
+
+function setCachedRevalidation(fareSourceCode: string, data: Record<string, unknown>): void {
+  // Lazy eviction: sweep expired entries when the map grows large.
+  if (revalidationCache.size >= REVALIDATION_CACHE_MAX_ENTRIES) {
+    const now = Date.now();
+    for (const [key, entry] of revalidationCache) {
+      if (now > entry.expiresAt) revalidationCache.delete(key);
+    }
+  }
+  revalidationCache.set(fareSourceCode, {
+    data,
+    expiresAt: Date.now() + REVALIDATION_CACHE_TTL_MS,
+  });
+}
+
+// ═══════════════════════════════════════════════
 // Routes
 // ═══════════════════════════════════════════════
 
@@ -235,7 +291,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/revalidate', async (request, reply) => {
     try {
-      const { fareSourceCode } = request.body as { fareSourceCode?: string };
+      const { fareSourceCode, skipCache, source } = request.body as { fareSourceCode?: string; skipCache?: boolean; source?: string };
 
       if (!fareSourceCode) {
         return reply.code(400).send({ error: 'fareSourceCode is required' });
@@ -243,6 +299,19 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const searchFscHash = hashFsc(fareSourceCode);
 
+      // Reuse a recent, still-valid revalidation (meal step ↔ payment-load share
+      // one Mystifly call). Confirm passes skipCache to force a fresh FSC.
+      if (!skipCache) {
+        const cached = getCachedRevalidation(fareSourceCode);
+        if (cached) {
+          // [FSC-DIAG] TEMP diagnostic — remove after call counts confirmed
+          console.log(`[FSC-DIAG][REVAL] source=${source ?? 'unknown'} fsc=${searchFscHash} cacheHit=true mystiflyCalled=false skipCache=${!!skipCache}`);
+          return { ...cached, cached: true };
+        }
+      }
+
+      // [FSC-DIAG] TEMP diagnostic — remove after call counts confirmed
+      console.log(`[FSC-DIAG][REVAL] source=${source ?? 'unknown'} fsc=${searchFscHash} cacheHit=false mystiflyCalled=true skipCache=${!!skipCache}`);
       const result = await mystifly.revalidateFlight(fareSourceCode);
 
       // Check for Mystifly-level errors
@@ -304,7 +373,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const revalFscHash = hashFsc(revalidatedFareSourceCode);
 
-      return {
+      const response = {
         success: true,
         isValid,
         holdAllowed,
@@ -316,6 +385,11 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         revalFscHash,
         raw: result,
       };
+
+      // Cache only successful, still-valid revalidations — never on skipCache.
+      if (!skipCache) setCachedRevalidation(fareSourceCode, response);
+
+      return response;
     } catch (error: any) {
       console.error('[Mystifly] Revalidation error:', error.message);
       return reply.code(502).send({
@@ -620,7 +694,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
   fastify.post('/trip-details', async (request, reply) => {
     try {
-      const { uniqueId } = request.body as { uniqueId?: string };
+      const { uniqueId, source } = request.body as { uniqueId?: string; source?: string };
 
       if (!uniqueId) {
         return reply.code(400).send({ error: 'uniqueId is required' });
@@ -628,6 +702,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const mfRef = await toMfRef(uniqueId);
       if (!mfRef) return unknownReference(reply, uniqueId);
+
+      // [FSC-DIAG] TEMP diagnostic — remove after call counts confirmed
+      console.log(`[FSC-DIAG][TRIP] source=${source ?? 'unknown'} mfRef=${mfRef}`);
 
       // Resilient: /api/v3/TripDetails errors on some bookings, so fall back
       // through the older versions rather than surfacing a provider error.

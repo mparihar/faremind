@@ -1,12 +1,18 @@
 /**
  * Pre-revalidate Mystifly fare before payment
  *
- * Called when the payment page loads to refresh the FSC (FareSourceCode).
- * Private fares have ~5 min TTL, so by the time the user reaches payment
- * the original FSC may have expired.
+ * Called when the payment page loads to surface an expired fare BEFORE the
+ * user enters card details, and to refresh the FareSourceCode in the store.
  *
- * Returns the fresh FSC so the frontend can update the checkout store
- * before the user clicks Pay.
+ * The backend /revalidate endpoint caches successful, still-valid revalidations
+ * briefly (keyed by FSC). If the meal step already revalidated this FSC within
+ * the cache window, this call is served from cache — no extra Mystifly hit. If
+ * the cached revalidation has expired (older than the cache TTL), the backend
+ * performs a fresh one automatically.
+ *
+ * Returns:
+ *   { valid: true,  freshFareSourceCode, totalFare, currency, holdAllowed }
+ *   { valid: false, error, errorCode }  → fare expired; UI shows the banner
  */
 
 import { NextRequest, NextResponse } from 'next/server';
@@ -15,8 +21,7 @@ const BACKEND_URL = process.env.BACKEND_URL || process.env.NEXT_PUBLIC_BACKEND_U
 
 export async function POST(request: NextRequest) {
   try {
-    const body = await request.json();
-    const { fareSourceCode } = body;
+    const { fareSourceCode } = await request.json();
 
     if (!fareSourceCode) {
       return NextResponse.json(
@@ -25,41 +30,32 @@ export async function POST(request: NextRequest) {
       );
     }
 
-    // Call Mystifly revalidate via the backend
     const revalRes = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fareSourceCode }),
+      body: JSON.stringify({ fareSourceCode, source: 'payment-load' }),
     });
     const revalData = await revalRes.json();
 
-    if (!revalRes.ok || !revalData.success) {
+    // Revalidation succeeded and the fare is still valid → return fresh FSC.
+    if (revalRes.ok && revalData.success && revalData.isValid !== false) {
+      const freshFsc = revalData.fareSourceCode || revalData.revalidatedFareSourceCode || fareSourceCode;
       return NextResponse.json({
-        valid: false,
-        error: revalData.error || 'Revalidation failed',
-        errorCode: revalData.errorCode || 'REVALIDATION_FAILED',
-      }, { status: 200 }); // 200 so frontend can handle gracefully
+        valid: true,
+        freshFareSourceCode: freshFsc,
+        totalFare: revalData.totalFare,
+        currency: revalData.currency,
+        holdAllowed: revalData.holdAllowed,
+        cached: revalData.cached ?? false,
+      });
     }
 
-    // Check IsValid
-    if (revalData.isValid === false) {
-      return NextResponse.json({
-        valid: false,
-        error: 'Fare is no longer valid',
-        errorCode: 'REVALIDATION_INVALID',
-      }, { status: 200 });
-    }
-
-    // Return the fresh FSC
-    const freshFsc = revalData.fareSourceCode || revalData.revalidatedFareSourceCode || fareSourceCode;
-
+    // Fare is no longer available — let the frontend show the "expired" banner.
     return NextResponse.json({
-      valid: true,
-      freshFareSourceCode: freshFsc,
-      totalFare: revalData.totalFare,
-      currency: revalData.currency,
-      holdAllowed: revalData.holdAllowed,
-    });
+      valid: false,
+      error: revalData.error || 'Fare is no longer available',
+      errorCode: revalData.errorCode || 'REVALIDATION_INVALID',
+    }, { status: 200 });
   } catch (err) {
     console.error('[Pre-revalidate] Error:', err instanceof Error ? err.message : err);
     return NextResponse.json(

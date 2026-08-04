@@ -1,7 +1,7 @@
 // FILE: src/app/checkout/payment/page.tsx
 'use client';
 
-import { useState, useEffect, useMemo } from 'react';
+import { useState, useEffect, useMemo, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   Lock,
@@ -238,14 +238,20 @@ function PaymentFormInner() {
   // so the user isn't surprised with "fare no longer available" after entering card details.
   const [fareExpired, setFareExpired] = useState(false);
   const [revalidating, setRevalidating] = useState(false);
+  // Guards the pre-revalidate call against React StrictMode / remount firing it
+  // twice. Refs persist across StrictMode's setup→cleanup→setup, so the second
+  // invocation is skipped and only one network call is made. A genuine remount
+  // (route revisit) creates a fresh ref and re-checks the fare as intended.
+  const preRevalidateStartedRef = useRef(false);
 
   useEffect(() => {
     const isMystifly = sourceFlight?.provider === 'mystifly' || sourceRoundTrip?.provider === 'mystifly';
     const fsc = sourceFlight?.providerOfferId || sourceRoundTrip?.providerOfferId;
 
     if (!isMystifly || !fsc) return;
+    if (preRevalidateStartedRef.current) return;
+    preRevalidateStartedRef.current = true;
 
-    let cancelled = false;
     setRevalidating(true);
 
     fetch('/api/checkout/bookings/pre-revalidate', {
@@ -255,7 +261,6 @@ function PaymentFormInner() {
     })
       .then((r) => r.json())
       .then((data) => {
-        if (cancelled) return;
         setRevalidating(false);
 
         if (!data.valid) {
@@ -279,10 +284,8 @@ function PaymentFormInner() {
         }
       })
       .catch(() => {
-        if (!cancelled) setRevalidating(false);
+        setRevalidating(false);
       });
-
-    return () => { cancelled = true; };
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 

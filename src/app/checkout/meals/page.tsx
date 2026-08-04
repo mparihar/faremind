@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useMemo, useCallback } from 'react';
+import { useEffect, useState, useMemo, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import {
   ChevronRight, Check, Plane, Lock, Info, AlertCircle,
@@ -520,9 +520,16 @@ export default function MealsPage() {
     [sourceFlight, sourceRoundTrip],
   );
 
-  // Fetch meal options from the provider API
+  // Fetch meal options from the provider API.
+  // Deduped by offerId so React StrictMode's double-invoke (and any segment-ref
+  // churn that keeps the same fare) triggers only one fetch — which, for
+  // Mystifly, is one Revalidate call.
+  const lastMealFetchKey = useRef<string | null>(null);
   useEffect(() => {
     if (!segments.length || !selectedFare?.offerId) { setLoading(false); return; }
+
+    if (lastMealFetchKey.current === selectedFare.offerId) return;
+    lastMealFetchKey.current = selectedFare.offerId;
 
     setLoading(true);
 

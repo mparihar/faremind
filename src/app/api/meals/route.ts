@@ -105,7 +105,7 @@ export async function GET(request: NextRequest) {
       const revalRes = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ fareSourceCode: offerId }),
+        body: JSON.stringify({ fareSourceCode: offerId, source: 'meal' }),
       });
 
       if (!revalRes.ok) {
