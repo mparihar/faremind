@@ -158,8 +158,23 @@ function dedupeIndistinguishable(offers: IncomingOffer[]): IncomingOffer[] {
 function buildFareOptions(rawOffers: IncomingOffer[], ctx: FlightContext, travelers: number, currency: string) {
   // Collapse duplicates BEFORE labelling and scoring, so badges and the "N of M"
   // ordering describe the fares actually shown.
-  const offers = dedupeIndistinguishable(rawOffers);
-  const collapsed = rawOffers.length - offers.length;
+  const deduped = dedupeIndistinguishable(rawOffers);
+  const collapsed = rawOffers.length - deduped.length;
+
+  // Rule: a fare the airline filed NO brand for is not shown as its own tile
+  // when a branded fare for the same flight exists. Those brandless copies are
+  // Mystifly's data-poor duplicates — no fare-family name, no booking class, and
+  // missing refund/baggage data that renders as a phantom "Non-refundable / no
+  // checked bag" fare at the same price (e.g. a second $163 card next to
+  // "ECONOMY SUPER LITE"). Guard: if EVERY fare is brandless (Mystifly's v1
+  // lowest-fare search often returns no FareFamily at all), keep them — dropping
+  // to zero would leave the flight with no bookable fare.
+  const branded = deduped.filter((o) => (o.airlineFareFamily || '').trim().length > 0);
+  const offers = branded.length > 0 ? branded : deduped;
+  const droppedBrandless = deduped.length - offers.length;
+  if (droppedBrandless > 0) {
+    console.log(`[fare-options] dropped ${droppedBrandless} brandless fare(s) — a branded fare exists for the same flight`);
+  }
 
   // Airline-named fares keep their brand verbatim. Brandless ones (Mystifly's
   // v1 "lowest fare" search returns no FareFamily) get a controlled generic
