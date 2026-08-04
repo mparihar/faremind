@@ -161,19 +161,22 @@ function buildFareOptions(rawOffers: IncomingOffer[], ctx: FlightContext, travel
   const deduped = dedupeIndistinguishable(rawOffers);
   const collapsed = rawOffers.length - deduped.length;
 
-  // Rule: a fare the airline filed NO brand for is not shown as its own tile
-  // when a branded fare for the same flight exists. Those brandless copies are
-  // Mystifly's data-poor duplicates — no fare-family name, no booking class, and
+  // Rule: an UNIDENTIFIED fare is not shown as its own tile when an identified
+  // fare for the same flight exists. "Identified" = the airline gave it either a
+  // fare-family name (e.g. "ECONOMY SUPER LITE") OR a booking class (e.g. "Class
+  // V") — anything the customer can tell apart. The offending tile has NEITHER:
+  // it is Mystifly's data-poor duplicate FareSourceCode — no name, no class, and
   // missing refund/baggage data that renders as a phantom "Non-refundable / no
-  // checked bag" fare at the same price (e.g. a second $163 card next to
-  // "ECONOMY SUPER LITE"). Guard: if EVERY fare is brandless (Mystifly's v1
-  // lowest-fare search often returns no FareFamily at all), keep them — dropping
-  // to zero would leave the flight with no bookable fare.
-  const branded = deduped.filter((o) => (o.airlineFareFamily || '').trim().length > 0);
-  const offers = branded.length > 0 ? branded : deduped;
-  const droppedBrandless = deduped.length - offers.length;
-  if (droppedBrandless > 0) {
-    console.log(`[fare-options] dropped ${droppedBrandless} brandless fare(s) — a branded fare exists for the same flight`);
+  // checked bag" fare at the same price. Guard: if EVERY fare is unidentified
+  // (Mystifly's v1 lowest-fare search often returns neither), keep them all —
+  // dropping to zero would leave the flight with no bookable fare.
+  const identified = deduped.filter(
+    (o) => (o.airlineFareFamily || '').trim().length > 0 || (o.bookingClass || '').trim().length > 0,
+  );
+  const offers = identified.length > 0 ? identified : deduped;
+  const droppedUnidentified = deduped.length - offers.length;
+  if (droppedUnidentified > 0) {
+    console.log(`[fare-options] dropped ${droppedUnidentified} unidentified fare(s) — no name and no booking class, while an identified fare exists for the same flight`);
   }
 
   // Airline-named fares keep their brand verbatim. Brandless ones (Mystifly's
