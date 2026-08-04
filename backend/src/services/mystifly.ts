@@ -21,6 +21,7 @@
  */
 
 import type { PtrPassenger } from '../lib/ptr-passengers';
+import * as crypto from 'crypto';
 
 // ═══════════════════════════════════════════════
 // Configuration
@@ -646,11 +647,81 @@ export async function searchFlights(params: MystiflySearchParams): Promise<any> 
 // Revalidate (Price/Availability Check)
 // ═══════════════════════════════════════════════
 
+// Revalidation cache — shared by EVERY caller of revalidateFlight().
+//
+// Revalidate mints a fresh FareSourceCode with a short TTL, and the checkout
+// hits it at several stages for the SAME FSC (seats seat-map, meal step,
+// add-ons seat-map, payment-page load). Caching a successful, still-valid
+// revalidation keyed by the input FSC lets those stages share ONE Mystifly call
+// instead of one each. Because the cache lives in this function — the single
+// point every path funnels through — even the direct seat-map calls dedupe.
+//
+// TTL is 3 min — comfortably shorter than the ~5 min private-fare TTL, so a
+// cache hit is always still bookable; a caller more than ~3 min later
+// re-revalidates automatically. Confirm passes skipCache to force a fresh FSC
+// immediately before BookFlight.
+const REVALIDATION_CACHE_TTL_MS = 3 * 60 * 1000;
+const REVALIDATION_CACHE_MAX_ENTRIES = 1000;
+
+interface RevalidationCacheEntry {
+  data: any;
+  expiresAt: number;
+}
+
+const revalidationCache = new Map<string, RevalidationCacheEntry>();
+
+/** SHA-256 (first 16 chars) of an FSC — log traceability without leaking the code. */
+function hashFsc(fsc: string): string {
+  return crypto.createHash('sha256').update(fsc).digest('hex').slice(0, 16);
+}
+
+/**
+ * Only cache a revalidation that actually succeeded and is still valid — never
+ * cache a provider error or IsValid=false, or a later stage would reuse it.
+ */
+function isRevalidationCacheable(result: any): boolean {
+  if (!result?.Data || typeof result.Data !== 'object') return false;
+  const error = result?.Data?.Error || result?.Error;
+  if (error?.ErrorCode && error.ErrorCode !== '0') return false;
+  const isValidRaw = result?.Data?.IsValid ?? result?.IsValid;
+  if (isValidRaw === false || isValidRaw === 'false' || isValidRaw === 'False') return false;
+  return true;
+}
+
+export interface RevalidateOptions {
+  /** Bypass the cache and force a fresh Mystifly call (confirm uses this before Book). */
+  skipCache?: boolean;
+  /** Diagnostic label for the [FSC-DIAG] counter (e.g. 'meal', 'seat-map', 'confirm'). */
+  source?: string;
+}
+
 /**
  * Revalidate a fare before booking.
  * Confirms the price is still available and returns updated pricing.
+ *
+ * Cached (3-min TTL, keyed by FSC) so the checkout's seat-map / meal / payment
+ * stages share one Mystifly call. Pass { skipCache: true } to force a fresh
+ * call. Every invocation emits one [FSC-DIAG][REVAL] line for call counting.
  */
-export async function revalidateFlight(fareSourceCode: string): Promise<any> {
+export async function revalidateFlight(
+  fareSourceCode: string,
+  options: RevalidateOptions = {},
+): Promise<any> {
+  const { skipCache = false, source = 'unknown' } = options;
+  const fscHash = hashFsc(fareSourceCode);
+
+  if (!skipCache) {
+    const entry = revalidationCache.get(fareSourceCode);
+    if (entry && Date.now() <= entry.expiresAt) {
+      // [FSC-DIAG] TEMP diagnostic — remove after call counts confirmed
+      console.log(`[FSC-DIAG][REVAL] source=${source} fsc=${fscHash} cacheHit=true mystiflyCalled=false skipCache=false`);
+      return entry.data;
+    }
+    if (entry) revalidationCache.delete(fareSourceCode); // expired
+  }
+
+  // [FSC-DIAG] TEMP diagnostic — remove after call counts confirmed
+  console.log(`[FSC-DIAG][REVAL] source=${source} fsc=${fscHash} cacheHit=false mystiflyCalled=true skipCache=${skipCache}`);
   const result = await mystiflyRequest<any>({
     method: 'POST',
     path: '/api/v1/Revalidate/Flight',
@@ -659,6 +730,17 @@ export async function revalidateFlight(fareSourceCode: string): Promise<any> {
       Target: MYSTIFLY_TARGET,
     },
   });
+
+  // Cache only successful, still-valid revalidations — never on skipCache.
+  if (!skipCache && isRevalidationCacheable(result)) {
+    if (revalidationCache.size >= REVALIDATION_CACHE_MAX_ENTRIES) {
+      const now = Date.now();
+      for (const [key, e] of revalidationCache) {
+        if (now > e.expiresAt) revalidationCache.delete(key);
+      }
+    }
+    revalidationCache.set(fareSourceCode, { data: result, expiresAt: Date.now() + REVALIDATION_CACHE_TTL_MS });
+  }
 
   return result;
 }

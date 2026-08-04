@@ -231,55 +231,6 @@ function unknownReference(reply: any, input: string) {
 }
 
 // ═══════════════════════════════════════════════
-// Revalidation Cache
-// ═══════════════════════════════════════════════
-// Revalidate mints a fresh FareSourceCode with a short TTL. The checkout hits
-// this endpoint at multiple stages (meal step, payment-page load) for the SAME
-// FSC. We briefly cache a successful, still-valid revalidation keyed by the
-// input FSC so those stages share ONE Mystifly call instead of one each.
-//
-// TTL is 3 min — comfortably shorter than the ~5 min private-fare TTL, so a
-// cache hit is always still bookable, and a payment-load more than ~3 min after
-// the meal step re-revalidates automatically.
-//
-// Confirm (the final step immediately before BookFlight) passes skipCache:true
-// so it ALWAYS gets a fresh FSC — its behaviour is unchanged.
-
-const REVALIDATION_CACHE_TTL_MS = 3 * 60 * 1000;
-const REVALIDATION_CACHE_MAX_ENTRIES = 1000;
-
-interface RevalidationCacheEntry {
-  data: Record<string, unknown>;
-  expiresAt: number;
-}
-
-const revalidationCache = new Map<string, RevalidationCacheEntry>();
-
-function getCachedRevalidation(fareSourceCode: string): Record<string, unknown> | null {
-  const entry = revalidationCache.get(fareSourceCode);
-  if (!entry) return null;
-  if (Date.now() > entry.expiresAt) {
-    revalidationCache.delete(fareSourceCode);
-    return null;
-  }
-  return entry.data;
-}
-
-function setCachedRevalidation(fareSourceCode: string, data: Record<string, unknown>): void {
-  // Lazy eviction: sweep expired entries when the map grows large.
-  if (revalidationCache.size >= REVALIDATION_CACHE_MAX_ENTRIES) {
-    const now = Date.now();
-    for (const [key, entry] of revalidationCache) {
-      if (now > entry.expiresAt) revalidationCache.delete(key);
-    }
-  }
-  revalidationCache.set(fareSourceCode, {
-    data,
-    expiresAt: Date.now() + REVALIDATION_CACHE_TTL_MS,
-  });
-}
-
-// ═══════════════════════════════════════════════
 // Routes
 // ═══════════════════════════════════════════════
 
@@ -299,20 +250,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
       const searchFscHash = hashFsc(fareSourceCode);
 
-      // Reuse a recent, still-valid revalidation (meal step ↔ payment-load share
-      // one Mystifly call). Confirm passes skipCache to force a fresh FSC.
-      if (!skipCache) {
-        const cached = getCachedRevalidation(fareSourceCode);
-        if (cached) {
-          // [FSC-DIAG] TEMP diagnostic — remove after call counts confirmed
-          console.log(`[FSC-DIAG][REVAL] source=${source ?? 'unknown'} fsc=${searchFscHash} cacheHit=true mystiflyCalled=false skipCache=${!!skipCache}`);
-          return { ...cached, cached: true };
-        }
-      }
-
-      // [FSC-DIAG] TEMP diagnostic — remove after call counts confirmed
-      console.log(`[FSC-DIAG][REVAL] source=${source ?? 'unknown'} fsc=${searchFscHash} cacheHit=false mystiflyCalled=true skipCache=${!!skipCache}`);
-      const result = await mystifly.revalidateFlight(fareSourceCode);
+      // Cache + [FSC-DIAG] call-counting now live inside revalidateFlight() — the
+      // single point every path funnels through (this route AND the direct
+      // seat-map revalidation). We just pass skipCache/source down.
+      const result = await mystifly.revalidateFlight(fareSourceCode, { skipCache, source });
 
       // Check for Mystifly-level errors
       const error = result?.Data?.Error || result?.Error;
@@ -385,9 +326,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         revalFscHash,
         raw: result,
       };
-
-      // Cache only successful, still-valid revalidations — never on skipCache.
-      if (!skipCache) setCachedRevalidation(fareSourceCode, response);
 
       return response;
     } catch (error: any) {
@@ -799,7 +737,9 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // revalidate first and use the revalidated FSC.
       let seatFsc = fareSourceCode;
       try {
-        const reval = await mystifly.revalidateFlight(fareSourceCode);
+        // Shares the revalidateFlight() cache, so this reuses the seats/meal/
+        // payment revalidation for the same FSC instead of a separate hit.
+        const reval = await mystifly.revalidateFlight(fareSourceCode, { source: 'seat-map' });
         const rd = reval?.Data || {};
         // Revalidate puts the new FSC on the PLURAL PricedItineraries[0], nested
         // under AirItineraryPricingInfo:
