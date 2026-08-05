@@ -17,6 +17,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatFlightDate } from '@/lib/provider-time';
 
 interface DashStats {
   totalBookings: number;
@@ -236,7 +237,7 @@ export default function AgentDashboardPage() {
                 {/* Date */}
                 <div className="text-right shrink-0">
                   <p className="text-xs text-slate-400">
-                    {new Date(b.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {formatFlightDate(b.departureDate, 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </p>
                   <p className="text-sm font-bold text-white mt-0.5">${b.totalAmount.toLocaleString()}</p>
                 </div>

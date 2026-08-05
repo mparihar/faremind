@@ -9,6 +9,7 @@ import { X, Clock, MapPin, CreditCard, Sparkles, TrendingUp, ChevronRight } from
 import { UnifiedFlight } from '@/lib/types';
 import { getAirportCoords } from '@/lib/airport-coords';
 import { format } from 'date-fns';
+import { formatFlightDate, formatFlightTime24 } from '@/lib/provider-time';
 
 interface FlightIntelligenceMapProps {
   flights: UnifiedFlight[];
@@ -622,7 +623,7 @@ export default function FlightIntelligenceMap(props: FlightIntelligenceMapProps)
                     )}
                   </div>
                   <p className="text-white/60 text-sm">
-                    {format(new Date(selectedFlight.segments[0].departure.time), 'EEE, MMM d')} · {selectedFlight.totalDuration} min total
+                    {formatFlightDate(selectedFlight.segments[0].departure.time, 'en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · {selectedFlight.totalDuration} min total
                   </p>
                 </div>
                 <button onClick={() => setSelectedFlight(null)} className="p-2 rounded-full bg-white/5 hover:bg-white/10 text-white/60 transition-colors">
@@ -636,7 +637,7 @@ export default function FlightIntelligenceMap(props: FlightIntelligenceMapProps)
                       <div key={seg.id} className="flex items-center gap-3">
                         <div className="flex flex-col items-center shrink-0">
                           <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white text-xs font-bold">{seg.departure.airport}</div>
-                          <span className="text-[10px] text-white/50 mt-0.5">{format(new Date(seg.departure.time), 'HH:mm')}</span>
+                          <span className="text-[10px] text-white/50 mt-0.5">{formatFlightTime24(seg.departure.time)}</span>
                         </div>
                         <div className="flex-1 flex flex-col items-center gap-1">
                           <div className="w-full h-px bg-gradient-to-r from-transparent via-white/20 to-transparent" />
@@ -644,7 +645,7 @@ export default function FlightIntelligenceMap(props: FlightIntelligenceMapProps)
                         </div>
                         <div className="flex flex-col items-center shrink-0">
                           <div className="w-9 h-9 rounded-xl bg-white/5 border border-white/10 flex items-center justify-center text-white text-xs font-bold">{seg.arrival.airport}</div>
-                          <span className="text-[10px] text-white/50 mt-0.5">{format(new Date(seg.arrival.time), 'HH:mm')}</span>
+                          <span className="text-[10px] text-white/50 mt-0.5">{formatFlightTime24(seg.arrival.time)}</span>
                         </div>
                         {i < selectedFlight.segments.length - 1 && <div className="absolute ml-2 text-[9px] text-white/30">· layover</div>}
                       </div>

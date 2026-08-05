@@ -12,6 +12,7 @@ import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
 import { apiFetch } from '@/lib/api-client';
 import { canAddBaggage } from '@/lib/booking-capabilities';
 import CouponStatusPanel from '@/components/booking/CouponStatusPanel';
+import { formatFlightDate, formatFlightDateTime, isFlightInPast } from '@/lib/provider-time';
 function StatusBadge({ status }: { status: string }) {
   const m: Record<string, [string, string]> = { CONFIRMED: ['bg-emerald-500/10 text-emerald-400', 'Confirmed'], TICKETED: ['bg-emerald-500/10 text-emerald-400', 'Ticketed'], CANCELLED: ['bg-red-500/10 text-red-400', 'Cancelled'], CANCEL_REQUESTED: ['bg-amber-500/10 text-amber-400', 'Cancellation Pending'], CREATED: ['bg-amber-500/10 text-amber-400', 'Processing'], COMPLETED: ['bg-blue-500/10 text-blue-400', 'Completed'] };
   const [cls, label] = m[status] || ['bg-slate-500/10 text-slate-400', status];
@@ -237,7 +238,7 @@ function ETicketModal({ bookingId, onClose }: { bookingId: string; onClose: () =
                     <div className="flex-1 flex items-center gap-1.5"><div className="h-px flex-1 bg-white/10" /><Plane size={14} className="text-[#1ABC9C] rotate-90" /><div className="h-px flex-1 bg-white/10" /></div>
                     <div className="text-center"><p className="text-white font-black text-2xl">{j.destinationAirport}</p></div>
                   </div>
-                  <p className="text-slate-400 text-xs mb-2">{(j.departureDateTime || j.departureDate) ? new Date(j.departureDateTime || j.departureDate).toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : ''}</p>
+                  <p className="text-slate-400 text-xs mb-2">{(j.departureDateTime || j.departureDate) ? formatFlightDate(j.departureDateTime || j.departureDate, 'en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : ''}</p>
                   {(j.segments || []).map((s: any, si: number) => (
                     <div key={si} className="flex items-center gap-2 text-xs text-slate-500 mt-1">
                       <span className="font-bold text-slate-300">{s.flightNumber}</span>
@@ -400,8 +401,8 @@ export default function BookingDetailPage() {
 
   const b = booking;
   const isCancelled = b.bookingStatus === 'CANCELLED';
-  const isPast = new Date(b.departureDate) < new Date();
-  const depDate = new Date(b.departureDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+  const isPast = isFlightInPast(b.departureDate);
+  const depDate = formatFlightDate(b.departureDate, 'en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
   const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: b.currency || 'USD', maximumFractionDigits: 0 }).format(n);
 
   // Check refundability from fareRules OR PNR data
@@ -641,7 +642,7 @@ export default function BookingDetailPage() {
                       <span className="text-[10px] font-bold text-[#1ABC9C] uppercase tracking-wider bg-[#1ABC9C]/10 px-2.5 py-0.5 rounded-full">
                         {j.direction === 'RETURN' ? 'Return' : 'Outbound'}
                       </span>
-                      <span className="text-xs text-slate-500">{new Date(j.departureDateTime || j.departureDate || b.departureDate).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
+                      <span className="text-xs text-slate-500">{formatFlightDateTime(j.departureDateTime || j.departureDate || b.departureDate, 'en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: '2-digit', minute: '2-digit' })}</span>
                     </div>
                     <div className="flex items-center gap-4">
                       <div className="text-center"><p className="text-white font-bold text-xl">{j.originAirport || b.originAirport}</p><p className="text-slate-500 text-[11px]">{j.originCity || b.originCity}</p></div>

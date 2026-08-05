@@ -15,6 +15,7 @@ import { SeatMapModal, PassengerModal, DateChangeModal, ETicketModal, RefundModa
 import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
 import { apiFetch } from '@/lib/api-client';
 import { canAddBaggage } from '@/lib/booking-capabilities';
+import { isFlightInPast } from '@/lib/provider-time';
 
 function StatusBadge({ status }: { status: string }) {
   const m: Record<string, [string, string]> = {
@@ -108,7 +109,7 @@ export default function BookingDetailPage() {
 
   const b = booking;
   const isCancelled = b.bookingStatus === 'CANCELLED';
-  const isPast = new Date(b.departureDate) < new Date();
+  const isPast = isFlightInPast(b.departureDate);
   const exactDepTime = b.journeys?.[0]?.departureDateTime || b.departureDate;
   const depDate = new Date(exactDepTime).toLocaleString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', hour: 'numeric', minute: '2-digit', hour12: true });
   const fmt = (n: number) => fmtC(n, b.currency || 'USD');

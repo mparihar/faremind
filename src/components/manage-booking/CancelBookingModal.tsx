@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 import { refundabilityLabel, refundabilityTone } from '@/lib/refundability';
+import { formatFlightDate } from '@/lib/provider-time';
 
 interface Props {
   bookingId: string;
@@ -209,7 +210,7 @@ export default function CancelBookingModal({ bookingId, onClose, successRedirect
                     {cancelQuote.departureDate && (
                       <div className="flex justify-between">
                         <span className="text-slate-400">Departure</span>
-                        <span className="text-white font-medium">{new Date(cancelQuote.departureDate).toLocaleDateString('en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
+                        <span className="text-white font-medium">{formatFlightDate(cancelQuote.departureDate, 'en-US', { day: 'numeric', month: 'short', year: 'numeric' })}</span>
                       </div>
                     )}
                   </div>

@@ -22,6 +22,7 @@ import { useCheckoutStore } from '@/store/useCheckoutStore';
 import type { PassengerInfo } from '@/store/useCheckoutStore';
 import { apiFetch } from '@/lib/api-client';
 import { useOfferGuard } from '@/hooks/useOfferGuard';
+import { formatFlightDate } from '@/lib/provider-time';
 
 // ─── Constants ────────────────────────────────────────────────────────────────
 
@@ -1024,7 +1025,7 @@ export default function PassengersPage() {
           <div className="mb-6 flex items-start gap-3 p-4 rounded-xl bg-white border border-slate-200 shadow-sm text-sm">
             <AlertCircle className="w-4 h-4 mt-0.5 flex-shrink-0 text-[#0F766E]" />
             <div>
-              <p className="font-semibold text-[#0F766E]">Age is verified based on travel date: {new Date(departureDate + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
+              <p className="font-semibold text-[#0F766E]">Age is verified based on travel date: {formatFlightDate(departureDate + 'T00:00:00', 'en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' })}</p>
               <p className="text-xs text-emerald-700 mt-1">
                 Adult: 12+ years &bull; Child: 2–11 years &bull; Infant: under 2 years (age at departure)
               </p>

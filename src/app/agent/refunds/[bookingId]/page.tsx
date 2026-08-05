@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { formatDistanceToNow } from 'date-fns';
+import { formatFlightDate } from '@/lib/provider-time';
 
 const fmt = (n: number, c = 'USD') =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 2 }).format(n);
@@ -137,7 +138,7 @@ export default function AgentRefundDetailPage({ params }: { params: Promise<{ bo
             <div className="flex items-center gap-4 text-xs text-slate-500 flex-wrap">
               <span className="flex items-center gap-1"><Calendar size={11} /> {r.origin} → {r.destination}</span>
               <span className="text-slate-600">•</span>
-              <span>{new Date(r.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+              <span>{formatFlightDate(r.departureDate, 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
             </div>
           </div>
           <div className="text-right">
@@ -203,7 +204,7 @@ export default function AgentRefundDetailPage({ params }: { params: Promise<{ bo
                       </div>
                       <div className="flex items-center gap-3 text-[10px] text-slate-500 mt-0.5">
                         {seg.airlineName && <span>{seg.airlineName}</span>}
-                        {seg.departureTime && <span>{new Date(seg.departureTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</span>}
+                        {seg.departureTime && <span>{formatFlightDate(seg.departureTime, 'en-US', { month: 'short', day: 'numeric' })}</span>}
                       </div>
                     </div>
                     <span className="text-[9px] text-red-400 font-bold bg-red-400/10 px-1.5 py-0.5 rounded uppercase shrink-0">{seg.status || 'Cancelled'}</span>

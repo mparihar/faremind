@@ -1,5 +1,6 @@
 import type { UnifiedFlight } from './types';
 import { computeHeuristicScores, type FlightHeuristicScores } from './dynamic-profile';
+import { flightTimeMs, providerHour } from './provider-time';
 
 export interface FareMindFlightCard extends FlightHeuristicScores {
   card_id: string;
@@ -30,10 +31,11 @@ export interface FareMindFlightCard extends FlightHeuristicScores {
 }
 
 function isRedEye(timeStr: string): boolean {
-  try {
-    const h = new Date(timeStr).getHours();
-    return h >= 22 || h < 4;
-  } catch { return false; }
+  // Wall-clock hour at the airport. Read locally, a 23:00 Barcelona departure
+  // is 17:00 in Chicago and stops being a red-eye purely because of where the
+  // process runs.
+  const h = providerHour(timeStr);
+  return h == null ? false : h >= 22 || h < 4;
 }
 
 function computeLayovers(flight: UnifiedFlight): {
@@ -53,15 +55,15 @@ function computeLayovers(flight: UnifiedFlight): {
   const connections: string[] = [];
 
   for (let i = 0; i < segs.length - 1; i++) {
-    const arrMs = new Date(segs[i].arrival.time).getTime();
-    const depMs = new Date(segs[i + 1].departure.time).getTime();
+    const arrMs = flightTimeMs(segs[i].arrival.time);
+    const depMs = flightTimeMs(segs[i + 1].departure.time);
     const layover = Math.round((depMs - arrMs) / 60000);
     if (layover > 0) {
       total += layover;
       if (layover > longest) longest = layover;
-      const arrH = new Date(segs[i].arrival.time).getHours();
-      const depH = new Date(segs[i + 1].departure.time).getHours();
-      if (arrH > depH || layover > 360) overnight = true;
+      const arrH = providerHour(segs[i].arrival.time);
+      const depH = providerHour(segs[i + 1].departure.time);
+      if ((arrH != null && depH != null && arrH > depH) || layover > 360) overnight = true;
     }
     if (segs[i].arrival.airport !== segs[i + 1].departure.airport) airportChange = true;
     connections.push(segs[i].arrival.airport);

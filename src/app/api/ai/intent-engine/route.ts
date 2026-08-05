@@ -6,6 +6,7 @@ import { matchProfile } from '@/lib/intent-profiles';
 import { normalizeFlightCards, type FareMindFlightCard } from '@/lib/normalize-flights';
 import { ALLOWED_WEIGHT_KEYS, sanitizeWeights, type DynamicProfile } from '@/lib/dynamic-profile';
 import type { UnifiedFlight } from '@/lib/types';
+import { formatFlightTime } from '@/lib/provider-time';
 
 const openaiClient = process.env.OPENAI_API_KEY
   ? new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
@@ -18,12 +19,9 @@ const anthropicClient = process.env.ANTHROPIC_API_KEY
 // ── Card serializer (compact, semantically rich) ──────────────────────────────
 
 function serializeCard(c: FareMindFlightCard, i: number): string {
-  const dep = new Date(c.departure_time_local);
-  const arr = new Date(c.arrival_time_local);
-  const depStr = isNaN(dep.getTime()) ? 'N/A'
-    : dep.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
-  const arrStr = isNaN(arr.getTime()) ? 'N/A'
-    : arr.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true });
+  const timeOpts = { hour: '2-digit', minute: '2-digit', hour12: true } as const;
+  const depStr = formatFlightTime(c.departure_time_local, 'en-US', timeOpts) || 'N/A';
+  const arrStr = formatFlightTime(c.arrival_time_local, 'en-US', timeOpts) || 'N/A';
   const dur = `${Math.floor(c.total_duration_minutes / 60)}h${c.total_duration_minutes % 60}m`;
   const bags = c.checked_bags > 0 ? `checked:${c.checked_bags}` : c.carry_on_bags > 0 ? 'carry-on only' : 'no bags';
   const stops = c.stops === 0 ? 'nonstop'

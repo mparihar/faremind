@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
+import { isFlightInPast } from '@/lib/provider-time';
 
 type FilterKey = 'all' | 'upcoming' | 'past' | 'cancelled';
 
@@ -169,7 +170,7 @@ export default function MyTripsPage() {
             const ret = b.journeys?.find((jj: any) => jj.direction === 'RETURN');
             const isRT = (b.tripType || '').toLowerCase().includes('round');
             const paxCount = b.passengers?.length || 1;
-            const isPast = new Date(b.departureDate) < new Date();
+            const isPast = isFlightInPast(b.departureDate);
             const isCancelled = b.bookingStatus === 'CANCELLED';
             const days = daysUntil(b.departureDate);
             const borderColor = STATUS_BORDER[b.bookingStatus] || 'border-l-slate-600';

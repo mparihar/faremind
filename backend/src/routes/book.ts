@@ -2,6 +2,7 @@ import { FastifyPluginAsync } from 'fastify';
 import * as duffelClient from '../services/duffel';
 import { createBooking as dbCreateBooking, createPayment, addLedgerEntry, createNotification } from '../lib/db-queries';
 import { prisma } from '../lib/db';
+import { parseProviderDateTimeOr } from '../lib/provider-time';
 
 
 
@@ -69,8 +70,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           airlineCode: flight.airline?.code || 'XX', airlineName: flight.airline?.name || 'Unknown',
           originAirport: firstSeg?.departure?.airport || '', originCity: firstSeg?.departure?.city || '',
           destinationAirport: lastSeg?.arrival?.airport || '', destinationCity: lastSeg?.arrival?.city || '',
-          departureTime: new Date(firstSeg?.departure?.time || Date.now()),
-          arrivalTime: new Date(lastSeg?.arrival?.time || Date.now()),
+          departureTime: parseProviderDateTimeOr(firstSeg?.departure?.time, new Date()),
+          arrivalTime: parseProviderDateTimeOr(lastSeg?.arrival?.time, new Date()),
           totalDuration: flight.totalDuration || 0, stops: flight.stops || 0,
           cabinClass: (flight.cabinClass || 'economy').toUpperCase() as any,
           fareClass: flight.fareClass, totalPrice: flight.totalPrice,
@@ -90,10 +91,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           })),
           segments: segments.map((seg: any, i: number) => ({
             segmentOrder: i, depAirport: seg.departure?.airport || '', depAirportName: seg.departure?.airportName,
-            depCity: seg.departure?.city, depTime: new Date(seg.departure?.time || Date.now()),
+            depCity: seg.departure?.city, depTime: parseProviderDateTimeOr(seg.departure?.time, new Date()),
             depTerminal: seg.departure?.terminal, arrAirport: seg.arrival?.airport || '',
             arrAirportName: seg.arrival?.airportName, arrCity: seg.arrival?.city,
-            arrTime: new Date(seg.arrival?.time || Date.now()), arrTerminal: seg.arrival?.terminal,
+            arrTime: parseProviderDateTimeOr(seg.arrival?.time, new Date()), arrTerminal: seg.arrival?.terminal,
             airlineCode: seg.airline?.code || '', airlineName: seg.airline?.name,
             flightNumber: seg.flightNumber || '', duration: seg.duration || 0,
             aircraft: seg.aircraft, operatingCarrier: seg.operatingCarrier?.code,

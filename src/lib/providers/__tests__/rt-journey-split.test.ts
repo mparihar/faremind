@@ -7,6 +7,7 @@
  */
 import assert from 'node:assert';
 import { normalizeMystiflyRoundTripOffer } from '../mystifly-round-trip-normalizer';
+import { flightTimeMs } from '../../provider-time';
 
 let passed = 0;
 function test(name: string, fn: () => void) {
@@ -61,8 +62,8 @@ test('the return starts at the destination and ends home', () => {
 
 test('the outbound no longer spans 23 days', () => {
   const o = normalizeMystiflyRoundTripOffer(misgrouped);
-  const hours = (new Date(o!.outboundJourney.arrivalTime).getTime()
-    - new Date(o!.outboundJourney.departureTime).getTime()) / 3_600_000;
+  const hours = (flightTimeMs(o!.outboundJourney.arrivalTime)
+    - flightTimeMs(o!.outboundJourney.departureTime)) / 3_600_000;
   assert.ok(hours < 48, `outbound spanned ${Math.round(hours)}h`);
 });
 

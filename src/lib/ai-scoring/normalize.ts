@@ -9,8 +9,8 @@ import { hourFromIso, isInternationalRoute } from './FlightScoringUtils';
 export function normalizeOneWay(f: UnifiedFlight): NormalizedOption {
   const layoverMinutes: number[] = [];
   for (let i = 0; i < f.segments.length - 1; i++) {
-    const arrMs = new Date(f.segments[i].arrival.time).getTime();
-    const depMs = new Date(f.segments[i + 1].departure.time).getTime();
+    const arrMs = flightTimeMs(f.segments[i].arrival.time);
+    const depMs = flightTimeMs(f.segments[i + 1].departure.time);
     layoverMinutes.push((depMs - arrMs) / 60_000);
   }
 
@@ -101,6 +101,7 @@ export function normalizeRoundTrip(o: RoundTripOption): NormalizedOption {
 // ═══════════════════════════════════════════════════════════════════════════════
 
 import type { NormalizedFlightOffer, FlightLeg, LegLayover, LegSegment } from './FlightScoringTypes';
+import { flightTimeMs } from '../provider-time';
 
 function buildLayoversFromSegments(
   segments: import('@/lib/types').FlightSegment[],
@@ -109,16 +110,16 @@ function buildLayoversFromSegments(
   if (segments.length < 2) return layovers;
 
   // Compute total elapsed time from first departure to last arrival (UTC)
-  const firstDepMs = new Date(segments[0].departure.time).getTime();
-  const lastArrMs = new Date(segments[segments.length - 1].arrival.time).getTime();
+  const firstDepMs = flightTimeMs(segments[0].departure.time);
+  const lastArrMs = flightTimeMs(segments[segments.length - 1].arrival.time);
   const totalElapsedMinutes = Math.max(0, (lastArrMs - firstDepMs) / 60_000);
 
   // Sum all segment flight durations
   const totalFlightMinutes = segments.reduce((sum, s) => sum + (s.duration || 0), 0);
 
   for (let i = 0; i < segments.length - 1; i++) {
-    const arrMs = new Date(segments[i].arrival.time).getTime();
-    const depMs = new Date(segments[i + 1].departure.time).getTime();
+    const arrMs = flightTimeMs(segments[i].arrival.time);
+    const depMs = flightTimeMs(segments[i + 1].departure.time);
     let durationMinutes = (depMs - arrMs) / 60_000;
 
     // Sanity check: layover cannot exceed 80% of total elapsed time

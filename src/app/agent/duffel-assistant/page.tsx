@@ -19,6 +19,7 @@ import {
   Loader2, ExternalLink, ChevronDown, Plane, User, Hash, Package,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import { formatFlightDate } from '@/lib/provider-time';
 
 interface DuffelBooking {
   id: string;
@@ -282,7 +283,7 @@ export default function AgentDuffelAssistantPage() {
                             )}
                             {b.departureDate && (
                               <span className="text-slate-500 text-xs">
-                                {format(new Date(b.departureDate), 'dd MMM yyyy')}
+                                {formatFlightDate(b.departureDate, 'en-GB', { day: '2-digit', month: 'short', year: 'numeric' })}
                               </span>
                             )}
                           </div>

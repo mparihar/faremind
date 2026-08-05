@@ -6,6 +6,7 @@ import { motion } from 'framer-motion';
 import { X, Loader2, AlertCircle, Check, Plane, Printer, User, Calendar, Mail } from 'lucide-react';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 import { flightDesignator } from '@/lib/flight-designator';
+import { formatFlightDate } from '@/lib/provider-time';
 
 // ── Seat Map Modal ──
 export function SeatMapModal({ bookingId, onClose, provider }: { bookingId: string; onClose: () => void; provider?: string }) {
@@ -450,7 +451,7 @@ export function DateChangeModal({ bookingId, booking, onClose }: { bookingId: st
           <div className="space-y-4">
             <div className="bg-white/[0.03] border border-white/[0.06] rounded-xl p-3 text-sm text-slate-400">
               Current: <span className="text-white font-medium">{booking.originAirport} → {booking.destinationAirport}</span>
-              {' · '}{new Date(booking.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+              {' · '}{formatFlightDate(booking.departureDate, 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
             </div>
             <div><label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">New Departure Date</label>
               <input type="date" value={depDate} onChange={e => setDepDate(e.target.value)} min={today} className={iCls} /></div>

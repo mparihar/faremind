@@ -9,6 +9,7 @@ import {
   Ticket, MessageSquare, AlertTriangle,
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
+import { formatFlightDate } from '@/lib/provider-time';
 
 const fmt = (n: number, c = 'USD') =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(n);
@@ -222,7 +223,7 @@ export default function RefundsPage() {
                     )}
                   </div>
                   <p className="text-slate-500 text-xs">
-                    {r.origin} → {r.destination} · {new Date(r.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    {r.origin} → {r.destination} · {formatFlightDate(r.departureDate, 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                   </p>
                 </div>
                 <div className="text-right shrink-0">

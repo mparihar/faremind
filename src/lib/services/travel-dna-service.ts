@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db';
 // Shared helpers — single source of truth for international detection (country-based,
 // from src/data/airports.ts) and timezone-safe local-hour extraction.
 import { isInternationalRoute, hourFromIso } from '@/lib/ai-scoring/FlightScoringUtils';
+import { flightTimeMs } from '../provider-time';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -472,8 +473,7 @@ function extractBookingPreferences(booking: any): ExtractedPreference[] {
   // Booking Window
   if (booking.createdAt && booking.departureDate) {
     const created = new Date(booking.createdAt);
-    const departure = new Date(booking.departureDate);
-    const daysBefore = Math.max(0, Math.round((departure.getTime() - created.getTime()) / (1000 * 60 * 60 * 24)));
+    const daysBefore = Math.max(0, Math.round((flightTimeMs(booking.departureDate) - created.getTime()) / (1000 * 60 * 60 * 24)));
     const windowBucket = getBookingWindowBucket(daysBefore);
     prefs.push({ category: 'booking_window', key: windowBucket.key, label: windowBucket.label });
   }

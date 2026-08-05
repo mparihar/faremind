@@ -12,6 +12,7 @@ import { journeyDurationMinutes } from '@/lib/journey-time';
 import type { JourneySegment, Layover, RoundTripOption } from '@/lib/round-trip-types';
 import { generateId, getAirlineLogo, getAirlineName } from '@/lib/utils';
 import { normalizeFareTier, itineraryKey, parseBaggageAllowance } from '@/lib/fare-family';
+import { flightTimeMs } from '../provider-time';
 
 // ── Cabin mapping (same as backend/src/services/mystifly.ts) ──
 
@@ -101,8 +102,8 @@ function odToJourney(
   // calculation stands — a wrong duration that looks authoritative is worse.
   let durationMinutes = journeyDurationMinutes(segments) ?? 0;
   if (durationMinutes === 0 && segments.length > 0) {
-    const dep = new Date(segments[0].departure.time).getTime();
-    const arr = new Date(segments[segments.length - 1].arrival.time).getTime();
+    const dep = flightTimeMs(segments[0].departure.time);
+    const arr = flightTimeMs(segments[segments.length - 1].arrival.time);
     if (arr > dep) durationMinutes = Math.round((arr - dep) / 60000);
   }
   // Fallback to sum of individual durations
@@ -112,8 +113,8 @@ function odToJourney(
 
   // Layovers from gaps between consecutive segments
   const layovers: Layover[] = segments.slice(0, -1).map((seg, i) => {
-    const arrMs = new Date(seg.arrival.time).getTime();
-    const depMs = new Date(segments[i + 1].departure.time).getTime();
+    const arrMs = flightTimeMs(seg.arrival.time);
+    const depMs = flightTimeMs(segments[i + 1].departure.time);
     return {
       airport: seg.arrival.airport,
       airportName: seg.arrival.airportName,

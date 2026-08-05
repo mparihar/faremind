@@ -17,6 +17,7 @@ import {
   RefreshCw,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
+import { formatFlightDate } from '@/lib/provider-time';
 
 interface AgentBooking {
   id: string;
@@ -216,7 +217,7 @@ export default function AgentBookingsPage() {
                   <div className="flex items-center gap-3 mt-1 text-xs text-slate-500">
                     <span>{b.customerName}</span>
                     <span>•</span>
-                    <span>{new Date(b.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+                    <span>{formatFlightDate(b.departureDate, 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
                     <span>•</span>
                     <span className="font-semibold text-white">${b.totalAmount.toLocaleString()}</span>
                   </div>

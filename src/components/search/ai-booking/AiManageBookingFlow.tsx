@@ -17,6 +17,7 @@ import AiManageBookingTiles from './AiManageBookingTiles';
 import AiCancelBookingFlow from './AiCancelBookingFlow';
 import AiPassengerUpdateFlow from './AiPassengerUpdateFlow';
 import { flightDesignator } from '@/lib/flight-designator';
+import { formatFlightDate, formatFlightTime } from '@/lib/provider-time';
 
 // Chat bubble matching AiBookFlightFlow's AiBubble
 function AiBubble({ children }: { children: React.ReactNode }) {
@@ -662,7 +663,7 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
                       <div className="px-3 py-2.5 space-y-2">
                         <div>
                           <p className="text-[8px] text-red-400 uppercase font-bold tracking-wider">Current</p>
-                          <p className="text-slate-800 text-[11px] font-medium">{selectedBooking.originAirport} → {selectedBooking.destinationAirport} · {new Date(selectedBooking.departureDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
+                          <p className="text-slate-800 text-[11px] font-medium">{selectedBooking.originAirport} → {selectedBooking.destinationAirport} · {formatFlightDate(selectedBooking.departureDate, 'en-US', { weekday: 'short', month: 'short', day: 'numeric' })}</p>
                         </div>
                         <div>
                           <p className="text-[8px] text-emerald-500 uppercase font-bold tracking-wider">New Flight</p>
@@ -799,7 +800,7 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
                                   <div>
                                     <p className="text-slate-800 text-[12px] font-semibold">
                                       {o.newItinerary?.departureDateTime && o.newItinerary.departureDateTime !== `${dcDate}T00:00:00`
-                                        ? `${new Date(o.newItinerary.departureDateTime).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${new Date(o.newItinerary.departureDateTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
+                                        ? `${formatFlightDate(o.newItinerary.departureDateTime, 'en-US', { weekday: 'short', month: 'short', day: 'numeric' })} · ${formatFlightTime(o.newItinerary.departureDateTime, 'en-US', { hour: 'numeric', minute: '2-digit', hour12: true })}`
                                         : new Date(dcDate).toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric' })}
                                     </p>
                                     <p className="text-slate-400 text-[10px]">
@@ -849,7 +850,7 @@ export default function AiManageBookingFlow({ preselectedAction, onExit }: Props
               <div className="space-y-2">
                 <div className="bg-white/80 border border-slate-200 rounded-xl p-3 text-[11px] text-slate-500">
                   Current: <span className="text-slate-800 font-medium">{selectedBooking.originAirport} {(selectedBooking.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} {selectedBooking.destinationAirport}</span>
-                  {' · '}{new Date(selectedBooking.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                  {' · '}{formatFlightDate(selectedBooking.departureDate, 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
                 </div>
 
                 <div>

@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as duffelClient from '@/lib/providers/duffel';
 import * as amadeusClient from '@/lib/providers/amadeus';
+import { parseProviderDateTimeOr } from '@/lib/provider-time';
 import {
   createBooking as dbCreateBooking,
   createPayment,
@@ -204,8 +205,8 @@ export async function POST(request: NextRequest) {
         originCity: firstSeg?.departure?.city || '',
         destinationAirport: lastSeg?.arrival?.airport || flight.destinationAirport || '',
         destinationCity: lastSeg?.arrival?.city || '',
-        departureTime: new Date(firstSeg?.departure?.time || Date.now()),
-        arrivalTime: new Date(lastSeg?.arrival?.time || Date.now()),
+        departureTime: parseProviderDateTimeOr(firstSeg?.departure?.time, new Date()),
+        arrivalTime: parseProviderDateTimeOr(lastSeg?.arrival?.time, new Date()),
         totalDuration: flight.totalDuration || 0,
         stops: flight.stops || 0,
         cabinClass: (flight.cabinClass || 'economy').toUpperCase() as any,
@@ -238,12 +239,12 @@ export async function POST(request: NextRequest) {
           depAirport: seg.departure?.airport || '',
           depAirportName: seg.departure?.airportName,
           depCity: seg.departure?.city,
-          depTime: new Date(seg.departure?.time || Date.now()),
+          depTime: parseProviderDateTimeOr(seg.departure?.time, new Date()),
           depTerminal: seg.departure?.terminal,
           arrAirport: seg.arrival?.airport || '',
           arrAirportName: seg.arrival?.airportName,
           arrCity: seg.arrival?.city,
-          arrTime: new Date(seg.arrival?.time || Date.now()),
+          arrTime: parseProviderDateTimeOr(seg.arrival?.time, new Date()),
           arrTerminal: seg.arrival?.terminal,
           airlineCode: seg.airline?.code || '',
           airlineName: seg.airline?.name,
@@ -270,7 +271,7 @@ export async function POST(request: NextRequest) {
             bookingId: booking.id,
             origin: firstSeg?.departure?.airport || '',
             destination: lastSeg?.arrival?.airport || '',
-            departureDate: new Date(firstSeg?.departure?.time || Date.now()),
+            departureDate: parseProviderDateTimeOr(firstSeg?.departure?.time, new Date()),
             cabinClass: (flight.cabinClass || 'economy').toUpperCase() as any,
             bookedPrice: flight.totalPrice,
             currency: flight.currency || 'USD',

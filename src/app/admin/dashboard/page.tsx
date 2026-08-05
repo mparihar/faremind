@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import Link from 'next/link';
+import { formatFlightDateTime } from '@/lib/provider-time';
 
 interface Stats {
   totalBookings: number;
@@ -209,7 +210,7 @@ export default function AdminDashboardPage() {
                   </td>
                   <td className="px-6 py-3.5 font-bold text-white text-sm">{b.originAirport} {(b.tripType || '').toLowerCase().includes('round') ? '⇄' : '→'} {b.destinationAirport}</td>
                   <td className="px-6 py-3.5 text-slate-300 text-sm">
-                    {format(new Date(b.departureTime), 'dd MMM yyyy hh:mm a')}
+                    {formatFlightDateTime(b.departureTime, 'en-GB', { day: '2-digit', month: 'short', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: true })}
                   </td>
                   <td className="px-6 py-3.5 font-bold text-white text-sm">
                     {new Intl.NumberFormat('en-US', { style: 'currency', currency: b.currency }).format(Number(b.totalPrice))}

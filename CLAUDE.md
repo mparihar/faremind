@@ -71,6 +71,18 @@ Conventions, folder rules, error handling, logging, and a **review checklist**: 
 - Persist raw provider payloads; map status via the status-mapper, not inline strings.
 - Never charge the customer on provider failure — except ERBUK082 (pending, no refund).
 
+## Flight times are wall clocks, not instants
+
+Providers send airport local time with no zone (`"2026-12-11T18:10:00"`). `new Date()` reads that in the *machine's* zone, so the same booking becomes a different instant on every host — FMP6VJN2 stored a BCN 18:10 departure as `2026-12-12T00:10:00Z`, a day late for anyone outside US Central. Three rules, and all three are needed:
+
+- **Parse** with `parseProviderDateTime` (`src/lib/provider-time.ts`, mirrored in `backend/src/lib/`) — pins the wall clock to UTC verbatim.
+- **Read** components with `providerHour` / `providerMinute` / `flightTimeMs`, never `getHours()`/`getTime()` on a raw parse.
+- **Render** with `formatFlightDate` / `formatFlightTime` / `formatFlightDateTime` — they pin `timeZone: 'UTC'`, which is what keeps 18:10 printing as 18:10 in Madrid.
+
+An ESLint `no-restricted-syntax` guard in `eslint.config.mjs` fails the build on the four shapes that reintroduce this. **This does not apply to real instants** — `createdAt`, `issuedAt`, payment and audit times are genuine points in time and correctly render in the viewer's own zone.
+
+Repairing rows written before the fix: `backend/scripts/backfill-flight-times.mjs` (dry run by default) re-derives from `raw_segment_payload`. It refuses any row more than 14 h out, because that is a reissue whose raw payload is stale, not a timezone misparse.
+
 ## Business rules (headline)
 
 - Only `providerPayableTotal` (fare + seat fees) is sent to a provider; markup/service-fee/insurance/protection are FareMind/third-party revenue via Stripe.
@@ -137,7 +149,21 @@ PROD_DB_URL="postgres://…" node backend/scripts/reconcile-financials.mjs --rec
 npx tsx scripts/e2e-bookings.ts
 ```
 
-Two traps: `src/lib/ai-scoring/__tests__/FlightRefundabilityUpgradeRule.test.ts` imports **`vitest`, which is not installed** — it cannot run until someone adds vitest, so treat it as a spec document, not a suite. And `domestic-ranking.test.ts` has **1 pre-existing failure at HEAD** ("Test 2: Slightly more expensive domestic flight wins when it saves significant time"; 5/6 pass) — verify against that baseline before assuming you broke it.
+Two traps: `src/lib/ai-scoring/__tests__/FlightRefundabilityUpgradeRule.test.ts` imports **`vitest`, which is not installed** — it cannot run until someone adds vitest, so treat it as a spec document, not a suite. And the ranking suites have **3 pre-existing failures at HEAD** (18 pass / 3 fail over `src/ranking/tests/*.test.ts`) — `domestic-ranking` "Test 2: Slightly more expensive domestic flight wins when it saves significant time", plus `international-ranking` "Test 6: Safer connection beats risky short connection" and "Test 7: Included checked bag ranks better when prices are close". Verify against that baseline before assuming you broke it.
+
+Several suites are hand-rolled scripts rather than `node:test` — they assert and set `process.exitCode`, so **run them directly and check the exit code**; under `--test` the whole file counts as one passing test and individual assertion failures are invisible:
+
+```bash
+cd backend && npx tsx src/lib/provider-time.test.ts     # 21 asserts
+cd backend && npx tsx src/lib/passenger-title.test.ts   # 11
+cd backend && npx tsx src/services/itinerary-sync.test.ts   # 14
+```
+
+`provider-time.test.ts` must pass under **several timezones**, not just yours — that is the entire point of it:
+
+```bash
+for z in UTC America/Chicago Asia/Kolkata Europe/Madrid Pacific/Auckland; do TZ=$z npx tsx src/lib/provider-time.test.ts; done
+```
 
 Fare/HoldAllowed/booking/refund/ticketing certification + required evidence: [docs/TESTING_GUIDE.md](./docs/TESTING_GUIDE.md).
 

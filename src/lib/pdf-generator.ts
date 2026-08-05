@@ -1,5 +1,6 @@
 import { jsPDF } from 'jspdf';
 import autoTable from 'jspdf-autotable';
+import { formatFlightDateTime } from './provider-time';
 
 // ── FareMind brand colours ──
 const TEAL    = [26, 188, 156] as const;  // #1ABC9C
@@ -149,8 +150,8 @@ export function generatePdf(booking: any, action: 'download' | 'base64' = 'base6
       const segRows = (j.segments || []).map((s: any) => [
         s.flightNumber || s.marketingFlightNumber || '',
         s.airlineName || '',
-        s.departureTime ? new Date(s.departureTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '',
-        s.arrivalTime ? new Date(s.arrivalTime).toLocaleString([], { dateStyle: 'short', timeStyle: 'short' }) : '',
+        s.departureTime ? formatFlightDateTime(s.departureTime, [], { dateStyle: 'short', timeStyle: 'short' }) : '',
+        s.arrivalTime ? formatFlightDateTime(s.arrivalTime, [], { dateStyle: 'short', timeStyle: 'short' }) : '',
         s.cabinClass || '',
         s.aircraft || '',
       ]);

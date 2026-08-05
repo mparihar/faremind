@@ -5,6 +5,7 @@ import { Clock, Armchair, ChevronRight, Sparkles, Tag, Zap, Check, X } from 'luc
 import { useAiRecommendationLimit } from '@/hooks/useAiRecommendationLimit';
 import { cn, formatDuration, formatTime, formatPrice, getStopsLabel, getAirlineLogo } from '@/lib/utils';
 import type { UnifiedFlight } from '@/lib/types';
+import { flightTimeMs } from '@/lib/provider-time';
 
 interface FlightCardProps {
   flight: UnifiedFlight;
@@ -34,8 +35,8 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
   const displayDuration = flight.totalDuration > 0
     ? flight.totalDuration
     : (() => {
-        const dep = new Date(firstSeg.departure.time).getTime();
-        const arr = new Date(lastSeg.arrival.time).getTime();
+        const dep = flightTimeMs(firstSeg.departure.time);
+        const arr = flightTimeMs(lastSeg.arrival.time);
         return (arr > dep) ? Math.round((arr - dep) / 60000) : 0;
       })();
 

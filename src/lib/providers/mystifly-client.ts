@@ -120,6 +120,7 @@ export async function searchMystiflyRoundTrip(params: {
 
 import type { UnifiedFlight, FlightSegment } from '@/lib/types';
 import { generateId } from '@/lib/utils';
+import { flightTimeMs } from '../provider-time';
 
 /**
  * When the backend returns already-normalized UnifiedFlight objects from Mystifly,
@@ -165,8 +166,8 @@ function findReturnLegStart(segments: UnifiedFlight['segments'], destination?: s
   let bestIdx = -1;
   let bestGapH = 0;
   for (let i = 1; i < segments.length; i++) {
-    const arrive = new Date(segments[i - 1].arrival.time).getTime();
-    const depart = new Date(segments[i].departure.time).getTime();
+    const arrive = flightTimeMs(segments[i - 1].arrival.time);
+    const depart = flightTimeMs(segments[i].departure.time);
     if (!Number.isFinite(arrive) || !Number.isFinite(depart)) continue;
     const gapH = (depart - arrive) / 3_600_000;
     if (gapH > bestGapH) { bestGapH = gapH; bestIdx = i; }
@@ -242,8 +243,8 @@ function segsToJourney(segments: FlightSegment[], direction: 'outbound' | 'retur
   // calculation stands — a wrong duration that looks authoritative is worse.
   let durationMinutes = journeyDurationMinutes(segments) ?? 0;
   if (durationMinutes === 0 && segments.length > 0) {
-    const dep = new Date(segments[0].departure.time).getTime();
-    const arr = new Date(segments[segments.length - 1].arrival.time).getTime();
+    const dep = flightTimeMs(segments[0].departure.time);
+    const arr = flightTimeMs(segments[segments.length - 1].arrival.time);
     if (arr > dep) durationMinutes = Math.round((arr - dep) / 60000);
   }
   if (durationMinutes === 0) {
@@ -254,7 +255,7 @@ function segsToJourney(segments: FlightSegment[], direction: 'outbound' | 'retur
     airport: seg.arrival.airport,
     airportName: seg.arrival.airportName,
     durationMinutes: Math.max(0, Math.round(
-      (new Date(segments[i + 1].departure.time).getTime() - new Date(seg.arrival.time).getTime()) / 60000
+      (flightTimeMs(segments[i + 1].departure.time) - flightTimeMs(seg.arrival.time)) / 60000
     )),
     terminalChange: seg.arrival.terminal !== segments[i + 1].departure.terminal,
   }));

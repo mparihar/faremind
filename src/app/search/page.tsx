@@ -10,6 +10,7 @@ import { usePreferencesStore, type SortPreference } from '@/store/usePreferences
 import { useAuthStore } from '@/store/useAuthStore';
 import { useFareStore } from '@/store/useFareStore';
 import { useCheckoutStore } from '@/store/useCheckoutStore';
+import { flightTimeMs, providerHour } from '@/lib/provider-time';
 import FareSelectionModal from '@/components/fare-selection/FareSelectionModal';
 import { collectFareSiblings, collectRoundTripFareSiblings } from '@/lib/fare-siblings';
 import { AIRPORTS } from '@/lib/mock-data';
@@ -128,7 +129,7 @@ function scoreFlightWithPreferences(
   if (prefs.stops === 'nonstop') { if (flight.stops === 0) score += 20; else score -= 10 * flight.stops; }
   else if (prefs.stops === '1stop') { if (flight.stops <= 1) score += 10; else score -= 10; }
   if (prefs.departureWindow && flight.segments.length > 0) {
-    const depHour = new Date(flight.segments[0].departure.time).getHours();
+    const depHour = providerHour(flight.segments[0].departure.time) ?? 12;
     const [minH, maxH] = WINDOW_RANGES[prefs.departureWindow] || [0, 24];
     const adj = depHour < 6 ? depHour + 24 : depHour;
     if (adj >= minH && adj < maxH) score += 12; else score -= 5;
@@ -429,13 +430,13 @@ function SearchContent() {
       case 'fewest_stops':
         copy.sort((a, b) => a.totalStops - b.totalStops || a.totalPrice - b.totalPrice); break;
       case 'earliest_dep':
-        copy.sort((a, b) => new Date(a.outboundJourney.departureTime).getTime() - new Date(b.outboundJourney.departureTime).getTime()); break;
+        copy.sort((a, b) => flightTimeMs(a.outboundJourney.departureTime) - flightTimeMs(b.outboundJourney.departureTime)); break;
       case 'latest_dep':
-        copy.sort((a, b) => new Date(b.outboundJourney.departureTime).getTime() - new Date(a.outboundJourney.departureTime).getTime()); break;
+        copy.sort((a, b) => flightTimeMs(b.outboundJourney.departureTime) - flightTimeMs(a.outboundJourney.departureTime)); break;
       case 'earliest_arr':
-        copy.sort((a, b) => new Date(a.outboundJourney.arrivalTime).getTime() - new Date(b.outboundJourney.arrivalTime).getTime()); break;
+        copy.sort((a, b) => flightTimeMs(a.outboundJourney.arrivalTime) - flightTimeMs(b.outboundJourney.arrivalTime)); break;
       case 'latest_arr':
-        copy.sort((a, b) => new Date(b.outboundJourney.arrivalTime).getTime() - new Date(a.outboundJourney.arrivalTime).getTime()); break;
+        copy.sort((a, b) => flightTimeMs(b.outboundJourney.arrivalTime) - flightTimeMs(a.outboundJourney.arrivalTime)); break;
     }
     return copy;
   }, [roundTripOptions, rtSortMode]);
@@ -604,7 +605,7 @@ function SearchContent() {
     }
     if (prefs.departureWindow != null) {
       filtered = filtered.filter(rt => {
-        const h = new Date(rt.outboundJourney.departureTime).getHours();
+        const h = providerHour(rt.outboundJourney.departureTime) ?? 12;
         if (prefs.departureWindow === 'morning')   return h >= 5 && h < 12;
         if (prefs.departureWindow === 'afternoon') return h >= 12 && h < 17;
         if (prefs.departureWindow === 'evening')   return h >= 17 && h < 21;
@@ -681,8 +682,8 @@ function SearchContent() {
     // Compute layover durations between consecutive segments
     const layoverMinutes: number[] = [];
     for (let i = 1; i < flight.segments.length; i++) {
-      const prevArr  = new Date(flight.segments[i - 1].arrival.time).getTime();
-      const nextDep  = new Date(flight.segments[i].departure.time).getTime();
+      const prevArr  = flightTimeMs(flight.segments[i - 1].arrival.time);
+      const nextDep  = flightTimeMs(flight.segments[i].departure.time);
       const layover  = Math.round((nextDep - prevArr) / 60000);
       if (layover > 0) layoverMinutes.push(layover);
     }

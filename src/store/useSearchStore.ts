@@ -2,6 +2,7 @@
 
 import { create } from 'zustand';
 import { SearchQuery, UnifiedFlight, SearchFilters, SortOption } from '@/lib/types';
+import { flightTimeMs, providerHour } from '@/lib/provider-time';
 
 interface SearchStore {
   // State
@@ -62,7 +63,7 @@ export const useSearchStore = create<SearchStore>((set, get) => ({
     if (filters.departureTimeRange) {
       const [minHour, maxHour] = filters.departureTimeRange;
       filtered = filtered.filter((f) => {
-        const hour = new Date(f.segments[0].departure.time).getHours();
+        const hour = providerHour(f.segments[0].departure.time) ?? 12;
         return hour >= minHour && hour <= maxHour;
       });
     }
@@ -77,8 +78,8 @@ export const useSearchStore = create<SearchStore>((set, get) => ({
         break;
       case 'departure':
         filtered.sort((a, b) =>
-          new Date(a.segments[0].departure.time).getTime() -
-          new Date(b.segments[0].departure.time).getTime()
+          flightTimeMs(a.segments[0].departure.time) -
+          flightTimeMs(b.segments[0].departure.time)
         );
         break;
       case 'value':

@@ -14,6 +14,7 @@ import { useAuthStore } from '@/store/useAuthStore';
 import { motion, AnimatePresence } from 'framer-motion';
 import OtherPaymentPanel from '@/components/payments/OtherPaymentPanel';
 import WalletRechargePanel from '@/components/payments/WalletRechargePanel';
+import { formatFlightDate } from '@/lib/provider-time';
 
 const stripePromise = loadStripe(process.env.NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY || '');
 const fmt = (n: number) => new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 2 }).format(n);
@@ -440,7 +441,7 @@ export default function AgentMakePaymentPage() {
                   </div>
                   <span className={`text-xs font-semibold ${b.bookingStatus === 'CONFIRMED' ? 'text-emerald-400' : 'text-amber-400'}`}>{b.bookingStatus}</span>
                 </div>
-                <p className="text-slate-500 text-xs mt-1">{b.originAirport} → {b.destinationAirport} · {new Date(b.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</p>
+                <p className="text-slate-500 text-xs mt-1">{b.originAirport} → {b.destinationAirport} · {formatFlightDate(b.departureDate, 'en-US', { month: 'short', day: 'numeric' })}</p>
               </button>
             ))}
             {bookings.length === 0 && <p className="text-slate-500 text-xs text-center py-8">No bookings found</p>}

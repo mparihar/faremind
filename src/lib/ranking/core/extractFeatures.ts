@@ -15,8 +15,8 @@ import type { RankingOffer, OfferFeatures, CabinClass } from '../types';
 function computeLayovers(segments: RankingOffer['segments']): number[] {
   const layovers: number[] = [];
   for (let i = 0; i < segments.length - 1; i++) {
-    const arrival = new Date(segments[i].arrivalTime).getTime();
-    const departure = new Date(segments[i + 1].departureTime).getTime();
+    const arrival = wallClockMs(segments[i].arrivalTime);
+    const departure = wallClockMs(segments[i + 1].departureTime);
     if (departure > arrival) {
       layovers.push(Math.round((departure - arrival) / 60000));
     }
@@ -59,11 +59,29 @@ function findLongestSegment(segments: RankingOffer['segments']): number {
 }
 
 /**
+ * Epoch ms for the airport wall clock in an ISO-ish string.
+ *
+ * Kept local rather than imported from `lib/provider-time` because this file is
+ * mirrored byte-for-byte into `backend/src/ranking`, where that relative path
+ * does not resolve. Same rule, same result: never let the runtime's timezone
+ * decide what a layover is.
+ */
+function wallClockMs(iso: string): number {
+  const m = /^(\d{4})-(\d{2})-(\d{2})[T ](\d{2}):(\d{2})(?::(\d{2}))?/.exec(iso ?? '');
+  if (!m) return NaN;
+  return Date.UTC(+m[1], +m[2] - 1, +m[3], +m[4], +m[5], +(m[6] ?? 0));
+}
+
+/**
  * Extract hour and minute from an ISO 8601 datetime string.
  */
 function extractTime(isoString: string): { hour: number; minute: number } {
-  const d = new Date(isoString);
-  return { hour: d.getHours(), minute: d.getMinutes() };
+  // The airport wall clock, not the runtime's. Departure-time scoring compares
+  // these against fixed windows (early / red-eye / business-hours), so reading
+  // them locally moves every offer into a different band on a non-UTC host.
+  const m = /T(\d{2}):(\d{2})/.exec(isoString ?? '');
+  if (m) return { hour: Number(m[1]), minute: Number(m[2]) };
+  return { hour: 12, minute: 0 };
 }
 
 /**

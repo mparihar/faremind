@@ -11,6 +11,7 @@ import {
   type FinancialBreakdown,
 } from '@/lib/checkout-validation';
 import { stripe } from '@/lib/stripe';
+import { flightTimeMs, parseProviderDateTime, parseProviderDateTimeOr, providerDateOnly } from '@/lib/provider-time';
 import { isBundleEnabled } from '@/lib/bundle-flags';
 
 // ── Duffel API client (direct import for Next.js API route) ──────────────────
@@ -265,8 +266,8 @@ async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
         destinationAirport: destinationAirport || 'N/A',
         routeLabel: ctx.routeLabel || routeDisplay,
         tripType: isRoundTrip ? 'ROUND_TRIP' : 'ONE_WAY',
-        departureDate: departureDate ? new Date(departureDate).toISOString().split('T')[0] : null,
-        returnDate: returnDate ? new Date(returnDate).toISOString().split('T')[0] : null,
+        departureDate: providerDateOnly(departureDate),
+        returnDate: providerDateOnly(returnDate),
         airline: airline || null,
         cabinClass: ctx.selectedFare?.cabin || null,
         passengerCount: ctx.passengers.length,
@@ -1732,8 +1733,8 @@ export async function POST(req: NextRequest) {
       : (lastOutSeg?.arrival?.airport ?? '');
     const destinationCity = lastOutSeg?.arrival?.city ?? '';
 
-    const outDepTime = firstSeg?.departure?.time ? new Date(firstSeg.departure.time) : new Date();
-    const outArrTime = lastOutSeg?.arrival?.time ? new Date(lastOutSeg.arrival.time) : new Date();
+    const outDepTime = parseProviderDateTimeOr(firstSeg?.departure?.time, new Date());
+    const outArrTime = parseProviderDateTimeOr(lastOutSeg?.arrival?.time, new Date());
 
     const retFirstSeg = retSegs[0] ?? null;
     const retLastSeg = retSegs[retSegs.length - 1] ?? null;
@@ -1833,9 +1834,7 @@ export async function POST(req: NextRequest) {
           destinationAirport,
           destinationCity,
           departureDate: outDepTime,
-          returnDate: isRoundTrip && retFirstSeg?.departure?.time
-            ? new Date(retFirstSeg.departure.time)
-            : null,
+          returnDate: isRoundTrip ? parseProviderDateTime(retFirstSeg?.departure?.time) : null,
           bookingStatus: 'CONFIRMED',
           paymentStatus: 'SUCCEEDED',
           ticketingStatus: initialTicketingStatus,
@@ -1914,7 +1913,7 @@ export async function POST(req: NextRequest) {
           const seg = segs[i];
           const prevSeg = segs[i - 1] ?? null;
           const layoverAfterMinutes = prevSeg
-            ? Math.round((new Date(seg.departure.time).getTime() - new Date(prevSeg.arrival.time).getTime()) / 60000)
+            ? Math.round((flightTimeMs(seg.departure.time) - flightTimeMs(prevSeg.arrival.time)) / 60000)
             : null;
           const dbSeg = await tx.bookingSegment.create({
             data: {
@@ -1938,8 +1937,8 @@ export async function POST(req: NextRequest) {
               destinationCity: seg.arrival?.city ?? '',
               destinationTerminal: seg.arrival?.terminal ?? null,
               destinationGate: seg.arrival?.gate ?? null,
-              departureDateTime: seg.departure?.time ? new Date(seg.departure.time) : new Date(),
-              arrivalDateTime: seg.arrival?.time ? new Date(seg.arrival.time) : new Date(),
+              departureDateTime: parseProviderDateTimeOr(seg.departure?.time, new Date()),
+              arrivalDateTime: parseProviderDateTimeOr(seg.arrival?.time, new Date()),
               durationMinutes: seg.duration ?? 0,
               layoverAfterMinutes,
               providerSegmentId: seg.id ?? null,
@@ -1986,8 +1985,8 @@ export async function POST(req: NextRequest) {
       let retKeyMap: Record<string, string> = {};
       let retDbToJourney: Record<string, string> = {};
       if (isRoundTrip && retSegs.length > 0) {
-        const retDepTime = retFirstSeg?.departure?.time ? new Date(retFirstSeg.departure.time) : new Date();
-        const retArrTime = retLastSeg?.arrival?.time ? new Date(retLastSeg.arrival.time) : new Date();
+        const retDepTime = parseProviderDateTimeOr(retFirstSeg?.departure?.time, new Date());
+        const retArrTime = parseProviderDateTimeOr(retLastSeg?.arrival?.time, new Date());
         retJourney = await tx.bookingJourney.create({
           data: {
             bookingId: mb.id,

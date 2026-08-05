@@ -9,6 +9,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { formatDistanceToNow } from 'date-fns';
+import { formatFlightDate, formatFlightTime } from '@/lib/provider-time';
 
 const fmt = (n: number, c = 'USD') =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 2 }).format(n);
@@ -150,7 +151,7 @@ export default function RefundDetailPage({ params }: { params: Promise<{ booking
                 {r.origin} → {r.destination}
               </span>
               <span className="text-slate-600">•</span>
-              <span>{new Date(r.departureDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
+              <span>{formatFlightDate(r.departureDate, 'en-US', { month: 'short', day: 'numeric', year: 'numeric' })}</span>
               {r.tripType && (
                 <>
                   <span className="text-slate-600">•</span>
@@ -234,7 +235,7 @@ export default function RefundDetailPage({ params }: { params: Promise<{ booking
                       <div className="flex items-center gap-3 text-[10px] text-slate-500 mt-0.5">
                         {seg.airlineName && <span>{seg.airlineName}</span>}
                         {seg.departureTime && (
-                          <span>{new Date(seg.departureTime).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} at {new Date(seg.departureTime).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</span>
+                          <span>{formatFlightDate(seg.departureTime, 'en-US', { month: 'short', day: 'numeric' })} at {formatFlightTime(seg.departureTime, 'en-US', { hour: 'numeric', minute: '2-digit' })}</span>
                         )}
                       </div>
                     </div>

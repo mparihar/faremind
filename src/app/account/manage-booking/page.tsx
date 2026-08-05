@@ -13,6 +13,7 @@ import {
 } from 'lucide-react';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 import { useAuthStore } from '@/store/useAuthStore';
+import { flightTimeMs, isFlightInPast } from '@/lib/provider-time';
 
 // ═══════════════════════════════════════════════
 // Helpers
@@ -94,7 +95,7 @@ function ReservationCard({ booking }: { booking: any }) {
   const destCity = journey?.destinationCity || booking.destinationCity;
   const isRT = (booking.tripType || '').toLowerCase().includes('round');
   const pnr = booking.pnrs?.[0]?.pnrCode || booking.masterPnr || '—';
-  const isPast = new Date(booking.departureDate) < new Date();
+  const isPast = isFlightInPast(booking.departureDate);
   const isCancelled = booking.bookingStatus === 'CANCELLED';
   const status = STATUS_MAP[booking.bookingStatus] || { cls: 'bg-slate-500/10 text-slate-400 border-slate-500/20', dot: 'bg-slate-400', label: booking.bookingStatus };
 
@@ -227,9 +228,9 @@ export default function AccountManageBookingPage() {
   }
 
   const bookings = store.bookings || [];
-  const upcomingBookings = bookings.filter(b => b.bookingStatus !== 'CANCELLED' && new Date(b.departureDate) > new Date())
-    .sort((a, b) => new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime());
-  const pastBookings = bookings.filter(b => b.bookingStatus !== 'CANCELLED' && new Date(b.departureDate) <= new Date());
+  const upcomingBookings = bookings.filter(b => b.bookingStatus !== 'CANCELLED' && !isFlightInPast(b.departureDate))
+    .sort((a, b) => flightTimeMs(a.departureDate) - flightTimeMs(b.departureDate));
+  const pastBookings = bookings.filter(b => b.bookingStatus !== 'CANCELLED' && isFlightInPast(b.departureDate));
   const cancelledBookings = bookings.filter(b => b.bookingStatus === 'CANCELLED');
 
   const inputCls = 'w-full px-4 py-3 bg-white/[0.03] border border-white/[0.1] rounded-xl text-white placeholder-slate-500 focus:outline-none focus:border-[#1ABC9C] focus:ring-1 focus:ring-[#1ABC9C] transition-all text-sm';

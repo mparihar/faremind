@@ -13,6 +13,7 @@
 //
 // This is the frontend twin of backend/src/lib/booking-lookup.ts.
 import { prisma } from '@/lib/db';
+import { parseProviderDateTime } from './provider-time';
 
 export interface ResolvedBooking {
   id: string;
@@ -217,7 +218,7 @@ export async function resolveServicingTarget(input: {
       fareMindRef: booking.masterBookingReference,
       airlinePnr: booking.airlinePnr,
       route,
-      departureDate: js[0]?.departureDateTime ? new Date(js[0].departureDateTime).toISOString() : null,
+      departureDate: parseProviderDateTime(js[0]?.departureDateTime)?.toISOString() ?? null,
       passengerCount: full?._count.passengers ?? 0,
       bookingStatus: full?.bookingStatus ?? booking.bookingStatus,
       ticketingStatus: full?.ticketingStatus ?? null,

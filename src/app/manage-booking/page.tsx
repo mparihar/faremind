@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { useAuthStore } from '@/store/useAuthStore';
 import { useManageBookingStore, type MasterBookingSummary } from '@/store/useManageBookingStore';
+import { formatFlightDate } from '@/lib/provider-time';
 
 // ═══════════════════════════════════════════════
 // OTP Input (reusable — same pattern as login)
@@ -105,8 +106,7 @@ function StatusBadge({ status }: { status: string }) {
 // ═══════════════════════════════════════════════
 
 function BookingCard({ booking, onClick }: { booking: MasterBookingSummary; onClick: () => void }) {
-  const dep = new Date(booking.departureDate);
-  const fmt = (d: Date) => d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+  const depLabel = formatFlightDate(booking.departureDate, 'en-US', { month: 'short', day: 'numeric', year: 'numeric' });
   const isRoundTrip = booking.tripType === 'ROUND_TRIP';
   return (
     <motion.button initial={{ opacity: 0, y: 8 }} animate={{ opacity: 1, y: 0 }} onClick={onClick}
@@ -143,7 +143,7 @@ function BookingCard({ booking, onClick }: { booking: MasterBookingSummary; onCl
 
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-3 text-slate-500 text-xs">
-          <span className="flex items-center gap-1"><CalendarDays size={12} />{fmt(dep)}</span>
+          <span className="flex items-center gap-1"><CalendarDays size={12} />{depLabel}</span>
           <span className="flex items-center gap-1"><User size={12} />{booking.passengers?.length || 1} pax</span>
         </div>
         <ChevronRight size={16} className="text-slate-600 group-hover:text-[#1ABC9C] transition-colors" />

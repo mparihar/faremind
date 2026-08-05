@@ -13,6 +13,7 @@ import {
 import { useAuthStore } from '@/store/useAuthStore';
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 import { canAddBaggage } from '@/lib/booking-capabilities';
+import { flightTimeMs, isFlightInPast } from '@/lib/provider-time';
 
 const fmt = (n: string | number, c = 'USD') =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency: c, maximumFractionDigits: 0 }).format(Number(n));
@@ -35,7 +36,7 @@ function durationStr(mins: number) {
 function TripCountdown({ departureDate, destCity }: { departureDate: string; destCity: string }) {
   const [now, setNow] = useState(Date.now());
   useEffect(() => { const i = setInterval(() => setNow(Date.now()), 1000); return () => clearInterval(i); }, []);
-  const diff = Math.max(0, new Date(departureDate).getTime() - now);
+  const diff = Math.max(0, flightTimeMs(departureDate) - now);
   const d = Math.floor(diff / 86400000);
   const h = Math.floor((diff % 86400000) / 3600000);
   const m = Math.floor((diff % 3600000) / 60000);
@@ -193,12 +194,12 @@ export default function AccountDashboard() {
   const firstName = user?.name?.split(' ')[0] || 'there';
 
   const upcomingTrips = bookings
-    .filter(b => b.bookingStatus !== 'CANCELLED' && new Date(b.departureDate) > new Date())
-    .sort((a, b) => new Date(a.departureDate).getTime() - new Date(b.departureDate).getTime());
+    .filter(b => b.bookingStatus !== 'CANCELLED' && !isFlightInPast(b.departureDate))
+    .sort((a, b) => flightTimeMs(a.departureDate) - flightTimeMs(b.departureDate));
 
   const nextTrip = upcomingTrips[0] || null;
   const cancelledCount = bookings.filter(b => b.bookingStatus === 'CANCELLED').length;
-  const pastCount = bookings.filter(b => b.bookingStatus !== 'CANCELLED' && new Date(b.departureDate) <= new Date()).length;
+  const pastCount = bookings.filter(b => b.bookingStatus !== 'CANCELLED' && isFlightInPast(b.departureDate)).length;
   const refundPendingCount = bookings.filter(b => b.bookingStatus === 'CANCELLED').length > 0 ? 1 : 0;
 
   const j = nextTrip?.journeys?.[0];
