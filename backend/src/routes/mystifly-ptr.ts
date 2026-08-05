@@ -36,6 +36,7 @@ import { reconcilePtrQuoteById } from '../workers/ptr-quote-reconciliation';
 import { getPtrPollFrequencyMs } from '../lib/ptr-poll-config';
 import { buildPtrRefundRef } from '../lib/ptr-refund-ref';
 import { ptrIdFromInProcessMessage } from '../lib/ptr-in-process';
+import { buildRefundDetails, ticketNumbersByType } from '../lib/refund-details';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -958,7 +959,14 @@ async function adoptInProcessPtr(params: {
         });
       }
 
-      const { result } = await withEticketRetry(uniqueId, bookingId, (pax) => mystifly.refundQuote(uniqueId, pax));
+      // Mystifly requires RefundDetails[] on a RefundQuote and refuses the
+      // request without it. The figures are the fare being refunded, so they
+      // come from the provider's own TripDetails breakdown rather than anything
+      // computed here. A failed read is not fatal — send the quote without them
+      // and let the provider's own message stand.
+      const tripForRefund = await mystifly.getTripDetailsResilient(uniqueId).catch(() => null);
+      const { result } = await withEticketRetry(uniqueId, bookingId, (pax) =>
+        mystifly.refundQuote(uniqueId, pax, buildRefundDetails(tripForRefund, ticketNumbersByType(pax))));
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
@@ -975,8 +983,8 @@ async function adoptInProcessPtr(params: {
         const contractGap = /details? (are|is) missing|missing from the request/i.test(message);
         if (contractGap) {
           return reply.code(422).send({
-            error: `The airline could not price a refund for this ticket (${message}). This is a provider-side request limitation, not something missing from your input — it has been seen on multi-segment itineraries. Use "Force Cancel + Refund" to cancel and refund manually.`,
-            errorCode: 'MYSTIFLY_REFUND_QUOTE_UNSUPPORTED',
+            error: `The airline could not price a refund for this ticket (${message}). The refund figures are normally taken from the airline's own fare breakdown — if TripDetails did not return one for this booking they cannot be sent, and the request is refused. Check the booking still resolves at the provider, then retry; if it persists use "Force Cancel + Refund".`,
+            errorCode: 'MYSTIFLY_REFUND_QUOTE_MISSING_DETAILS',
             raw: result,
           });
         }

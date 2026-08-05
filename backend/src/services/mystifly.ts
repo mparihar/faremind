@@ -21,6 +21,7 @@
  */
 
 import type { PtrPassenger } from '../lib/ptr-passengers';
+import type { MystiflyRefundDetail } from '../lib/refund-details';
 import * as crypto from 'crypto';
 import { passengerTitleCased } from '../lib/passenger-title';
 
@@ -1521,7 +1522,11 @@ export async function executeVoid(
  *
  * Used when void is not available (outside void window).
  */
-export async function refundQuote(mfRef: string, passengers: PtrPassenger[] = []): Promise<any> {
+export async function refundQuote(
+  mfRef: string,
+  passengers: PtrPassenger[] = [],
+  refundDetails: MystiflyRefundDetail[] = [],
+): Promise<any> {
   // NOT synchronous, despite what this comment used to claim. Every RefundQuote
   // raised on this account has come back PTRStatus=InProcess,
   // Resolution=QuoteRequested with an EMPTY RefundQuotes[] — 4 of 4, none ever
@@ -1532,7 +1537,17 @@ export async function refundQuote(mfRef: string, passengers: PtrPassenger[] = []
   return mystiflyRequest<any>({
     method: 'POST',
     path: '/api/PostTicketingRequest',
-    body: { ptrType: 'RefundQuote', mFRef: mfRef, passengers } as unknown as Record<string, unknown>,
+    // RefundDetails is required, not optional. Omitting it is answered with
+    // "Refund quote request cannot be processed as the refund details are
+    // missing from the request." — wording that names no field and reads like an
+    // airline limitation. Proven on MF35565926: same request minus this array
+    // fails, with it returns PTRId 22982. See lib/refund-details.
+    body: {
+      ptrType: 'RefundQuote',
+      mFRef: mfRef,
+      passengers,
+      ...(refundDetails.length ? { RefundDetails: refundDetails } : {}),
+    } as unknown as Record<string, unknown>,
     retries: 0,
   });
 }
