@@ -14,28 +14,40 @@ import { prisma } from '../lib/db';
 import { checkReissueSettlement } from '../services/reissue-settlement';
 import { syncItineraryFromTripDetails } from '../services/itinerary-sync';
 import { searchPtrStatus } from '../services/mystifly';
+import { getPtrPollFrequencyMs } from '../lib/ptr-poll-config';
 
-let schedulerInterval: ReturnType<typeof setInterval> | null = null;
-const DEFAULT_INTERVAL_MS = 15 * 60 * 1000; // 15 minutes
+let schedulerTimeout: ReturnType<typeof setTimeout> | null = null;
+let stopped = false;
 
-export function startReissueReconciliationScheduler(intervalMs: number = DEFAULT_INTERVAL_MS): void {
-  if (schedulerInterval) {
+export function startReissueReconciliationScheduler(): void {
+  if (schedulerTimeout) {
     console.log('[reissue-reconciliation-cron] Scheduler already running.');
     return;
   }
+  stopped = false;
+  console.log('[reissue-reconciliation-cron] Starting scheduler (interval: admin-configurable, default 3h)');
 
-  console.log(`[reissue-reconciliation-cron] Starting scheduler (interval: ${intervalMs / 1000}s)`);
+  // Run first cycle after a short delay (don't block startup), then
+  // self-reschedule at the configured rate so a settings change is picked up
+  // on the next tick.
+  schedulerTimeout = setTimeout(runAndReschedule, 45_000);
+}
 
-  // Run first cycle after a short delay (don't block startup)
-  setTimeout(runReissueReconciliationCycle, 45_000);
+async function runAndReschedule(): Promise<void> {
+  if (stopped) return;
+  await runReissueReconciliationCycle();
+  if (stopped) return;
 
-  schedulerInterval = setInterval(runReissueReconciliationCycle, intervalMs);
+  const intervalMs = await getPtrPollFrequencyMs();
+  console.log(`[reissue-reconciliation-cron] Next cycle in ${Math.round(intervalMs / 60_000)} min`);
+  schedulerTimeout = setTimeout(runAndReschedule, intervalMs);
 }
 
 export function stopReissueReconciliationScheduler(): void {
-  if (schedulerInterval) {
-    clearInterval(schedulerInterval);
-    schedulerInterval = null;
+  stopped = true;
+  if (schedulerTimeout) {
+    clearTimeout(schedulerTimeout);
+    schedulerTimeout = null;
     console.log('[reissue-reconciliation-cron] Scheduler stopped.');
   }
 }

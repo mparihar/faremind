@@ -56,6 +56,19 @@ export const PUT = withAdmin(async (req: NextRequest, { admin }) => {
       }
     }
 
+    // Validate PTR poll frequency (minutes). Separate from the ticketing one:
+    // that paces TripDetails while a ticket is issuing, this paces how often we
+    // ask the provider about an outstanding void / refund / reissue request.
+    if (key === 'ptr_poll_frequency_minutes') {
+      const minutes = parseInt(value, 10);
+      if (isNaN(minutes) || minutes < 1 || minutes > 1440) {
+        return NextResponse.json(
+          { error: 'ptr_poll_frequency_minutes must be between 1 and 1440 (24h)' },
+          { status: 400 },
+        );
+      }
+    }
+
     // Validate rate limit config keys
     if (key === 'rate_limit_enabled') {
       if (value !== 'true' && value !== 'false') {

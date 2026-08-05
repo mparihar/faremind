@@ -192,12 +192,31 @@ function BookingTimerConfig() {
   );
 }
 
-// ─── TripDetails Poll Frequency Card ─────────────────────────────────────────
+// ─── Poll Frequency Cards ────────────────────────────────────────────────────
 
-function TicketingPollConfig() {
-  const DEFAULT_MIN = 180; // 3 hours
-  const [minutes, setMinutes] = useState(DEFAULT_MIN);
-  const [originalMinutes, setOriginalMinutes] = useState(DEFAULT_MIN);
+/**
+ * A minutes-valued SystemConfig knob that paces a background poller.
+ *
+ * Two of these exist and they are deliberately separate settings: TripDetails
+ * paces ticket issuance (minutes matter there — a queued void cannot run until
+ * the e-ticket exists), while PTR paces how hard we chase the provider's back
+ * office on a void / refund / reissue. Same shape, different clocks.
+ */
+function PollFrequencyCard({
+  configKey,
+  title,
+  blurb,
+  dbDescription,
+  defaultMinutes,
+}: {
+  configKey: string;
+  title: string;
+  blurb: string;
+  dbDescription: string;
+  defaultMinutes: number;
+}) {
+  const [minutes, setMinutes] = useState(defaultMinutes);
+  const [originalMinutes, setOriginalMinutes] = useState(defaultMinutes);
   const [updatedBy, setUpdatedBy] = useState<string | null>(null);
   const [updatedAt, setUpdatedAt] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
@@ -205,27 +224,32 @@ function TicketingPollConfig() {
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState('');
 
-  async function loadConfig() {
-    setLoading(true);
-    try {
-      const res = await adminFetch('/api/admin/system-config');
-      if (!res.ok) { setLoading(false); return; }
-      const data = await res.json();
-      const config = data.configs?.find((c: any) => c.key === 'ticketing_poll_frequency_minutes');
-      if (config) {
-        const val = parseInt(config.value, 10);
-        setMinutes(isNaN(val) ? DEFAULT_MIN : val);
-        setOriginalMinutes(isNaN(val) ? DEFAULT_MIN : val);
-        setUpdatedBy(config.updatedBy ?? null);
-        setUpdatedAt(config.updatedAt ?? null);
-      }
-    } catch {
-      // ignore
-    }
-    setLoading(false);
-  }
+  useEffect(() => {
+    let cancelled = false;
 
-  useEffect(() => { loadConfig(); }, []);
+    async function loadConfig() {
+      setLoading(true);
+      try {
+        const res = await adminFetch('/api/admin/system-config');
+        if (!res.ok) { if (!cancelled) setLoading(false); return; }
+        const data = await res.json();
+        const config = data.configs?.find((c: any) => c.key === configKey);
+        if (config && !cancelled) {
+          const val = parseInt(config.value, 10);
+          setMinutes(isNaN(val) ? defaultMinutes : val);
+          setOriginalMinutes(isNaN(val) ? defaultMinutes : val);
+          setUpdatedBy(config.updatedBy ?? null);
+          setUpdatedAt(config.updatedAt ?? null);
+        }
+      } catch {
+        // A failed read leaves the card on its default; the worker has its own.
+      }
+      if (!cancelled) setLoading(false);
+    }
+
+    loadConfig();
+    return () => { cancelled = true; };
+  }, [configKey, defaultMinutes]);
 
   async function saveConfig() {
     setError('');
@@ -234,11 +258,7 @@ function TicketingPollConfig() {
     try {
       const res = await adminFetch('/api/admin/system-config', {
         method: 'PUT',
-        body: JSON.stringify({
-          key: 'ticketing_poll_frequency_minutes',
-          value: String(minutes),
-          description: 'How often the reconciliation worker polls Mystifly (AirTicketOrderStatus + TripDetails) for pending-ticket bookings, in minutes',
-        }),
+        body: JSON.stringify({ key: configKey, value: String(minutes), description: dbDescription }),
       });
       const data = await res.json();
       if (!res.ok) {
@@ -259,6 +279,7 @@ function TicketingPollConfig() {
 
   const hasChanged = minutes !== originalMinutes;
   const hoursLabel = (minutes / 60).toFixed(minutes % 60 === 0 ? 0 : 1);
+  const defaultHours = (defaultMinutes / 60).toFixed(defaultMinutes % 60 === 0 ? 0 : 1);
 
   if (loading) {
     return (
@@ -274,15 +295,11 @@ function TicketingPollConfig() {
     <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
       <div className="px-5 py-4 border-b border-slate-700/50 flex items-center gap-3">
         <RefreshCw size={16} className="text-sky-400" />
-        <h2 className="text-white font-bold text-sm">TripDetails Poll Frequency</h2>
+        <h2 className="text-white font-bold text-sm">{title}</h2>
       </div>
 
       <div className="px-5 py-5 space-y-5">
-        <p className="text-xs text-slate-400 leading-relaxed">
-          How often the reconciliation worker polls the airline (AirTicketOrderStatus + TripDetails)
-          for bookings still awaiting ticketing. Lower values ticket faster but call TripDetails much
-          more often. Changes take effect on the next cycle without a redeploy.
-        </p>
+        <p className="text-xs text-slate-400 leading-relaxed">{blurb}</p>
 
         <div className="flex items-end gap-4">
           <div className="flex-1 max-w-xs">
@@ -305,7 +322,7 @@ function TicketingPollConfig() {
               <span className="text-slate-500 text-xs">≈ {hoursLabel} h</span>
             </div>
             <p className="text-[10px] text-slate-500 mt-1.5">
-              Min: 1 min · Max: 1440 min (24h) · Default: 180 min (3h)
+              Min: 1 min · Max: 1440 min (24h) · Default: {defaultMinutes} min ({defaultHours}h)
             </p>
           </div>
 
@@ -346,6 +363,30 @@ function TicketingPollConfig() {
         )}
       </div>
     </div>
+  );
+}
+
+function TicketingPollConfig() {
+  return (
+    <PollFrequencyCard
+      configKey="ticketing_poll_frequency_minutes"
+      title="TripDetails Poll Frequency"
+      defaultMinutes={180}
+      blurb="How often the reconciliation worker polls the airline (AirTicketOrderStatus + TripDetails) for bookings still awaiting ticketing. Lower values ticket faster but call TripDetails much more often. Changes take effect on the next cycle without a redeploy."
+      dbDescription="How often the reconciliation worker polls Mystifly (AirTicketOrderStatus + TripDetails) for pending-ticket bookings, in minutes"
+    />
+  );
+}
+
+function PtrPollConfig() {
+  return (
+    <PollFrequencyCard
+      configKey="ptr_poll_frequency_minutes"
+      title="PTR Poll Frequency"
+      defaultMinutes={180}
+      blurb="How often the workers ask Mystifly about an outstanding Post-Ticketing Request — void, refund and reissue all share this one value, since they are the same question asked of the same endpoint. The provider's back office works these on its own clock, so polling faster mostly spends provider calls rather than settling anything sooner. Changes take effect on the next cycle without a redeploy."
+      dbDescription="How often the PTR workers poll Mystifly for outstanding void / refund / reissue requests, in minutes"
+    />
   );
 }
 
@@ -677,6 +718,11 @@ export default function SettingsPage() {
       {/* TripDetails Poll Frequency */}
       <div className="mb-6">
         <TicketingPollConfig />
+      </div>
+
+      {/* PTR Poll Frequency (void / refund / reissue) */}
+      <div className="mb-6">
+        <PtrPollConfig />
       </div>
 
       {/* Rate Limit Configuration */}

@@ -19,6 +19,7 @@ import { prisma } from '../lib/db';
 import { getProvider } from './provider-adapter';
 import { refundCollectionWithAudit } from './customer-collect';
 import { getTripDetailsResilient } from './mystifly';
+import { getPtrPollFrequencyMs } from '../lib/ptr-poll-config';
 import { syncItineraryFromTripDetails } from './itinerary-sync';
 import * as mbq from '../lib/manage-booking-queries';
 import { fireNotification } from '../lib/notify';
@@ -30,10 +31,8 @@ const ESCALATE_AFTER_HOURS = 30;
  * Progressive poll back-off (hours) by attempt number.
  * First check ~30 min after accept, then widen out to 12h.
  */
-function nextCheckDelayMs(attempt: number): number {
-  const hours = attempt <= 1 ? 0.5 : attempt === 2 ? 1 : attempt === 3 ? 3 : attempt === 4 ? 6 : 12;
-  return hours * 60 * 60 * 1000;
-}
+// The escalating backoff (0.5h → 1h → 3h → 6h → 12h) that used to live here is
+// replaced by the admin-configured PTR poll frequency; see lib/ptr-poll-config.
 
 /**
  * Check one ChangeRequest's reissue settlement status.
@@ -198,7 +197,10 @@ export async function checkReissueSettlement(changeRequestId: string): Promise<v
 
   // ── Still processing → reschedule the next poll ───────────────────────
   const ageHours = (Date.now() - cr.createdAt.getTime()) / (1000 * 60 * 60);
-  const nextCheckAt = new Date(Date.now() + nextCheckDelayMs(attempt));
+  // The admin-configured PTR frequency, not an escalating backoff. One setting
+  // has to actually govern the cadence, otherwise a 12 h per-record delay would
+  // silently override a 3 h cron and the flag would appear not to work.
+  const nextCheckAt = new Date(Date.now() + await getPtrPollFrequencyMs());
 
   await prisma.changeRequest.update({
     where: { id: cr.id },
