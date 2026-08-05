@@ -9,6 +9,7 @@ import { useFareStore, getSelectedFareOption } from '@/store/useFareStore';
 import { useBookingStore } from '@/store/useBookingStore';
 import { useCheckoutStore } from '@/store/useCheckoutStore';
 import { useOfferSessionStore } from '@/store/useOfferSessionStore';
+import type { OfferSessionSearchCriteria } from '@/store/useOfferSessionStore';
 import type { FareSelectionPayload, PriceProtectionQuote } from '@/lib/fare-types';
 import type { FareSiblingOffer } from '@/lib/fare-siblings';
 import { apiFetch } from '@/lib/api-client';
@@ -97,7 +98,17 @@ export default function FareSelectionModal({ onClose }: Props) {
   // Other. Then the first populated tab opens instead of an empty one.
   const [activeCabin, setActiveCabin] = useState<string>('economy');
   const [confirming, setConfirming] = useState(false);
-  const [fareContext, setFareContext] = useState<{ origin: string; destination: string; trip: string } | null>(null);
+  // Read once from sessionStorage during render, like travelerCount below.
+  // It was state assigned from an effect, which cost an extra render and is the
+  // setState-in-effect pattern that cascades.
+  const fareContext = useMemo(() => {
+    if (typeof window === 'undefined') return null;
+    try {
+      const ctx = JSON.parse(sessionStorage.getItem('fm_fare_context') || '{}');
+      if (!ctx?.origin) return null;
+      return { origin: ctx.origin as string, destination: ctx.destination as string, trip: (ctx.trip || 'one_way') as string };
+    } catch { return null; }
+  }, []);
 
   const { travelerCount, passengerBreakdown } = useMemo(() => {
     if (typeof window === 'undefined') return { travelerCount: 1, passengerBreakdown: undefined as { adults: number; children: number; infants: number } | undefined };
@@ -129,7 +140,7 @@ export default function FareSelectionModal({ onClose }: Props) {
         session.updateTrackedOffer(providerOfferId, providerName);
       } else {
         // No active timer (e.g. page refresh, direct navigation) — start a new session
-        let searchCriteria: any;
+        let searchCriteria: OfferSessionSearchCriteria | undefined;
         try {
           const ctx = JSON.parse(sessionStorage.getItem('fm_fare_context') || '{}');
           searchCriteria = {
@@ -163,7 +174,6 @@ export default function FareSelectionModal({ onClose }: Props) {
 
     let ctx: { offerId: string; basePrice: number; travelers: number; currency: string; origin: string; destination: string; stops: number; durationMinutes?: number; layoverMinutes?: number[]; trip?: string; fareRules?: { changeable?: boolean; changeFee?: number; refundable?: boolean; cancellationFee?: number }; baggage?: { carryOn?: number; checked?: number }; offers?: FareSiblingOffer[] };
     try { ctx = JSON.parse(raw); } catch { onClose(); return; }
-    setFareContext({ origin: ctx.origin, destination: ctx.destination, trip: ctx.trip || 'one_way' });
 
     const s = useFareStore.getState;
     s().setLoading(true);
@@ -234,7 +244,7 @@ export default function FareSelectionModal({ onClose }: Props) {
     store.selectFare(id);
     // Clear the stale protection quote immediately so the UI doesn't flash
     // the old fare's protection fee while the new quote loads
-    store.setProtectionQuote(null as any);
+    store.setProtectionQuote(null);
     const allFares = store.payload?.fareGroups.flatMap(g => g.fares) ?? [];
     const fare = allFares.find(f => f.id === id);
     if (!fare) return;
@@ -255,11 +265,6 @@ export default function FareSelectionModal({ onClose }: Props) {
     return selectedFare.totalPrice + (store.priceProtection ? totalProtectionFee : 0);
   }, [selectedFare, store.priceProtection, totalProtectionFee]);
 
-  const activeFares = useMemo(
-    () => store.payload?.fareGroups.find(g => g.cabin === activeCabin)?.fares ?? [],
-    [store.payload, activeCabin]
-  );
-
   /** How many fares each tab holds. Empty tabs render, but cannot be opened. */
   const faresByCabin = useMemo(() => {
     const m = new Map<string, number>();
@@ -268,19 +273,29 @@ export default function FareSelectionModal({ onClose }: Props) {
     return m;
   }, [store.payload]);
 
-  // Land on a tab that actually has fares, and pre-select its first (cheapest)
-  // fare so the panel always opens on a real, selectable option.
+  // The tab actually shown. Correcting an out-of-range choice during render
+  // rather than writing it back from an effect means the panel never paints an
+  // empty tab first, and drops the cascading setState the effect used to do.
+  const effectiveCabin = useMemo(() => {
+    const populated: string[] = CABIN_ORDER.filter(c => (faresByCabin.get(c) ?? 0) > 0);
+    if (!populated.length) return activeCabin;
+    return populated.includes(activeCabin) ? activeCabin : populated[0];
+  }, [faresByCabin, activeCabin]);
+
+  const activeFares = useMemo(
+    () => store.payload?.fareGroups.find(g => g.cabin === effectiveCabin)?.fares ?? [],
+    [store.payload, effectiveCabin]
+  );
+
+  // Only the fare auto-selection remains here — it calls into the store, not
+  // into this component's own state.
   useEffect(() => {
     if (!store.payload) return;
-    const populated = CABIN_ORDER.filter(c => (faresByCabin.get(c) ?? 0) > 0);
-    if (!populated.length) return;
-    const target = populated.includes(activeCabin as any) ? activeCabin : populated[0];
-    if (target !== activeCabin) { setActiveCabin(target); return; }
-    const fares = store.payload.fareGroups.find(g => g.cabin === target)?.fares ?? [];
+    const fares = store.payload.fareGroups.find(g => g.cabin === effectiveCabin)?.fares ?? [];
     if (fares.length && !fares.some(f => f.id === store.selectedFareId)) {
       handleSelectFare(fares[0].id);
     }
-  }, [store.payload, faresByCabin, activeCabin, store.selectedFareId, handleSelectFare]);
+  }, [store.payload, effectiveCabin, store.selectedFareId, handleSelectFare]);
 
   const allFares = useMemo(
     () => store.payload?.fareGroups.flatMap(g => g.fares) ?? [],
@@ -504,7 +519,7 @@ export default function FareSelectionModal({ onClose }: Props) {
                 <div className="flex gap-2 overflow-x-auto pb-1 scrollbar-slim">
                   {CABIN_ORDER.map(cabin => {
                     const count = faresByCabin.get(cabin) ?? 0;
-                    const isActive = activeCabin === cabin;
+                    const isActive = effectiveCabin === cabin;
                     return (
                       <button
                         key={cabin}
