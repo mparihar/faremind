@@ -552,6 +552,7 @@ export class DuffelAdapter implements IBookingProvider {
 import * as mystiflyClient from './mystifly';
 import type { MystiflyReissueOriginDestination, MystiflyReissuePassenger } from './mystifly';
 import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
+import { parsePtrRefundRef } from '../lib/ptr-refund-ref';
 
 /**
  * Read a Mystifly booking's real fare rules out of TripDetails.
@@ -1581,13 +1582,9 @@ export class MystiflyAdapter implements IBookingProvider {
     // refundRequestId is our quoteId, one of:
     //   mystifly_void_{mfRef}_{ptrId}          mystifly_refund_{mfRef}_{ptrId}
     //   mystifly_void_unticketed_{mfRef}       mystifly_cancel_norefund_{mfRef}
-    const ptrType: 'Void' | 'Refund' = refundRequestId.includes('_refund_') ? 'Refund' : 'Void';
-    const ptrId = parseInt(refundRequestId.match(/_(\d+)$/)?.[1] || '0', 10);
-    const mfRef = orderId
-      || refundRequestId
-          .replace(/^mystifly_(void|refund|cancel)_/, '')
-          .replace(/^(unticketed|norefund)_/, '')
-          .replace(/_\d+$/, '');
+    // Shared with the writer in routes/mystifly-ptr.ts — see lib/ptr-refund-ref.
+    const { ptrType, ptrId: parsedPtrId, mfRef } = parsePtrRefundRef(refundRequestId, orderId);
+    const ptrId = parsedPtrId ?? 0;
 
     try {
       const ptrResult = await mystiflyClient.searchPtr(ptrType, mfRef, ptrId);

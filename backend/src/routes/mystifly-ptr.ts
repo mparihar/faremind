@@ -33,6 +33,8 @@ import { toUsd } from '../services/fx';
 import * as mbq from '../lib/manage-booking-queries';
 import { summariseCoupons, couponSummaryLabel } from '../services/coupon-eligibility';
 import { reconcilePtrQuoteById } from '../workers/ptr-quote-reconciliation';
+import { getPtrPollFrequencyMs } from '../lib/ptr-poll-config';
+import { buildPtrRefundRef } from '../lib/ptr-refund-ref';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -567,8 +569,50 @@ async function applyCancellationToBooking(params: {
           where: { id: bk.id },
           data: { paymentStatus: owed >= paid - 0.01 ? 'REFUNDED' : 'PARTIALLY_REFUNDED' },
         });
+        // The customer's card refund is done; the AIRLINE side is not. Mystifly
+        // answers Void/Refund synchronously with PTRStatus=InProcess and settles
+        // in its back office, so the only proof the ticket was actually voided
+        // or refunded is Resolution=Voided/Refunded on a later
+        // Search/PostTicketingRequest.
+        //
+        // refund-reconciliation-cron already makes that call, via
+        // getProviderRefundStatus -> searchPtr. It selects on
+        // (providerReimbursementStatus IN PENDING|PROCESSING, nextProviderStatusCheckAt <= now),
+        // and this row previously set neither — status defaulted to NOT_STARTED
+        // and the timestamp stayed NULL, which a SQL `<=` drops. Two independent
+        // reasons the record was never picked up, so every void and refund was
+        // submitted and never confirmed. A provider REJECTION after submission
+        // would have gone unseen with the customer already refunded.
+        //
+        // providerRefundRequestId encodes the type and PTR id in the shape the
+        // adapter parses back out (mystifly_void_{mfRef}_{ptrId}); providerPnr
+        // carries the MF ref it searches on. Without both, the poll would run
+        // with ptrId 0 and an empty reference.
+        const ptrRefundRef = buildPtrRefundRef(kind, uniqueId, providerPtrId);
+        const canVerify = ptrRefundRef !== null;
         await prisma.bookingRefund.create({
-          data: { bookingId: bk.id, amount: owed, currency: payment.currency || 'USD', method: 'ORIGINAL_PAYMENT', status: 'COMPLETED', provider: 'MYSTIFLY' },
+          data: {
+            bookingId: bk.id,
+            amount: owed,
+            currency: payment.currency || 'USD',
+            method: 'ORIGINAL_PAYMENT',
+            status: 'COMPLETED',              // the customer has their money back
+            stripeRefundId: stripeRefund.id,
+            provider: 'MYSTIFLY',
+            providerPnr: uniqueId,
+            providerBookingReference: uniqueId,
+            providerRefundRequestId: ptrRefundRef,
+            providerExpectedReimbursementAmount: params.quotedRefundAmount ?? null,
+            fareMindCancellationFee: adminFee,
+            customerRefundStatus: 'CUSTOMER_REFUNDED',
+            // Only chase a PTR that exists. An unticketed void or a no-refund
+            // cancellation has none, and leaving those NOT_STARTED keeps the
+            // cron off records it could never resolve.
+            providerReimbursementStatus: canVerify ? 'PENDING' : 'NOT_STARTED',
+            nextProviderStatusCheckAt: canVerify
+              ? new Date(Date.now() + (await getPtrPollFrequencyMs()))
+              : null,
+          },
         }).catch((be: any) => console.error('[PTR] bookingRefund record failed:', be?.message));
         await prisma.bookingEvent.create({
           data: {
