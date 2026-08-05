@@ -35,6 +35,7 @@ import { summariseCoupons, couponSummaryLabel } from '../services/coupon-eligibi
 import { reconcilePtrQuoteById } from '../workers/ptr-quote-reconciliation';
 import { getPtrPollFrequencyMs } from '../lib/ptr-poll-config';
 import { buildPtrRefundRef } from '../lib/ptr-refund-ref';
+import { ptrIdFromInProcessMessage } from '../lib/ptr-in-process';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -753,6 +754,11 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
+        const adopted = await adoptInProcessPtr({
+          message, ptrRecordId: ptrRecord?.id, result, booking: publicRef(resolved.ref), kind: 'void',
+        });
+        if (adopted) return adopted;
+
         if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date(), providerQuoteResponse: result });
         const notEligible = /verify the request|not eligible|not allowed|not permitted|window|invalid/i.test(message);
         const friendly = notEligible
@@ -860,6 +866,47 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
     }
   });
 
+/**
+ * Adopt an in-flight provider PTR onto our record so the reconciler can finish
+ * it. Returns the response to send, or null when the message named no PTR.
+ */
+async function adoptInProcessPtr(params: {
+  message: string;
+  ptrRecordId?: string | null;
+  result: any;
+  booking: unknown;
+  kind: 'void' | 'refund';
+}): Promise<Record<string, unknown> | null> {
+  const providerPtrId = ptrIdFromInProcessMessage(params.message);
+  if (providerPtrId == null) return null;
+
+  if (params.ptrRecordId) {
+    await updatePtrRecord(params.ptrRecordId, {
+      status: 'QUOTE_PENDING',
+      providerRequestId: String(providerPtrId),
+      providerStatus: 'InProcess',
+      failureReason: null,
+      failedAt: null,
+      providerQuoteResponse: params.result,
+    }).catch(() => {});
+  }
+
+  return {
+    success: true,
+    booking: params.booking,
+    ptrId: params.ptrRecordId ?? undefined,
+    providerPtrId,
+    quotePending: true,
+    adoptedExistingPtr: true,
+    ptrStatus: 'InProcess',
+    pendingMessage:
+      `The airline already has ${params.kind === 'void' ? 'a void' : 'a refund'} quote open for this ticket (PTR ${providerPtrId}) — a previous attempt reached them even though it reported an error. ` +
+      `That request is now being tracked and will price automatically; no need to raise another. Do not execute until an amount is returned.`,
+    quote: null,
+    raw: params.result,
+  };
+}
+
   // ── Refund Quote ───────────────────────────────
 
   fastify.post('/refund-quote', async (request, reply) => {
@@ -889,6 +936,13 @@ const ptrPlugin: FastifyPluginAsync = async (fastify) => {
       const { hasError, message } = extractPtrError(result);
 
       if (hasError) {
+        // A refusal that names an existing PTR is not a failure — it is the
+        // provider telling us the id of the request we already have open.
+        const adopted = await adoptInProcessPtr({
+          message, ptrRecordId: ptrRecord?.id, result, booking: publicRef(resolved.ref), kind: 'refund',
+        });
+        if (adopted) return adopted;
+
         if (ptrRecord) await updatePtrRecord(ptrRecord.id, { status: 'FAILED', failureReason: message, failedAt: new Date(), providerQuoteResponse: result });
         // The airline refused a refund PTR (non-refundable, still in void window, or
         // already processed). Point staff at the right alternative instead of a dead end.
