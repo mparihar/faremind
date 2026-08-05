@@ -379,19 +379,6 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Build Book v1 request payload
       const travelers = toMystiflyTravelers(passengers);
 
-      // [TITLE-DIAG] TEMP diagnostic — remove after infant-title issue confirmed.
-      // Logs the EXACT title we send to Mystifly per passenger, so a booking's
-      // TripDetails can be compared against what we sent (do WE send MISS, or
-      // does Mystifly downgrade it to MS?).
-      console.log('[TITLE-DIAG] book travelers: ' + JSON.stringify(
-        (passengers as any[]).map((p, i) => ({
-          in_type: p?.type,
-          in_gender: p?.gender,
-          sent_PassengerType: travelers[i]?.PassengerType,
-          sent_PassengerTitle: travelers[i]?.PassengerName?.PassengerTitle,
-        })),
-      ));
-
       const result = await mystifly.bookFlight({
         fareSourceCode,
         travelers,
