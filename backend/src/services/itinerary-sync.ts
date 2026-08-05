@@ -269,7 +269,14 @@ export function pairByRoute(
   return pairs;
 }
 
-/** Keep journey-level origin/destination/times aligned with their segments. */
+/**
+ * Keep journey- and booking-level times aligned with their segments.
+ *
+ * The booking-level `departureDate` is what every list screen, email and search
+ * filter reads. Without this, a completed reissue moved the segments and left
+ * the booking still advertising the flight it replaced — FMVTT9ZQ showed
+ * 14 Nov after being reissued to 2 Dec.
+ */
 async function syncJourneys(bookingId: string, providerSegs: ProviderSegment[]): Promise<void> {
   const journeys = await prisma.bookingJourney.findMany({
     where: { bookingId },
@@ -288,6 +295,18 @@ async function syncJourneys(bookingId: string, providerSegs: ProviderSegment[]):
         departureDateTime: first.departureDateTime,
         arrivalDateTime: last.arrivalDateTime,
       },
+    }).catch(() => {});
+  }
+
+  const outbound = journeys.find((j) => j.direction === 'OUTBOUND') ?? journeys[0];
+  const inbound = journeys.find((j) => j.direction === 'RETURN');
+  const departureDate = outbound?.segments[0]?.departureDateTime ?? null;
+  const returnDate = inbound?.segments[0]?.departureDateTime ?? null;
+
+  if (departureDate) {
+    await prisma.masterBooking.update({
+      where: { id: bookingId },
+      data: { departureDate, ...(returnDate ? { returnDate } : {}) },
     }).catch(() => {});
   }
 }
