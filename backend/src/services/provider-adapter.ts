@@ -553,6 +553,7 @@ import * as mystiflyClient from './mystifly';
 import type { MystiflyReissueOriginDestination, MystiflyReissuePassenger } from './mystifly';
 import { MystiflyCancellationError } from '../providers/mystifly/mystifly.errors';
 import { parsePtrRefundRef } from '../lib/ptr-refund-ref';
+import { buildRefundDetails, ticketNumbersByType } from '../lib/refund-details';
 
 /**
  * Read a Mystifly booking's real fare rules out of TripDetails.
@@ -620,6 +621,22 @@ function mystiflyFareConditions(data: any): {
     ...(changeFees.length ? { changePenalty: Math.max(...changeFees) } : {}),
     ...(currency ? { penaltyCurrency: currency } : {}),
   };
+}
+
+
+/**
+ * RefundDetails[] for a Mystifly RefundQuote, read from the provider's own fare
+ * breakdown.
+ *
+ * Mystifly refuses a RefundQuote without this array ("…the refund details are
+ * missing from the request."). The PTR console route builds it the same way;
+ * these cancellation paths reach RefundQuote only after a VoidQuote has been
+ * refused, so the extra TripDetails read happens on the fallback, not on every
+ * cancellation.
+ */
+async function refundDetailsFor(mfRef: string, passengers: PtrPassenger[]) {
+  const trip = await mystiflyClient.getTripDetailsResilient(mfRef).catch(() => null);
+  return buildRefundDetails(trip, ticketNumbersByType(passengers));
 }
 
 export class MystiflyAdapter implements IBookingProvider {
@@ -805,7 +822,7 @@ export class MystiflyAdapter implements IBookingProvider {
     // ── Step 3: VoidQuote not eligible or failed → try RefundQuote ──
     let refundResult;
     try {
-      refundResult = await mystiflyClient.refundQuote(mfRef, passengers);
+      refundResult = await mystiflyClient.refundQuote(mfRef, passengers, await refundDetailsFor(mfRef, passengers));
     } catch (refundErr) {
       // RefundQuote API crashed (e.g. Mystifly 500 bug on certain bookings)
       // Fall back to direct cancel path
@@ -1117,7 +1134,7 @@ export class MystiflyAdapter implements IBookingProvider {
 
       // Try RefundQuote → executeRefund
       try {
-        const refundQuoteResult = await mystiflyClient.refundQuote(mfRef, passengers);
+        const refundQuoteResult = await mystiflyClient.refundQuote(mfRef, passengers, await refundDetailsFor(mfRef, passengers));
         console.log(`[MystiflyAdapter] RefundQuote fallback response for ${mfRef}:`, JSON.stringify(refundQuoteResult));
         const refundData = refundQuoteResult?.Data || refundQuoteResult;
         const refundSuccess = refundData?.Success ?? refundQuoteResult?.Success;
