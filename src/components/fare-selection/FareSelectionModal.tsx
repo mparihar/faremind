@@ -13,6 +13,7 @@ import type { FareSelectionPayload, PriceProtectionQuote } from '@/lib/fare-type
 import type { FareSiblingOffer } from '@/lib/fare-siblings';
 import { apiFetch } from '@/lib/api-client';
 import { getAirlineLogo } from '@/lib/utils';
+import HScrollbar from '@/components/ui/HScrollbar';
 
 // FareMind's five UI tabs. These are display buckets, not fare families — the
 // airline's own brand ("ECO VALUE", "BUSINESS FLEX") is shown on the card
@@ -88,6 +89,8 @@ export default function FareSelectionModal({ onClose }: Props) {
   const store = useFareStore();
   const bookingStore = useBookingStore();
   const scrollRef = useRef<HTMLDivElement>(null);
+  // The fare row scrolls horizontally; HScrollbar draws its bar (see below).
+  const fareRowRef = useRef<HTMLDivElement>(null);
 
   // Economy is the default. It is only overridden when economy came back empty —
   // e.g. a carrier that filed no cabin data at all, where every fare lands in
@@ -527,7 +530,9 @@ export default function FareSelectionModal({ onClose }: Props) {
                     row wider than the panel reads as scrollable rather than as
                     a card mysteriously clipped at the edge. */}
                 <div
-                  className="flex gap-3 pb-3 items-stretch overflow-x-auto snap-x snap-mandatory scrollbar-slim"
+                  ref={fareRowRef}
+                  id="fare-options-row"
+                  className="flex gap-3 pb-3 items-stretch overflow-x-auto snap-x snap-mandatory scrollbar-hide"
                 >
                   {activeFares.map(fare => (
                     <div key={fare.id} id={`fare-${fare.id}`} className="flex min-w-[240px] sm:min-w-[280px] flex-1 snap-start">
@@ -545,6 +550,12 @@ export default function FareSelectionModal({ onClose }: Props) {
                     </div>
                   ))}
                 </div>
+
+                {/* The bar for the row above. Drawn rather than native: the OS
+                    hides thin scrollbars at rest, which left a fare clipped at
+                    the edge with nothing to say the row scrolls. Renders only
+                    when the fares actually overflow. */}
+                <HScrollbar targetRef={fareRowRef} controlsId="fare-options-row" label="Scroll fare options" />
               </div>
             </div>
           )}
