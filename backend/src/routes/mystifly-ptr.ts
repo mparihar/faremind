@@ -37,6 +37,7 @@ import { getPtrPollFrequencyMs } from '../lib/ptr-poll-config';
 import { buildPtrRefundRef } from '../lib/ptr-refund-ref';
 import { ptrIdFromInProcessMessage } from '../lib/ptr-in-process';
 import { buildRefundDetails, ticketNumbersByType } from '../lib/refund-details';
+import { extractEticketsByPassenger, matchProviderEticket } from '../lib/eticket-backfill';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -91,16 +92,51 @@ async function loadPtrPassengers(
               tickets: { orderBy: { createdAt: 'asc' } },
             },
           });
-          if (reloaded) return buildPtrPassengers(reloaded);
+          if (reloaded) return applyTicketedTitles(buildPtrPassengers(reloaded), mfRef);
         }
       } catch (e) {
         console.warn(`[PTR] eTicket backfill failed for ${mfRef}:`, (e as Error).message);
       }
     }
 
-    return buildPtrPassengers(booking);
+    return applyTicketedTitles(buildPtrPassengers(booking), mfRef);
   } catch {
     return [];
+  }
+}
+
+/**
+ * Replace each derived title with the one the coupon was ticketed under.
+ *
+ * We derive a title from gender and passenger type, which is right at book time.
+ * The airline may then rewrite it — Air India stores an infant's Miss as MS —
+ * and from that moment the derived title no longer matches the ticket. Reissue
+ * checks it and refuses: "Passenger details are not matching for this ticket
+ * number = TKT529625". Sending back exactly what is on the ticket clears it.
+ *
+ * Best-effort: if TripDetails cannot be read, or names a passenger we cannot
+ * match, that passenger keeps the derived title and the provider's own error
+ * stands rather than a guess being sent.
+ */
+async function applyTicketedTitles(
+  passengers: PtrPassenger[],
+  mfRef?: string | null,
+): Promise<PtrPassenger[]> {
+  if (!mfRef || passengers.length === 0) return passengers;
+  try {
+    const trip = await mystifly.getTripDetailsResilient(mfRef);
+    const ticketed = extractEticketsByPassenger(trip);
+    if (ticketed.length === 0) return passengers;
+
+    return passengers.map((p) => {
+      const match = matchProviderEticket(
+        { firstName: p.firstName, lastName: p.lastName, passengerType: p.passengerType },
+        ticketed,
+      );
+      return match?.title ? { ...p, title: match.title } : p;
+    });
+  } catch {
+    return passengers;
   }
 }
 

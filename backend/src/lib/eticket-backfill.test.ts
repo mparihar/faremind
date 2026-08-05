@@ -106,4 +106,30 @@ test('an empty or shapeless payload yields nothing and does not throw', () => {
   assert.equal(matchProviderEticket({ firstName: 'A', lastName: 'B', passengerType: 'ADT' }, []), null);
 });
 
+// ── Ticketed titles ─────────────────────────────────────────────────────────
+
+test('the title comes back as ticketed, not as we would derive it', () => {
+  // Air India stores this infant as MS. Our derived title is Miss, and
+  // ReIssueQuote refuses it: "Passenger details are not matching for this
+  // ticket number = TKT529625". Only the ticketed title matches.
+  const trip = { Data: { TripDetailsResult: { TravelItinerary: { PassengerInfos: [
+    { Passenger: { PassengerType: 'INF', NameNumber: 529625,
+        PaxName: { PassengerTitle: 'MS', PassengerFirstName: 'PUJA', PassengerLastName: 'SINGH' } },
+      ETickets: [{ ETicketNumber: 'TKT529625', ETicketType: 'Ticketed' }] },
+  ] } } } };
+  const e = extractEticketsByPassenger(trip);
+  assert.equal(e[0].title, 'MS');
+  assert.equal(
+    matchProviderEticket({ firstName: 'Puja', lastName: 'Singh', passengerType: 'infant' }, e)?.title,
+    'MS',
+  );
+});
+
+test('a title the provider does not give stays empty rather than invented', () => {
+  // The caller keeps its derived title in that case; an empty string here must
+  // not overwrite a usable one.
+  const e = extractEticketsByPassenger(TRIP);
+  assert.equal(e[0].title, '');
+});
+
 console.log(`\n${passed} passed`);

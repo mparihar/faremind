@@ -113,6 +113,15 @@ export interface ProviderEticket {
   passengerType: string;   // ADT | CHD | INF
   nameNumber: string;      // provider's own passenger id, when given
   eTicket: string;
+  /**
+   * The title the coupon was actually ticketed under.
+   *
+   * Not always the title we sent: Air India rewrites an infant's Miss to MS, and
+   * ReIssueQuote then rejects our derived Miss with "Passenger details are not
+   * matching for this ticket number = TKT529625". Whatever is on the ticket is
+   * the only title the airline will match against.
+   */
+  title: string;
 }
 
 /**
@@ -150,6 +159,7 @@ export function extractEticketsByPassenger(tripResult: any): ProviderEticket[] {
       passengerType: String(pax?.PassengerType ?? '').trim().toUpperCase(),
       nameNumber: String(pax?.NameNumber ?? '').trim(),
       eTicket: num,
+      title: String(pax?.PaxName?.PassengerTitle ?? '').trim(),
     });
   }
   return out;
