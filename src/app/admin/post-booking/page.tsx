@@ -12,6 +12,7 @@ import CouponStatusPanel from '@/components/booking/CouponStatusPanel';
 import PtrQuoteResult from '@/components/post-booking/PtrQuoteResult';
 import PtrExecResult from '@/components/post-booking/PtrExecResult';
 import BookingFinder, { type ServicingTarget } from '@/components/post-booking/BookingFinder';
+import RawResponse from '@/components/post-booking/RawResponse';
 
 /**
  * Admin Post-Booking Servicing Page — MYSTIFLY ONLY
@@ -571,12 +572,18 @@ export default function AdminPostBookingPage() {
                   <p>Refund: <span className="font-bold">{fcResult?.refundAmount ?? fcResult?.netRefundAmount ?? '—'} {fcResult?.refundCurrency ?? ''}</span></p>
                   <p>Status: {fcResult?.paymentStatus ?? fcResult?.newStatus ?? 'CANCELLED'}</p>
                   <p className="text-emerald-400/70 text-xs mt-1">The customer&apos;s Stripe refund is processing — check the booking timeline.</p>
+                  <RawResponse data={fcResult} label="Cancellation response" />
                   <button onClick={() => setFcOpen(false)} className="mt-3 px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-bold">Close</button>
                 </div>
               ) : (
                 <>
                   {fcLoadingQuote && <p className="text-slate-400 text-sm">Fetching live provider quote…</p>}
-                  {fcError && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-sm">{fcError}</div>}
+                  {fcError && (
+                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-sm">
+                      {fcError}
+                      <RawResponse data={fcQuote ?? fcResult} label="Provider response" />
+                    </div>
+                  )}
                   {fcQuote && (
                     <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-300 space-y-1">
                       <div className="flex justify-between"><span className="text-slate-500">Route</span><span>{fcQuote.route}</span></div>
@@ -636,12 +643,18 @@ export default function AdminPostBookingPage() {
                   <p className="font-bold text-emerald-300 mb-1">✓ Reissued</p>
                   <p>Collected: <span className="font-bold">{riResult?.collected ?? '—'} {riResult?.currency ?? 'USD'}</span> (fare diff {riResult?.fareDifference ?? '—'} + service fee {riResult?.serviceFee ?? '—'})</p>
                   <p>PTR #: <span className="font-mono">{riResult?.ptrNumber ?? '—'}</span></p>
+                  <RawResponse data={riResult} label="Reissue response" />
                   <button onClick={() => setRiOpen(false)} className="mt-3 px-4 py-2 rounded-lg bg-slate-700 text-white text-sm font-bold">Close</button>
                 </div>
               ) : (
                 <>
                   {riLoadingQuote && <p className="text-slate-400 text-sm">Fetching reissue quote…</p>}
-                  {riError && <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-sm">{riError}</div>}
+                  {riError && (
+                    <div className="rounded-lg border border-red-500/30 bg-red-500/10 p-3 text-red-300 text-sm">
+                      {riError}
+                      <RawResponse data={riQuote ?? riResult} label="Provider response" />
+                    </div>
+                  )}
                   {riQuote && (
                     <div className="rounded-xl border border-slate-700 bg-slate-800/50 p-4 text-sm text-slate-300 space-y-1">
                       <div className="flex justify-between"><span className="text-slate-500">Route</span><span>{riQuote.route}</span></div>
@@ -651,6 +664,7 @@ export default function AdminPostBookingPage() {
                       <div className="flex justify-between"><span className="text-slate-500">Airline penalty</span><span>{riQuote.penalty} {riQuote.currency}</span></div>
                       <div className="flex justify-between"><span className="text-slate-500">Service fee</span><span>{riQuote.serviceFee} {riQuote.currency}</span></div>
                       <div className="flex justify-between border-t border-slate-700 pt-1 mt-1 font-bold text-white"><span>Total to charge customer</span><span>{riQuote.totalCollect} {riQuote.currency}</span></div>
+                      <RawResponse data={riQuote} label="Reissue quote response" />
                     </div>
                   )}
                   <p className="text-[11px] text-amber-400/80">Confirm charges the customer&apos;s card for the total above, then reissues the ticket. If the charge fails, the reissue is NOT executed.</p>

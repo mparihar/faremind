@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { CheckCircle2, XCircle, Clock, AlertTriangle } from 'lucide-react';
+import RawResponse from './RawResponse';
 
 /**
  * The outcome of executing a void / refund / reissue.
@@ -64,7 +65,7 @@ export default function PtrExecResult({ execResult, fmt }: PtrExecResultProps) {
     return (
       <div className="p-4 rounded-xl border mb-3 bg-red-400/10 border-red-400/20">
         <p className="text-red-400 text-sm font-semibold flex items-center gap-2"><XCircle size={14} /> {execResult.error}</p>
-        <Raw data={execResult} />
+        <RawResponse data={execResult} />
       </div>
     );
   }
@@ -101,16 +102,9 @@ export default function PtrExecResult({ execResult, fmt }: PtrExecResultProps) {
         </p>
       )}
 
-      <Raw data={execResult} />
+      <RawResponse data={execResult} />
     </div>
   );
 }
 
-function Raw({ data }: { data: any }) {
-  return (
-    <details className="bg-slate-900/50 border border-slate-700/30 rounded-xl mt-2">
-      <summary className="px-3 py-2 text-xs font-bold text-slate-500 cursor-pointer hover:text-slate-300 uppercase tracking-wider">Raw Response</summary>
-      <pre className="px-3 pb-3 text-xs text-slate-400 font-mono overflow-x-auto max-h-48">{JSON.stringify(data, null, 2)}</pre>
-    </details>
-  );
-}
+

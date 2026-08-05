@@ -2,6 +2,7 @@
 
 import React from 'react';
 import { CheckCircle2, XCircle, Clock, RefreshCw, Loader2 } from 'lucide-react';
+import RawResponse from './RawResponse';
 
 /**
  * The result of a void / refund / reissue quote.
@@ -48,6 +49,7 @@ export default function PtrQuoteResult({ quoteResult, fmt, onRefresh, refreshing
         {quoteResult.servicePaymentId && (
           <p className="text-[11px] text-slate-500 mt-1 font-mono">Payment {quoteResult.servicePaymentId}</p>
         )}
+        <RawResponse data={quoteResult} />
       </div>
     );
   }
@@ -58,6 +60,10 @@ export default function PtrQuoteResult({ quoteResult, fmt, onRefresh, refreshing
         <p className="text-red-400 text-sm font-semibold flex items-center gap-2">
           <XCircle size={14} /> {quoteResult.error}
         </p>
+        {/* A failure is exactly when the payload is worth reading — "Voiding
+            window expired", "already in process", a provider 500. This branch
+            used to return the message alone. */}
+        <RawResponse data={quoteResult} />
       </div>
     );
   }
@@ -187,10 +193,7 @@ export default function PtrQuoteResult({ quoteResult, fmt, onRefresh, refreshing
         </div>
       )}
 
-      <details className="bg-slate-900/50 border border-slate-700/30 rounded-xl mt-2">
-        <summary className="px-3 py-2 text-xs font-bold text-slate-500 cursor-pointer hover:text-slate-300 uppercase tracking-wider">Raw Response</summary>
-        <pre className="px-3 pb-3 text-xs text-slate-400 font-mono overflow-x-auto max-h-48">{JSON.stringify(quoteResult, null, 2)}</pre>
-      </details>
+      <RawResponse data={quoteResult} />
     </div>
   );
 }
