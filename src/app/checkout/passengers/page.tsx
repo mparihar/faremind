@@ -667,15 +667,22 @@ function PassengerCard({ pax, index, errors, touched, onChange, onAutoFill, depa
   const [autoFilled, setAutoFilled] = useState(false);
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const handleNameBlur = useCallback(() => {
-    const fn = pax.firstName.trim();
-    const ln = pax.lastName.trim();
+  // Recall needs the contact email, which is the family key. Remember what we
+  // last asked for so a retry cannot loop.
+  const lastLookupRef = useRef<string>('');
+
+  const runLookup = useCallback((fn: string, ln: string, email?: string) => {
     if (fn.length < 2 || ln.length < 2) return;
+    if (!email || !email.includes('@')) return;
+
+    const key = `${fn.toLowerCase()}|${ln.toLowerCase()}|${email.toLowerCase()}`;
+    if (lastLookupRef.current === key) return;
+    lastLookupRef.current = key;
 
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(async () => {
       setLookingUp(true);
-      const result = await lookupByName(fn, ln, sessionToken, contactEmail);
+      const result = await lookupByName(fn, ln, sessionToken, email);
       setLookingUp(false);
       if (result.found && result.data) {
         onAutoFill(result.data);
@@ -683,7 +690,25 @@ function PassengerCard({ pax, index, errors, touched, onChange, onAutoFill, depa
         setTimeout(() => setAutoFilled(false), 4000);
       }
     }, 300);
-  }, [pax.firstName, pax.lastName, onAutoFill, sessionToken, contactEmail]);
+  }, [onAutoFill, sessionToken]);
+
+  const handleNameBlur = useCallback(() => {
+    runLookup(pax.firstName.trim(), pax.lastName.trim(), contactEmail);
+  }, [pax.firstName, pax.lastName, contactEmail, runLookup]);
+
+  // People do not fill the form top to bottom. Name a traveller before typing
+  // the contact email and the blur lookup has no family key to search on, so it
+  // returns nothing and never asks again — the traveller sits there half filled
+  // while the booker, whose own lookup runs off the email itself, fills in fine.
+  // Retry once the email arrives, and only while the details are still blank so
+  // this can never overwrite something already typed.
+  useEffect(() => {
+    const fn = pax.firstName.trim();
+    const ln = pax.lastName.trim();
+    if (!fn || !ln || !contactEmail) return;
+    if (pax.dateOfBirth || pax.passportNumber) return;
+    runLookup(fn, ln, contactEmail);
+  }, [contactEmail, pax.firstName, pax.lastName, pax.dateOfBirth, pax.passportNumber, runLookup]);
 
   // Check if DOB is a future date (show error immediately, no need for touched)
   const isFutureDob = (() => {

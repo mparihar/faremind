@@ -2105,8 +2105,14 @@ export async function POST(req: NextRequest) {
             firstName: p.firstName ?? '',
             middleName: p.middleName ?? null,
             lastName: p.lastName ?? '',
-            email: p.email ?? null,
-            phone: p.phone ?? null,
+            // Children and infants have no address of their own, so the form
+            // only ever collects the booker's. Stamping the contact email onto
+            // every passenger is what makes a family recallable later: passenger
+            // recall keys on (first name, last name, contact email), and rows
+            // written with '' here could never be matched — the booker
+            // auto-filled on a repeat booking and their children never did.
+            email: p.email?.trim() || customerEmail || null,
+            phone: p.phone?.trim() || primaryPax.phone?.trim() || null,
             gender: p.gender ?? null,
             dateOfBirth: p.dateOfBirth ? new Date(p.dateOfBirth) : null,
             nationality: p.nationality ?? null,

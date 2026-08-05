@@ -123,6 +123,29 @@ async function sessionUser(request: any): Promise<{ id: string; email: string } 
   }
 }
 
+/**
+ * Which bookings may this caller recall passengers from?
+ *
+ * Two kinds of ownership, and an agent needs the second one. Checkout sets
+ * `userId` to the CUSTOMER — the primary contact, auto-registered if they were
+ * not already a user — and records the agent separately in `agentUserId`. So an
+ * agent booking for someone else owns none of those bookings by `userId`, and
+ * scoping on that alone gave them no recall at all: not the traveller rows, not
+ * even the booker's.
+ *
+ * It looks like it works today only because our test agent books under their own
+ * email, which makes both columns the same id. The first booking an agent makes
+ * for a real customer would have shown the whole feature dead on their side.
+ *
+ * An agent may recall from bookings they made; a customer from bookings they
+ * own. Neither reaches anyone else's, and another agent's customers stay out of
+ * reach. Combined with the required contact-email match, the caller has to know
+ * both who they are looking for and which family they belong to.
+ */
+function callerOwnedBooking(callerId: string) {
+  return { OR: [{ userId: callerId }, { agentUserId: callerId }] };
+}
+
   fastify.post('/passengers/lookup-by-email', async (request, reply) => {
     try {
       const { email, firstName, lastName } = request.body as
@@ -157,10 +180,13 @@ async function sessionUser(request: any): Promise<{ id: string; email: string } 
 
       const bookingPax = await prisma.bookingPassenger.findFirst({
         where: {
-          email: { equals: emailLower, mode: 'insensitive' },
-          booking: { userId: caller.id },
+          booking: callerOwnedBooking(caller.id),
           firstName: { equals: name.first, mode: 'insensitive' },
           lastName: { equals: name.last, mode: 'insensitive' },
+          OR: [
+            { email: { equals: emailLower, mode: 'insensitive' } },
+            { booking: { customerEmail: { equals: emailLower, mode: 'insensitive' } } },
+          ],
         },
         orderBy: { createdAt: 'desc' },
       });
@@ -252,12 +278,25 @@ async function sessionUser(request: any): Promise<{ id: string; email: string } 
       const contactEmail = String(email ?? '').trim().toLowerCase();
       if (!contactEmail || !contactEmail.includes('@')) return { found: false };
 
+      // Match the contact email against EITHER the passenger's own row or the
+      // booking it belongs to. The comment above described the intent, but
+      // checkout only ever collected one email address, so every child and
+      // infant was persisted with '' and could never match on the passenger row
+      // alone — which is exactly why the booker auto-filled and their family
+      // did not. The booking's customerEmail is the reliable family key.
+      //
+      // Ownership, not the email, is what protects this: the booking must
+      // belong to the caller (see callerOwnedBooking), so a guessed name still
+      // only ever reaches travellers they already booked.
       const bookingPax = await prisma.bookingPassenger.findFirst({
         where: {
           firstName: { equals: firstName.trim(), mode: 'insensitive' },
           lastName: { equals: lastName.trim(), mode: 'insensitive' },
-          email: { equals: contactEmail, mode: 'insensitive' },
-          booking: { userId: caller.id },
+          booking: callerOwnedBooking(caller.id),
+          OR: [
+            { email: { equals: contactEmail, mode: 'insensitive' } },
+            { booking: { customerEmail: { equals: contactEmail, mode: 'insensitive' } } },
+          ],
         },
         orderBy: { createdAt: 'desc' },
       });
