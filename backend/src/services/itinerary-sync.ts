@@ -213,10 +213,15 @@ export async function syncItineraryFromTripDetails(
       }
     }
 
-    if (diffs.length === 0) return { applied: true, changed: 0, diffs: [] };
-
-    // Journeys carry their own origin/destination/departure for list views.
+    // Journeys and the booking row carry their own copies of origin/destination
+    // and departure for list views, and they can be stale even when every
+    // segment already matches the provider — an earlier partial repair fixed
+    // FMVTT9ZQ's segments and left the booking still showing the flight the
+    // reissue replaced. So reconcile them before the no-diff early return, not
+    // after it.
     await syncJourneys(bookingId, providerSegs);
+
+    if (diffs.length === 0) return { applied: true, changed: 0, diffs: [] };
 
     const summary = diffs
       .filter((d) => d.field === 'flightNumber' || d.field === 'departureDateTime')
