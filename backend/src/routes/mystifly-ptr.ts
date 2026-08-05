@@ -880,8 +880,34 @@ async function adoptInProcessPtr(params: {
   const providerPtrId = ptrIdFromInProcessMessage(params.message);
   if (providerPtrId == null) return null;
 
-  if (params.ptrRecordId) {
+  // The local record is created before the provider call, so each retry adds a
+  // row. Without this, clicking Get Refund Quote five times against one stuck
+  // PTR leaves five QUOTE_PENDING rows all naming 22981 — a cluttered history,
+  // and the reconciler polling the same provider request once per duplicate.
+  const already = await prisma.postTicketingRequest.findFirst({
+    where: {
+      providerRequestId: String(providerPtrId),
+      provider: 'MYSTIFLY',
+      ...(params.ptrRecordId ? { NOT: { id: params.ptrRecordId } } : {}),
+    },
+    orderBy: { createdAt: 'asc' },
+  }).catch(() => null);
+
+  // Keep the record that already tracks this PTR and retire the duplicate this
+  // click created, rather than the other way round: the original carries the
+  // history, and the reconciler may already be working it.
+  const trackingId = already?.id ?? params.ptrRecordId ?? null;
+
+  if (already && params.ptrRecordId && already.id !== params.ptrRecordId) {
     await updatePtrRecord(params.ptrRecordId, {
+      status: 'CANCELLED',
+      failureReason: `Superseded — PTR ${providerPtrId} is already tracked on request ${already.id}.`,
+      providerQuoteResponse: params.result,
+    }).catch(() => {});
+  }
+
+  if (trackingId) {
+    await updatePtrRecord(trackingId, {
       status: 'QUOTE_PENDING',
       providerRequestId: String(providerPtrId),
       providerStatus: 'InProcess',
@@ -894,7 +920,7 @@ async function adoptInProcessPtr(params: {
   return {
     success: true,
     booking: params.booking,
-    ptrId: params.ptrRecordId ?? undefined,
+    ptrId: trackingId ?? undefined,
     providerPtrId,
     quotePending: true,
     adoptedExistingPtr: true,
