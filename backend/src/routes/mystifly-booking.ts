@@ -21,6 +21,7 @@ import * as crypto from 'crypto';
 import * as mystifly from '../services/mystifly';
 import { resolveMystiflyRef } from '../lib/booking-lookup';
 import { passengerTitle } from '../lib/passenger-title';
+import { bookPhoneFields } from '../lib/phone-country';
 import type {
   MystiflyAirTraveler,
   MystiflyPassengerType,
@@ -379,12 +380,24 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // Build Book v1 request payload
       const travelers = toMystiflyTravelers(passengers);
 
+      // TravelerInfo.CountryCode is the phone's DIALLING code (1, 91), not an ISO
+      // country. It was being filled with toIsoCountry(), and since checkout
+      // sends no country at all it defaulted to "US" on every booking — the
+      // constant wrong value Mystifly flagged across all references. The number
+      // itself carries the code, so read it from there.
+      // Only CountryCode changes. PhoneNumber keeps carrying the full number,
+      // as it always has and as TripDetails echoes back, because AreaCode is
+      // still a hard-coded '1' — stripping the dialling code out of the number
+      // while that stands could have the airline reassemble a different phone.
+      // One field, the one that was wrong.
+      const phoneFields = bookPhoneFields(phone, countryCode || passengers?.[0]?.nationality);
+
       const result = await mystifly.bookFlight({
         fareSourceCode,
         travelers,
         phoneNumber: (phone || '0000000000').replace(/[^0-9]/g, ''),
         email,
-        countryCode: toIsoCountry(countryCode),
+        countryCode: phoneFields.countryCode,
         clientReferenceNo,
         holdBooking: holdBooking ?? false,
       });
