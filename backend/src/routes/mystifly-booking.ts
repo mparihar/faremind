@@ -426,8 +426,15 @@ const plugin: FastifyPluginAsync = async (fastify) => {
 
         if (pendingUnconfirmed) {
           let mfRef: string | null = result?.Data?.UniqueID || result?.UniqueID || null;
-          if (!mfRef) mfRef = await mystifly.getMfRefFromFsc(fareSourceCode);
-          console.warn(`[Mystifly] Booking pending/unconfirmed [${errCode}] ${errMsg} — ref=${mfRef ?? 'NONE'}`);
+          let lookup: Awaited<ReturnType<typeof mystifly.lookupMfRefFromFsc>> | null = null;
+          if (!mfRef) {
+            lookup = await mystifly.lookupMfRefFromFsc(fareSourceCode);
+            if (lookup.outcome === 'found') mfRef = lookup.mfRef;
+          }
+          console.warn(
+            `[Mystifly] Booking pending/unconfirmed [${errCode}] ${errMsg} — ref=${mfRef ?? 'NONE'}` +
+            (lookup && lookup.outcome !== 'found' ? ` (lookup=${lookup.outcome})` : ''),
+          );
 
           if (mfRef) {
             return reply.code(200).send({
@@ -442,7 +449,36 @@ const plugin: FastifyPluginAsync = async (fastify) => {
               raw: result,
             });
           }
-          // No reference resolvable → fall through to hard failure (caller refunds).
+
+          // No reference. Whether that is safe to refund depends entirely on WHY.
+          //
+          //   not_found — the provider states it holds no booking for this fare.
+          //               Nothing was created, so refunding is correct.
+          //   unknown   — the lookup itself failed. A booking may exist and be
+          //               confirming right now. Refunding here is how a customer
+          //               ends up with a live PNR they did not pay for and no
+          //               record on our side, so we refuse to guess and hand it
+          //               to a human instead.
+          if (lookup?.outcome === 'unknown') {
+            console.error(
+              `[Mystifly] ERBUK082 with no reference AND an unreadable MFRef lookup (${lookup.reason}) — ` +
+              `NOT refunding; escalating for manual reconciliation.`,
+            );
+            return reply.code(202).send({
+              success: false,
+              pending: true,
+              unresolved: true,
+              uniqueId: null,
+              status: 'PendingUnresolved',
+              errorCode: 'MYSTIFLY_BOOKING_PENDING_UNRESOLVED',
+              mystiflyErrorCode: errCode,
+              error: errMsg,
+              bookFscHash,
+              raw: result,
+            });
+          }
+          // outcome === 'not_found' → the provider has no such booking; fall
+          // through to hard failure and let the caller refund.
         }
 
         console.error(`[Mystifly] Booking failed: [${errCode}] ${errMsg}`);

@@ -1053,23 +1053,59 @@ export async function searchCreditNotes(opts: { page?: number; mfRef?: string } 
   return { creditNotes, raw: res };
 }
 
-export async function getMfRefFromFsc(fareSourceCode: string): Promise<string | null> {
+/**
+ * Outcome of resolving an MFRef from a FareSourceCode.
+ *
+ * The three cases are NOT interchangeable. This is the call that decides whether
+ * an ERBUK082 booking gets refunded, so "the provider says no booking exists"
+ * and "we could not find out" must never collapse into the same answer: the
+ * first is safe to refund, the second may be a live PNR.
+ */
+export type MfRefLookup =
+  | { outcome: 'found'; mfRef: string }
+  | { outcome: 'not_found' }
+  | { outcome: 'unknown'; reason: string };
+
+/** Sentinels the provider returns in the MFRef field instead of an empty one. */
+const NOT_A_REF = /^(no matching mfref found|not found|n\/?a|none|null)$/i;
+
+export async function lookupMfRefFromFsc(fareSourceCode: string): Promise<MfRefLookup> {
+  let result: any;
   try {
-    const result = await mystiflyRequest<any>({
+    result = await mystiflyRequest<any>({
       method: 'GET',
       path: `/api/RetrieveMFRefThroughFSC/${encodeURIComponent(fareSourceCode)}`,
       retries: 1,
     });
-    const mfRef =
-      result?.Data?.MFRef || result?.Data?.MfRef || result?.Data?.UniqueID ||
-      result?.MFRef || result?.MfRef ||
-      (typeof result?.Data === 'string' ? result.Data : null) ||
-      (typeof result === 'string' ? result : null);
-    return mfRef && typeof mfRef === 'string' && mfRef.trim().length > 0 ? mfRef.trim() : null;
   } catch (err) {
-    console.warn('[Mystifly] getMfRefFromFsc failed:', (err as Error).message);
-    return null;
+    // A transport failure tells us nothing about whether a booking exists.
+    return { outcome: 'unknown', reason: (err as Error).message };
   }
+
+  // Real shape, confirmed live:
+  //   { Data: { MFRefResult: { Success: false, MFRef: "No Matching MFRef found" } }, Success: true }
+  // The previous parser read Data.MFRef — a path that does not exist — so it
+  // returned null for every booking, and every ERBUK082 was refunded as if the
+  // carrier had no record of it.
+  const inner = result?.Data?.MFRefResult ?? result?.MFRefResult ?? null;
+  const raw =
+    inner?.MFRef ?? inner?.MfRef ??
+    result?.Data?.MFRef ?? result?.Data?.MfRef ?? result?.Data?.UniqueID ??
+    result?.MFRef ?? result?.MfRef ??
+    (typeof result?.Data === 'string' ? result.Data : null) ??
+    (typeof result === 'string' ? result : null);
+
+  const ref = typeof raw === 'string' ? raw.trim() : '';
+
+  if (inner && inner.Success === false) return { outcome: 'not_found' };
+  if (!ref || NOT_A_REF.test(ref)) return { outcome: 'not_found' };
+  return { outcome: 'found', mfRef: ref };
+}
+
+/** Back-compat wrapper: the reference, or null for both no-booking and unknown. */
+export async function getMfRefFromFsc(fareSourceCode: string): Promise<string | null> {
+  const r = await lookupMfRefFromFsc(fareSourceCode);
+  return r.outcome === 'found' ? r.mfRef : null;
 }
 
 // ═══════════════════════════════════════════════

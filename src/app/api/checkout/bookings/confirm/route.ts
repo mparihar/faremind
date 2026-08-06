@@ -1474,6 +1474,44 @@ export async function POST(req: NextRequest) {
         // TripDetails instead of refunding + failing the UI.
         const bookPending = bookData?.pending === true && !!bookData?.uniqueId;
 
+        // ERBUK082 where the provider could not be asked whether a booking
+        // exists. The backend deliberately withholds a verdict rather than
+        // implying "no booking"; refunding on that guess is how a customer ends
+        // up with a live PNR they no longer paid for. Charge stands, nothing is
+        // ticketed, a human reconciles it.
+        const bookPendingUnresolved = bookData?.pending === true && bookData?.unresolved === true;
+
+        if (bookPendingUnresolved) {
+          const pendingMsg = bookData.error || 'Awaiting carrier response';
+          console.error(
+            `[Mystifly] ERBUK082 unresolved — no reference and the provider could not confirm whether a ` +
+            `booking exists. NOT refunding; logged for manual reconciliation.`,
+          );
+          await logBookingFailure({
+            passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
+            paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
+            currency, errorCode: 'MYSTIFLY_BOOKING_PENDING_UNRESOLVED',
+            errorMessage: pendingMsg,
+            customerMessage:
+              'Your booking is being confirmed with the airline. This can take a little longer than usual — ' +
+              'we will email you as soon as it is confirmed. Please do not book again; our team is on it.',
+            failureStage: 'MYSTIFLY_BOOKING_AFTER_CAPTURE',
+            refundStatus: 'NOT_APPLICABLE', refundId: null, refundAmount: null,
+            refundFailureReason: 'Withheld — provider could not confirm whether a booking exists (ERBUK082).',
+          });
+          return NextResponse.json(
+            {
+              error: pendingMsg,
+              errorCode: 'MYSTIFLY_BOOKING_PENDING_UNRESOLVED',
+              pending: true,
+              customerMessage:
+                'Your booking is being confirmed with the airline. We will email you as soon as it is confirmed — ' +
+                'please do not book again.',
+            },
+            { status: 202 },
+          );
+        }
+
         if ((!bookRes.ok || !bookData.success || !bookData.uniqueId) && !bookPending) {
           // BookFlight failed AFTER payment capture — must refund
           const errMsg = bookData.error || 'Booking creation failed';
