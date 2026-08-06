@@ -291,7 +291,7 @@ const INITIAL: Omit<CheckoutStore,
   error: null,
 };
 
-export const useCheckoutStore = create<CheckoutStore>((set) => ({
+export const useCheckoutStore = create<CheckoutStore>((set, get) => ({
   ...INITIAL,
 
   setSessionId: (sessionId) => set({ sessionId }),
@@ -330,6 +330,41 @@ export const useCheckoutStore = create<CheckoutStore>((set) => ({
     } else {
       const count = Math.max(1, travelerCount);
       passengers = Array.from({ length: count }, (_, i) => makePassenger(i));
+    }
+
+    // Carry over anything already typed for the same traveller.
+    //
+    // Choosing a different fare — or coming back after a booking failed and
+    // searching again — runs this and replaced the array with blanks, so three
+    // passports had to be re-entered because the FARE changed. Recall cannot
+    // help there: it reads completed bookings, and a booking that failed leaves
+    // none, which is exactly when a traveller is most likely to be re-entering.
+    //
+    // Matched per traveller type, in order, so an adult never inherits a child's
+    // passport. Only blanks are filled, and only when the type agrees.
+    const previous = get().passengers ?? [];
+    if (previous.length > 0) {
+      const pool: Record<string, PassengerInfo[]> = { adult: [], child: [], infant: [] };
+      for (const p of previous) (pool[p.type] ??= []).push(p);
+      const taken: Record<string, number> = { adult: 0, child: 0, infant: 0 };
+
+      passengers = passengers.map((next) => {
+        const prior = pool[next.type]?.[taken[next.type]++];
+        if (!prior) return next;
+        // Gender always carries: it has a non-empty default, so the
+        // fill-blanks-only rule would never reach it.
+        const merged: PassengerInfo = { ...next, gender: prior.gender ?? next.gender };
+        const carried = [
+          'firstName', 'middleName', 'lastName', 'dateOfBirth',
+          'nationality', 'passportCountry', 'passportNumber', 'passportExpiry',
+          'email', 'phone',
+        ] as const;
+        for (const key of carried) {
+          const value = prior[key];
+          if (value && !merged[key]) merged[key] = value;
+        }
+        return merged;
+      });
     }
     set({
       selectedFare,
