@@ -268,6 +268,7 @@ function typeLabel(type: 'adult' | 'child' | 'infant'): string {
 interface PassengerErrors {
   firstName?: string;
   lastName?: string;
+  gender?: string;
   dateOfBirth?: string;
   nationality?: string;
   passportCountry?: string;
@@ -281,6 +282,9 @@ function validatePassenger(pax: PassengerInfo, departureDate?: string): Passenge
   const errors: PassengerErrors = {};
   if (!pax.firstName.trim()) errors.firstName = 'First name is required';
   if (!pax.lastName.trim()) errors.lastName = 'Last name is required';
+  // Marked required on the form and never checked, so the silent 'male' default
+  // sailed through to the airline on every booking.
+  if (!pax.gender) errors.gender = 'Gender is required';
 
   // Date of birth + age validation
   if (!pax.dateOfBirth) {
@@ -811,11 +815,16 @@ function PassengerCard({ pax, index, errors, touched, onChange, onAutoFill, depa
           <SelectField
             value={pax.gender}
             onChange={e => onChange('gender', e.target.value)}
+            hasError={touched && !!errors.gender}
           >
+            {/* No pre-selected value. The airline books whatever is here, so a
+                default is an answer nobody gave. */}
+            <option value="">Select gender</option>
             {GENDERS.map(g => (
               <option key={g.value} value={g.value}>{g.label}</option>
             ))}
           </SelectField>
+          {touched && <FieldError message={errors.gender} />}
         </div>
         <div>
           <FieldLabel required>Date of Birth</FieldLabel>

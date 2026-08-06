@@ -15,7 +15,12 @@ export interface PassengerInfo {
   firstName: string;
   middleName: string;
   lastName: string;
-  gender: 'male' | 'female' | 'other';
+  /**
+   * Unset until chosen. It used to default to 'male', which made every
+   * fill-blanks rule skip it — recall could never correct a female passenger,
+   * and nobody was ever asked to pick, so the default was quietly booked.
+   */
+  gender: '' | 'male' | 'female' | 'other';
   dateOfBirth: string;
   nationality: string;
   passportCountry: string;
@@ -241,7 +246,7 @@ export function makePassenger(index: number, type: 'adult' | 'child' | 'infant' 
     id: `pax_${index}`,
     type,
     firstName: '', middleName: '', lastName: '',
-    gender: 'male',
+    gender: '',
     dateOfBirth: '',
     nationality: '',
     passportCountry: '',
@@ -353,7 +358,7 @@ export const useCheckoutStore = create<CheckoutStore>((set, get) => ({
         if (!prior) return next;
         // Gender always carries: it has a non-empty default, so the
         // fill-blanks-only rule would never reach it.
-        const merged: PassengerInfo = { ...next, gender: prior.gender ?? next.gender };
+        const merged: PassengerInfo = { ...next, gender: prior.gender || next.gender };
         const carried = [
           'firstName', 'middleName', 'lastName', 'dateOfBirth',
           'nationality', 'passportCountry', 'passportNumber', 'passportExpiry',
