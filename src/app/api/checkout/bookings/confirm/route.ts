@@ -1544,9 +1544,10 @@ export async function POST(req: NextRequest) {
           // The provider's own words ("Pending Need - Awaiting carrier response
           // - Booking Unconfirmed") are also not customer language and are kept
           // to the audit record.
-          const fareGone =
-            /ERBUK082/i.test(String(bookData?.mystiflyErrorCode ?? '')) ||
-            /booking unconfirmed|awaiting carrier|pending need|no longer available|sold out|not available/i.test(errMsg);
+          // ERBUK082 no longer reaches this branch — it is never auto-refunded —
+          // so this covers the genuine "seat is gone" rejections, where sending
+          // the customer back at the same fare would just fail again.
+          const fareGone = /no longer available|sold out|not available|fare.*(expired|invalid)/i.test(errMsg);
 
           const refundLine =
             refundStatus === 'REFUND_ISSUED'

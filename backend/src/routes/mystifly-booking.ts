@@ -450,35 +450,38 @@ const plugin: FastifyPluginAsync = async (fastify) => {
             });
           }
 
-          // No reference. Whether that is safe to refund depends entirely on WHY.
+          // No reference — and no way to earn one.
           //
-          //   not_found — the provider states it holds no booking for this fare.
-          //               Nothing was created, so refunding is correct.
-          //   unknown   — the lookup itself failed. A booking may exist and be
-          //               confirming right now. Refunding here is how a customer
-          //               ends up with a live PNR they did not pay for and no
-          //               record on our side, so we refuse to guess and hand it
-          //               to a human instead.
-          if (lookup?.outcome === 'unknown') {
-            console.error(
-              `[Mystifly] ERBUK082 with no reference AND an unreadable MFRef lookup (${lookup.reason}) — ` +
-              `NOT refunding; escalating for manual reconciliation.`,
-            );
-            return reply.code(202).send({
-              success: false,
-              pending: true,
-              unresolved: true,
-              uniqueId: null,
-              status: 'PendingUnresolved',
-              errorCode: 'MYSTIFLY_BOOKING_PENDING_UNRESOLVED',
-              mystiflyErrorCode: errCode,
-              error: errMsg,
-              bookFscHash,
-              raw: result,
-            });
-          }
-          // outcome === 'not_found' → the provider has no such booking; fall
-          // through to hard failure and let the caller refund.
+          // RetrieveMFRefThroughFSC cannot be used to rule a booking out. Asked
+          // about five bookings that demonstrably exist (FME4N3CL, FMJHI8HG,
+          // FMP6VJN2, FM8NH1EA, FM83B9T2, all with live MFRefs) it answered
+          // "No Matching MFRef found" for every one. Its negative is not
+          // evidence of anything; only its positive is worth having, and that is
+          // why it is still called above.
+          //
+          // So there is no safe automatic refund here. ERBUK082 means the
+          // carrier is still deciding, and refunding on a signal that says "not
+          // found" about bookings that exist is how a customer ends up holding a
+          // ticket they no longer paid for, with nothing on our side recording
+          // it. The charge stands, nothing is ticketed, and a human reconciles —
+          // which is what "ERBUK082 is a valid pending state, no refund" has
+          // always meant.
+          console.error(
+            `[Mystifly] ERBUK082 with no resolvable reference (lookup=${lookup?.outcome ?? 'skipped'}) — ` +
+            `NOT refunding; escalating for manual reconciliation.`,
+          );
+          return reply.code(202).send({
+            success: false,
+            pending: true,
+            unresolved: true,
+            uniqueId: null,
+            status: 'PendingUnresolved',
+            errorCode: 'MYSTIFLY_BOOKING_PENDING_UNRESOLVED',
+            mystiflyErrorCode: errCode,
+            error: errMsg,
+            bookFscHash,
+            raw: result,
+          });
         }
 
         console.error(`[Mystifly] Booking failed: [${errCode}] ${errMsg}`);
