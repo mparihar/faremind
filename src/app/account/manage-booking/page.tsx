@@ -14,6 +14,7 @@ import {
 import { useManageBookingStore } from '@/store/useManageBookingStore';
 import { useAuthStore } from '@/store/useAuthStore';
 import { flightTimeMs, isFlightInPast } from '@/lib/provider-time';
+import BookedDateSort from '@/components/bookings/BookedDateSort';
 
 // ═══════════════════════════════════════════════
 // Helpers
@@ -228,8 +229,12 @@ export default function AccountManageBookingPage() {
   }
 
   const bookings = store.bookings || [];
-  const upcomingBookings = bookings.filter(b => b.bookingStatus !== 'CANCELLED' && !isFlightInPast(b.departureDate))
-    .sort((a, b) => flightTimeMs(a.departureDate) - flightTimeMs(b.departureDate));
+  // Order comes from the server, by booking date, honouring the sort control.
+  // The client used to re-sort the upcoming group by departure, which silently
+  // overrode it — a trip booked this morning still sat wherever its departure
+  // fell. Grouping into upcoming / past / cancelled is kept; the order within
+  // each group is the one the customer chose.
+  const upcomingBookings = bookings.filter(b => b.bookingStatus !== 'CANCELLED' && !isFlightInPast(b.departureDate));
   const pastBookings = bookings.filter(b => b.bookingStatus !== 'CANCELLED' && isFlightInPast(b.departureDate));
   const cancelledBookings = bookings.filter(b => b.bookingStatus === 'CANCELLED');
 
@@ -283,6 +288,17 @@ export default function AccountManageBookingPage() {
             </div>
           ) : (
             <div className="space-y-4">
+              <div className="flex items-center justify-end">
+                <BookedDateSort
+                  order={store.bookingsOrder}
+                  onChange={(o) => {
+                    store.setBookingsOrder(o);
+                    if (user?.id) store.loadUserBookings(user.id);
+                  }}
+                  tone="dark"
+                />
+              </div>
+
               {/* Upcoming */}
               {upcomingBookings.length > 0 && (
                 <>

@@ -5,6 +5,9 @@ import { prisma } from '@/lib/db';
 export const GET = withAdmin(async (req: NextRequest) => {
   try {
     const { searchParams } = new URL(req.url);
+  // 'asc' | 'desc'; anything else is newest first.
+  const sortOrder: 'asc' | 'desc' =
+    (searchParams.get('order') ?? '').toLowerCase() === 'asc' ? 'asc' : 'desc';
     const page   = Math.max(1, parseInt(searchParams.get('page') ?? '1'));
     const limit  = Math.min(100, parseInt(searchParams.get('limit') ?? '20'));
     const search = searchParams.get('q') ?? '';
@@ -95,7 +98,10 @@ export const GET = withAdmin(async (req: NextRequest) => {
         where,
         take: limit,
         skip: (page - 1) * limit,
-        orderBy: { createdAt: 'desc' },
+        // Booking date, newest first by default, direction from ?order=.
+        // Ties break on id so paging cannot repeat or skip a row when two
+        // bookings share a timestamp.
+        orderBy: [{ createdAt: sortOrder }, { id: sortOrder }],
         include: {
           user:       { select: { firstName: true, lastName: true, email: true } },
           passengers: { select: { id: true, passengerType: true }, orderBy: { passengerOrder: 'asc' } },

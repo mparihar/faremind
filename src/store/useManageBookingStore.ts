@@ -143,6 +143,8 @@ interface ManageBookingStore {
 
   // Bookings list
   bookings: MasterBookingSummary[];
+  /** Booking-date sort direction for the list. */
+  bookingsOrder: 'asc' | 'desc';
   bookingCounts: { upcoming: number; past: number; cancelled: number; total: number };
   bookingsFilter: 'upcoming' | 'past' | 'cancelled' | 'all';
   bookingsLoading: boolean;
@@ -213,6 +215,7 @@ interface ManageBookingStore {
   setLookupRef: (v: string) => void;
   setLookupLastName: (v: string) => void;
   setBookingsFilter: (f: 'upcoming' | 'past' | 'cancelled' | 'all') => void;
+  setBookingsOrder: (o: 'asc' | 'desc') => void;
   setActiveModal: (m: string | null) => void;
 
   lookupBooking: () => Promise<boolean>;
@@ -258,7 +261,7 @@ async function api<T>(path: string, opts?: RequestInit): Promise<T> {
 export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
   lookupRef: '', lookupLastName: '', lookupLoading: false, lookupError: null,
   guestToken: null, maskedEmail: null, otpSent: false, otpVerifying: false,
-  bookings: [], bookingCounts: { upcoming: 0, past: 0, cancelled: 0, total: 0 },
+  bookings: [], bookingsOrder: 'desc', bookingCounts: { upcoming: 0, past: 0, cancelled: 0, total: 0 },
   bookingsFilter: 'all', bookingsLoading: false,
   booking: null, bookingLoading: false,
   actions: [], actionsLoading: false, fareRules: null,
@@ -278,6 +281,7 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
   setLookupRef: (v) => set({ lookupRef: v }),
   setLookupLastName: (v) => set({ lookupLastName: v }),
   setBookingsFilter: (f) => set({ bookingsFilter: f }),
+  setBookingsOrder: (o) => set({ bookingsOrder: o }),
   setActiveModal: (m) => set({ activeModal: m }),
   setCancelSuccess: (s) => set({ cancelSuccess: s }),
 
@@ -328,7 +332,9 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
     set({ bookingsLoading: true });
     try {
       const agentParam = includeAgentBookings ? '&agent=true' : '';
-      const data = await api<any>(`/api/manage-booking/user/${userId}/bookings?filter=${get().bookingsFilter}${agentParam}`);
+      const data = await api<any>(
+        `/api/manage-booking/user/${userId}/bookings?filter=${get().bookingsFilter}${agentParam}&order=${get().bookingsOrder}`,
+      );
       set({ bookings: data.bookings, bookingCounts: data.counts, bookingsLoading: false });
     } catch { set({ bookingsLoading: false }); }
   },
@@ -535,7 +541,7 @@ export const useManageBookingStore = create<ManageBookingStore>((set, get) => ({
   reset: () => set({
     lookupRef: '', lookupLastName: '', lookupLoading: false, lookupError: null,
     guestToken: null, maskedEmail: null, otpSent: false, otpVerifying: false,
-    bookings: [], bookingsFilter: 'all', bookingsLoading: false,
+    bookings: [], bookingsOrder: 'desc', bookingsFilter: 'all', bookingsLoading: false,
     booking: null, bookingLoading: false, actions: [], actionsLoading: false, fareRules: null,
     cancelQuote: null, cancelSuccess: null, cancelLoading: false, cancelError: null, cancelErrorCode: null, cancelRetryable: false, cancelSupportTicketCreated: false,
     seatMaps: [], seatMapLoading: false, timeline: [], timelineLoading: false,

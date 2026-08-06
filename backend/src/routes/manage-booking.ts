@@ -378,8 +378,10 @@ const plugin: FastifyPluginAsync = async (fastify) => {
   fastify.get('/user/:userId/bookings', async (request, reply) => {
     try {
       const { userId } = request.params as { userId: string };
-      const { filter, agent } = request.query as { filter?: 'upcoming' | 'past' | 'cancelled' | 'all'; agent?: string };
+      const { filter, agent, order } = request.query as
+        { filter?: 'upcoming' | 'past' | 'cancelled' | 'all'; agent?: string; order?: string };
       const includeAgentBookings = agent === 'true';
+      const sortOrder = mbq.normaliseBookingOrder(order);
 
       let userEmail: string | undefined;
 
@@ -397,6 +399,8 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           realUserId || userId,
           filter || 'all',
           userEmail,
+          false,
+          sortOrder,
         );
       const now = new Date();
       return {
@@ -411,7 +415,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       }
 
       const dbUser = await prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
-      const bookings = await mbq.getUserMasterBookings(userId, filter || 'all', dbUser?.email ?? undefined, includeAgentBookings);
+      const bookings = await mbq.getUserMasterBookings(userId, filter || 'all', dbUser?.email ?? undefined, includeAgentBookings, sortOrder);
       const now = new Date();
       return {
         bookings,

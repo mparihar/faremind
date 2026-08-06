@@ -106,11 +106,19 @@ export async function getMasterBookingFull(bookingId: string) {
 }
 
 /** User's bookings grouped by status */
+/** Sort direction for a booking list. Anything else falls back to newest first. */
+export type BookingSortOrder = 'asc' | 'desc';
+
+export function normaliseBookingOrder(v: unknown): BookingSortOrder {
+  return String(v ?? '').toLowerCase() === 'asc' ? 'asc' : 'desc';
+}
+
 export async function getUserMasterBookings(
   userId: string,
   filter?: 'upcoming' | 'past' | 'cancelled' | 'all',
   userEmail?: string,
-  includeAgentBookings?: boolean
+  includeAgentBookings?: boolean,
+  order: BookingSortOrder = 'desc',
 ) {
   const now = new Date();
 
@@ -150,7 +158,11 @@ export async function getUserMasterBookings(
       passengers: true,
       pnrs: { where: { isPrimary: true }, take: 1 },
     },
-    orderBy: { departureDate: 'desc' },
+    // Booking date, not departure date. A list ordered by when someone flies
+    // puts a trip booked this morning below one booked months ago, so "where is
+    // the booking I just made" has no answer. Ordered by when it was made, the
+    // newest is where people look for it. Ties break on id so paging is stable.
+    orderBy: [{ createdAt: order }, { id: order }],
   });
 }
 

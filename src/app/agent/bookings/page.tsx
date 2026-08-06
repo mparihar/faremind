@@ -18,6 +18,7 @@ import {
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { formatFlightDate } from '@/lib/provider-time';
+import BookedDateSort, { type BookedSortOrder } from '@/components/bookings/BookedDateSort';
 
 interface AgentBooking {
   id: string;
@@ -66,6 +67,7 @@ export default function AgentBookingsPage() {
   const [pages, setPages] = useState(1);
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('');
+  const [sortOrder, setSortOrder] = useState<BookedSortOrder>('desc');
   const [loading, setLoading] = useState(true);
 
   const fetchBookings = useCallback(async () => {
@@ -75,6 +77,7 @@ export default function AgentBookingsPage() {
       const params = new URLSearchParams({ page: String(page), limit: '20' });
       if (search) params.set('search', search);
       if (status) params.set('status', status);
+      params.set('order', sortOrder);
 
       const res = await fetch(`/api/agent/bookings?${params}`, {
         headers: { Authorization: `Bearer ${sessionToken}` },
@@ -90,7 +93,7 @@ export default function AgentBookingsPage() {
     } finally {
       setLoading(false);
     }
-  }, [sessionToken, page, search, status]);
+  }, [sessionToken, page, search, status, sortOrder]);
 
   useEffect(() => { fetchBookings(); }, [fetchBookings]);
 
@@ -141,6 +144,7 @@ export default function AgentBookingsPage() {
             ))}
           </select>
         </div>
+        <BookedDateSort order={sortOrder} onChange={(o) => { setSortOrder(o); setPage(1); }} className="py-3" />
       </div>
 
       {/* Bookings list */}

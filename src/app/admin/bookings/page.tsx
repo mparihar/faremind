@@ -13,6 +13,7 @@ import {
   Calendar, Plane, CreditCard, Ticket,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import BookedDateSort, { type BookedSortOrder } from '@/components/bookings/BookedDateSort';
 
 interface BookingPnrRow {
   id: string;
@@ -270,6 +271,7 @@ export default function AdminBookingsPage() {
   const [pages, setPages]     = useState(1);
   const [loading, setLoading] = useState(true);
   const [search, setSearch]   = useState('');
+  const [sortOrder, setSortOrder] = useState<BookedSortOrder>('desc');
   const [status, setStatus]   = useState('');
   const [paymentStatus, setPaymentStatus]     = useState('');
   const [ticketingStatus, setTicketingStatus] = useState('');
@@ -297,6 +299,7 @@ export default function AdminBookingsPage() {
     if (tripType)        params.set('tripType', tripType);
     if (dateFrom)        params.set('from', dateFrom);
     if (dateTo)          params.set('to', dateTo);
+    params.set('order', sortOrder);
     const res = await adminFetch(`/api/admin/bookings?${params}`);
     if (res.status === 401) { router.replace('/admin/login'); return; }
     const json = await res.json();
@@ -304,7 +307,7 @@ export default function AdminBookingsPage() {
     setTotal(json.total ?? 0);
     setPages(json.pages ?? 1);
     setLoading(false);
-  }, [page, search, status, paymentStatus, ticketingStatus, provider, cabin, tripType, dateFrom, dateTo, router]);
+  }, [page, search, status, paymentStatus, ticketingStatus, provider, cabin, tripType, dateFrom, dateTo, sortOrder, router]);
 
   useEffect(() => { load(); }, [load]);
 
@@ -407,6 +410,7 @@ export default function AdminBookingsPage() {
             ))}
           </select>
         </div>
+        <BookedDateSort order={sortOrder} onChange={(o) => { setSortOrder(o); setPage(1); }} className="py-2.5" />
         <button
           onClick={() => setShowFilters(!showFilters)}
           className={`flex items-center gap-2 px-4 py-2 border rounded-xl text-sm font-semibold transition-all ${

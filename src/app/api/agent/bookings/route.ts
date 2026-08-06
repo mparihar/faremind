@@ -9,6 +9,9 @@ export const GET = withAgentServicing(async (req: NextRequest, { agent }) => {
   const limit = Math.min(parseInt(url.searchParams.get('limit') || '20', 10), 50);
   const search = url.searchParams.get('search')?.trim() || '';
   const status = url.searchParams.get('status')?.trim() || '';
+  // 'asc' | 'desc'; anything else is newest first.
+  const sortOrder: 'asc' | 'desc' =
+    (url.searchParams.get('order') ?? '').toLowerCase() === 'asc' ? 'asc' : 'desc';
   const skip = (page - 1) * limit;
 
   // Show bookings where the user is the agent OR the customer (self-bookings)
@@ -78,7 +81,9 @@ export const GET = withAgentServicing(async (req: NextRequest, { agent }) => {
           take: 3,
         },
       },
-      orderBy: { createdAt: 'desc' },
+      // Booking date, newest first by default, direction from ?order=.
+      // Ties break on id so paging cannot repeat or skip a row.
+      orderBy: [{ createdAt: sortOrder }, { id: sortOrder }],
       skip,
       take: limit,
     }),
