@@ -189,7 +189,15 @@ function callerOwnedBooking(callerId: string) {
             { booking: { customerEmail: { equals: emailLower, mode: 'insensitive' } } },
           ],
         },
-        orderBy: { createdAt: 'desc' },
+        // Most recently ENTERED OR CORRECTED, not most recently created.
+        //
+        // A passport typo fixed on an older booking (manage-booking and the
+        // admin passenger route both write the row in place) moves updatedAt and
+        // leaves createdAt alone. Ordering by createdAt would keep handing back a
+        // newer booking that still carries the wrong number, so the correction
+        // would never reach the next form the traveller sees. On a fresh row the
+        // two are equal, so nothing else changes.
+        orderBy: { updatedAt: 'desc' },
       });
 
       if (bookingPax) {
@@ -328,7 +336,15 @@ function callerOwnedBooking(callerId: string) {
             { booking: { customerEmail: { equals: contactEmail, mode: 'insensitive' } } },
           ],
         },
-        orderBy: { createdAt: 'desc' },
+        // Most recently ENTERED OR CORRECTED, not most recently created.
+        //
+        // A passport typo fixed on an older booking (manage-booking and the
+        // admin passenger route both write the row in place) moves updatedAt and
+        // leaves createdAt alone. Ordering by createdAt would keep handing back a
+        // newer booking that still carries the wrong number, so the correction
+        // would never reach the next form the traveller sees. On a fresh row the
+        // two are equal, so nothing else changes.
+        orderBy: { updatedAt: 'desc' },
       });
 
       if (bookingPax) {
