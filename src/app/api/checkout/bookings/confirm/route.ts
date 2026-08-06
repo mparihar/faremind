@@ -1291,8 +1291,8 @@ export async function POST(req: NextRequest) {
         if (!revalData) {
           await cancelStripeAuth('Mystifly revalidation failed (no valid FSC)');
           const customerMessage = suppliedAlternates.length > 0
-            ? 'This fare is no longer available at the selected price. Please search again for updated pricing. Your card was not charged.'
-            : 'This fare is no longer available. Please search again for updated pricing. Your card was not charged.';
+            ? 'This fare is no longer available at the price shown. Please search again to view the latest available options. Your card was not charged.'
+            : 'This fare is no longer available. Please search again to view the latest available options. Your card was not charged.';
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
@@ -1321,7 +1321,7 @@ export async function POST(req: NextRequest) {
         // ── Point 10: Block booking when revalidation does not return a valid FSC ──
         if (!revalidatedFareSourceCode) {
           await cancelStripeAuth('Revalidation returned no FareSourceCode');
-          const customerMessage = 'Fare validation issue. Please search again. Your card was not charged.';
+          const customerMessage = 'This fare is no longer available. Please search again to view the latest available options. Your card was not charged.';
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
@@ -1556,9 +1556,15 @@ export async function POST(req: NextRequest) {
                 ? 'Your refund is being processed — you will receive it within 5-10 business days.'
                 : 'Your card was not charged.';
 
+          // Never put the provider's words in front of a customer. errMsg is
+          // airline-desk language — "Pending Need - Awaiting carrier response -
+          // Booking Unconfirmed", "ERBUK037", "Please verify the request" — which
+          // tells them nothing they can act on and reads as though something is
+          // wrong with what THEY entered. It is kept on the audit record, where
+          // staff need it verbatim.
           const customerMessage = fareGone
             ? `This fare is no longer available. Please search again to view the latest available options. ${refundLine}`
-            : `${errMsg}. ${refundLine} Please try again.`;
+            : `We could not complete this booking with the airline. ${refundLine} Please search again to view the latest available options.`;
 
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
@@ -1720,10 +1726,10 @@ export async function POST(req: NextRequest) {
         }
 
         const customerMessage = refundStatus === 'REFUND_ISSUED'
-          ? `The airline was unable to process this booking. Your payment has been refunded. Please try again.`
+          ? 'The airline was unable to complete this booking. Your payment has been refunded in full. Please search again to view the latest available options.'
           : refundStatus === 'REFUND_PENDING'
-            ? `The airline was unable to process this booking. Your refund is being processed — you will receive it within 5-10 business days.`
-            : `The airline was unable to process this booking. Your card was not charged. Please try again.`;
+            ? 'The airline was unable to complete this booking. Your refund is being processed — you will receive it within 5-10 business days.'
+            : 'The airline was unable to complete this booking. Your card was not charged. Please search again to view the latest available options.';
 
         await logBookingFailure({
           passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
@@ -2818,11 +2824,23 @@ export async function POST(req: NextRequest) {
       const providerTitle = err.errors[0]?.title || err.errors[0]?.message || msg;
       customerMsg = `${providerTitle}. Booking could not be completed at this time. Your card was not charged. Please try again.`;
     } else {
-      // For non-Duffel errors, show actual error context (sanitized)
-      const safeMsg = msg.includes('Duffel') || msg.includes('offer') || msg.includes('expired') || msg.includes('passenger')
-        ? msg.replace(/Duffel API error \(\d+\): /g, '')
-        : 'An unexpected error occurred';
-      customerMsg = `${safeMsg}. Booking could not be completed at this time. Your card was not charged. Please try again.`;
+      // Map the few conditions a customer can act on; say nothing otherwise.
+      //
+      // This used to forward the exception text whenever it merely CONTAINED
+      // "offer", "expired" or "passenger", which is true of plenty of internal
+      // failures — "Cannot read properties of undefined (reading 'offer')" would
+      // have gone straight to the customer. The full message is on the audit
+      // record either way, so nothing is lost by not printing it here.
+      const actionable =
+        /offer.*(expired|no longer)|fare.*(expired|no longer)/i.test(msg)
+          ? 'This fare is no longer available. Please search again to view the latest available options.'
+          : /passenger/i.test(msg) && /invalid|mismatch|required|missing/i.test(msg)
+            ? 'Some passenger details could not be accepted. Please check them and try again.'
+            : null;
+
+      customerMsg = actionable
+        ? `${actionable} Your card was not charged.`
+        : 'Booking could not be completed at this time. Your card was not charged. Please try again, or contact support if this keeps happening.';
     }
 
     // Audit log — capture unexpected errors for admin review
