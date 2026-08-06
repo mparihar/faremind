@@ -1,6 +1,7 @@
 import { FastifyPluginAsync } from 'fastify';
 import { fireNotification } from '../lib/notify';
 import { prisma } from '../lib/db';
+import { recallFromFailedAttempts } from '../lib/recall-failed-attempts';
 
 // FAREMIND_BUNDLE gate — reads from env (loaded via env.ts preloader)
 function isBundleEnabled(): boolean {
@@ -214,7 +215,36 @@ function callerOwnedBooking(callerId: string) {
         };
       }
 
-      // 2. Fallback: the caller's OWN account record. Looking up any other
+      // 2. Fallback: a failed attempt by this caller. Same reasoning as the
+      //    name lookup — a booking that never completed leaves no passenger
+      //    rows, and that is exactly when someone is re-entering.
+      const failedMatch = await recallFromFailedAttempts({
+        callerId: caller.id,
+        firstName: name.first,
+        lastName: name.last,
+        contactEmail: emailLower,
+      });
+      if (failedMatch) {
+        return {
+          found: true,
+          source: 'failed_attempt',
+          partial: true,
+          data: {
+            firstName: failedMatch.firstName,
+            middleName: failedMatch.middleName,
+            lastName: failedMatch.lastName,
+            phone: failedMatch.phone,
+            gender: failedMatch.gender,
+            dateOfBirth: failedMatch.dateOfBirth,
+            nationality: normaliseCountry(failedMatch.nationality),
+            passportCountry: '',
+            passportNumber: '',
+            passportExpiry: '',
+          },
+        };
+      }
+
+      // 3. Fallback: the caller's OWN account record. Looking up any other
       //    user by email would be the same disclosure through a smaller hole,
       //    and it only applies when the form names the account holder — someone
       //    booking for a friend must not get their own phone number back.
@@ -304,6 +334,7 @@ function callerOwnedBooking(callerId: string) {
       if (bookingPax) {
         return {
           found: true,
+          source: 'booking',
           data: {
             middleName: bookingPax.middleName ?? '',
             email: bookingPax.email ?? '',
@@ -318,6 +349,36 @@ function callerOwnedBooking(callerId: string) {
             passportExpiry: bookingPax.passportExpiry
               ? bookingPax.passportExpiry.toISOString().split('T')[0]
               : '',
+          },
+        };
+      }
+
+      // No completed booking. Fall back to what a FAILED attempt captured — the
+      // fare dying is the most likely reason this traveller is being entered
+      // again, and re-typing what they filled in minutes ago is the worst part
+      // of it. Partial by nature: no passport, no gender. Whatever is known
+      // gets filled and the traveller supplies the rest.
+      const fromFailed = await recallFromFailedAttempts({
+        callerId: caller.id,
+        firstName: firstName.trim(),
+        lastName: lastName.trim(),
+        contactEmail,
+      });
+      if (fromFailed) {
+        return {
+          found: true,
+          source: 'failed_attempt',
+          partial: true,
+          data: {
+            middleName: fromFailed.middleName,
+            email: fromFailed.email,
+            phone: fromFailed.phone,
+            gender: fromFailed.gender,
+            dateOfBirth: fromFailed.dateOfBirth,
+            nationality: normaliseCountry(fromFailed.nationality),
+            passportCountry: '',
+            passportNumber: '',
+            passportExpiry: '',
           },
         };
       }
