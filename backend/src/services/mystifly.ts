@@ -146,10 +146,15 @@ export interface MystiflySpecialServiceRequest {
   }>;
 }
 
-// Extra services (baggage add-ons)
+// Paid extras — baggage and meals.
+//
+// The provider's doc gives exactly one property, the id:
+//   "ExtraServices1_1": [ { "ExtraServiceId": 5 }, { "ExtraServiceId": 10 } ]
+// Quantity and Key were ours; a second bag is a second id, not a quantity.
+// They stay optional only so an older caller still compiles.
 export interface MystiflyExtraService {
   ExtraServiceId: number;
-  Quantity: number;
+  Quantity?: number;
   Key?: string;
 }
 
@@ -169,8 +174,10 @@ export interface MystiflyAirTraveler {
   NationalID?: string;
   // ── SSR / Ancillary fields ──
   SpecialServiceRequest?: MystiflySpecialServiceRequest;
+  /** @deprecated The sibling that comes back empty on every revalidation. */
   ExtraServices?: MystiflyExtraService[];
-  ExtraServices1_1?: MystiflyExtraService[];  // v1.1 format
+  /** The tag services are offered under, and the one Book reads. */
+  ExtraServices1_1?: MystiflyExtraService[];
   Seats?: MystiflySeatSelectionRQ;
 }
 

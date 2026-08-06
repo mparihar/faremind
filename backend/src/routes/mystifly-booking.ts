@@ -22,6 +22,7 @@ import * as mystifly from '../services/mystifly';
 import { resolveMystiflyRef } from '../lib/booking-lookup';
 import { passengerTitle } from '../lib/passenger-title';
 import { bookPhoneFields } from '../lib/phone-country';
+import { toBookExtraServices } from '../lib/mystifly-extra-services';
 import type {
   MystiflyAirTraveler,
   MystiflyPassengerType,
@@ -184,13 +185,20 @@ function toMystiflyTravelers(passengers: any[]): MystiflyAirTraveler[] {
       }
     }
 
-    // Extra services (e.g., extra baggage)
+    // Paid extras — baggage and meals — chosen from the revalidation response.
+    //
+    // The tag is ExtraServices1_1, matching the key the services are OFFERED
+    // under. We were sending ExtraServices, the sibling that comes back empty on
+    // every revalidation, so a selection would have gone out under a name
+    // Mystifly does not read for this.
+    //
+    // Shape is exactly [{ ExtraServiceId: 5 }] per the provider's doc: no
+    // Quantity, no Key. A second bag is a second id, not a quantity.
     if (p.extraServices && Array.isArray(p.extraServices) && p.extraServices.length > 0) {
-      traveler.ExtraServices = p.extraServices.map((svc: any) => ({
-        ExtraServiceId: svc.extraServiceId ?? svc.ExtraServiceId,
-        Quantity: svc.quantity ?? svc.Quantity ?? 1,
-        Key: svc.key ?? svc.Key,
-      }));
+      const ids = p.extraServices.map((svc: any) =>
+        svc?.extraServiceId ?? svc?.ExtraServiceId ?? svc?.serviceId ?? svc?.ServiceId ?? svc);
+      const services = toBookExtraServices(ids);
+      if (services.length > 0) traveler.ExtraServices1_1 = services;
     }
 
     // Seat selection keys (from SeatMap)

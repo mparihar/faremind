@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getOffer } from '@/lib/providers/duffel';
 import { resolveMeal } from '@/lib/meal-types';
 import type { MealOptionDef } from '@/lib/meal-types';
+import { mealServices, mealCodeFromDescription } from '@/lib/mystifly-extra-services';
 
 // ── In-memory cache (5-min TTL) ───────────────────────────────────────────────
 
@@ -116,29 +117,15 @@ export async function GET(request: NextRequest) {
       }
 
       const revalData = await revalRes.json();
-      const extraServices = revalData?.raw?.Data?.ExtraServices ?? revalData?.raw?.ExtraServices ?? [];
 
-      if (Array.isArray(extraServices) && extraServices.length > 0) {
-      }
+      // ExtraServices1_1, not ExtraServices. The response carries both and the
+      // second is empty on every revalidation seen — reading it meant no paid
+      // meal was ever offered. The value is also an object with the list under
+      // `.Services`, so the old `Array.isArray` check could not have matched
+      // either. parseExtraServices handles both.
+      const offered = mealServices(revalData);
 
-      // Parse meal-type services from ExtraServices
-      // Mystifly ExtraServices structure: { ServiceType, ServiceCode, Description, Amount, Currency, ... }
-      const MEAL_CODES = new Set([
-        'MEAL', 'MLML', 'AVML', 'HNML', 'VGML', 'VLML', 'DBML', 'BLML',
-        'CHML', 'FPML', 'GFML', 'KSML', 'LCML', 'LFML', 'LSML', 'MOML',
-        'NLML', 'ORML', 'SFML', 'SPML', 'VOML', 'BBML', 'RVML',
-      ]);
-
-      const mealServices = Array.isArray(extraServices)
-        ? extraServices.filter((s: any) => {
-            const type = (s.ServiceType || s.Type || '').toUpperCase();
-            const code = (s.ServiceCode || s.Code || '').toUpperCase();
-            return type === 'MEAL' || type === 'MEALS' || type === 'CATERING' ||
-                   MEAL_CODES.has(code) || MEAL_CODES.has(code.slice(0, 4));
-          })
-        : [];
-
-      if (mealServices.length === 0) {
+      if (offered.length === 0) {
         // Mystifly supports meal SSR preferences at booking time even when
         // ExtraServices doesn't list them. Fall back to standard IATA SSR codes.
         const ssrCodes = ['STANDARD', 'VGML', 'AVML', 'NLML', 'MOML', 'KSML', 'HNML', 'DBML', 'GFML', 'LFML', 'FPML', 'SFML', 'LCML', 'CHML', 'NONE'];
@@ -149,10 +136,15 @@ export async function GET(request: NextRequest) {
         return NextResponse.json({ ...result, cached: false });
       }
 
-      const meals: MealOptionDef[] = mealServices.map((s: any) => {
-        const code = (s.ServiceCode || s.Code || 'STANDARD').toUpperCase();
-        const price = parseFloat(s.Amount || s.TotalAmount || s.Price || '0');
-        return resolveMeal(code, price);
+      // The provider gives a description and a price, not an IATA code — the doc's
+      // own examples are "Child Menu 39.12 USD", "Gluten-free Menu 39.12 USD".
+      // Match a code out of the wording where one is recognisable and keep the
+      // provider's own text otherwise, so a menu we have no code for is still
+      // offered rather than dropped.
+      const meals: MealOptionDef[] = offered.map((s) => {
+        const code = mealCodeFromDescription(s.description);
+        const meal = resolveMeal(code, s.amount);
+        return { ...meal, label: s.description || meal.label, serviceId: s.serviceId };
       });
 
       // Deduplicate by code

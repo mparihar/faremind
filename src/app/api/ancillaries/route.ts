@@ -15,6 +15,7 @@ import {
   normalizeDuffelPremiumServices,
   type NormalizedAncillary,
 } from '@/lib/providers/providerAncillaryNormalizer';
+import { baggageServices, mealServices, baggageWeightKg } from '@/lib/mystifly-extra-services';
 
 // ── In-memory cache (5-min TTL) ───────────────────────────────────────────────
 
@@ -208,6 +209,81 @@ async function handleMystifly(offerId: string, cacheKey: string, mfref?: string 
     }
   } catch (seatErr) {
     console.warn(`[Ancillaries] Mystifly SeatMap fetch failed: ${(seatErr as Error).message}`);
+  }
+
+  // ── Pre-booking: paid baggage and meals from the revalidation ─────────────
+  //
+  // Mystifly offers purchasable extras on the REVALIDATION response, under
+  // ExtraServices1_1, before the booking exists. We only ever looked at the
+  // post-booking AncillaryServiceRequest below, so a customer was never shown a
+  // paid bag while choosing their fare — on BCN→MUC that is four options between
+  // $54.89 and $80.81 that simply were not on the page.
+  //
+  // Only WebFare and Private fares carry them, so an empty list here is a normal
+  // answer for a public fare rather than a failure.
+  try {
+    const revalRes = await fetch(`${BACKEND_URL}/api/mystifly/revalidate`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ fareSourceCode: offerId, source: 'ancillaries' }),
+    });
+    if (revalRes.ok) {
+      const revalData = await revalRes.json();
+
+      for (const svc of baggageServices(revalData)) {
+        const kg = baggageWeightKg(svc.description);
+        baggage.push({
+          provider: 'MYSTIFLY',
+          providerOfferId: offerId,
+          // The provider's own ServiceId is what goes back on the Book request.
+          providerServiceId: `extra-${svc.serviceId}`,
+          ancillaryType: 'EXTRA_CHECKED_BAG',
+          passengerId: null,
+          segmentId: null,
+          journeyId: null,
+          airportCode: null,
+          label: svc.description || (kg ? `Checked bag ${kg}kg` : 'Extra checked bag'),
+          description: svc.direction === 'BOTH'
+            ? 'Applies to the whole trip'
+            : `${svc.direction === 'OUTBOUND' ? 'Outbound' : 'Return'} flight only`,
+          included: false,
+          chargeable: svc.amount > 0,
+          amount: svc.amount,
+          currency: svc.currency,
+          quantity: 1,
+          // GROUP_PAX services cover everyone on the booking; PER_PAX is one each.
+          maxQuantity: 1,
+          rawProviderData: { ...svc, extraServiceId: svc.serviceId },
+        });
+      }
+
+      for (const svc of mealServices(revalData)) {
+        meals.push({
+          provider: 'MYSTIFLY',
+          providerOfferId: offerId,
+          providerServiceId: `extra-${svc.serviceId}`,
+          ancillaryType: 'MEAL',
+          passengerId: null,
+          segmentId: null,
+          journeyId: null,
+          airportCode: null,
+          label: svc.description || 'Meal',
+          description: svc.direction === 'BOTH'
+            ? 'Applies to the whole trip'
+            : `${svc.direction === 'OUTBOUND' ? 'Outbound' : 'Return'} flight only`,
+          included: false,
+          chargeable: svc.amount > 0,
+          amount: svc.amount,
+          currency: svc.currency,
+          quantity: 1,
+          maxQuantity: 1,
+          rawProviderData: { ...svc, extraServiceId: svc.serviceId },
+        });
+      }
+    }
+  } catch (err) {
+    // Extras are additive; never let them stop the rest of the page loading.
+    console.warn(`[Ancillaries] Mystifly ExtraServices1_1 fetch failed: ${(err as Error).message}`);
   }
 
   // ── Pre-booking: Meal preferences (IATA SSR codes) ────────────────────────
