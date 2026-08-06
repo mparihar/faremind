@@ -1536,11 +1536,28 @@ export async function POST(req: NextRequest) {
             }
           }
 
-          const customerMessage = refundStatus === 'REFUND_ISSUED'
-            ? `${errMsg}. Your card has been refunded. Please try again.`
-            : refundStatus === 'REFUND_PENDING'
-              ? `${errMsg}. Your refund is being processed — you will receive it within 5-10 business days.`
-              : `${errMsg}. Your card was not charged. Please try again.`;
+          // What the customer is told depends on whether the seat is gone.
+          //
+          // ERBUK082 that resolves to "no booking exists" means the carrier did
+          // not take it — the fare is no longer sellable. "Please try again"
+          // sends them back at the same dead fare; they need to search afresh.
+          // The provider's own words ("Pending Need - Awaiting carrier response
+          // - Booking Unconfirmed") are also not customer language and are kept
+          // to the audit record.
+          const fareGone =
+            /ERBUK082/i.test(String(bookData?.mystiflyErrorCode ?? '')) ||
+            /booking unconfirmed|awaiting carrier|pending need|no longer available|sold out|not available/i.test(errMsg);
+
+          const refundLine =
+            refundStatus === 'REFUND_ISSUED'
+              ? 'Your card has been refunded in full.'
+              : refundStatus === 'REFUND_PENDING'
+                ? 'Your refund is being processed — you will receive it within 5-10 business days.'
+                : 'Your card was not charged.';
+
+          const customerMessage = fareGone
+            ? `This fare is no longer available. Please search again to view the latest available options. ${refundLine}`
+            : `${errMsg}. ${refundLine} Please try again.`;
 
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
