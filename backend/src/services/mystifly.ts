@@ -780,8 +780,12 @@ export async function bookFlight(params: MystiflyBookParams): Promise<any> {
     FareSourceCode: params.fareSourceCode,
     TravelerInfo: {
       AirTravelers: params.travelers,
-      CountryCode: params.countryCode || 'US',
-      AreaCode: params.areaCode || '1',
+      // Numeric dialling code and national destination code, digits only.
+      // AreaCode defaulted to '1' on every booking regardless of country, so an
+      // Indian number went out with a US area code; there is no sane default for
+      // it, and empty is a valid value the contract allows.
+      CountryCode: params.countryCode || '',
+      AreaCode: params.areaCode ?? '',
       PhoneNumber: params.phoneNumber,
       Email: params.email,
     },

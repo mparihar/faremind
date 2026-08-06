@@ -1,230 +1,147 @@
 /**
- * Phone country codes for the Mystifly Book request.
+ * The phone block for a Mystifly Book request: CountryCode, AreaCode, PhoneNumber.
  *
- * `TravelerInfo.CountryCode` is the phone's DIALLING code — 1 for the US, 91 for
- * India — and not an ISO country. We were filling it with `toIsoCountry(...)`,
- * which yields "US", and because the checkout never sends a country at all it
- * fell through to that function's own 'US' default on every booking. Mystifly
- * flagged it across all references: the value was wrong AND constant, so an
- * Indian traveller was booked as US too.
+ * Mystifly asked for the numeric dialling code — 1 for the US, 91 for India —
+ * with no special characters, and only for phone numbers. Two things were wrong:
  *
- * ISO codes still belong on `Passport.Country` and `PassengerNationality`.
- * Those are genuinely countries; only the phone block wants a dialling code.
+ *   CountryCode was filled by toIsoCountry(), which yields "US". And because
+ *   checkout sends no country at all, it fell through to that function's own
+ *   'US' default, so the value was not merely the wrong format but the same
+ *   literal on every booking regardless of traveller.
  *
- * The number itself already carries it — checkout stores E.164 ("+19723456789")
- * — so the dialling code is read from the phone by longest-prefix match rather
- * than guessed from nationality. A traveller with an Indian passport and a US
- * mobile has a US phone, and the phone block describes the phone.
+ *   AreaCode was hard-coded '1'. Every booking, every country. An Indian number
+ *   went out with a US area code.
+ *
+ * Splitting is done by libphonenumber-js, against Google's own numbering-plan
+ * metadata, rather than a table of our own. Hand-rolled rules do not survive
+ * contact with the world: NANP area codes are always three digits, India's STD
+ * codes are two to four, UK's are two to five, and Singapore has none at all.
+ *
+ * ── What goes in AreaCode ────────────────────────────────────────────────────
+ *
+ * The national destination code — the first group the numbering plan defines
+ * after the country code:
+ *
+ *   +1  972 345 6789   -> 1  / 972   / 3456789    (Dallas)
+ *   +91 22 1234 5678   -> 91 / 22    / 12345678   (Mumbai STD)
+ *   +44 20 7123 4567   -> 44 / 20    / 71234567   (London)
+ *   +91 98262 40929    -> 91 / 98262 / 40929      (mobile block)
+ *
+ * For a landline that is the area code proper. For a mobile it is the operator
+ * block, which is what the numbering plan puts in the same position — we do not
+ * separate mobile from landline, so the same rule applies to both.
+ *
+ * ── The invariant ───────────────────────────────────────────────────────────
+ *
+ * CountryCode + AreaCode + PhoneNumber always reconstructs the full number,
+ * digits only, nothing dropped and nothing duplicated. However Mystifly chooses
+ * to reassemble the three parts, the traveller's number comes back out.
  */
+import { parsePhoneNumber } from 'libphonenumber-js/max';
 
-export interface DialCountry {
-  dial: string;
-  name: string;
-  /** ISO alpha-2 codes sharing this dialling code (+1 covers US and CA). */
-  iso?: string[];
-}
-
-/** Dialling codes, longest first so +1 never shadows +1876. */
-export const DIAL_COUNTRIES: DialCountry[] = [
-  { dial: '93', name: "Afghanistan" },
-  { dial: '355', name: "Albania" },
-  { dial: '213', name: "Algeria" },
-  { dial: '376', name: "Andorra" },
-  { dial: '244', name: "Angola" },
-  { dial: '54', name: "Argentina" },
-  { dial: '374', name: "Armenia" },
-  { dial: '61', name: "Australia", iso: ['AU'] },
-  { dial: '43', name: "Austria", iso: ['AT'] },
-  { dial: '994', name: "Azerbaijan" },
-  { dial: '973', name: "Bahrain", iso: ['BH'] },
-  { dial: '880', name: "Bangladesh", iso: ['BD'] },
-  { dial: '375', name: "Belarus" },
-  { dial: '32', name: "Belgium", iso: ['BE'] },
-  { dial: '501', name: "Belize" },
-  { dial: '591', name: "Bolivia" },
-  { dial: '55', name: "Brazil", iso: ['BR'] },
-  { dial: '673', name: "Brunei" },
-  { dial: '359', name: "Bulgaria" },
-  { dial: '855', name: "Cambodia" },
-  { dial: '237', name: "Cameroon" },
-  { dial: '56', name: "Chile" },
-  { dial: '86', name: "China", iso: ['CN'] },
-  { dial: '57', name: "Colombia" },
-  { dial: '506', name: "Costa Rica" },
-  { dial: '385', name: "Croatia" },
-  { dial: '53', name: "Cuba" },
-  { dial: '357', name: "Cyprus" },
-  { dial: '420', name: "Czech Republic" },
-  { dial: '45', name: "Denmark", iso: ['DK'] },
-  { dial: '593', name: "Ecuador" },
-  { dial: '20', name: "Egypt", iso: ['EG'] },
-  { dial: '503', name: "El Salvador" },
-  { dial: '372', name: "Estonia" },
-  { dial: '251', name: "Ethiopia" },
-  { dial: '679', name: "Fiji" },
-  { dial: '358', name: "Finland", iso: ['FI'] },
-  { dial: '33', name: "France", iso: ['FR'] },
-  { dial: '995', name: "Georgia" },
-  { dial: '49', name: "Germany", iso: ['DE'] },
-  { dial: '233', name: "Ghana" },
-  { dial: '30', name: "Greece", iso: ['GR'] },
-  { dial: '502', name: "Guatemala" },
-  { dial: '504', name: "Honduras" },
-  { dial: '852', name: "Hong Kong", iso: ['HK'] },
-  { dial: '36', name: "Hungary" },
-  { dial: '354', name: "Iceland" },
-  { dial: '91', name: "India", iso: ['IN'] },
-  { dial: '62', name: "Indonesia", iso: ['ID'] },
-  { dial: '98', name: "Iran" },
-  { dial: '964', name: "Iraq" },
-  { dial: '353', name: "Ireland", iso: ['IE'] },
-  { dial: '972', name: "Israel", iso: ['IL'] },
-  { dial: '39', name: "Italy", iso: ['IT'] },
-  { dial: '81', name: "Japan", iso: ['JP'] },
-  { dial: '962', name: "Jordan" },
-  { dial: '7', name: "Kazakhstan / Russia" },
-  { dial: '254', name: "Kenya", iso: ['KE'] },
-  { dial: '965', name: "Kuwait", iso: ['KW'] },
-  { dial: '856', name: "Laos" },
-  { dial: '371', name: "Latvia" },
-  { dial: '961', name: "Lebanon" },
-  { dial: '370', name: "Lithuania" },
-  { dial: '352', name: "Luxembourg" },
-  { dial: '853', name: "Macau" },
-  { dial: '60', name: "Malaysia", iso: ['MY'] },
-  { dial: '960', name: "Maldives" },
-  { dial: '356', name: "Malta" },
-  { dial: '52', name: "Mexico", iso: ['MX'] },
-  { dial: '373', name: "Moldova" },
-  { dial: '976', name: "Mongolia" },
-  { dial: '212', name: "Morocco" },
-  { dial: '258', name: "Mozambique" },
-  { dial: '95', name: "Myanmar" },
-  { dial: '977', name: "Nepal", iso: ['NP'] },
-  { dial: '31', name: "Netherlands", iso: ['NL'] },
-  { dial: '64', name: "New Zealand", iso: ['NZ'] },
-  { dial: '505', name: "Nicaragua" },
-  { dial: '234', name: "Nigeria", iso: ['NG'] },
-  { dial: '47', name: "Norway", iso: ['NO'] },
-  { dial: '968', name: "Oman", iso: ['OM'] },
-  { dial: '92', name: "Pakistan", iso: ['PK'] },
-  { dial: '507', name: "Panama" },
-  { dial: '595', name: "Paraguay" },
-  { dial: '51', name: "Peru" },
-  { dial: '63', name: "Philippines", iso: ['PH'] },
-  { dial: '48', name: "Poland", iso: ['PL'] },
-  { dial: '351', name: "Portugal", iso: ['PT'] },
-  { dial: '974', name: "Qatar", iso: ['QA'] },
-  { dial: '40', name: "Romania" },
-  { dial: '966', name: "Saudi Arabia", iso: ['SA'] },
-  { dial: '381', name: "Serbia" },
-  { dial: '65', name: "Singapore", iso: ['SG'] },
-  { dial: '421', name: "Slovakia" },
-  { dial: '386', name: "Slovenia" },
-  { dial: '27', name: "South Africa", iso: ['ZA'] },
-  { dial: '82', name: "South Korea", iso: ['KR'] },
-  { dial: '34', name: "Spain", iso: ['ES'] },
-  { dial: '94', name: "Sri Lanka", iso: ['LK'] },
-  { dial: '46', name: "Sweden", iso: ['SE'] },
-  { dial: '41', name: "Switzerland", iso: ['CH'] },
-  { dial: '963', name: "Syria" },
-  { dial: '886', name: "Taiwan", iso: ['TW'] },
-  { dial: '992', name: "Tajikistan" },
-  { dial: '255', name: "Tanzania" },
-  { dial: '66', name: "Thailand", iso: ['TH'] },
-  { dial: '216', name: "Tunisia" },
-  { dial: '90', name: "Turkey", iso: ['TR'] },
-  { dial: '993', name: "Turkmenistan" },
-  { dial: '256', name: "Uganda" },
-  { dial: '380', name: "Ukraine" },
-  { dial: '971', name: "United Arab Emirates", iso: ['AE'] },
-  { dial: '44', name: "United Kingdom", iso: ['GB'] },
-  { dial: '1', name: "United States / Canada", iso: ['US', 'CA'] },
-  { dial: '598', name: "Uruguay" },
-  { dial: '998', name: "Uzbekistan" },
-  { dial: '58', name: "Venezuela" },
-  { dial: '84', name: "Vietnam", iso: ['VN'] },
-  { dial: '967', name: "Yemen" },
-  { dial: '260', name: "Zambia" },
-  { dial: '263', name: "Zimbabwe" },
-];
-
-const BY_LENGTH = [...DIAL_COUNTRIES].sort((a, b) => b.dial.length - a.dial.length);
-
-export interface SplitPhone {
-  /** Dialling code without '+', e.g. "1" or "91". Empty when undeterminable. */
+export interface BookPhoneFields {
+  /** Numeric dialling code, digits only. "1", "91". */
   countryCode: string;
-  /** The national number, dialling code removed. */
+  /** National destination code, digits only. Empty where the plan defines none. */
+  areaCode: string;
+  /** Subscriber number, digits only, with the code and area code removed. */
   phoneNumber: string;
 }
 
-/**
- * Split an E.164-ish phone into its dialling code and national number.
- *
- * Only a leading '+' is treated as proof of a dialling code. A bare
- * "9723456789" is a national number that happens to start with 9 — reading that
- * as Zambia (+972 is Israel, +9 nothing) would be an invention, so it is left
- * whole and the caller falls back to the country hint.
- */
-export function splitPhone(raw: string | null | undefined, isoHint?: string | null): SplitPhone {
-  const s = String(raw ?? '').trim();
-  const digits = s.replace(/[^0-9]/g, '');
-  if (!digits) return { countryCode: '', phoneNumber: '' };
+const digits = (v: unknown) => String(v ?? '').replace(/[^0-9]/g, '');
 
-  if (s.startsWith('+') || s.startsWith('00')) {
-    const body = s.startsWith('00') ? digits.slice(2) : digits;
-    for (const c of BY_LENGTH) {
-      // Leave at least four digits behind, so a short string cannot be consumed
-      // entirely by its own prefix.
-      if (body.startsWith(c.dial) && body.length - c.dial.length >= 4) {
-        return { countryCode: c.dial, phoneNumber: body.slice(c.dial.length) };
-      }
-    }
-    return { countryCode: '', phoneNumber: body };
-  }
-
-  const hinted = dialCodeForCountry(isoHint);
-  if (hinted && digits.startsWith(hinted) && digits.length - hinted.length >= 4) {
-    return { countryCode: hinted, phoneNumber: digits.slice(hinted.length) };
-  }
-  return { countryCode: hinted, phoneNumber: digits };
-}
-
-/** Dialling code for an ISO alpha-2 or a country name. */
+/** Dialling code for an ISO alpha-2 or a country name, when the phone has none. */
 export function dialCodeForCountry(value: string | null | undefined): string {
   const v = String(value ?? '').trim();
   if (!v) return '';
+
+  // A two-letter code is an ISO country; ask the library for its dialling code
+  // by parsing a placeholder national number against it.
   if (/^[A-Za-z]{2}$/.test(v)) {
-    const iso = v.toUpperCase();
-    return DIAL_COUNTRIES.find((c) => c.iso?.includes(iso))?.dial ?? '';
+    try {
+      const p = parsePhoneNumber('000000000', v.toUpperCase() as any);
+      return String(p?.countryCallingCode ?? '');
+    } catch { return ''; }
   }
+
   const name = v.toLowerCase();
-  const alias: Record<string, string> = {
-    'usa': 'united states', 'us': 'united states', 'america': 'united states',
-    'uk': 'united kingdom', 'great britain': 'united kingdom', 'uae': 'united arab emirates',
+  const byName: Record<string, string> = {
+    'united states': 'US', 'united states of america': 'US', 'usa': 'US', 'us': 'US',
+    'america': 'US', 'india': 'IN', 'united kingdom': 'GB', 'uk': 'GB',
+    'great britain': 'GB', 'canada': 'CA', 'australia': 'AU', 'singapore': 'SG',
+    'united arab emirates': 'AE', 'uae': 'AE', 'germany': 'DE', 'france': 'FR',
+    'malaysia': 'MY', 'thailand': 'TH', 'hong kong': 'HK', 'japan': 'JP',
+    'china': 'CN', 'saudi arabia': 'SA', 'qatar': 'QA', 'nepal': 'NP',
+    'sri lanka': 'LK', 'bangladesh': 'BD', 'pakistan': 'PK', 'indonesia': 'ID',
+    'philippines': 'PH', 'vietnam': 'VN', 'new zealand': 'NZ', 'south africa': 'ZA',
   };
-  const target = alias[name] ?? name;
-  const exact = DIAL_COUNTRIES.find((c) => c.name.toLowerCase() === target);
-  if (exact) return exact.dial;
-  // Several entries label a shared code as "United States / Canada"; match the
-  // country inside the label rather than only the whole label.
-  const combined = DIAL_COUNTRIES.find((c) =>
-    c.name.toLowerCase().split('/').map((part) => part.trim()).includes(target));
-  return combined?.dial ?? '';
+  const iso = byName[name];
+  return iso ? dialCodeForCountry(iso) : '';
 }
 
 /**
- * The phone block for a Book request: dialling code and national number.
+ * Split a phone number into the three fields the Book request wants.
  *
- * Falls back to the traveller's country only when the phone carries no code,
- * and to US 1 only when nothing at all is known — matching the old default so a
- * missing phone cannot start failing bookings that used to succeed.
+ * `countryHint` (an ISO code or country name) is used only when the number
+ * carries no dialling code of its own — a bare "9723456789" is a national
+ * number, and reading its leading digits as a country would invent one.
+ *
+ * Never throws. An unparseable number still yields digits-only fields rather
+ * than blocking a booking, and falls back to the previous behaviour's '1' only
+ * when nothing at all can be determined.
  */
 export function bookPhoneFields(
   phone: string | null | undefined,
   countryHint?: string | null,
-): { countryCode: string; phoneNumber: string } {
-  const split = splitPhone(phone, countryHint);
-  const countryCode = split.countryCode || dialCodeForCountry(countryHint) || '1';
-  return { countryCode, phoneNumber: split.phoneNumber || String(phone ?? '').replace(/[^0-9]/g, '') };
+): BookPhoneFields {
+  const raw = String(phone ?? '').trim();
+  const allDigits = digits(raw);
+
+  const attempt = (input: string, country?: string) => {
+    try {
+      const p = country
+        ? parsePhoneNumber(input, country.toUpperCase() as any)
+        : parsePhoneNumber(input);
+      // isPossible, not isValid. isValid checks the number against known
+      // subscriber ranges, which rejects a perfectly real number whenever that
+      // range data lags a telecom operator — and refusing to split a number is
+      // how a booking fails. Length is the right bar: it catches genuine
+      // nonsense without second-guessing the carrier.
+      return p && p.isPossible() ? p : null;
+    } catch { return null; }
+  };
+
+  // A leading + (or 00) means the number states its own country.
+  const hintIso = /^[A-Za-z]{2}$/.test(String(countryHint ?? '').trim())
+    ? String(countryHint).trim().toUpperCase()
+    : undefined;
+
+  const parsed =
+    attempt(raw.startsWith('00') ? `+${allDigits.slice(2)}` : raw) ??
+    (hintIso ? attempt(raw, hintIso) : null) ??
+    attempt(`+${allDigits}`);
+
+  if (!parsed) {
+    // Unparseable. Keep every digit and say nothing we cannot support.
+    const cc = dialCodeForCountry(countryHint) || '1';
+    const national = allDigits.startsWith(cc) && allDigits.length - cc.length >= 4
+      ? allDigits.slice(cc.length)
+      : allDigits;
+    return { countryCode: cc, areaCode: '', phoneNumber: national };
+  }
+
+  const countryCode = digits(parsed.countryCallingCode);
+  const national = digits(parsed.nationalNumber);
+
+  // formatInternational() groups the number the way the numbering plan does:
+  // "+1 972 345 6789". The first group after the dialling code is the national
+  // destination code — the area code for a landline, the operator block for a
+  // mobile, and absent where the plan has neither.
+  const groups = parsed.formatInternational().split(' ').slice(1).map(digits).filter(Boolean);
+  const ndc = groups.length > 1 ? groups[0] : '';
+
+  const areaCode = ndc && national.startsWith(ndc) ? ndc : '';
+  const phoneNumber = areaCode ? national.slice(areaCode.length) : national;
+
+  return { countryCode, areaCode, phoneNumber };
 }

@@ -385,17 +385,16 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // sends no country at all it defaulted to "US" on every booking — the
       // constant wrong value Mystifly flagged across all references. The number
       // itself carries the code, so read it from there.
-      // Only CountryCode changes. PhoneNumber keeps carrying the full number,
-      // as it always has and as TripDetails echoes back, because AreaCode is
-      // still a hard-coded '1' — stripping the dialling code out of the number
-      // while that stands could have the airline reassemble a different phone.
-      // One field, the one that was wrong.
+      // All three phone fields come from one split, so they cannot disagree:
+      // CountryCode + AreaCode + PhoneNumber always reconstructs the number the
+      // traveller gave, digits only, however Mystifly reassembles them.
       const phoneFields = bookPhoneFields(phone, countryCode || passengers?.[0]?.nationality);
 
       const result = await mystifly.bookFlight({
         fareSourceCode,
         travelers,
-        phoneNumber: (phone || '0000000000').replace(/[^0-9]/g, ''),
+        phoneNumber: phoneFields.phoneNumber || '0000000000',
+        areaCode: phoneFields.areaCode,
         email,
         countryCode: phoneFields.countryCode,
         clientReferenceNo,
