@@ -12,14 +12,24 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
  * the edge, with nothing to say more fares existed.
  *
  * This draws the track and thumb as real elements, so it is there whether or not
- * the OS shows its own. It hides itself when the content fits, and it drives the
- * same `scrollLeft` the wheel, trackpad and touch already use — nothing about
- * native scrolling changes.
+ * the OS shows its own. It drives the same `scrollLeft` the wheel, trackpad and
+ * touch already use — nothing about native scrolling changes.
+ *
+ * ── Why the track is always mounted ──────────────────────────────────────────
+ *
+ * An earlier version returned null while `overflows` was false, which deadlocked
+ * it: the track was never in the DOM, so `trackRef.current` was null, so
+ * `measure()` bailed on its first line, so `overflows` never became true, so the
+ * track was never mounted. The bar could not appear for any content at all —
+ * which is exactly what three rounds of "it still isn't showing" looked like.
+ *
+ * The element is now always rendered and merely hidden when there is nothing to
+ * scroll. Measurement never depends on the outcome of measurement.
  */
 export default function HScrollbar({
   targetRef,
   className = '',
-  label = 'Scroll fares',
+  label = 'Scroll',
   controlsId,
 }: {
   targetRef: React.RefObject<HTMLElement | null>;
@@ -39,43 +49,69 @@ export default function HScrollbar({
 
   const measure = useCallback(() => {
     const el = targetRef.current;
-    const track = trackRef.current;
-    if (!el || !track) return;
+    if (!el) return;
 
     const { scrollWidth, clientWidth, scrollLeft } = el;
-    const trackWidth = track.clientWidth;
-    // A sub-pixel difference is not overflow; it is rounding.
-    const maxScroll = Math.max(0, scrollWidth - clientWidth);
-    const overflows = maxScroll > 1 && trackWidth > 0;
+    // The track spans the same width as the row, so the row's own width is a
+    // safe fallback on the first pass, before the track has been laid out.
+    const trackWidth = trackRef.current?.clientWidth || clientWidth;
 
-    if (!overflows) {
-      setMetrics({ thumbWidth: 0, thumbLeft: 0, overflows: false, percent: 0 });
+    // A sub-pixel difference is rounding, not overflow.
+    const maxScroll = Math.max(0, scrollWidth - clientWidth);
+    if (maxScroll <= 1 || trackWidth <= 0) {
+      setMetrics((m) => (m.overflows || m.thumbWidth
+        ? { thumbWidth: 0, thumbLeft: 0, overflows: false, percent: 0 }
+        : m));
       return;
     }
-    const width = Math.max(MIN_THUMB, (clientWidth / scrollWidth) * trackWidth);
+
+    const width = Math.min(trackWidth, Math.max(MIN_THUMB, (clientWidth / scrollWidth) * trackWidth));
     const left = (scrollLeft / maxScroll) * (trackWidth - width);
-    setMetrics({
-      thumbWidth: width, thumbLeft: left, overflows: true,
+    const next = {
+      thumbWidth: width,
+      thumbLeft: Number.isFinite(left) ? left : 0,
+      overflows: true,
       percent: Math.round((scrollLeft / maxScroll) * 100),
-    });
+    };
+    // Skip identical updates so a ResizeObserver cannot loop.
+    setMetrics((m) =>
+      m.overflows === next.overflows &&
+      Math.abs(m.thumbWidth - next.thumbWidth) < 0.5 &&
+      Math.abs(m.thumbLeft - next.thumbLeft) < 0.5
+        ? m
+        : next);
   }, [targetRef]);
 
   useEffect(() => {
     const el = targetRef.current;
     if (!el) return;
+
+    // Measure after layout, and again on the next frame — fonts and images
+    // settle after mount and change the row's width.
     measure();
+    const raf = requestAnimationFrame(measure);
 
     el.addEventListener('scroll', measure, { passive: true });
     // Tab changes swap the fares in place, so the row's width changes without a
-    // window resize — observe the element itself rather than the viewport.
-    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(measure) : null;
+    // window resize — observe the element and its children, not the viewport.
+    const ro = typeof ResizeObserver !== 'undefined' ? new ResizeObserver(() => measure()) : null;
     ro?.observe(el);
     for (const child of Array.from(el.children)) ro?.observe(child);
+    // Children are added and removed when the cabin tab changes.
+    const mo = typeof MutationObserver !== 'undefined'
+      ? new MutationObserver(() => {
+          for (const child of Array.from(el.children)) ro?.observe(child);
+          measure();
+        })
+      : null;
+    mo?.observe(el, { childList: true });
     window.addEventListener('resize', measure);
 
     return () => {
+      cancelAnimationFrame(raf);
       el.removeEventListener('scroll', measure);
       ro?.disconnect();
+      mo?.disconnect();
       window.removeEventListener('resize', measure);
     };
   }, [targetRef, measure]);
@@ -95,6 +131,7 @@ export default function HScrollbar({
     const el = targetRef.current;
     if (!el) return;
     e.preventDefault();
+    e.stopPropagation();
     e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = { pointerId: e.pointerId, startX: e.clientX, startScroll: el.scrollLeft };
   };
@@ -131,9 +168,6 @@ export default function HScrollbar({
     if (delta !== undefined) { el.scrollLeft += delta; e.preventDefault(); }
   };
 
-  // Nothing to scroll — say nothing rather than show a dead track.
-  if (!overflows) return null;
-
   return (
     <div
       ref={trackRef}
@@ -144,13 +178,20 @@ export default function HScrollbar({
       aria-valuemin={0}
       aria-valuemax={100}
       aria-valuenow={percent}
-      tabIndex={0}
+      // Kept in the DOM so it can be measured; hidden, and out of the tab order
+      // and the accessibility tree, when there is nothing to scroll.
+      aria-hidden={!overflows}
+      tabIndex={overflows ? 0 : -1}
       onKeyDown={onKeyDown}
       onPointerDown={(e) => {
-        // Clicking the track jumps to that position; dragging the thumb is handled below.
+        // Clicking the track jumps there; dragging the thumb is handled below.
         if (e.target === trackRef.current) scrollFromPointer(e.clientX);
       }}
-      className={`relative h-2.5 w-full rounded-full bg-slate-200/80 cursor-pointer focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1ABC9C] ${className}`}
+      // Collapsed to zero height when idle so it leaves no dead strip under the
+      // row; width is unaffected, so it still measures correctly.
+      className={`relative w-full rounded-full bg-slate-200 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1ABC9C] ${
+        overflows ? 'mt-1 h-2.5 opacity-100 cursor-pointer' : 'mt-0 h-0 pointer-events-none opacity-0'
+      } ${className}`}
     >
       <div
         onPointerDown={onThumbPointerDown}
