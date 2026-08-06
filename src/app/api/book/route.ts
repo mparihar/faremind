@@ -10,6 +10,7 @@ import {
 } from '@/lib/db-queries';
 import prisma from '@/lib/db';
 import { fireNotification } from '@/lib/notify';
+import { buildPassengerExtras } from '@/lib/mystifly-passenger-extras';
 
 /**
  * POST /api/book
@@ -151,7 +152,11 @@ export async function POST(request: NextRequest) {
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
             fareSourceCode: providerOfferId,
-            passengers: passengers.map((p: any) => ({
+            // This path sent no add-ons whatsoever — a bag, seat or meal chosen
+            // on the booking page was charged for and never reached the airline.
+            // Same mapper as checkout, so the two cannot drift again. Passport
+            // expiry and issuing country were missing here too.
+            passengers: passengers.map((p: any, pIdx: number) => ({
               firstName: p.firstName,
               lastName: p.lastName,
               gender: p.gender,
@@ -159,6 +164,15 @@ export async function POST(request: NextRequest) {
               type: p.type,
               nationality: p.nationality,
               passportNumber: p.passportNumber,
+              passportExpiry: p.passportExpiry,
+              passportCountry: p.passportCountry,
+              ...buildPassengerExtras({
+                passengerId: p.id,
+                passengerIndex: pIdx,
+                selectedAncillaries: body?.selectedAncillaries,
+                seatSelections: body?.seatSelections,
+                mealSelections: body?.mealSelections,
+              }),
             })),
             email: firstPax.email,
             phone: firstPax.phone || '0000000000',

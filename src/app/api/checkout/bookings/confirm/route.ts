@@ -13,6 +13,7 @@ import {
 import { stripe } from '@/lib/stripe';
 import { flightTimeMs, parseProviderDateTime, parseProviderDateTimeOr, providerDateOnly } from '@/lib/provider-time';
 import { isBundleEnabled } from '@/lib/bundle-flags';
+import { buildPassengerExtras } from '@/lib/mystifly-passenger-extras';
 
 // ── Duffel API client (direct import for Next.js API route) ──────────────────
 const DUFFEL_API_URL = process.env.DUFFEL_API_URL || 'https://api.duffel.com';
@@ -1418,46 +1419,16 @@ export async function POST(req: NextRequest) {
                 passportCountry: p.passportCountry,
               };
 
-              // ── SSR: Meal preference ──
-              // mealSelections is an array of { passengerId, mealCode } or similar
-              const mealForPax = Array.isArray(mealSelections)
-                ? mealSelections.find((m: any) => m.passengerId === p.id || m.passengerIndex === pIdx)
-                : null;
-              if (mealForPax?.mealCode || mealForPax?.code) {
-                pax.mealPreference = mealForPax.mealCode || mealForPax.code;
-              }
-
-              // ── SSR: Seat preference ──
-              // seatSelections is an array of { passengerId, seatPreference, seatSelectionKey } or similar
-              const seatForPax = Array.isArray(seatSelections)
-                ? seatSelections.find((s: any) => s.passengerId === p.id || s.passengerIndex === pIdx)
-                : null;
-              if (seatForPax?.seatPreference) {
-                pax.seatPreference = seatForPax.seatPreference; // 'A' (aisle), 'W' (window)
-              }
-              if (seatForPax?.seatSelectionKey || seatForPax?.seatSelectionKeys) {
-                pax.seatSelectionKeys = Array.isArray(seatForPax.seatSelectionKeys)
-                  ? seatForPax.seatSelectionKeys
-                  : [seatForPax.seatSelectionKey];
-              }
-
-              // ── Extra baggage services ──
-              // selectedAncillaries contains NormalizedAncillary[] with providerServiceId like 'baggage-123'
-              const baggageForPax = Array.isArray(selectedAncillaries)
-                ? selectedAncillaries.filter((a: any) =>
-                    (a.ancillaryType === 'EXTRA_CHECKED_BAG' || a.ancillaryType === 'CHECKED_BAG') &&
-                    a.provider === 'MYSTIFLY' &&
-                    !a.included &&
-                    (a.passengerId === p.id || !a.passengerId) // Per-pax or global
-                  )
-                : [];
-              if (baggageForPax.length > 0) {
-                pax.extraServices = baggageForPax.map((a: any) => ({
-                  extraServiceId: parseInt(a.providerServiceId?.replace('baggage-', '') || '0', 10),
-                  quantity: a.quantity || 1,
-                  key: a.rawProviderData?.Key || a.rawProviderData?.ServiceKey || undefined,
-                }));
-              }
+              // Baggage, meals and seats, built by the one mapper every book
+              // path uses. Assembling this per call site is what let /api/book
+              // drop every add-on while this route kept only baggage.
+              Object.assign(pax, buildPassengerExtras({
+                passengerId: p.id,
+                passengerIndex: pIdx,
+                selectedAncillaries,
+                seatSelections,
+                mealSelections,
+              }));
 
               return pax;
             }),
