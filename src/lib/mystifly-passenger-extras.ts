@@ -35,19 +35,51 @@ export interface SelectedAncillaryLike {
   rawProviderData?: Record<string, unknown> | null;
 }
 
+/**
+ * The checkout store's SeatSelection, plus the older field names.
+ *
+ * The store calls these `preference` and `seatNumber`; the book request wanted
+ * `seatPreference` and `seatSelectionKey`. Nothing matched, so no seat request
+ * has ever reached Mystifly.
+ */
 export interface SeatSelectionLike {
   passengerId?: string | null;
   passengerIndex?: number;
+  /** Store field: 'window' | 'aisle' | 'middle' | 'no_preference'. */
+  preference?: string | null;
+  /** Store field: the chosen seat, e.g. '12A'. */
+  seatNumber?: string | null;
   seatPreference?: string | null;
   seatSelectionKey?: string | null;
   seatSelectionKeys?: string[] | null;
 }
 
+/** The store's MealSelection uses `mealType`; the book request read `mealCode`. */
 export interface MealSelectionLike {
   passengerId?: string | null;
   passengerIndex?: number;
+  /** Store field: the SSR code, e.g. 'VGML'. */
+  mealType?: string | null;
   mealCode?: string | null;
   code?: string | null;
+}
+
+/** Mystifly accepts only Any | A | W; the store holds words. */
+function toSeatPreference(v: unknown): 'A' | 'W' | null {
+  const p = String(v ?? '').trim().toLowerCase();
+  if (p === 'window') return 'W';
+  if (p === 'aisle') return 'A';
+  // 'middle' and 'no_preference' have no Mystifly equivalent. Sending 'Any'
+  // would claim a preference nobody expressed, and there is no middle code.
+  if (p === 'w' || p === 'a') return p.toUpperCase() as 'A' | 'W';
+  return null;
+}
+
+/** STANDARD and NONE mean "no SSR", not a meal code. */
+function toMealPreference(v: unknown): string | null {
+  const code = String(v ?? '').trim().toUpperCase();
+  if (!code || code === 'STANDARD' || code === 'NONE' || code === 'ANY') return null;
+  return code;
 }
 
 export interface MystiflyPassengerExtras {
@@ -113,15 +145,26 @@ export function buildPassengerExtras(params: {
   if (extras.length > 0) out.extraServices = extras;
 
   // ── Seats ──
-  const seat = (params.seatSelections ?? []).find((s) => mine(s.passengerId ?? null, s.passengerIndex));
-  if (seat?.seatPreference) out.seatPreference = seat.seatPreference;
-  const keys = seat?.seatSelectionKeys ?? (seat?.seatSelectionKey ? [seat.seatSelectionKey] : null);
-  if (keys && keys.length > 0) out.seatSelectionKeys = keys.filter(Boolean) as string[];
+  //
+  // A passenger can hold one selection per segment; Mystifly takes a single
+  // preference per traveller, so the first stated one wins. Read the store's own
+  // field names — `preference` and `seatNumber` — which is what nothing did.
+  const seats = (params.seatSelections ?? []).filter((s) => mine(s.passengerId ?? null, s.passengerIndex));
+  for (const s of seats) {
+    const pref = toSeatPreference(s.seatPreference ?? s.preference);
+    if (pref && !out.seatPreference) out.seatPreference = pref;
+  }
+  const keys = seats.flatMap((s) =>
+    s.seatSelectionKeys ?? (s.seatSelectionKey ? [s.seatSelectionKey] : (s.seatNumber ? [s.seatNumber] : [])));
+  const uniqueKeys = [...new Set(keys.filter(Boolean) as string[])];
+  if (uniqueKeys.length > 0) out.seatSelectionKeys = uniqueKeys;
 
   // ── Free meal preference (SSR) ──
-  const meal = (params.mealSelections ?? []).find((m) => mine(m.passengerId ?? null, m.passengerIndex));
-  const mealCode = meal?.mealCode ?? meal?.code;
-  if (mealCode) out.mealPreference = mealCode;
+  const meals = (params.mealSelections ?? []).filter((m) => mine(m.passengerId ?? null, m.passengerIndex));
+  for (const m of meals) {
+    const code = toMealPreference(m.mealType ?? m.mealCode ?? m.code);
+    if (code) { out.mealPreference = code; break; }
+  }
 
   return out;
 }

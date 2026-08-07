@@ -130,4 +130,72 @@ test('nothing chosen yields an empty object, not empty arrays', () => {
   assert.deepEqual(forPax([]), {});
 });
 
+// ── The real store shapes — what was never matching ─────────────────────────
+
+test('a meal reads the store field mealType, not mealCode', () => {
+  // MealSelection has `mealType`. The mapper read `mealCode ?? code`, so no meal
+  // preference has ever reached Mystifly on any booking — FM0U0J94 recorded
+  // DBML on both legs and TripDetails carried no SSR at all.
+  const e = buildPassengerExtras({
+    passengerId: 'p1', passengerIndex: 0,
+    mealSelections: [{ passengerId: 'p1', mealType: 'VGML' }],
+  });
+  assert.equal(e.mealPreference, 'VGML');
+});
+
+test('STANDARD and NONE are not meal codes', () => {
+  for (const mealType of ['STANDARD', 'NONE', '']) {
+    const e = buildPassengerExtras({
+      passengerId: 'p1', passengerIndex: 0,
+      mealSelections: [{ passengerId: 'p1', mealType }],
+    });
+    assert.equal(e.mealPreference, undefined, `for "${mealType}"`);
+  }
+});
+
+test('a seat reads the store fields preference and seatNumber', () => {
+  // SeatSelection has `preference` and `seatNumber`; the mapper read
+  // `seatPreference` and `seatSelectionKey`. Nothing matched, ever.
+  const e = buildPassengerExtras({
+    passengerId: 'p1', passengerIndex: 0,
+    seatSelections: [{ passengerId: 'p1', preference: 'window', seatNumber: '12A' }],
+  });
+  assert.equal(e.seatPreference, 'W');
+  assert.deepEqual(e.seatSelectionKeys, ['12A']);
+});
+
+test('seat words translate to the codes Mystifly accepts', () => {
+  // The contract is Any | A | W; the store holds 'window' / 'aisle'.
+  const pref = (preference: string) => buildPassengerExtras({
+    passengerId: 'p1', passengerIndex: 0,
+    seatSelections: [{ passengerId: 'p1', preference }],
+  }).seatPreference;
+  assert.equal(pref('window'), 'W');
+  assert.equal(pref('aisle'), 'A');
+});
+
+test('middle and no_preference send nothing rather than a wrong code', () => {
+  // There is no middle code, and 'Any' would claim a preference nobody gave.
+  const pref = (preference: string) => buildPassengerExtras({
+    passengerId: 'p1', passengerIndex: 0,
+    seatSelections: [{ passengerId: 'p1', preference }],
+  }).seatPreference;
+  assert.equal(pref('middle'), undefined);
+  assert.equal(pref('no_preference'), undefined);
+});
+
+test('a per-segment selection yields one preference and every seat', () => {
+  // The store keys selections by segment; Mystifly takes one preference per
+  // traveller, so the first stated one wins and all the seats travel.
+  const e = buildPassengerExtras({
+    passengerId: 'p1', passengerIndex: 0,
+    seatSelections: [
+      { passengerId: 'p1', preference: 'window', seatNumber: '12A' },
+      { passengerId: 'p1', preference: 'aisle',  seatNumber: '14C' },
+    ],
+  });
+  assert.equal(e.seatPreference, 'W');
+  assert.deepEqual(e.seatSelectionKeys, ['12A', '14C']);
+});
+
 console.log(`\n${passed} passed`);
