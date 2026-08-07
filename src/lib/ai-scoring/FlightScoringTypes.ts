@@ -26,7 +26,19 @@ export interface LegLayover {
   airport: string;
   durationMinutes: number;
   isOvernight?: boolean;
+  /**
+   * The connection lands at one airport and departs from another — JFK in, LGA
+   * out. A taxi across a city with bags and, on an international arrival,
+   * immigration. This is a warning.
+   */
   requiresAirportChange?: boolean;
+  /**
+   * Same airport, different terminal. Real information, but a walk or a shuttle
+   * — not grounds for blocking a recommendation. Kept separate because
+   * conflating the two both over-warns on terminals and hides real airport
+   * changes behind a flag that means neither.
+   */
+  requiresTerminalChange?: boolean;
   isSelfTransfer?: boolean;
 }
 

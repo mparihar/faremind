@@ -14,6 +14,7 @@ import { stripe } from '@/lib/stripe';
 import { flightTimeMs, parseProviderDateTime, parseProviderDateTimeOr, providerDateOnly } from '@/lib/provider-time';
 import { isBundleEnabled } from '@/lib/bundle-flags';
 import { buildPassengerExtras } from '@/lib/mystifly-passenger-extras';
+import { detectConnectionChanges } from '@/lib/connection-changes';
 
 // ── Duffel API client (direct import for Next.js API route) ──────────────────
 const DUFFEL_API_URL = process.env.DUFFEL_API_URL || 'https://api.duffel.com';
@@ -2111,12 +2112,21 @@ export async function POST(req: NextRequest) {
         });
       }
 
+      // Derived from the flight itself, not from how many PNRs it needed.
+      const connectionChanges = detectConnectionChanges(outSegs ?? []);
+
       await tx.masterBooking.update({
         where: { id: mb.id },
         data: {
           pnrStrategy: pnrResult.strategy,
           isSplitTicket: pnrResult.isSplitTicket,
-          isSelfTransfer: pnrResult.isSelfTransfer,
+          // A single-PNR itinerary that lands at one airport and departs from
+          // another is still a self-transfer in every way that matters to the
+          // traveller: they collect bags, leave, cross a city and check in
+          // again. FM0WD01L (DEL-JFK then LGA-YYZ) came through as one PNR with
+          // this false, so nothing downstream — confirmation, itinerary email,
+          // manage-booking — had any reason to mention it.
+          isSelfTransfer: pnrResult.isSelfTransfer || connectionChanges.hasAirportChange,
           connectionProtStatus: pnrResult.connectionProtectionStatus,
           pnrCount: pnrResult.pnrCount,
           riskLabel: pnrResult.riskLabel,

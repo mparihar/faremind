@@ -145,11 +145,26 @@ function buildLayoversFromSegments(
       durationMinutes = 0;
     }
 
+    // Land at one airport, leave from another — the JFK-in, LGA-out case. This
+    // was hard-coded false, so the AIRPORT_CHANGE warning, the AI-Pick block and
+    // the 30-point penalty that all depend on it could never fire for any
+    // itinerary. The test is simply whether the two airports differ.
+    const arrivesAt = segments[i].arrival.airport;
+    const leavesFrom = segments[i + 1].departure.airport;
+    const requiresAirportChange = !!arrivesAt && !!leavesFrom && arrivesAt !== leavesFrom;
+
+    // Same airport, different terminal. Worth saying, not worth blocking on.
+    const arrTerminal = (segments[i].arrival as any)?.terminal;
+    const depTerminal = (segments[i + 1].departure as any)?.terminal;
+    const requiresTerminalChange = !requiresAirportChange &&
+      !!arrTerminal && !!depTerminal && String(arrTerminal) !== String(depTerminal);
+
     layovers.push({
-      airport: segments[i].arrival.airport,
+      airport: arrivesAt,
       durationMinutes,
       isOvernight: durationMinutes > 600,
-      requiresAirportChange: false,
+      requiresAirportChange,
+      requiresTerminalChange,
       isSelfTransfer: false,
     });
   }
@@ -227,13 +242,23 @@ export function roundTripOptionToOffer(o: RoundTripOption): NormalizedFlightOffe
       arrivalTime:      j.arrivalTime,
       durationMinutes:  j.durationMinutes,
       stops:            j.stops,
-      layovers: j.layovers.map(l => ({
-        airport:         l.airport,
-        durationMinutes: l.durationMinutes,
-        isOvernight:     l.durationMinutes > 600,
-        requiresAirportChange: l.terminalChange ?? false,
-        isSelfTransfer: false,
-      })),
+      // The journey's Layover carries only one airport, so the change is derived
+      // from the segments either side of it. Reading l.terminalChange as an
+      // airport change — which is what this did — both over-warns on a terminal
+      // walk and misses a real airport change entirely.
+      layovers: j.layovers.map((l, li) => {
+        const arrivesAt = j.segments?.[li]?.arrival?.airport ?? l.airport;
+        const leavesFrom = j.segments?.[li + 1]?.departure?.airport ?? l.airport;
+        const requiresAirportChange = !!arrivesAt && !!leavesFrom && arrivesAt !== leavesFrom;
+        return {
+          airport:         l.airport,
+          durationMinutes: l.durationMinutes,
+          isOvernight:     l.durationMinutes > 600,
+          requiresAirportChange,
+          requiresTerminalChange: !requiresAirportChange && (l.terminalChange ?? false),
+          isSelfTransfer: false,
+        };
+      }),
       segments: buildLegSegments(j.segments),
     };
   }

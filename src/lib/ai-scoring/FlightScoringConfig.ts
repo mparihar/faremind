@@ -317,6 +317,9 @@ export const NEGATIVE_PENALTY_MAP: Record<string, PenaltyDef> = {
   OVERNIGHT_LAYOVER:               { severity: 'MAJOR',    points: 7   },
   TIGHT_CONNECTION:                { severity: 'CRITICAL', points: 14  },
   AIRPORT_CHANGE:                  { severity: 'CRITICAL', points: 15  },
+  // A terminal walk, not a taxi across a city. Reported, not penalised heavily,
+  // and never a reason to withhold the AI Pick.
+  TERMINAL_CHANGE:                 { severity: 'MINOR',    points: 2   },
   SELF_TRANSFER:                   { severity: 'CRITICAL', points: 16  },
 
   // Fare rules

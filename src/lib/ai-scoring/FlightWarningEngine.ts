@@ -131,9 +131,21 @@ export function generateWarnings(
     }
 
     if (layover.requiresAirportChange) {
-      warn(warnings, 'AIRPORT_CHANGE', 'Airport change required during connection');
+      // Name both airports. "Airport change required" leaves the traveller to
+      // work out which two and how far apart, and the whole point is that they
+      // can judge it before booking.
+      warn(
+        warnings,
+        'AIRPORT_CHANGE',
+        `Airport change: you arrive at ${layover.airport} and depart from a different airport — ` +
+        'you must transfer yourself, with bags',
+      );
       aiPickBlocked = true;
       aiPickBlockReason = 'Airport change required';
+    } else if (layover.requiresTerminalChange) {
+      // A terminal change is worth saying and not worth blocking on. It used to
+      // be reported as an airport change, which overstated it.
+      warn(warnings, 'TERMINAL_CHANGE', `Terminal change at ${layover.airport} — allow extra time`);
     }
 
     // Plausibility guard: skip duration-based warnings for implausible layovers

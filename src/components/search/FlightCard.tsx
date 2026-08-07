@@ -1,11 +1,12 @@
 'use client';
 
 import { motion } from 'framer-motion';
-import { Clock, Armchair, ChevronRight, Sparkles, Tag, Zap, Check, X } from 'lucide-react';
+import { Clock, Armchair, ChevronRight, Sparkles, Tag, Zap, Check, X, AlertTriangle } from 'lucide-react';
 import { useAiRecommendationLimit } from '@/hooks/useAiRecommendationLimit';
 import { cn, formatDuration, formatTime, formatPrice, getStopsLabel, getAirlineLogo } from '@/lib/utils';
 import type { UnifiedFlight } from '@/lib/types';
 import { flightTimeMs } from '@/lib/provider-time';
+import { detectConnectionChanges, airportChangeLabel } from '@/lib/connection-changes';
 
 interface FlightCardProps {
   flight: UnifiedFlight;
@@ -28,6 +29,11 @@ interface FlightCardProps {
 
 export default function FlightCard({ flight, index, isCompact, onSelect, scoreOverride, aiReasons, isAiHighlighted, aiBadge, dnaScore, dnaMatchLabel, dnaMatchReasons, dnaMismatchReasons, finalDnaScore, showScores }: FlightCardProps) {
   const aiRecLimit = useAiRecommendationLimit();
+  // Airport change on any connection — derived from the segments the card
+  // already holds, so no extra plumbing and it cannot go stale.
+  const connectionChanges = detectConnectionChanges(flight.segments);
+  const connectionChangeLabel = airportChangeLabel(connectionChanges);
+
   const firstSeg = flight.segments[0];
   const lastSeg  = flight.segments[flight.segments.length - 1];
 
@@ -208,6 +214,14 @@ export default function FlightCard({ flight, index, isCompact, onSelect, scoreOv
                   </div>
                   <p className="text-xs text-slate-500 font-medium">{formatDuration(displayDuration)}</p>
                   <p className="text-xs text-slate-400">{getStopsLabel(flight.stops)}</p>
+                  {/* An airport change is the one connection detail a traveller
+                      cannot recover from after booking, so it belongs here — at
+                      the point they can still choose another flight. */}
+                  {connectionChangeLabel && (
+                    <span className="mt-0.5 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-amber-50 border border-amber-200 text-[10px] font-bold text-amber-700 whitespace-nowrap">
+                      <AlertTriangle size={9} /> {connectionChangeLabel}
+                    </span>
+                  )}
                 </div>
 
                 <div className="text-right">
