@@ -514,10 +514,57 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         });
       }
 
+      // ── Confirm the booking actually exists before reporting success ──
+      //
+      // A UniqueID is allocated when the itinerary is held, not when the carrier
+      // accepts it, so returning success on its presence alone reports a booking
+      // that may never have been made. FM78J1NG did exactly that: MFRef
+      // MF35592826 came back, we wrote BOOKING_CONFIRMED, captured $537 and
+      // showed a confirmation page — while TripDetails said
+      //
+      //   "BookingStatus": "NotBooked",  AirlinePNR: "",  FlightStatus: "  "
+      //
+      // on all four segments. Its TicketingTimeLimit had expired 25 seconds
+      // before capture. Nothing in the BookFlight response said so.
+      //
+      // One TripDetails call at the one moment it matters. If it cannot be read
+      // we do NOT fail the booking — an unreadable check is not evidence of
+      // absence, and the reconciliation cron will pick it up — but a provider
+      // that states NotBooked is believed.
+      let verifiedStatus: string | null = null;
+      try {
+        const trip = await mystifly.getTripDetailsResilient(uniqueId);
+        const itinerary =
+          trip?.Data?.TripDetailsResult?.TravelItinerary ?? trip?.Data?.TravelItinerary ?? null;
+        verifiedStatus = String(itinerary?.BookingStatus ?? '').trim() || null;
+      } catch (verifyErr) {
+        console.warn(
+          `[Mystifly] Could not verify ${uniqueId} after booking (${(verifyErr as Error).message}) — ` +
+          `proceeding; reconciliation will confirm.`,
+        );
+      }
+
+      if (verifiedStatus && /^not\s*booked$/i.test(verifiedStatus)) {
+        console.error(
+          `[Mystifly] BookFlight returned ${uniqueId} but the provider reports BookingStatus=` +
+          `"${verifiedStatus}" — the carrier holds no booking. Reporting failure so the caller ` +
+          `refunds rather than confirming a flight that does not exist.`,
+        );
+        return reply.code(422).send({
+          error: 'The airline did not complete this booking. The held fare expired before it could be confirmed.',
+          errorCode: 'MYSTIFLY_BOOKING_NOT_BOOKED',
+          mystiflyBookingStatus: verifiedStatus,
+          uniqueId,
+          bookFscHash,
+          raw: result,
+        });
+      }
+
       return {
         success: true,
         uniqueId,
         status,
+        verifiedBookingStatus: verifiedStatus,
         bookFscHash,
         raw: result,
       };

@@ -1519,7 +1519,13 @@ export async function POST(req: NextRequest) {
           // ERBUK082 no longer reaches this branch — it is never auto-refunded —
           // so this covers the genuine "seat is gone" rejections, where sending
           // the customer back at the same fare would just fail again.
-          const fareGone = /no longer available|sold out|not available|fare.*(expired|invalid)/i.test(errMsg);
+          // MYSTIFLY_BOOKING_NOT_BOOKED means the provider states it holds no
+          // booking — the held fare expired before the carrier confirmed it.
+          // That is the fare being gone, and the refund is unambiguous: unlike
+          // ERBUK082 there is nothing pending that might yet confirm.
+          const fareGone =
+            bookData?.errorCode === 'MYSTIFLY_BOOKING_NOT_BOOKED' ||
+            /no longer available|sold out|not available|fare.*(expired|invalid)|did not complete this booking/i.test(errMsg);
 
           const refundLine =
             refundStatus === 'REFUND_ISSUED'

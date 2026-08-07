@@ -383,6 +383,15 @@ export default function ConfirmPage() {
   // Whichever we have: the value captured at confirm, or the one that landed after.
   const displayAirlinePnr = (confirmation as any)?.airlinePnr ?? latePnr;
 
+  // Do not claim a flight is confirmed until the airline has actually confirmed
+  // it. FM78J1NG showed "Booking Confirmed!" over a booking the provider
+  // reported as NotBooked — no PNR, no tickets, blank flight status — while the
+  // customer had been charged. The API now refuses that case outright; this is
+  // the second line, so a booking still awaiting the carrier is described as
+  // received rather than done.
+  const awaitingAirline =
+    !!(confirmation as any)?.ticketingPending && !displayAirlinePnr;
+
   if (!confirmation) {
     return (
       <div className="min-h-screen bg-[#F8FAFC] flex items-center justify-center">
@@ -488,8 +497,14 @@ export default function ConfirmPage() {
                 <Check className="w-10 h-10 text-white" strokeWidth={3} />
               </div>
             </motion.div>
-            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight mb-1.5">Booking Confirmed!</h1>
-            <p className="text-sm text-slate-500 max-w-xs mx-auto">Your flight is booked. A confirmation has been sent to your email.</p>
+            <h1 className="text-2xl sm:text-3xl font-black text-slate-900 tracking-tight mb-1.5">
+              {awaitingAirline ? 'Booking Received' : 'Booking Confirmed!'}
+            </h1>
+            <p className="text-sm text-slate-500 max-w-xs mx-auto">
+              {awaitingAirline
+                ? 'We are confirming your seats with the airline. You will get an email as soon as your ticket is issued — no need to book again.'
+                : 'Your flight is booked. A confirmation has been sent to your email.'}
+            </p>
           </div>
 
           {/* Split-ticket warning */}
