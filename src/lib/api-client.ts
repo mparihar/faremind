@@ -25,7 +25,13 @@ export function apiUrl(path: string): string {
 /**
  * Typed fetch wrapper for API calls.
  */
-export async function apiFetch<T>(
+/**
+ * Returns the PARSED body, and throws when the response is not ok — it is not a
+ * fetch wrapper that hands back a Response. A caller writing `res.ok` or
+ * `await res.json()` on the result is reading a plain object: `.ok` is
+ * undefined, so the success branch never runs, and `.json()` is not a function.
+ */
+export async function apiFetch<T = unknown>(
   path: string,
   options?: RequestInit
 ): Promise<T> {

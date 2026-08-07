@@ -106,6 +106,75 @@ export function airportChangeLabel(changes: ConnectionChanges): string | null {
 }
 
 /**
+ * Detect changes on STORED segments.
+ *
+ * The detector takes the offer shape (departure.airport / arrival.airport); the
+ * database uses originAirport / destinationAirport. Every screen that reads a
+ * booking rather than an offer needs this translation, and writing it inline at
+ * each one is how a surface ends up silently detecting nothing — the mapping
+ * fails soft, so a wrong field name looks exactly like a trip with no changes.
+ */
+export function detectStoredConnectionChanges(
+  segments: Array<Record<string, unknown>> | null | undefined,
+): ConnectionChanges {
+  const segs = Array.isArray(segments) ? segments : [];
+  return detectConnectionChanges(segs.map((s) => ({
+    departure: {
+      airport: (s.originAirport ?? s.departureAirport ?? null) as string | null,
+      terminal: (s.originTerminal ?? s.departureTerminal ?? null) as string | null,
+      time: (s.departureDateTime ?? s.departureTime ?? null) as string | null,
+    },
+    arrival: {
+      airport: (s.destinationAirport ?? s.arrivalAirport ?? null) as string | null,
+      terminal: (s.destinationTerminal ?? s.arrivalTerminal ?? null) as string | null,
+      time: (s.arrivalDateTime ?? s.arrivalTime ?? null) as string | null,
+    },
+  })));
+}
+
+/**
+ * The airport change at one specific layover, if there is one.
+ *
+ * The summary label answers "does this trip have an airport change". On an
+ * itinerary the traveller needs the answer attached to the gap it applies to —
+ * a three-leg trip can change airports at the second connection and not the
+ * first, and a warning floating above the whole journey does not say which.
+ */
+export function airportChangeAt(
+  changes: ConnectionChanges,
+  afterSegment: number,
+): ConnectionChange | null {
+  return changes.airportChanges.find((c) => c.afterSegment === afterSegment) ?? null;
+}
+
+/**
+ * The headline on the layover itself: "Airport change — arrive JFK, depart LGA".
+ *
+ * The old badge read "4h 15m layover · JFK" on a connection that arrives at JFK
+ * and departs from LGA. Naming one airport for a gap that spans two is not a
+ * missing warning, it is a wrong statement — it tells someone they are waiting
+ * at JFK when they have to get themselves across New York.
+ */
+export function airportChangeSegmentLabel(change: ConnectionChange): string {
+  return `Airport change — arrive ${change.from}, depart ${change.to}`;
+}
+
+/**
+ * The instruction under it. Short, because it sits on a tile.
+ *
+ * Says what they must DO. "Airports differ" is a fact; "you must travel between
+ * them yourself, with your bags" is the thing that changes how much time they
+ * leave, and time is the only variable they still control.
+ */
+export function airportChangeSegmentDetail(change: ConnectionChange): string {
+  const gap = change.connectionMinutes != null
+    ? `${Math.floor(change.connectionMinutes / 60)}h ${change.connectionMinutes % 60}m to do it. `
+    : '';
+  return `${gap}Collect your bags and travel between the two airports yourself. ` +
+    `Allow time for immigration if you are arriving internationally.`;
+}
+
+/**
  * What the traveller has to do, for the confirmation and the itinerary email.
  *
  * Deliberately different from the search wording. Before booking it is a

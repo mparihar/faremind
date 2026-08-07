@@ -8,7 +8,9 @@
  */
 import assert from 'node:assert';
 import {
-  detectConnectionChanges, airportChangeLabel, airportChangeNotice,
+  detectConnectionChanges, detectStoredConnectionChanges, airportChangeLabel,
+  airportChangeNotice, airportChangeAt, airportChangeSegmentLabel,
+  airportChangeSegmentDetail,
 } from './connection-changes';
 
 let passed = 0;
@@ -126,6 +128,84 @@ test('missing or malformed input does not throw', () => {
   assert.equal(detectConnectionChanges(null).hasAirportChange, false);
   assert.equal(detectConnectionChanges([]).hasAirportChange, false);
   assert.equal(detectConnectionChanges([{}, {}] as any).hasAirportChange, false);
+});
+
+// ── Per-layover, for showing it ON the connection it applies to ─────────────
+
+test('the change is found at the gap it belongs to, and nowhere else', () => {
+  // A whole-journey banner cannot say WHICH connection. On a three-leg trip
+  // that changes airports once, two of the three gaps must stay silent.
+  const c = detectConnectionChanges([
+    seg('LHR', 'JFK', '2026-01-01T09:00:00', '2026-01-01T12:00:00'),
+    seg('JFK', 'ORD', '2026-01-01T16:00:00', '2026-01-01T18:00:00'),
+    seg('MDW', 'LAX', '2026-01-01T21:00:00', '2026-01-01T23:00:00'),
+  ]);
+  assert.equal(airportChangeAt(c, 0), null);          // JFK → JFK, ordinary
+  assert.equal(airportChangeAt(c, 1)?.to, 'MDW');     // ORD → MDW, the real one
+  assert.equal(airportChangeAt(c, 2), null);          // no gap after the last leg
+});
+
+test('the badge names both airports and which is which', () => {
+  const change = airportChangeAt(detectConnectionChanges(FM0WD01L), 0)!;
+  const label = airportChangeSegmentLabel(change);
+  assert.match(label, /arrive JFK/);
+  assert.match(label, /depart LGA/);
+});
+
+test('the detail says what to DO and how long there is', () => {
+  const change = airportChangeAt(detectConnectionChanges(FM0WD01L), 0)!;
+  const detail = airportChangeSegmentDetail(change);
+  assert.match(detail, /4h 39m/);
+  assert.match(detail, /Collect your bags/);
+  assert.match(detail, /immigration/);
+});
+
+test('an unknown connection time omits the duration rather than inventing one', () => {
+  const c = detectConnectionChanges([seg('JFK', 'ORD', '', ''), seg('MDW', 'LAX', '', '')]);
+  const detail = airportChangeSegmentDetail(c.airportChanges[0]);
+  assert.doesNotMatch(detail, /\dh \dm/);
+  assert.match(detail, /Collect your bags/);
+});
+
+// ── Stored segments — the shape every console and email actually holds ──────
+
+test('stored field names are detected, not silently ignored', () => {
+  // The DB uses originAirport/destinationAirport. Feeding those to the offer
+  // detector finds nothing, and a surface that maps them wrong looks exactly
+  // like a trip with no changes — which is why there is one mapper.
+  const c = detectStoredConnectionChanges([
+    { originAirport: 'DEL', destinationAirport: 'JFK', departureDateTime: '2026-11-13T23:55:00', arrivalDateTime: '2026-11-14T06:25:00' },
+    { originAirport: 'LGA', destinationAirport: 'YYZ', departureDateTime: '2026-11-14T11:04:00', arrivalDateTime: '2026-11-14T13:01:00' },
+  ]);
+  assert.equal(c.hasAirportChange, true);
+  assert.equal(c.airportChanges[0].from, 'JFK');
+  assert.equal(c.airportChanges[0].to, 'LGA');
+  assert.equal(c.airportChanges[0].connectionMinutes, 279);
+});
+
+test('an ordinary stored connection stays silent', () => {
+  const c = detectStoredConnectionChanges([
+    { originAirport: 'BOM', destinationAirport: 'SIN' },
+    { originAirport: 'SIN', destinationAirport: 'HKG' },
+  ]);
+  assert.equal(c.hasAirportChange, false);
+});
+
+test('stored terminals are read for terminal changes too', () => {
+  const c = detectStoredConnectionChanges([
+    { originAirport: 'BOM', destinationAirport: 'SIN', destinationTerminal: '2' },
+    { originAirport: 'SIN', destinationAirport: 'HKG', originTerminal: '3' },
+  ]);
+  assert.equal(c.hasAirportChange, false);
+  assert.equal(c.hasTerminalChange, true);
+  assert.equal(c.terminalChanges[0].from, '2');
+  assert.equal(c.terminalChanges[0].to, '3');
+});
+
+test('stored detection survives null and junk', () => {
+  assert.equal(detectStoredConnectionChanges(null).hasAirportChange, false);
+  assert.equal(detectStoredConnectionChanges([]).hasAirportChange, false);
+  assert.equal(detectStoredConnectionChanges([{}, {}]).hasAirportChange, false);
 });
 
 console.log(`\n${passed} passed`);

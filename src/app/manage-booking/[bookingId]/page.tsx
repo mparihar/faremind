@@ -14,6 +14,7 @@ import { canAddBaggage } from '@/lib/booking-capabilities';
 import CouponStatusPanel from '@/components/booking/CouponStatusPanel';
 import { formatFlightDate, formatFlightDateTime, isFlightInPast } from '@/lib/provider-time';
 import { segmentRouteWithTerminals } from '@/lib/terminal';
+import { StoredAirportChangeNotice } from '@/components/booking/AirportChangeNotice';
 function StatusBadge({ status }: { status: string }) {
   const m: Record<string, [string, string]> = { CONFIRMED: ['bg-emerald-500/10 text-emerald-400', 'Confirmed'], TICKETED: ['bg-emerald-500/10 text-emerald-400', 'Ticketed'], CANCELLED: ['bg-red-500/10 text-red-400', 'Cancelled'], CANCEL_REQUESTED: ['bg-amber-500/10 text-amber-400', 'Cancellation Pending'], CREATED: ['bg-amber-500/10 text-amber-400', 'Processing'], COMPLETED: ['bg-blue-500/10 text-blue-400', 'Completed'] };
   const [cls, label] = m[status] || ['bg-slate-500/10 text-slate-400', status];
@@ -654,13 +655,16 @@ export default function BookingDetailPage() {
                       <div className="flex-1 flex items-center gap-1.5"><div className="h-px flex-1 bg-white/10" /><Plane size={14} className="text-[#1ABC9C] rotate-90" /><div className="h-px flex-1 bg-white/10" /></div>
                       <div className="text-center"><p className="text-white font-bold text-xl">{j.destinationAirport || b.destinationAirport}</p><p className="text-slate-500 text-[11px]">{j.destinationCity || b.destinationCity}</p></div>
                     </div>
-                    {(j.segments || []).map((seg: any) => (
-                      <div key={seg.id} className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
-                        <span className="font-semibold text-slate-300">{seg.flightNumber || seg.marketingFlightNumber}</span>
-                        <span>{seg.airlineName}</span>
-                        {seg.aircraft && <span>· {seg.aircraft}</span>}
-                        {seg.cabinClass && <span className="px-2 py-0.5 rounded bg-white/[0.04] text-slate-400 capitalize">{seg.cabinClass}</span>}
-                        <span className="text-slate-400">{segmentRouteWithTerminals(seg)}</span>
+                    {(j.segments || []).map((seg: any, si: number) => (
+                      <div key={seg.id}>
+                        <div className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
+                          <span className="font-semibold text-slate-300">{seg.flightNumber || seg.marketingFlightNumber}</span>
+                          <span>{seg.airlineName}</span>
+                          {seg.aircraft && <span>· {seg.aircraft}</span>}
+                          {seg.cabinClass && <span className="px-2 py-0.5 rounded bg-white/[0.04] text-slate-400 capitalize">{seg.cabinClass}</span>}
+                          <span className="text-slate-400">{segmentRouteWithTerminals(seg)}</span>
+                        </div>
+                        <StoredAirportChangeNotice segments={j.segments} afterSegment={si} tone="dark" />
                       </div>
                     ))}
                   </div>

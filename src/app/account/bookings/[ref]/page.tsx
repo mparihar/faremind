@@ -16,6 +16,7 @@ import { generateItineraryHtmlFromBooking } from '@/lib/fare-utils';
 import { apiFetch } from '@/lib/api-client';
 import { canAddBaggage } from '@/lib/booking-capabilities';
 import { isFlightInPast } from '@/lib/provider-time';
+import { StoredAirportChangeNotice } from '@/components/booking/AirportChangeNotice';
 
 function StatusBadge({ status }: { status: string }) {
   const m: Record<string, [string, string]> = {
@@ -68,19 +69,26 @@ export default function BookingDetailPage() {
     setScBusy(action);
     setScMsg(null);
     try {
-      const res = await apiFetch(`/api/manage-booking/${booking.id}/schedule-change/${action}`, {
-        method: 'POST',
-        body: JSON.stringify({ requestedBy: (booking as any).customerEmail || 'customer', role: 'CUSTOMER' }),
-      });
-      const data = await res.json();
-      if (res.ok && data.success) {
+      // apiFetch returns the PARSED body and throws on a non-ok response. This
+      // was treating it as a fetch Response: `await res.json()` on a plain
+      // object throws, so accepting a schedule change always landed in the
+      // catch below and told the customer "network error" after the request had
+      // in fact succeeded.
+      const data = await apiFetch<{ success?: boolean; error?: string }>(
+        `/api/manage-booking/${booking.id}/schedule-change/${action}`,
+        {
+          method: 'POST',
+          body: JSON.stringify({ requestedBy: (booking as any).customerEmail || 'customer', role: 'CUSTOMER' }),
+        },
+      );
+      if (data.success) {
         setScMsg({ type: 'success', text: "Your request has been submitted — we'll email you an update shortly." });
         loadBookingDetail(ref);
       } else {
         setScMsg({ type: 'error', text: data.error || 'We could not process this right now. Please contact support.' });
       }
-    } catch {
-      setScMsg({ type: 'error', text: 'Network error. Please try again.' });
+    } catch (err) {
+      setScMsg({ type: 'error', text: (err as Error).message || 'Network error. Please try again.' });
     }
     setScBusy(null);
   }
@@ -452,6 +460,14 @@ export default function BookingDetailPage() {
                             {seg.aircraftType && (
                               <p className="text-[10px] text-slate-600 mt-2 pt-2 border-t border-white/[0.04]">Aircraft: {seg.aircraftType}</p>
                             )}
+                            {/* Sits inside the card it follows so the change is
+                                read with the flight that lands, not floating
+                                between two tiles belonging to neither. */}
+                            <StoredAirportChangeNotice
+                              segments={j.segments}
+                              afterSegment={si}
+                              tone="dark"
+                            />
                           </div>
                         ))}
 

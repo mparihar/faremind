@@ -1,6 +1,6 @@
 'use client';
 
-import { useState, useEffect, use } from 'react';
+import { useState, useEffect, use, Fragment } from 'react';
 import { airlinePnrLabel } from '@/lib/booking-identifiers';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -32,6 +32,7 @@ import { refundabilityLabel, refundabilityTone } from '@/lib/refundability';
 import { flightDesignator } from '@/lib/flight-designator';
 import { formatFlightDate, formatFlightTime } from '@/lib/provider-time';
 import { terminalShort } from '@/lib/terminal';
+import { StoredAirportChangeNotice } from '@/components/booking/AirportChangeNotice';
 
 const STATUS_COLORS: Record<string, string> = {
   CONFIRMED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
@@ -493,7 +494,8 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                       </div>
                       <div className="space-y-2">
                         {jSegs.map((seg: any, si: number) => (
-                          <div key={si} className="flex items-center gap-4 p-3 rounded-xl bg-slate-800/40 border border-white/[0.04]">
+                          <Fragment key={si}>
+                          <div className="flex items-center gap-4 p-3 rounded-xl bg-slate-800/40 border border-white/[0.04]">
                             <div className="text-center shrink-0 min-w-[52px]">
                               <p className="text-sm font-bold text-white">{seg.originAirport}</p>
                               <p className="text-[10px] text-slate-500">{seg.departureDateTime ? formatFlightTime(seg.departureDateTime, 'en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
@@ -522,6 +524,10 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                               <p className="text-[10px] font-mono text-slate-500">{flightDesignator(seg.airlineCode, seg.flightNumber)}</p>
                             </div>
                           </div>
+                          {/* An agent servicing this booking needs to see the
+                              airport change before the customer phones about it. */}
+                          <StoredAirportChangeNotice segments={jSegs} afterSegment={si} tone="dark" />
+                          </Fragment>
                         ))}
                       </div>
                     </div>

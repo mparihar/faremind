@@ -12,6 +12,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import { flightDesignator } from '@/lib/flight-designator';
+import { StoredAirportChangeNotice } from '@/components/booking/AirportChangeNotice';
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -114,7 +115,7 @@ function Section({ title, children, action }: { title: string; children: React.R
 
 // ─── Journey segment card ──────────────────────────────────────────────────────
 
-function SegmentCard({ seg, index, total }: { seg: any; index: number; total: number }) {
+function SegmentCard({ seg, index, total, siblings }: { seg: any; index: number; total: number; siblings?: any[] }) {
   return (
     <div className="relative">
       <div className="bg-slate-900/60 border border-slate-700/50 rounded-xl overflow-hidden">
@@ -166,6 +167,11 @@ function SegmentCard({ seg, index, total }: { seg: any; index: number; total: nu
             Operated by {seg.operatingAirlineName ?? seg.operatingAirlineCode}
           </div>
         )}
+      </div>
+      {/* Support gets asked "why does my ticket say two airports" — the answer
+          has to be visible on the segment, not reconstructed from the codes. */}
+      <div className="px-4">
+        <StoredAirportChangeNotice segments={siblings} afterSegment={index} tone="dark" />
       </div>
       {seg.layoverAfterMinutes != null && (
         <div className="flex items-center gap-3 my-2 px-4">
@@ -219,7 +225,7 @@ function JourneyPanel({ journey }: { journey: any }) {
       {segs.length > 0 ? (
         <div className="space-y-2 pl-2">
           {segs.map((seg, i) => (
-            <SegmentCard key={seg.id} seg={seg} index={i} total={segs.length} />
+            <SegmentCard key={seg.id} seg={seg} index={i} total={segs.length} siblings={segs} />
           ))}
         </div>
       ) : (

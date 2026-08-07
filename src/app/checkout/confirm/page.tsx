@@ -10,7 +10,7 @@ import {
   Check, Copy, Share2, Download, LayoutDashboard, Search,
   ShieldCheck, Plane, User, CreditCard, CheckCircle2, Clock,
   AlertCircle, Loader2, CalendarDays, MapPin, ArrowRightLeft, ArrowRight,
-  Info, Briefcase,
+  Info, Briefcase, AlertTriangle,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useCheckoutStore, buildLocalPricing } from '@/store/useCheckoutStore';
@@ -24,6 +24,10 @@ import {
 import type { FlightSegment } from '@/lib/types';
 import type { PassengerInfo } from '@/store/useCheckoutStore';
 import type { Layover } from '@/lib/round-trip-types';
+import {
+  detectConnectionChanges, airportChangeAt,
+  airportChangeSegmentLabel, airportChangeSegmentDetail,
+} from '@/lib/connection-changes';
 import { useBuildPricingConfig } from '@/hooks/usePricingConfig';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
@@ -217,6 +221,11 @@ function FlightLegCard({
   layovers: Layover[];
   totalDurationMinutes: number;
 }) {
+  // Derived from the segments themselves rather than from the layover's
+  // terminalChange flag, which was hard-coded false in one path and meant
+  // "terminal" in the other. Neither could ever report an airport change.
+  const connectionChanges = detectConnectionChanges(segments);
+
   if (!segments.length) return null;
   return (
     <div>
@@ -281,15 +290,36 @@ function FlightLegCard({
               </div>
             </div>
           </div>
-          {i < segments.length - 1 && layovers[i] && (
-            <div className="flex items-center gap-2 px-3 py-2 my-2 mx-3 rounded-xl bg-amber-50 border border-amber-200">
-              <Clock className="w-3 h-3 text-amber-500 flex-shrink-0" />
-              <div>
-                <p className="text-xs font-bold text-amber-800">{formatDurationMinutes(layovers[i].durationMinutes)} layover · {layovers[i].airport}</p>
-                <p className="text-[10px] text-amber-600">{layovers[i].airportName}{layovers[i].terminalChange && ' · Terminal change required'}</p>
+          {i < segments.length - 1 && layovers[i] && (() => {
+            // An airport change is not a layover with a footnote. The old badge
+            // read "4h 15m layover · JFK" on a connection that arrives at JFK
+            // and departs from LGA — naming one airport for a gap that spans two
+            // tells the passenger they are waiting somewhere they are not. It
+            // gets its own colour, its own icon and its own instruction.
+            const change = airportChangeAt(connectionChanges, i);
+            if (change) {
+              return (
+                <div className="flex items-start gap-2 px-3 py-2.5 my-2 mx-3 rounded-xl bg-red-50 border border-red-200">
+                  <AlertTriangle className="w-3.5 h-3.5 text-red-500 flex-shrink-0 mt-0.5" />
+                  <div>
+                    <p className="text-xs font-bold text-red-800">{airportChangeSegmentLabel(change)}</p>
+                    <p className="text-[10px] text-red-600 leading-relaxed mt-0.5">
+                      {airportChangeSegmentDetail(change)}
+                    </p>
+                  </div>
+                </div>
+              );
+            }
+            return (
+              <div className="flex items-center gap-2 px-3 py-2 my-2 mx-3 rounded-xl bg-amber-50 border border-amber-200">
+                <Clock className="w-3 h-3 text-amber-500 flex-shrink-0" />
+                <div>
+                  <p className="text-xs font-bold text-amber-800">{formatDurationMinutes(layovers[i].durationMinutes)} layover · {layovers[i].airport}</p>
+                  <p className="text-[10px] text-amber-600">{layovers[i].airportName}{layovers[i].terminalChange && ' · Terminal change required'}</p>
+                </div>
               </div>
-            </div>
-          )}
+            );
+          })()}
         </Fragment>
       ))}
     </div>

@@ -93,7 +93,11 @@ export const useOfferSessionStore = create<OfferSessionStore>((set, get) => ({
     }
 
     try {
-      const res = await apiFetch('/api/booking-session/offer-session/start', {
+      const res = await apiFetch<{
+        offerSessionId: string;
+        expiresAt: string;
+        remainingSeconds?: number;
+      }>('/api/booking-session/offer-session/start', {
         method: 'POST',
         body: JSON.stringify({
           provider,

@@ -10,6 +10,10 @@ import type { SelectedFare, FareOption } from '@/lib/fare-types';
 import type { RoundTripOption } from '@/lib/round-trip-types';
 import type { UnifiedFlight, FlightSegment } from '@/lib/types';
 import { airlinePnrLabel, fareMindRef } from '@/lib/booking-identifiers';
+import {
+  detectConnectionChanges, detectStoredConnectionChanges, airportChangeAt,
+  airportChangeSegmentLabel, airportChangeSegmentDetail,
+} from '@/lib/connection-changes';
 
 // ─── Currency ─────────────────────────────────────────────────────────────────
 
@@ -356,6 +360,41 @@ function renderPassengerServicesHtml(services: PassengerServices[]): string {
   }).join('');
 }
 
+/**
+ * The gap between two segments, in an email-safe table cell.
+ *
+ * An airport change is rendered as its own thing, not as a layover with a
+ * footnote. FM0WD01L lands at JFK and leaves from LGA on one ticket, and every
+ * itinerary we produced described that as "layover · JFK" — a single airport
+ * named for a gap that spans two, which reads as "wait here" to someone who has
+ * to cross New York with their bags.
+ *
+ * Inline styles and a table, because this is also an email: Gmail and Outlook
+ * strip <style> blocks and do not lay out flexbox.
+ */
+function connectionGapHtml(
+  changes: import('@/lib/connection-changes').ConnectionChanges,
+  layover: import('@/lib/round-trip-types').Layover | undefined,
+  afterSegment: number,
+): string {
+  const change = airportChangeAt(changes, afterSegment);
+
+  if (change) {
+    return `<table width="100%" cellpadding="0" cellspacing="0" style="margin:6px 12px;border-collapse:separate;">
+      <tr>
+        <td style="padding:10px 14px;background:#fef2f2;border:1px solid #fecaca;border-radius:8px;">
+          <div style="font-size:12px;font-weight:700;color:#b91c1c;">⚠ ${airportChangeSegmentLabel(change)}</div>
+          <div style="font-size:11px;color:#dc2626;line-height:1.5;margin-top:3px;">${airportChangeSegmentDetail(change)}</div>
+        </td>
+      </tr>
+    </table>`;
+  }
+
+  if (!layover) return '';
+  const terminalNote = layover.terminalChange ? ' · Terminal change' : '';
+  return `<div style="margin:4px 12px;padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:12px;color:#92400e;text-align:center;">⏱ ${formatDurationMinutes(layover.durationMinutes)} layover · ${layover.airportName} (${layover.airport})${terminalNote}</div>`;
+}
+
 export function generateItineraryHtml(p: ItineraryParams): string {
   const { confirmation, routeLabel, airlineName, selectedFare, passengers, pricing, priceProtection,
           sourceRoundTrip, sourceFlight, seatSelections = [], mealSelections = [], extraBags = 0, fareOption = null } = p;
@@ -380,8 +419,12 @@ export function generateItineraryHtml(p: ItineraryParams): string {
     sourceFlight: sourceFlight ?? null,
   });
 
-  const renderSegmentsHtml = (segs: FlightSegment[], layovers: import('@/lib/round-trip-types').Layover[]) =>
-    segs.map((seg, i) => `
+  const renderSegmentsHtml = (segs: FlightSegment[], layovers: import('@/lib/round-trip-types').Layover[]) => {
+    // Derived from the segments, not from the layover's terminalChange flag —
+    // that flag never carried an airport change, so the downloaded itinerary
+    // said "4h 15m layover · JFK" for a connection that leaves from LGA.
+    const changes = detectConnectionChanges(segs);
+    return segs.map((seg, i) => `
       <div style="margin-bottom:16px;">
         <div style="background:#ffffff;border-radius:12px;border:1px solid #e2e8f0;">
           <!-- Header -->
@@ -391,7 +434,7 @@ export function generateItineraryHtml(p: ItineraryParams): string {
                 ✈️ ${seg.airline.name || ''}
               </td>
               <td style="padding:12px 16px;text-align:right;font-size:12px;color:#64748b;font-family:'Courier New',monospace;font-weight:600;">
-                ${seg.flightNumber || ''} &nbsp;•&nbsp; <span style="text-transform:uppercase;">${fareOption?.cabinClass || 'ECONOMY'}</span>
+                ${seg.flightNumber || ''} &nbsp;•&nbsp; <span style="text-transform:uppercase;">${fareOption?.cabin || 'ECONOMY'}</span>
               </td>
             </tr>
           </table>
@@ -425,8 +468,9 @@ export function generateItineraryHtml(p: ItineraryParams): string {
             </tr>
           </table>
         </div>
-        ${layovers[i] ? `<div style="margin:4px 12px;padding:8px 12px;background:#fffbeb;border:1px solid #fde68a;border-radius:6px;font-size:12px;color:#92400e;text-align:center;">⏱ ${formatDurationMinutes(layovers[i].durationMinutes)} layover · ${layovers[i].airportName} (${layovers[i].airport})${layovers[i].terminalChange ? ' · Terminal change' : ''}</div>` : ''}
+        ${connectionGapHtml(changes, layovers[i], i)}
       </div>`).join('');
+  };
 
   const outSegs = sourceRoundTrip ? renderSegmentsHtml(sourceRoundTrip.outboundJourney.segments, sourceRoundTrip.outboundJourney.layovers) : (sourceFlight ? renderSegmentsHtml(sourceFlight.segments, []) : '');
   const retSegs = sourceRoundTrip ? renderSegmentsHtml(sourceRoundTrip.returnJourney.segments, sourceRoundTrip.returnJourney.layovers) : '';
@@ -596,7 +640,11 @@ function _generateItineraryHtmlFromBookingInner(booking: any): string {
   const fareClass = firstSeg?.cabin || firstSeg?.cabinClass || '';
 
   // ─── Flight Segments ─────────────────────────────────────────
-  const renderSegs = (segs: any[]) => segs.map((seg: any) => {
+  const renderSegs = (segs: any[]) => {
+    // The emailed itinerary is often the only version a traveller has with them
+    // at the airport, so an airport change has to survive into it.
+    const changes = detectStoredConnectionChanges(segs);
+    return segs.map((seg: any, segIndex: number) => {
     const depTime = seg.departureDateTime || seg.departureTime || '';
     const arrTime = seg.arrivalDateTime || seg.arrivalTime || '';
     const depAirport = seg.originAirport || seg.departureAirport || '';
@@ -649,7 +697,9 @@ function _generateItineraryHtmlFromBookingInner(booking: any): string {
         </tr>
       </table>
     </div>
+    ${connectionGapHtml(changes, undefined, segIndex)}
   `; }).join('');
+  };
 
   let flightSectionHtml = '';
   if (journeys.length > 0) {
