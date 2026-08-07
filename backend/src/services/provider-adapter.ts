@@ -705,7 +705,20 @@ export class MystiflyAdapter implements IBookingProvider {
       // construction rather than by data.
       conditions: mystiflyFareConditions(data),
       capabilities: {
-        addBaggageAllowed: false, // Mystifly Post-booking baggage addition not currently supported in adapter
+        // Not an adapter gap, as this used to say — the provider endpoint itself
+        // is broken. AncillaryServiceRequest answers
+        //   { "Success": false, "Data": null,
+        //     "Message": "Invalid URI: The format of the URI could not be determined." }
+        // for every booking tried: MF35578826 (Scoot webfare), MF35579026
+        // (Vueling webfare) and MF35591426 (AA public). Their own URI, not one we
+        // supply — the request carries only an MFRef and boolean flags.
+        //
+        // Leave this false. Offering a post-booking bag we cannot actually sell
+        // is worse than not offering one. Paid bags bought BEFORE ticketing are
+        // unaffected: those ride on the Book request via ExtraServices1_1.
+        //
+        // Raised with Mystifly; flip this once the endpoint answers.
+        addBaggageAllowed: false,
       },
       createdAt: data?.BookingDate || data?.bookingDate || new Date().toISOString(),
       raw: tripDetails,

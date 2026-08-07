@@ -200,4 +200,5 @@ Consolidated register (debt, unknowns, unconfirmed behavior, prioritized future 
 | [DEVELOPMENT_GUIDE.md](./docs/DEVELOPMENT_GUIDE.md) | Conventions + checklist |
 | [TESTING_GUIDE.md](./docs/TESTING_GUIDE.md) | Test + certification |
 | [KNOWN_LIMITATIONS.md](./docs/KNOWN_LIMITATIONS.md) | Debt + unknowns |
+| [MYSTIFLY_OPEN_ISSUES.md](./docs/MYSTIFLY_OPEN_ISSUES.md) | Live provider-side defects, with evidence — and what was ours |
 | [FareMind-Scoring-and-Ranking-Algorithm.md](./docs/FareMind-Scoring-and-Ranking-Algorithm.md) | Older 8-dim scoring doc (superseded by FLIGHT_RANKING_ENGINE.md) |
