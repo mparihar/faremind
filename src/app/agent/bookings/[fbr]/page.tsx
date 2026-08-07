@@ -31,6 +31,7 @@ import { cn } from '@/lib/utils';
 import { refundabilityLabel, refundabilityTone } from '@/lib/refundability';
 import { flightDesignator } from '@/lib/flight-designator';
 import { formatFlightDate, formatFlightTime } from '@/lib/provider-time';
+import { terminalShort } from '@/lib/terminal';
 
 const STATUS_COLORS: Record<string, string> = {
   CONFIRMED: 'bg-emerald-500/15 text-emerald-400 border-emerald-500/25',
@@ -496,6 +497,9 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                             <div className="text-center shrink-0 min-w-[52px]">
                               <p className="text-sm font-bold text-white">{seg.originAirport}</p>
                               <p className="text-[10px] text-slate-500">{seg.departureDateTime ? formatFlightTime(seg.departureDateTime, 'en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                              {terminalShort(seg.originTerminal) && (
+                                <p className="text-[9px] text-slate-600">{terminalShort(seg.originTerminal)}</p>
+                              )}
                             </div>
                             <div className="flex-1 flex flex-col items-center gap-0.5">
                               <p className="text-[9px] text-slate-600 font-medium">
@@ -509,6 +513,9 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                             <div className="text-center shrink-0 min-w-[52px]">
                               <p className="text-sm font-bold text-white">{seg.destinationAirport}</p>
                               <p className="text-[10px] text-slate-500">{seg.arrivalDateTime ? formatFlightTime(seg.arrivalDateTime, 'en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                              {terminalShort(seg.destinationTerminal) && (
+                                <p className="text-[9px] text-slate-600">{terminalShort(seg.destinationTerminal)}</p>
+                              )}
                             </div>
                             <div className="shrink-0 text-right min-w-[90px]">
                               <p className="text-xs text-slate-400 font-medium">{seg.airlineName}</p>
@@ -527,6 +534,9 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                         <div className="text-center shrink-0 min-w-[52px]">
                           <p className="text-sm font-bold text-white">{seg.originAirport}</p>
                           <p className="text-[10px] text-slate-500">{seg.departureDateTime ? formatFlightTime(seg.departureDateTime, 'en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                          {terminalShort(seg.originTerminal) && (
+                            <p className="text-[9px] text-slate-600">{terminalShort(seg.originTerminal)}</p>
+                          )}
                         </div>
                         <div className="flex-1 border-t border-dashed border-slate-700 relative">
                           <Plane className="w-3 h-3 text-[#1ABC9C] absolute top-1/2 left-1/2 -translate-x-1/2 -translate-y-1/2 bg-slate-800/40" />
@@ -534,6 +544,9 @@ export default function AgentBookingDetailPage({ params }: { params: Promise<{ f
                         <div className="text-center shrink-0 min-w-[52px]">
                           <p className="text-sm font-bold text-white">{seg.destinationAirport}</p>
                           <p className="text-[10px] text-slate-500">{seg.arrivalDateTime ? formatFlightTime(seg.arrivalDateTime, 'en-US', { hour: '2-digit', minute: '2-digit' }) : ''}</p>
+                          {terminalShort(seg.destinationTerminal) && (
+                            <p className="text-[9px] text-slate-600">{terminalShort(seg.destinationTerminal)}</p>
+                          )}
                         </div>
                         <div className="shrink-0 text-right">
                           <p className="text-xs text-slate-400">{seg.airlineName}</p>

@@ -22,6 +22,7 @@
 import { prisma } from '../lib/db';
 import * as mbq from '../lib/manage-booking-queries';
 import { getTripDetailsResilient } from './mystifly';
+import { terminalOf } from '../lib/terminal';
 
 export interface SegmentDiff {
   segmentOrder: number;
@@ -43,6 +44,8 @@ interface ProviderSegment {
   operatingAirlineCode: string | null;
   originAirport: string;
   destinationAirport: string;
+  originTerminal: string | null;
+  destinationTerminal: string | null;
   departureDateTime: Date | null;
   arrivalDateTime: Date | null;
   cabin: string | null;
@@ -119,6 +122,19 @@ export function mapProviderSegments(trip: any): ProviderSegment[] {
     operatingAirlineCode: String(r?.OperatingAirlineCode ?? '').trim() || null,
     originAirport: String(r?.DepartureAirportLocationCode ?? '').trim(),
     destinationAirport: String(r?.ArrivalAirportLocationCode ?? '').trim(),
+    // Terminals exist ONLY here. Mystifly's search response carries no terminal
+    // at all, so every booking persisted null at book time — 0 of 86 production
+    // segments had one — and every screen that was already written to show
+    // "Terminal 3" had nothing to show. TripDetails is the only source, which
+    // makes this sync the one place that can fill them.
+    //
+    // Normalised on the way in, because the provider is not consistent about it:
+    // most legs come back as "3", but Bangkok and Jakarta return "T3". Stored
+    // verbatim, the column would hold both conventions and the display layer
+    // would render "Terminal T3" for some airports and "Terminal 3" for others.
+    // The column holds the bare terminal; the "T" belongs to the view.
+    originTerminal: terminalOf(r?.DepartureTerminal),
+    destinationTerminal: terminalOf(r?.ArrivalTerminal),
     departureDateTime: toDate(r?.DepartureDateTime),
     arrivalDateTime: toDate(r?.ArrivalDateTime),
     cabin: String(r?.CabinClass ?? '').trim() || null,
@@ -208,6 +224,20 @@ export async function syncItineraryFromTripDetails(
         data.operatingAirlineCode = p.operatingAirlineCode;
       }
 
+      // Terminals are filled, not reconciled. Book time has none to disagree
+      // with, so writing one is new information rather than drift — counting it
+      // as a diff would raise "the airline changed your itinerary" on every
+      // booking that ever syncs, which trains people to ignore the message that
+      // matters. A terminal that CHANGES is real and is reported.
+      for (const [field, provided, hold] of [
+        ['originTerminal', p.originTerminal, s.originTerminal],
+        ['destinationTerminal', p.destinationTerminal, s.destinationTerminal],
+      ] as const) {
+        if (!provided || provided === hold) continue;
+        data[field] = provided;
+        if (hold) diffs.push({ segmentOrder: s.segmentOrder, field, from: hold, to: provided });
+      }
+
       if (Object.keys(data).length > 0) {
         await prisma.bookingSegment.update({ where: { id: s.id }, data });
       }
@@ -241,6 +271,87 @@ export async function syncItineraryFromTripDetails(
   } catch (err) {
     console.error(`[itinerary-sync] ${mfRef} failed:`, (err as Error).message);
     return { ...none, reason: (err as Error).message };
+  }
+}
+
+/**
+ * Terminals per leg, keyed by route, straight from a TripDetails payload.
+ *
+ * Used at BOOK time, where there is no stored booking to pair against yet — the
+ * book route already fetches TripDetails to verify the provider actually holds
+ * the booking, so the terminals come free from a call that is already made. The
+ * caller matches them onto the segments it is about to persist.
+ */
+export function collectSegmentTerminals(trip: any): Array<{
+  origin: string;
+  destination: string;
+  originTerminal: string | null;
+  destinationTerminal: string | null;
+}> {
+  return mapProviderSegments(trip)
+    .filter((p) => p.originTerminal || p.destinationTerminal)
+    .map((p) => ({
+      origin: p.originAirport,
+      destination: p.destinationAirport,
+      originTerminal: p.originTerminal,
+      destinationTerminal: p.destinationTerminal,
+    }));
+}
+
+/**
+ * Fill in terminals from TripDetails.
+ *
+ * Separate from the full sync because the full sync only runs after a REISSUE,
+ * and terminals are missing on every booking, not just reissued ones. Mystifly's
+ * search response carries no terminal field at all, so book time has nothing to
+ * persist — 0 of 86 production segments had one — while TripDetails returns
+ * DepartureTerminal / ArrivalTerminal for every leg. The confirmation page, the
+ * itinerary email and both consoles were already written to print "Terminal 3";
+ * they simply never had it.
+ *
+ * Enrichment only: it writes terminals and nothing else, raises no drift, and
+ * refuses to touch anything when the segment counts disagree — a restructured
+ * trip is the full sync's problem, and guessing here would put one leg's
+ * terminal on another.
+ *
+ * Safe on every poll: a provider that returns no terminal writes nothing, and a
+ * stored value is never overwritten with a blank.
+ */
+export async function backfillTerminalsFromTripDetails(
+  bookingId: string,
+  mfRef: string,
+  trip: any,
+): Promise<number> {
+  try {
+    const providerSegs = mapProviderSegments(trip);
+    if (!providerSegs.some((p) => p.originTerminal || p.destinationTerminal)) return 0;
+
+    const stored = await prisma.bookingSegment.findMany({
+      where: { bookingId },
+      orderBy: [{ segmentOrder: 'asc' }, { departureDateTime: 'asc' }],
+    });
+    if (stored.length === 0 || stored.length !== providerSegs.length) return 0;
+
+    const pairs = pairByRoute(stored, providerSegs);
+    if (!pairs) return 0;   // re-routed — pairing by position would misassign terminals
+
+    let filled = 0;
+    for (const [s, p] of pairs) {
+      const data: Record<string, string> = {};
+      if (p.originTerminal && p.originTerminal !== s.originTerminal) data.originTerminal = p.originTerminal;
+      if (p.destinationTerminal && p.destinationTerminal !== s.destinationTerminal) data.destinationTerminal = p.destinationTerminal;
+      if (Object.keys(data).length === 0) continue;
+      await prisma.bookingSegment.update({ where: { id: s.id }, data });
+      filled += Object.keys(data).length;
+    }
+
+    if (filled > 0) console.log(`[itinerary-sync] ${mfRef}: filled ${filled} terminal field(s).`);
+    return filled;
+  } catch (err) {
+    // Terminals are supplemental. Failing to get them must never disturb the
+    // ticketing poll this runs inside.
+    console.warn(`[itinerary-sync] terminal backfill failed for ${mfRef}: ${(err as Error).message}`);
+    return 0;
   }
 }
 

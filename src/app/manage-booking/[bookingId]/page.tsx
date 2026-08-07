@@ -13,6 +13,7 @@ import { apiFetch } from '@/lib/api-client';
 import { canAddBaggage } from '@/lib/booking-capabilities';
 import CouponStatusPanel from '@/components/booking/CouponStatusPanel';
 import { formatFlightDate, formatFlightDateTime, isFlightInPast } from '@/lib/provider-time';
+import { segmentRouteWithTerminals } from '@/lib/terminal';
 function StatusBadge({ status }: { status: string }) {
   const m: Record<string, [string, string]> = { CONFIRMED: ['bg-emerald-500/10 text-emerald-400', 'Confirmed'], TICKETED: ['bg-emerald-500/10 text-emerald-400', 'Ticketed'], CANCELLED: ['bg-red-500/10 text-red-400', 'Cancelled'], CANCEL_REQUESTED: ['bg-amber-500/10 text-amber-400', 'Cancellation Pending'], CREATED: ['bg-amber-500/10 text-amber-400', 'Processing'], COMPLETED: ['bg-blue-500/10 text-blue-400', 'Completed'] };
   const [cls, label] = m[status] || ['bg-slate-500/10 text-slate-400', status];
@@ -240,11 +241,15 @@ function ETicketModal({ bookingId, onClose }: { bookingId: string; onClose: () =
                   </div>
                   <p className="text-slate-400 text-xs mb-2">{(j.departureDateTime || j.departureDate) ? formatFlightDate(j.departureDateTime || j.departureDate, 'en-US', { weekday: 'long', month: 'long', day: 'numeric', year: 'numeric' }) : ''}</p>
                   {(j.segments || []).map((s: any, si: number) => (
-                    <div key={si} className="flex items-center gap-2 text-xs text-slate-500 mt-1">
+                    <div key={si} className="flex flex-wrap items-center gap-2 text-xs text-slate-500 mt-1">
                       <span className="font-bold text-slate-300">{s.flightNumber}</span>
                       <span>{s.airlineName}</span>
                       {s.aircraft && <span>· {s.aircraft}</span>}
                       {s.cabinClass && <span className="px-1.5 py-0.5 rounded bg-white/[0.04] capitalize">{s.cabinClass}</span>}
+                      {/* Which building to walk into. This is the document a
+                          passenger opens at the airport, so the terminal belongs
+                          next to the airport it applies to, not in a footnote. */}
+                      <span className="text-slate-400">{segmentRouteWithTerminals(s)}</span>
                     </div>
                   ))}
                 </div>
@@ -650,11 +655,12 @@ export default function BookingDetailPage() {
                       <div className="text-center"><p className="text-white font-bold text-xl">{j.destinationAirport || b.destinationAirport}</p><p className="text-slate-500 text-[11px]">{j.destinationCity || b.destinationCity}</p></div>
                     </div>
                     {(j.segments || []).map((seg: any) => (
-                      <div key={seg.id} className="mt-3 flex items-center gap-3 text-xs text-slate-500">
+                      <div key={seg.id} className="mt-3 flex flex-wrap items-center gap-3 text-xs text-slate-500">
                         <span className="font-semibold text-slate-300">{seg.flightNumber || seg.marketingFlightNumber}</span>
                         <span>{seg.airlineName}</span>
                         {seg.aircraft && <span>· {seg.aircraft}</span>}
                         {seg.cabinClass && <span className="px-2 py-0.5 rounded bg-white/[0.04] text-slate-400 capitalize">{seg.cabinClass}</span>}
+                        <span className="text-slate-400">{segmentRouteWithTerminals(seg)}</span>
                       </div>
                     ))}
                   </div>

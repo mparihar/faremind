@@ -23,6 +23,7 @@ import { resolveMystiflyRef } from '../lib/booking-lookup';
 import { passengerTitle } from '../lib/passenger-title';
 import { bookPhoneFields } from '../lib/phone-country';
 import { toBookExtraServices } from '../lib/mystifly-extra-services';
+import { collectSegmentTerminals } from '../services/itinerary-sync';
 import type {
   MystiflyAirTraveler,
   MystiflyPassengerType,
@@ -532,11 +533,26 @@ const plugin: FastifyPluginAsync = async (fastify) => {
       // absence, and the reconciliation cron will pick it up — but a provider
       // that states NotBooked is believed.
       let verifiedStatus: string | null = null;
+      let segmentTerminals: Array<{
+        origin: string; destination: string;
+        originTerminal: string | null; destinationTerminal: string | null;
+      }> = [];
       try {
         const trip = await mystifly.getTripDetailsResilient(uniqueId);
         const itinerary =
           trip?.Data?.TripDetailsResult?.TravelItinerary ?? trip?.Data?.TravelItinerary ?? null;
         verifiedStatus = String(itinerary?.BookingStatus ?? '').trim() || null;
+
+        // Terminals, from the payload we are already holding.
+        //
+        // Mystifly's SEARCH response has no terminal field, so the segments the
+        // caller is about to persist carry none — every booking stored null, and
+        // every screen written to print "Terminal 3" had nothing to print.
+        // TripDetails is the only source, and this is the one call that already
+        // happens before the confirmation page renders. Taking them here means
+        // the terminal is on the booking from the moment it exists, rather than
+        // appearing 30 seconds later when reconciliation first polls.
+        segmentTerminals = collectSegmentTerminals(trip);
       } catch (verifyErr) {
         console.warn(
           `[Mystifly] Could not verify ${uniqueId} after booking (${(verifyErr as Error).message}) — ` +
@@ -565,6 +581,7 @@ const plugin: FastifyPluginAsync = async (fastify) => {
         uniqueId,
         status,
         verifiedBookingStatus: verifiedStatus,
+        segmentTerminals,
         bookFscHash,
         raw: result,
       };

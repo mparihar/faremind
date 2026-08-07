@@ -22,6 +22,7 @@ import { prisma } from '../lib/db';
 import * as mystifly from '../services/mystifly';
 import { extractEticketNumbers, backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
 import { backfillFareRulesFromTripDetails } from '../lib/fare-rules-backfill';
+import { backfillTerminalsFromTripDetails } from '../services/itinerary-sync';
 import { backfillAirlinePnr } from '../lib/airline-pnr-backfill';
 import { executeQueuedCancellation } from '../services/cancellation-orchestrator';
 import {
@@ -232,6 +233,14 @@ async function reconcileSingleBooking(record: any): Promise<ReconciliationResult
     // refund/change in the meantime.
     try { await backfillFareRulesFromTripDetails(record.bookingId, mfRef, tripDetailsResponse); }
     catch (err) { console.warn(`[TicketRecon] fare-rules backfill failed for ${mfRef}:`, (err as Error).message); }
+
+    // Terminals, for the same reason. Mystifly's SEARCH response has no terminal
+    // field, so book time persists null on every segment — the confirmation
+    // page, the itinerary PDF, the email and both consoles were all written to
+    // print "Terminal 3" and never had one to print. TripDetails is the only
+    // place it appears, and this poll already holds that payload.
+    try { await backfillTerminalsFromTripDetails(record.bookingId, mfRef, tripDetailsResponse); }
+    catch (err) { console.warn(`[TicketRecon] terminal backfill failed for ${mfRef}:`, (err as Error).message); }
   }
 
   // ── Step 3: Determine outcome ──

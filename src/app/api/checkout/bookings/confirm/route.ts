@@ -17,6 +17,7 @@ import { buildPassengerExtras } from '@/lib/mystifly-passenger-extras';
 import { detectConnectionChanges } from '@/lib/connection-changes';
 import { refundBookingPayment } from '@/lib/booking-refund-client';
 import { classifyRefund, needsAttention, refundQueue } from '@/lib/refund-status';
+import { applySegmentTerminals } from '@/lib/terminal';
 
 // ── Duffel API client (direct import for Next.js API route) ──────────────────
 const DUFFEL_API_URL = process.env.DUFFEL_API_URL || 'https://api.duffel.com';
@@ -1575,6 +1576,13 @@ export async function POST(req: NextRequest) {
           uniqueId: bookData.uniqueId,
           status: bookData.status,
         };
+
+        // Terminals the airline published, read from the TripDetails the book
+        // endpoint already fetched. The search offer these segments came from
+        // carries no terminal at all, so without this every segment persists
+        // null and stays that way until reconciliation first polls — which is
+        // after the customer has already read their confirmation.
+        applySegmentTerminals(sourceFlight, sourceRoundTrip, bookData.segmentTerminals);
 
         // ── Step 5/6: Issue ticket (ONLY for Hold bookings) ──────────────
         // HoldAllowed=true  → OrderTicket is required (payment debited here)
