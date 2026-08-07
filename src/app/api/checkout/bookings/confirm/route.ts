@@ -16,6 +16,7 @@ import { isBundleEnabled } from '@/lib/bundle-flags';
 import { buildPassengerExtras } from '@/lib/mystifly-passenger-extras';
 import { detectConnectionChanges } from '@/lib/connection-changes';
 import { refundBookingPayment } from '@/lib/booking-refund-client';
+import { classifyRefund, needsAttention, refundQueue } from '@/lib/refund-status';
 
 // ── Duffel API client (direct import for Next.js API route) ──────────────────
 const DUFFEL_API_URL = process.env.DUFFEL_API_URL || 'https://api.duffel.com';
@@ -310,34 +311,41 @@ async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
       const errorLabel = ERROR_LABELS[ctx.errorCode] || ctx.errorCode;
 
       // Surface the refund outcome ON the ticket so support sees it in the queue
-      // without cross-referencing the failure audit. A failed auto-refund
-      // (REFUND_PENDING) is flagged URGENT + queued for manual action.
-      const manualRefundNeeded = ctx.refundStatus === 'REFUND_PENDING';
-      const refundLine =
-        ctx.refundStatus === 'REFUND_ISSUED'
-          ? `Refund: ISSUED $${ctx.refundAmount ?? ''} (${ctx.refundId ?? 'n/a'})`
-          : ctx.refundStatus === 'REFUND_PENDING'
-            ? `Refund: PENDING — MANUAL REFUND REQUIRED (auto-refund failed: ${ctx.refundFailureReason ?? 'unknown'})`
-            : ctx.refundStatus
-              ? `Refund: ${ctx.refundStatus}`
-              : 'Refund: not applicable (card not charged)';
+      // without cross-referencing the failure audit. One shared classifier
+      // decides what the state means, so the queue, the badge and this ticket
+      // cannot disagree about whether money is owed.
+      const refundState = classifyRefund({
+        stripePaymentIntentId: ctx.paymentIntentId ?? null,
+        refundStatus: ctx.refundStatus ?? null,
+        refundId: ctx.refundId ?? null,
+        refundFailureReason: ctx.refundFailureReason ?? null,
+      });
+      const needsWatching = needsAttention(refundState);
 
-      // Auto-close the ticket when there's nothing for support to action — i.e. the
-      // refund was already issued, or the card was never charged. Only a FAILED
-      // auto-refund (REFUND_PENDING) stays OPEN (URGENT + manual-refund queue).
-      const autoResolveNote = manualRefundNeeded
+      const money = `$${ctx.refundAmount ?? ''}`;
+      const refundLine =
+        refundState === 'REFUNDED'   ? `Refund: ISSUED ${money} (${ctx.refundId ?? 'n/a'})`
+        : refundState === 'IN_FLIGHT' ? `Refund: IN FLIGHT ${money} (${ctx.refundId}) — accepted by Stripe, awaiting settlement`
+        : refundState === 'OWED'      ? `Refund: NOT SENT — MANUAL REFUND REQUIRED (${ctx.refundFailureReason ?? 'the refund call failed'})`
+        : refundState === 'UNRESOLVED' ? 'Refund: UNRESOLVED — card was charged and no refund is recorded'
+        : 'Refund: not applicable (card not charged)';
+
+      // Auto-close only when there is nothing left to watch — the refund settled,
+      // or the card was never charged. Anything still moving stays OPEN so it can
+      // be assigned; the Stripe webhook closes it when the money lands.
+      const autoResolveNote = needsWatching
         ? ''
-        : `\n\n[Auto-closed] No action required — ${ctx.refundStatus === 'REFUND_ISSUED' ? 'card was automatically refunded.' : 'card was not charged.'}`;
+        : `\n\n[Auto-closed] No action required — ${refundState === 'REFUNDED' ? 'card was automatically refunded.' : 'card was not charged.'}`;
 
       await prisma.supportTicket.create({
         data: {
           subject: `Failed Booking: ${routeDisplay} — ${customerName}`,
           description: `[${errorLabel}] ${ctx.errorMessage}\n\nRoute: ${routeDisplay}\nAmount: $${(ctx.pricing?.total ?? ctx.selectedFare?.totalPrice ?? 0).toLocaleString()}\nPassengers: ${ctx.passengers.length}\nFailure Stage: ${ctx.failureStage}\n${refundLine}${autoResolveNote}`,
-          priority: manualRefundNeeded ? 'URGENT' : 'HIGH',
-          status: manualRefundNeeded ? 'OPEN' : 'CLOSED',
-          closedAt: manualRefundNeeded ? null : new Date(),
+          priority: needsWatching ? 'URGENT' : 'HIGH',
+          status: needsWatching ? 'OPEN' : 'CLOSED',
+          closedAt: needsWatching ? null : new Date(),
           category: 'Failed Booking',
-          queue: manualRefundNeeded ? 'MANUAL_REFUND_REQUIRED' : null,
+          queue: refundQueue(refundState),
           customerName,
           customerEmail,
           failureAuditId: auditRecord.id,

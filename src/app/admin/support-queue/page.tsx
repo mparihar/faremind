@@ -7,8 +7,10 @@ import {
   RefreshCw, Search, MessageSquare, Clock, User, AlertTriangle,
   CheckCircle2, ArrowUpCircle, Inbox, ChevronRight, ChevronDown, ChevronUp,
   Phone, Mail, XCircle, Trash2, Pencil, Plane, DollarSign, Users, ShieldAlert,
+  CreditCard,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
+import { classifyRefund, refundLabel, type RefundFacts } from '@/lib/refund-status';
 
 type TicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CUSTOMER' | 'ESCALATED' | 'RESOLVED' | 'CLOSED';
@@ -54,6 +56,32 @@ interface CategoryGroup {
   bg: string;
   border: string;
   match: string[] | 'ALL' | 'OTHERS';
+}
+
+/**
+ * One-word answer to "does this ticket have money stuck in it?"
+ *
+ * Read from the failure audit rather than the ticket's description text — the
+ * description is written when the booking fails and never revised, while the
+ * audit is what the Stripe webhook settles. Triaging a queue off the former
+ * means chasing refunds that already landed and missing ones that never left.
+ */
+const REFUND_BADGE_STYLES: Record<string, string> = {
+  REFUNDED:    'bg-emerald-400/15 text-emerald-400',
+  IN_FLIGHT:   'bg-blue-400/15 text-blue-400',
+  OWED:        'bg-red-400/15 text-red-400',
+  UNRESOLVED:  'bg-red-400/15 text-red-400',
+  NOT_CHARGED: 'bg-slate-400/15 text-slate-400',
+};
+
+function refundBadge(audit: RefundFacts | null | undefined): { label: string; cls: string } | null {
+  if (!audit) return null;
+  const state = classifyRefund(audit);
+  // A card that was never charged is not news on a failed booking — the row
+  // already says the booking failed. Only money that moved earns a badge.
+  if (state === 'NOT_CHARGED' || state === 'NOT_APPLICABLE') return null;
+  const label = refundLabel(state);
+  return label ? { label, cls: REFUND_BADGE_STYLES[state] ?? '' } : null;
 }
 
 const CATEGORY_GROUPS: CategoryGroup[] = [
@@ -522,10 +550,25 @@ export default function SupportQueuePage() {
                       </td>
                       <td className="px-5 py-4">
                         {ticket.category === 'Failed Booking' ? (
-                          <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-500/15 text-red-400 border border-red-500/20">
-                            <ShieldAlert size={11} />
-                            Failed Booking
-                          </span>
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-500/15 text-red-400 border border-red-500/20">
+                              <ShieldAlert size={11} />
+                              Failed Booking
+                            </span>
+                            {/* Where the customer's money is, live from the audit
+                                the Stripe webhook writes to. On a failed booking
+                                that is the only thing anyone triaging the queue
+                                actually needs to see first. */}
+                            {(() => {
+                              const r = refundBadge(ticket.failureAudit);
+                              return r ? (
+                                <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${r.cls}`}>
+                                  <CreditCard size={9} />
+                                  {r.label}
+                                </span>
+                              ) : null;
+                            })()}
+                          </div>
                         ) : ticket.category === 'Cancellation Request' || ticket.category === 'Cancellation' ? (
                           <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-red-500/10 text-red-400 border border-red-400/20">
                             <XCircle size={11} />

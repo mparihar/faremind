@@ -10,6 +10,7 @@ import {
   Phone, Mail, ExternalLink, ShieldAlert, Users,
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
+import { classifyRefund, refundLabel, refundDetail, type RefundFacts } from '@/lib/refund-status';
 
 type TicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CUSTOMER' | 'ESCALATED' | 'RESOLVED' | 'CLOSED';
@@ -39,6 +40,55 @@ const CATEGORY_STYLES: Record<string, { bg: string; text: string; icon: React.El
   'Cancellation':          { bg: 'bg-red-500/10 border-red-500/20', text: 'text-red-400', icon: XCircle },
   'Change Request':        { bg: 'bg-purple-500/10 border-purple-500/20', text: 'text-purple-400', icon: Calendar },
 };
+
+/**
+ * Where the customer's money currently is, from the failure audit.
+ *
+ * Not from the description text. That text is written once, at the moment the
+ * booking fails, and says what we had just asked Stripe to do — the refund
+ * settles or fails minutes later, and the words never change. The audit is what
+ * the Stripe webhook writes to, so it is the only thing that reflects the
+ * outcome rather than the request.
+ *
+ * The distinction that matters to whoever is holding this ticket is not
+ * refunded/not-refunded, it is: does someone have to DO something.
+ */
+const REFUND_TONES: Record<string, { box: string; pill: string; text: string }> = {
+  REFUNDED:       { box: 'bg-emerald-500/5 border-emerald-500/20', pill: 'bg-emerald-400/15 text-emerald-400', text: 'text-emerald-300' },
+  IN_FLIGHT:      { box: 'bg-blue-500/5 border-blue-500/20',       pill: 'bg-blue-400/15 text-blue-400',       text: 'text-blue-300' },
+  OWED:           { box: 'bg-red-500/5 border-red-500/20',         pill: 'bg-red-400/15 text-red-400',         text: 'text-red-300' },
+  UNRESOLVED:     { box: 'bg-red-500/5 border-red-500/20',         pill: 'bg-red-400/15 text-red-400',         text: 'text-red-300' },
+  NOT_CHARGED:    { box: 'bg-slate-800/40 border-slate-700/30',    pill: 'bg-slate-400/15 text-slate-400',     text: 'text-slate-300' },
+  NOT_APPLICABLE: { box: 'bg-slate-800/40 border-slate-700/30',    pill: 'bg-slate-400/15 text-slate-400',     text: 'text-slate-300' },
+};
+
+/** The audit fields this panel reads: the money state, plus the amounts. */
+type RefundAudit = RefundFacts & {
+  refundAmount?: number | string | null;
+  totalAmount?: number | string | null;
+};
+
+function describeRefund(audit: RefundAudit | null | undefined): {
+  label: string;
+  detail: string;
+  amount: number | null;
+  tone: { box: string; pill: string; text: string };
+} | null {
+  if (!audit) return null;
+
+  const state = classifyRefund(audit);
+  const label = refundLabel(state);
+  if (!label) return null;
+
+  // An amount only means something once money has actually moved. Showing the
+  // booking total next to "not charged" reads as an amount owed.
+  const amount = state === 'NOT_CHARGED' || state === 'NOT_APPLICABLE'
+    ? null
+    : audit.refundAmount != null ? Number(audit.refundAmount)
+      : audit.totalAmount != null ? Number(audit.totalAmount) : null;
+
+  return { label, amount, detail: refundDetail(state), tone: REFUND_TONES[state] };
+}
 
 /**
  * Parse structured fields from the description text.
@@ -182,6 +232,9 @@ export default function TicketDetailPage({ params }: { params: Promise<{ ticketI
   // Parse structured fields from description
   const parsed = parseStructuredFields(ticket.description);
   const passengers = parsePassengers(ticket.description);
+
+  const audit: RefundAudit & { currency?: string; refundedAt?: string } | null = ticket.failureAudit ?? null;
+  const refund = describeRefund(audit);
 
   // Derive display ticket number
   const displayTicketNum = ticket.ticketNumber
@@ -369,6 +422,65 @@ export default function TicketDetailPage({ params }: { params: Promise<{ ticketI
                     </div>
                   )}
                 </div>
+
+                {/* Refund status — read LIVE from the failure audit.
+                    Everything else on this card is parsed out of the description
+                    text, which was written once when the booking failed. The
+                    money moves after that: Stripe's webhook settles or fails the
+                    refund minutes later. Reading the audit means support sees
+                    where the money actually is, not what we asked for. */}
+                {refund && (
+                  <div className={`rounded-xl border p-4 ${refund.tone.box}`}>
+                    <div className="flex items-center justify-between gap-3 mb-3">
+                      <p className="text-[10px] font-black uppercase tracking-wider flex items-center gap-1.5 text-slate-400">
+                        <CreditCard size={11} /> Customer Payment
+                      </p>
+                      <span className={`text-[10px] font-black uppercase tracking-wider px-2 py-1 rounded-full ${refund.tone.pill}`}>
+                        {refund.label}
+                      </span>
+                    </div>
+
+                    <p className={`text-sm font-semibold ${refund.tone.text}`}>{refund.detail}</p>
+
+                    <div className="grid grid-cols-2 lg:grid-cols-3 gap-3 mt-3">
+                      {refund.amount != null && (
+                        <div className="p-3 bg-slate-900/40 rounded-lg border border-slate-700/30">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Amount</p>
+                          <p className="text-white text-sm font-bold tabular-nums">
+                            {refund.amount.toLocaleString(undefined, { minimumFractionDigits: 2 })} {audit?.currency ?? ''}
+                          </p>
+                        </div>
+                      )}
+                      {audit?.refundId && (
+                        <div className="p-3 bg-slate-900/40 rounded-lg border border-slate-700/30">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Stripe Refund</p>
+                          <p className="text-slate-300 text-xs font-bold font-mono break-all">{audit.refundId}</p>
+                        </div>
+                      )}
+                      {audit?.refundedAt && (
+                        <div className="p-3 bg-slate-900/40 rounded-lg border border-slate-700/30">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Refunded</p>
+                          {/* A real instant — the viewer's own zone is correct here. */}
+                          <p className="text-slate-300 text-xs font-semibold">
+                            {format(new Date(audit.refundedAt), 'd MMM yyyy, HH:mm')}
+                          </p>
+                        </div>
+                      )}
+                      {audit?.stripePaymentIntentId && (
+                        <div className="p-3 bg-slate-900/40 rounded-lg border border-slate-700/30">
+                          <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">Payment Intent</p>
+                          <p className="text-slate-300 text-xs font-bold font-mono break-all">{audit.stripePaymentIntentId}</p>
+                        </div>
+                      )}
+                    </div>
+
+                    {audit?.refundFailureReason && (
+                      <p className="mt-3 text-xs text-red-300/90 leading-relaxed">
+                        <span className="font-black uppercase tracking-wider">Stripe said:</span> {audit.refundFailureReason}
+                      </p>
+                    )}
+                  </div>
+                )}
 
                 {/* Passengers */}
                 {passengers.length > 0 && (
