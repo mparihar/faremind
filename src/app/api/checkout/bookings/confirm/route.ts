@@ -15,6 +15,7 @@ import { flightTimeMs, parseProviderDateTime, parseProviderDateTimeOr, providerD
 import { isBundleEnabled } from '@/lib/bundle-flags';
 import { buildPassengerExtras } from '@/lib/mystifly-passenger-extras';
 import { detectConnectionChanges } from '@/lib/connection-changes';
+import { refundBookingPayment } from '@/lib/booking-refund-client';
 
 // ── Duffel API client (direct import for Next.js API route) ──────────────────
 const DUFFEL_API_URL = process.env.DUFFEL_API_URL || 'https://api.duffel.com';
@@ -1495,17 +1496,21 @@ export async function POST(req: NextRequest) {
           let refundFailureReason: string | null = null;
 
           if (mystiflyPaymentCaptured && paymentIntentId) {
-            try {
-              const refund = await stripe.refunds.create({ payment_intent: paymentIntentId });
-              refundStatus = 'REFUND_ISSUED';
-              refundId = refund.id;
-              refundAmount = refund.amount / 100; // Stripe amounts are in cents
-              console.log(`[Stripe] ✅ Refund issued: ${refund.id} — $${refundAmount}`);
-            } catch (refundErr: any) {
-              refundStatus = 'REFUND_PENDING';
-              refundFailureReason = refundErr.message;
-              console.error(`[Stripe] ❌ CRITICAL: Refund failed after BookFlight failure: ${refundErr.message}`);
-            }
+            // The BACKEND owns refunds — it is where every other refund lives
+            // and where the signed webhook lands, so the outcome is recorded
+            // from Stripe's own signal rather than assumed from a create() that
+            // resolved. A create() resolving means accepted, not settled; a
+            // refund failing afterwards was previously invisible, with the
+            // customer already told their card had been refunded.
+            const r = await refundBookingPayment({
+              paymentIntentId,
+              reason: `Booking failed: ${errMsg}`,
+              bookingRef: null,
+            });
+            refundStatus = r.outcome === 'ALREADY_REFUNDED' ? 'REFUND_ISSUED' : r.outcome;
+            refundId = r.refundId;
+            refundAmount = r.amount;
+            refundFailureReason = r.failureReason;
           }
 
           // What the customer is told depends on whether the seat is gone.
@@ -1691,15 +1696,18 @@ export async function POST(req: NextRequest) {
         // If payment was captured, try to refund
         if (stripeVerified && paymentIntentId) {
           try {
-            const refund = await stripe.refunds.create({ payment_intent: paymentIntentId });
-            refundStatus = 'REFUND_ISSUED';
-            refundId = refund.id;
-            refundAmount = refund.amount / 100;
-            console.log(`[Stripe] ✅ Refund issued: ${refund.id} — $${refundAmount}`);
+            const r = await refundBookingPayment({
+              paymentIntentId,
+              reason: 'Ticketing failed after booking',
+              bookingRef: null,
+            });
+            refundStatus = r.outcome === 'ALREADY_REFUNDED' ? 'REFUND_ISSUED' : r.outcome;
+            refundId = r.refundId;
+            refundAmount = r.amount;
+            refundFailureReason = r.failureReason;
           } catch (refundErr: any) {
             refundStatus = 'REFUND_PENDING';
             refundFailureReason = refundErr.message;
-            console.error(`[Stripe] ❌ CRITICAL: Refund failed: ${refundErr.message}`);
           }
         }
 

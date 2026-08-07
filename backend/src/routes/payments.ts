@@ -10,8 +10,34 @@
  */
 import { FastifyPluginAsync } from 'fastify';
 import { fulfillPayment } from '../services/payment-fulfill';
+import { refundBookingPayment } from '../services/booking-refund';
 
 const paymentsPlugin: FastifyPluginAsync = async (fastify) => {
+  /**
+   * Refund a captured payment for a booking that could not be made.
+   *
+   * Owned by the backend like every other refund, so the money movement and the
+   * webhook that confirms it live in one place. The frontend used to call
+   * Stripe directly here, which meant nothing recorded that a refund was owed
+   * if the call failed.
+   */
+  fastify.post('/booking-refund', async (request, reply) => {
+    const { paymentIntentId, reason, bookingRef } = request.body as {
+      paymentIntentId?: string; reason?: string; bookingRef?: string;
+    };
+    if (!paymentIntentId) {
+      return reply.code(400).send({ error: 'paymentIntentId is required' });
+    }
+    const result = await refundBookingPayment({
+      paymentIntentId,
+      reason: reason || 'Booking could not be completed',
+      bookingRef: bookingRef ?? null,
+    });
+    // Never a 5xx: the caller is already handling a failed booking, and a
+    // refund that could not be issued still has to be reported, not thrown.
+    return reply.send(result);
+  });
+
   fastify.post('/fulfill', async (request, reply) => {
     const { paymentId } = (request.body || {}) as { paymentId?: string };
     if (!paymentId) return reply.code(400).send({ error: 'paymentId is required' });

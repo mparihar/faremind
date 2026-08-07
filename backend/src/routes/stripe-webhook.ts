@@ -19,6 +19,7 @@ import { FastifyPluginAsync } from 'fastify';
 import Stripe from 'stripe';
 import { prisma } from '../lib/db';
 import { fulfillPayment, markPaymentFailed } from '../services/payment-fulfill';
+import { recordRefundOutcome } from '../services/booking-refund';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -80,6 +81,30 @@ const stripeWebhookPlugin: FastifyPluginAsync = async (fastify) => {
           if (payment) await markPaymentFailed(payment.id, 'Payment canceled', event.id);
           break;
         }
+        // ── Refunds ──────────────────────────────────────────────────────
+        //
+        // The webhook is the only place Stripe's actual verdict arrives. A
+        // refunds.create() that resolves means accepted, not settled — a refund
+        // can still fail afterwards, and until now nothing would have noticed:
+        // the customer had already been told their card was refunded.
+        case 'charge.refunded':
+        case 'refund.updated':
+        case 'charge.refund.updated': {
+          const obj = event.data.object as any;
+          // charge.refunded carries the charge; refund.* carries the refund.
+          const refund = obj?.object === 'refund' ? obj : obj?.refunds?.data?.[0];
+          if (!refund) { await tagEvent(event.id, 'IGNORED'); break; }
+          await recordRefundOutcome({
+            paymentIntentId: refund.payment_intent ?? obj?.payment_intent ?? null,
+            refundId: refund.id,
+            status: String(refund.status ?? ''),
+            amount: (refund.amount ?? 0) / 100,
+            currency: String(refund.currency ?? '').toUpperCase(),
+            failureReason: refund.failure_reason ?? null,
+          });
+          break;
+        }
+
         default:
           await tagEvent(event.id, 'IGNORED');
           break;
