@@ -1454,7 +1454,57 @@ export async function POST(req: NextRequest) {
         // state, not a failure. The backend resolved a poll-able reference
         // (bookData.uniqueId); we persist the booking as pending and reconcile via
         // TripDetails instead of refunding + failing the UI.
-        const bookPending = bookData?.pending === true && !!bookData?.uniqueId;
+        // ERBUK082 that the backend could not verify as a real booking.
+        //
+        // This used to be a soft success: a MasterBooking was written CONFIRMED
+        // and the customer was sent to a confirmation page reading "Airline PNR:
+        // Not Available". FMKYVIQT is what that produced — $934 captured, the
+        // provider reporting NotBooked with a ticketing limit that had already
+        // passed, and a page telling the customer they were flying.
+        //
+        // A booking nobody will vouch for is not a booking. The backend now asks
+        // TripDetails before answering: a confirmed one comes back success, a
+        // dead one comes back MYSTIFLY_BOOKING_NOT_BOOKED and is refunded below,
+        // and this is what is left — unreadable, held for a human, and never
+        // shown to the customer as confirmed.
+        const bookUnconfirmed =
+          bookData?.errorCode === 'MYSTIFLY_BOOKING_UNCONFIRMED' ||
+          (bookData?.pending === true && !!bookData?.uniqueId && bookData?.success !== true);
+
+        if (bookUnconfirmed) {
+          const pendingMsg = bookData.error || 'The airline has not confirmed this booking.';
+          console.error(
+            `[Mystifly] ERBUK082 ${bookData.uniqueId} unverified — NOT writing a confirmed booking and ` +
+            `NOT showing a confirmation page. Held for reconciliation.`,
+          );
+          await logBookingFailure({
+            passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
+            paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
+            currency, errorCode: 'MYSTIFLY_BOOKING_UNCONFIRMED',
+            errorMessage: `${pendingMsg} (ref ${bookData.uniqueId}, provider status ${bookData.mystiflyBookingStatus ?? 'unreadable'})`,
+            customerMessage:
+              'We could not confirm this booking with the airline. Our team is checking with them now and will ' +
+              'email you within a few hours. Please do not book again until you hear from us — you may be charged twice.',
+            failureStage: 'MYSTIFLY_BOOKING_AFTER_CAPTURE',
+            // Deliberately not refunded: an unreadable status is not evidence
+            // that no booking exists, and refunding one that does leaves the
+            // customer holding a ticket they no longer paid for.
+            refundStatus: 'NOT_APPLICABLE', refundId: null, refundAmount: null,
+            refundFailureReason: `Withheld — provider would not confirm whether ${bookData.uniqueId} exists (ERBUK082).`,
+          });
+          return NextResponse.json(
+            {
+              error: pendingMsg,
+              errorCode: 'MYSTIFLY_BOOKING_UNCONFIRMED',
+              providerReference: bookData.uniqueId,
+              customerMessage:
+                'We could not confirm this booking with the airline. Our team is checking and will email you ' +
+                'within a few hours. Please do not book again until you hear from us.',
+            },
+            { status: 202 },
+          );
+        }
+
 
         // ERBUK082 where the provider could not be asked whether a booking
         // exists. The backend deliberately withholds a verdict rather than
@@ -1494,7 +1544,7 @@ export async function POST(req: NextRequest) {
           );
         }
 
-        if ((!bookRes.ok || !bookData.success || !bookData.uniqueId) && !bookPending) {
+        if (!bookRes.ok || !bookData.success || !bookData.uniqueId) {
           // BookFlight failed AFTER payment capture — must refund
           const errMsg = bookData.error || 'Booking creation failed';
           console.error(`[Mystifly] ❌ BookFlight failed after payment capture: ${errMsg}`);
@@ -1589,17 +1639,12 @@ export async function POST(req: NextRequest) {
         // HoldAllowed=false → Webfare: payment was debited at BookFlight, skip OrderTicket
         let ticketingStatus: 'ISSUED' | 'TICKETING_PENDING' | 'SKIPPED_WEBFARE' | 'FAILED' = 'FAILED';
 
-        if (bookPending) {
-          // ERBUK082 — booking accepted but unconfirmed by the carrier. Do NOT
-          // issue a ticket now and do NOT refund; persist as pending and let the
-          // reconciliation worker poll TripDetails/AirTicketOrderStatus until the
-          // carrier confirms (→ ISSUED) or rejects (→ FAILED, manual-review refund).
-          ticketingStatus = 'TICKETING_PENDING';
-          (mystiflyBookingResult as any).erbuk082 = true;
-          (mystiflyBookingResult as any).pendingReason =
-            bookData.error || bookData.mystiflyErrorCode || 'ERBUK082 — Pending Need, awaiting carrier response';
-          console.warn(`[Mystifly] Booking pending (ERBUK082) ref=${mystiflyBookingResult.uniqueId} — queued for reconciliation, OrderTicket skipped.`);
-        } else if (holdAllowed) {
+        // An ERBUK082 that TripDetails confirmed as genuinely Booked reaches
+        // here as an ordinary booking and tickets normally. One that could not
+        // be confirmed returned 202 above and never gets this far, so there is
+        // no longer a "pending" branch that skips OrderTicket while telling the
+        // customer they are booked.
+        if (holdAllowed) {
           // Hold booking — must call OrderTicket to issue ticket and debit payment
           try {
             const ticketRes = await fetch(`${BACKEND_URL}/api/mystifly/order-ticket`, {

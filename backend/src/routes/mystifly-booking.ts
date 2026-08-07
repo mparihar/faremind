@@ -445,12 +445,81 @@ const plugin: FastifyPluginAsync = async (fastify) => {
           );
 
           if (mfRef) {
-            return reply.code(200).send({
+            // ASK, rather than assume the carrier is still deciding.
+            //
+            // This branch returned "pending" without ever checking, and pending
+            // was treated downstream as a soft success: the booking was
+            // persisted CONFIRMED and the customer was shown a confirmation page
+            // reading "Airline PNR: Not Available". FMKYVIQT is what that looks
+            // like — ERBUK082 at 10:40:38, $934 captured 20s earlier, and
+            // TripDetails saying BookingStatus "NotBooked", AirlinePNR "", and a
+            // TicketingTimeLimit equal to the creation time to the millisecond.
+            // The fare was dead before the request finished.
+            //
+            // The same call the success path makes, on the path that needs it
+            // more. Three outcomes, and only one of them is a booking.
+            let verifiedStatus: string | null = null;
+            let verifyTrip: any = null;
+            try {
+              verifyTrip = await mystifly.getTripDetailsResilient(mfRef);
+              const itinerary =
+                verifyTrip?.Data?.TripDetailsResult?.TravelItinerary ?? verifyTrip?.Data?.TravelItinerary ?? null;
+              verifiedStatus = String(itinerary?.BookingStatus ?? '').trim() || null;
+            } catch (verifyErr) {
+              console.warn(
+                `[Mystifly] ERBUK082 ${mfRef}: could not verify (${(verifyErr as Error).message}).`,
+              );
+            }
+
+            if (verifiedStatus && /^not\s*booked$/i.test(verifiedStatus)) {
+              console.error(
+                `[Mystifly] ERBUK082 ${mfRef} — provider reports BookingStatus="${verifiedStatus}". ` +
+                `The carrier holds no booking. Failing so the caller refunds instead of confirming.`,
+              );
+              return reply.code(422).send({
+                error: 'The airline did not complete this booking. The held fare expired before it could be confirmed.',
+                errorCode: 'MYSTIFLY_BOOKING_NOT_BOOKED',
+                mystiflyBookingStatus: verifiedStatus,
+                mystiflyErrorCode: errCode,
+                uniqueId: mfRef,
+                bookFscHash,
+                raw: result,
+              });
+            }
+
+            // Confirmed after all — ERBUK082 was exactly what it claims to be,
+            // a slow carrier. This is the only case that is a booking, and the
+            // only one the customer may be shown a confirmation for.
+            if (verifiedStatus && /^booked$/i.test(verifiedStatus)) {
+              console.log(`[Mystifly] ERBUK082 ${mfRef} resolved to "${verifiedStatus}" — genuine booking.`);
+              return {
+                success: true,
+                uniqueId: mfRef,
+                status: 'Booked',
+                verifiedBookingStatus: verifiedStatus,
+                recoveredFromPending: true,
+                segmentTerminals: collectSegmentTerminals(verifyTrip),
+                bookFscHash,
+                raw: result,
+              };
+            }
+
+            // Neither confirmed nor denied. NOT a confirmation — the customer is
+            // not shown a booking that no provider will vouch for. Not a refund
+            // either: an unreadable status is not evidence of absence, and
+            // refunding a booking that exists leaves them holding a ticket they
+            // no longer paid for. It is a held reference for reconciliation.
+            console.error(
+              `[Mystifly] ERBUK082 ${mfRef} unverified (status=${verifiedStatus ?? 'unreadable'}) — ` +
+              `NOT confirming to the customer; escalating for reconciliation.`,
+            );
+            return reply.code(202).send({
               success: false,
               pending: true,
               uniqueId: mfRef,
-              status: 'Pending',
-              errorCode: 'MYSTIFLY_BOOKING_PENDING',
+              status: 'PendingUnverified',
+              errorCode: 'MYSTIFLY_BOOKING_UNCONFIRMED',
+              mystiflyBookingStatus: verifiedStatus,
               mystiflyErrorCode: errCode,
               error: errMsg,
               bookFscHash,
