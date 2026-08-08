@@ -6,10 +6,23 @@
  */
 import { NextRequest, NextResponse } from 'next/server';
 import { withAdmin } from '@/lib/admin-rbac';
+import { prisma } from '@/lib/db';
+import { fireNotification } from '@/lib/notify';
 import { auditLog } from '@/lib/admin-auth';
 import {
   agentsDueForPeriod, payAgentCommission, rejectAgentCommission,
 } from '@/lib/finance/agent-commission-payout';
+
+const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June',
+  'July', 'August', 'September', 'October', 'November', 'December'];
+
+const fmtUsd = (n: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD' }).format(Number.isFinite(n) ? n : 0);
+
+/** The calculated figure, whichever branch produced the decision. */
+function systemAmountFor(r: { outcome: string; paidAmount?: number }): number {
+  return typeof r.paidAmount === 'number' ? r.paidAmount : 0;
+}
 
 function readPeriod(searchParams: URLSearchParams) {
   const now = new Date();
@@ -81,6 +94,35 @@ export const POST = withAdmin(async (req: NextRequest, { admin }) => {
     after: { agentUserId, period, ...result },
     metadata: { reason: reason ?? null },
   }).catch(() => {});
+
+  // Tell the agent, and tell finance. Money moving — or deliberately not
+  // moving — without anyone being told is how an agent first learns about a
+  // withheld payout by noticing it missing from their bank.
+  const agent = await prisma.user.findUnique({
+    where: { id: agentUserId },
+    select: { email: true, firstName: true, lastName: true },
+  }).catch(() => null);
+
+  if (agent) {
+    const agentName = `${agent.firstName ?? ''} ${agent.lastName ?? ''}`.trim() || 'Agent';
+    await fireNotification({
+      event_type: action === 'PAY' ? 'COMMISSION_PAID' : 'COMMISSION_WITHHELD',
+      // The agent is the direct recipient of a commission email, so they ride
+      // the customer channel; finance and support get the admin copy.
+      customer_email: agent.email,
+      data: {
+        agent_email: agent.email,
+        agent_name: agentName,
+        customer_name: agentName,   // the agent IS the recipient here
+        period: `${MONTH_NAMES[period.month - 1]} ${period.year}`,
+        paid_amount: result.outcome === 'PAID' ? fmtUsd(result.paidAmount) : fmtUsd(0),
+        system_amount: fmtUsd(systemAmountFor(result)),
+        entry_count: result.outcome === 'PAID' ? result.entriesSettled : null,
+        reason: reason ?? null,
+        decided_by: decidedBy,
+      },
+    }).catch((e) => console.warn(`[CommissionPayout] notification failed: ${e.message}`));
+  }
 
   return NextResponse.json(result);
 }, 'FINANCE');

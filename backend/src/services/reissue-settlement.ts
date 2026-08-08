@@ -104,17 +104,31 @@ export async function checkReissueSettlement(changeRequestId: string): Promise<v
       actorType: 'system',
     });
 
-    if (booking?.customerEmail) {
-      fireNotification({
-        event_type: 'FLIGHT_CHANGE_CONFIRMED',
-        booking_id: cr.bookingId,
-        customer_email: booking.customerEmail || undefined,
-        data: {
-          booking_reference: booking.masterBookingReference,
-          customer_name: booking.customerName ?? '',
-        },
-      });
-    }
+    // Fired unconditionally. It was guarded on the customer having an email,
+    // which meant a reissue on a booking without one told NOBODY — not the
+    // agent, not support, not admin — even though the flights had changed and
+    // the old ones were dead.
+    //
+    // The payload carries the new flights, because "your booking was reissued"
+    // without them makes a passenger go looking for what they are now on.
+    await fireNotification({
+      event_type: 'REISSUE_COMPLETED' as any,
+      booking_id: cr.bookingId,
+      customer_email: booking?.customerEmail || undefined,
+      data: {
+        booking_reference: booking?.masterBookingReference ?? null,
+        customer_name: booking?.customerName ?? '',
+        airline_pnr: (booking as any)?.airlinePnr ?? null,
+        mystifly_ref: cr.providerMfRef ?? (booking as any)?.masterPnr ?? null,
+        route: booking ? `${booking.originAirport} → ${booking.destinationAirport}` : null,
+        new_route: (providerStatus as any)?.newRoute ?? null,
+        new_departure: (providerStatus as any)?.newDeparture ?? null,
+        fare_difference: cr.fareDifference != null ? `${booking?.currency ?? 'USD'} ${Number(cr.fareDifference).toFixed(2)}` : null,
+        agent_email: (booking as any)?.agentEmail ?? null,
+        agent_name: (booking as any)?.agentName ?? null,
+        provider_ptr_id: cr.providerPtrId,
+      },
+    }).catch((e) => console.warn(`[reissue-settlement] notification failed: ${e.message}`));
 
     console.log(`[reissue-settlement] ChangeRequest ${cr.id} SETTLED (PTR ${cr.providerPtrId}).`);
     return;

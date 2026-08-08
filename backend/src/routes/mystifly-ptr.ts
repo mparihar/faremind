@@ -38,6 +38,8 @@ import { buildPtrRefundRef } from '../lib/ptr-refund-ref';
 import { ptrIdFromInProcessMessage } from '../lib/ptr-in-process';
 import { buildRefundDetails, ticketNumbersByType } from '../lib/refund-details';
 import { extractEticketsByPassenger, matchProviderEticket } from '../lib/eticket-backfill';
+import { fireNotification } from '../lib/notify';
+import { reverseCommission } from '../lib/finance/agent-commission-ledger';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -547,7 +549,12 @@ async function applyCancellationToBooking(params: {
 
     const full = await prisma.masterBooking.findUnique({
       where: { id: bk.id },
-      select: { serviceFeeAmount: true, totalAmount: true, currency: true, paymentStatus: true, agentUserId: true, masterBookingReference: true, passengers: { select: { id: true } } },
+      // Widened for the void/refund notification: without the customer and
+      // route these emails cannot be addressed or made meaningful.
+      select: { serviceFeeAmount: true, totalAmount: true, currency: true, paymentStatus: true, agentUserId: true, masterBookingReference: true,
+        customerEmail: true, customerName: true, airlinePnr: true, masterPnr: true,
+        originAirport: true, destinationAirport: true, agentEmail: true, agentName: true,
+        passengers: { select: { id: true } } },
     });
 
     // Only a void changes ticketingStatus — MbTicketingStatus has no refund member, so a
@@ -607,6 +614,37 @@ async function applyCancellationToBooking(params: {
           where: { id: bk.id },
           data: { paymentStatus: owed >= paid - 0.01 ? 'REFUNDED' : 'PARTIALLY_REFUNDED' },
         });
+
+        // Money has left our account for the customer's card. Nobody was told.
+        //
+        // A void or refund raised by staff moved real money and produced no
+        // email at all — the customer found out from their statement, the agent
+        // kept commission on a trip that no longer exists, and support learned
+        // about it when the customer phoned. Fired here, at the point the refund
+        // is actually accepted, rather than when the PTR was merely requested.
+        await reverseCommission({
+          bookingId: bk.id,
+          reason: isVoid ? 'Booking voided' : 'Booking refunded',
+        }).catch((e) => console.warn(`[PTR] commission reversal failed for ${bk.id}: ${e.message}`));
+
+        await fireNotification({
+          event_type: (isVoid ? 'BOOKING_VOIDED' : 'REFUND_ISSUED') as any,
+          booking_id: bk.id,
+          customer_email: full?.customerEmail ?? undefined,
+          data: {
+            customer_name: full?.customerName?.split(' ')[0] || 'Traveler',
+            booking_reference: bk.masterBookingReference,
+            airline_pnr: full?.airlinePnr ?? null,
+            mystifly_ref: uniqueId ?? full?.masterPnr ?? null,   // internal recipients only
+            route: `${full?.originAirport ?? ''} → ${full?.destinationAirport ?? ''}`,
+            refund_amount: `${full?.currency ?? 'USD'} ${owed.toFixed(2)}`,
+            refund_reference: stripeRefund.id,
+            service_fee_retained: adminFee > 0 ? adminFee.toFixed(2) : null,
+            agent_email: full?.agentEmail ?? null,
+            agent_name: full?.agentName ?? null,
+            requested_by: requestedBy || 'staff',
+          },
+        }).catch((e) => console.warn(`[PTR] notification failed for ${bk.id}: ${e.message}`));
         // The customer's card refund is done; the AIRLINE side is not. Mystifly
         // answers Void/Refund synchronously with PTRStatus=InProcess and settles
         // in its back office, so the only proof the ticket was actually voided

@@ -27,6 +27,8 @@
 import Stripe from 'stripe';
 import { prisma } from '../lib/db';
 import { classifyRefund, refundQueue, type RefundState } from '../lib/refund-status';
+import { reverseCommission } from '../lib/finance/agent-commission-ledger';
+import { fireNotification } from '../lib/notify';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', {
   apiVersion: '2025-09-30.clover' as any,
@@ -179,6 +181,63 @@ export async function recordRefundOutcome(params: {
   );
 
   await syncFailureTicket({ auditId: audit.id, state, refundId, amount, currency, status, failureReason: reason });
+
+  if (settled) await onRefundSettled({ paymentIntentId, refundId, amount, currency });
+}
+
+/**
+ * Everything that has to happen once money is genuinely back with the customer.
+ *
+ * Both of these were missing, and both are the kind of omission nobody notices
+ * until it matters: an agent keeps commission on a booking that was refunded,
+ * and a customer is refunded without being told.
+ */
+async function onRefundSettled(params: {
+  paymentIntentId: string;
+  refundId: string;
+  amount: number;
+  currency: string;
+}): Promise<void> {
+  const { paymentIntentId, refundId, amount, currency } = params;
+
+  // The booking this refund belongs to, if one was ever created. A booking that
+  // failed before persisting has none — there is then no commission to reverse
+  // and no booking reference to quote, but the customer still gets told.
+  const booking = await prisma.masterBooking.findFirst({
+    where: { payments: { some: { stripePaymentIntentId: paymentIntentId } } },
+    select: {
+      id: true, masterBookingReference: true, customerEmail: true, customerName: true,
+      airlinePnr: true, masterPnr: true, originAirport: true, destinationAirport: true,
+      agentUserId: true, agentEmail: true, agentName: true,
+    },
+  }).catch(() => null);
+
+  // Commission on a refunded booking is taken back. This was wired into the
+  // cancellation path only — a booking refunded through the FAILURE path, which
+  // is how the phantom bookings went, left the agent credited for a trip that
+  // never happened.
+  if (booking?.id && booking.agentUserId) {
+    await reverseCommission({ bookingId: booking.id, reason: `Refunded — ${refundId}` })
+      .catch((e) => console.warn(`[BookingRefund] commission reversal failed: ${e.message}`));
+  }
+
+  await fireNotification({
+    event_type: 'REFUND_ISSUED' as any,
+    booking_id: booking?.id,
+    customer_email: booking?.customerEmail,
+    data: {
+      customer_name: booking?.customerName?.split(' ')[0] || 'Traveler',
+      booking_reference: booking?.masterBookingReference ?? null,
+      airline_pnr: booking?.airlinePnr ?? null,
+      mystifly_ref: booking?.masterPnr ?? null,   // internal recipients only
+      route: booking ? `${booking.originAirport} → ${booking.destinationAirport}` : null,
+      refund_amount: `${currency} ${amount.toFixed(2)}`,
+      refund_reference: refundId,
+      refund_timeline: 'It can take 5–10 business days to appear on your statement.',
+      agent_email: booking?.agentEmail ?? null,
+      agent_name: booking?.agentName ?? null,
+    },
+  }).catch((e) => console.warn(`[BookingRefund] refund notification failed: ${e.message}`));
 }
 
 /**

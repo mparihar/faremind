@@ -16,6 +16,10 @@ const SENDER_NAME   = 'FAREMIND';
 const SUPER_ADMIN_EMAIL = 'mparihar@gmail.com';
 
 export type NotifyEventType =
+  // Agent commission settlement. The agent is the direct recipient here, so it
+  // rides the customer channel; finance and support get the admin copy.
+  | 'COMMISSION_PAID'
+  | 'COMMISSION_WITHHELD'
   | 'BOOKING_CONFIRMED'
   | 'BOOKING_PENDING'
   | 'BOOKING_FAILED'
@@ -169,6 +173,47 @@ export function buildCustomerEmail(eventType: string, d: Record<string, unknown>
   const amount = String(d.total_amount ?? '');
 
   switch (eventType) {
+    // ── Agent commission ────────────────────────────────────────────────────
+    //
+    // The agent is the recipient, so these ride the customer channel. They
+    // state the amount, the period, and — when the figure was changed — what it
+    // was changed from and why: an agent finding a different number in their
+    // bank has no other way to ask about it.
+
+    case 'COMMISSION_PAID': {
+      const paid = String(d.paid_amount ?? '');
+      const calculated = String(d.system_amount ?? '');
+      const period = String(d.period ?? '');
+      const who = String(d.agent_name ?? 'there');
+      const adjusted = !!calculated && paid !== calculated;
+      return {
+        subject: `Commission paid – ${paid} for ${period}`,
+        html: wrap('Commission Paid', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Your ${period} commission has been paid</h2>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${who}, <strong>${paid}</strong> has been settled for ${period}${d.entry_count ? ` across ${d.entry_count} booking(s)` : ''}.</p>
+          ${adjusted ? `<p style="margin:0 0 16px;color:#b45309;font-size:14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;">Adjusted from the calculated <strong>${calculated}</strong>.${d.reason ? ` Reason: ${d.reason}` : ''}</p>` : ''}
+          <p style="margin:0;color:#64748b;font-size:14px;">The full breakdown is under <strong>My Commission</strong> in your agent portal.</p>
+        `),
+        text: `Hi ${who}, ${paid} commission paid for ${period}.${adjusted ? ` Adjusted from ${calculated}.` : ''}`,
+      };
+    }
+
+    case 'COMMISSION_WITHHELD': {
+      const held = String(d.system_amount ?? '');
+      const period = String(d.period ?? '');
+      const who = String(d.agent_name ?? 'there');
+      return {
+        subject: `Commission on hold – ${period}`,
+        html: wrap('Commission On Hold', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Your ${period} commission is on hold</h2>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${who}, <strong>${held}</strong> for ${period} was not released in this payout run.</p>
+          ${d.reason ? `<p style="margin:0 0 16px;color:#0f172a;font-size:14px;">Reason: ${d.reason}</p>` : ''}
+          <p style="margin:0;color:#64748b;font-size:14px;">This commission remains owed to you and carries into the next payout.</p>
+        `),
+        text: `Hi ${who}, ${held} commission for ${period} is on hold.${d.reason ? ` Reason: ${d.reason}` : ''} It remains owed and carries forward.`,
+      };
+    }
+
     case 'BOOKING_CONFIRMED': {
       // Send ONLY the detailed itinerary email — no simple fallback template.
       // If itinerary generation fails, customer does not receive any email
@@ -350,6 +395,30 @@ export function buildSupportEmail(eventType: string, d: Record<string, unknown>)
   const ts = new Date().toISOString();
 
   switch (eventType) {
+    case 'COMMISSION_PAID':
+      return {
+        subject: `[FAREMIND] Commission paid – ${d.paid_amount ?? ''} to ${d.agent_name ?? 'agent'}`,
+        html: wrap('[Finance] Commission Paid', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Commission Paid</h2>
+          <p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>${d.paid_amount ?? ''}</strong> paid to <strong>${d.agent_name ?? ''}</strong> for ${d.period ?? ''}${d.entry_count ? `, covering ${d.entry_count} booking(s)` : ''}.</p>
+          ${d.system_amount && d.paid_amount !== d.system_amount ? `<p style="margin:0 0 8px;color:#b45309;font-size:14px;">Adjusted from the calculated ${d.system_amount}. Reason: ${d.reason ?? 'not stated'}</p>` : ''}
+          <p style="margin:0;color:#64748b;font-size:13px;">Approved by ${d.decided_by ?? 'admin'}</p>
+        `),
+        text: `Commission paid: ${d.paid_amount ?? ''} to ${d.agent_name ?? ''} for ${d.period ?? ''} by ${d.decided_by ?? 'admin'}.`,
+      };
+
+    case 'COMMISSION_WITHHELD':
+      return {
+        subject: `[FAREMIND] Commission withheld – ${d.agent_name ?? 'agent'} (${d.period ?? ''})`,
+        html: wrap('[Finance] Commission Withheld', `
+          <h2 style="margin:0 0 8px;color:#ef4444;font-size:20px;font-weight:800;">Commission Withheld</h2>
+          <p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>${d.system_amount ?? ''}</strong> for <strong>${d.agent_name ?? ''}</strong> was not released for ${d.period ?? ''}. It remains owed and carries into the next payout.</p>
+          <p style="margin:0 0 8px;color:#0f172a;font-size:14px;">Reason: ${d.reason ?? 'not stated'}</p>
+          <p style="margin:0;color:#64748b;font-size:13px;">Decided by ${d.decided_by ?? 'admin'}</p>
+        `),
+        text: `Commission withheld: ${d.system_amount ?? ''} for ${d.agent_name ?? ''} (${d.period ?? ''}). Reason: ${d.reason ?? 'not stated'}`,
+      };
+
     case 'BOOKING_CONFIRMED': {
       // If full booking data is provided, embed the same itinerary as customer
       const fullBookingData = d.full_booking_data as Record<string, unknown> | undefined;
@@ -467,6 +536,7 @@ export function buildSupportEmail(eventType: string, d: Record<string, unknown>)
 
 // Mapping: which events send to customer, support, or both
 const CUSTOMER_EVENTS = new Set<string>([
+  'COMMISSION_PAID', 'COMMISSION_WITHHELD',
   'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
   'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
   'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
@@ -476,6 +546,7 @@ const CUSTOMER_EVENTS = new Set<string>([
 ]);
 
 const SUPPORT_EVENTS = new Set<string>([
+  'COMMISSION_PAID', 'COMMISSION_WITHHELD',
   'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_FAILED', 'BOOKING_CANCELLED',
   'BOOKING_UPDATED', 'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
   'PAYMENT_SUCCESS', 'PAYMENT_FAILED',

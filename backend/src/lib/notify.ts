@@ -39,6 +39,14 @@ export type NotifyEventType =
   | 'WALLET_RECHARGED'
   | 'WALLET_REACTIVATED'
   | 'WALLET_ADJUSTED'
+  // Money movements that were happening silently. A platform that refunds,
+  // voids, reissues or pays commission without telling anyone leaves the
+  // customer, the agent and support each discovering it from a bank statement.
+  | 'REFUND_ISSUED'
+  | 'BOOKING_VOIDED'
+  | 'REISSUE_COMPLETED'
+  | 'COMMISSION_PAID'
+  | 'COMMISSION_WITHHELD'
   | 'SUPPORT_MANUAL';
 
 interface NotifyPayload {
@@ -307,6 +315,52 @@ export function buildCustomerEmail(eventType: string, d: Record<string, unknown>
           <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${name}, your booking <strong>${ref}</strong> for <strong>${route}</strong> is being confirmed with the airline.</p>
         `),
         text: `Hi ${name}, your booking ${ref} for ${route} is being processed.`,
+      };
+
+    // ── Money movements ─────────────────────────────────────────────────────
+    //
+    // The customer wording deliberately leads with the amount and the card,
+    // because the question these answer is "did my money come back", and an
+    // email that buries that under a booking reference does not answer it.
+
+    case 'REFUND_ISSUED': {
+      const amt = String(d.refund_amount ?? '');
+      const timeline = String(d.refund_timeline ?? 'It can take 5–10 business days to appear on your statement.');
+      const forBooking = d.booking_reference ? ` for booking <strong>${ref}</strong>` : '';
+      return {
+        subject: amt ? `Refund issued – ${amt}` : 'Refund issued',
+        html: wrap('Refund Issued', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Your refund is on its way</h2>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${name}, we have refunded <strong>${amt}</strong>${forBooking} to the card you paid with. ${timeline}</p>
+          ${d.refund_reference ? `<p style="margin:0;color:#94a3b8;font-size:12px;">Reference: ${d.refund_reference}</p>` : ''}
+        `),
+        text: `Hi ${name}, we have refunded ${amt}${d.booking_reference ? ` for booking ${ref}` : ''} to your original card. ${timeline}`,
+      };
+    }
+
+    case 'BOOKING_VOIDED':
+      return {
+        subject: `Booking voided – ${ref}`,
+        html: wrap('Booking Voided', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Your booking has been voided</h2>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${name}, booking <strong>${ref}</strong> for <strong>${route}</strong> has been voided with the airline and you are no longer travelling on it.</p>
+          ${d.refund_amount ? `<p style="margin:0 0 8px;color:#64748b;font-size:14px;">A full refund of <strong>${d.refund_amount}</strong> is being returned to your original payment method.</p>` : ''}
+        `),
+        text: `Hi ${name}, booking ${ref} for ${route} has been voided.${d.refund_amount ? ` A refund of ${d.refund_amount} is on its way to your original payment method.` : ''}`,
+      };
+
+    case 'REISSUE_COMPLETED':
+      return {
+        subject: `Your new flight details – ${ref}`,
+        html: wrap('Flights Changed', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Your flights have been changed</h2>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${name}, booking <strong>${ref}</strong> has been reissued and your new flights are confirmed.</p>
+          ${d.new_route ? `<p style="margin:0 0 8px;color:#0f172a;font-size:14px;"><strong>${d.new_route}</strong></p>` : ''}
+          ${d.new_departure ? `<p style="margin:0 0 8px;color:#64748b;font-size:14px;">Departing ${d.new_departure}</p>` : ''}
+          ${d.fare_difference ? `<p style="margin:0 0 8px;color:#64748b;font-size:14px;">Fare difference: <strong>${d.fare_difference}</strong></p>` : ''}
+          <p style="margin:0;color:#64748b;font-size:14px;">Your previous flights are no longer valid. Please travel on the flights above.</p>
+        `),
+        text: `Hi ${name}, booking ${ref} has been reissued.${d.new_route ? ` New flights: ${d.new_route}.` : ''} Your previous flights are no longer valid.`,
       };
 
     case 'BOOKING_CANCELLED': {
@@ -701,6 +755,69 @@ export function buildSupportEmail(eventType: string, d: Record<string, unknown>)
   const ts = new Date().toISOString();
 
   switch (eventType) {
+    // ── Money movements, for the people who answer for them ─────────────────
+    //
+    // Staff see the internal reference and the amount, because the call they
+    // take is "a customer says they were refunded and cannot see it" and the
+    // answer starts with the provider reference the customer never has.
+
+    case 'REFUND_ISSUED':
+      return {
+        subject: `[FAREMIND] Refund issued – ${d.refund_amount ?? ''} ${ref ? `(${ref})` : ''}`,
+        html: wrap('[Support] Refund Issued', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Refund Issued</h2>
+          <p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>${d.refund_amount ?? ''}</strong> refunded to ${name}${ref ? ` on booking <strong>${ref}</strong>` : ''}.</p>
+          <p style="margin:0;color:#64748b;font-size:13px;">Stripe refund: ${d.refund_reference ?? 'n/a'}${d.mystifly_ref ? ` · Provider ref: ${d.mystifly_ref}` : ''}</p>
+        `),
+        text: `Refund issued: ${d.refund_amount ?? ''} to ${name}${ref ? ` (booking ${ref})` : ''}. Stripe: ${d.refund_reference ?? 'n/a'}`,
+      };
+
+    case 'BOOKING_VOIDED':
+      return {
+        subject: `[FAREMIND] Booking voided – ${ref}`,
+        html: wrap('[Support] Booking Voided', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking Voided</h2>
+          <p style="margin:0 0 8px;color:#64748b;font-size:14px;">Booking <strong>${ref}</strong> (${route}) for ${name} has been voided.${d.refund_amount ? ` Refund: <strong>${d.refund_amount}</strong>.` : ''}</p>
+          <p style="margin:0;color:#64748b;font-size:13px;">${d.mystifly_ref ? `Provider ref: ${d.mystifly_ref}` : ''}${d.airline_pnr ? ` · Airline PNR: ${d.airline_pnr}` : ''}</p>
+        `),
+        text: `Booking ${ref} (${route}) voided for ${name}.${d.refund_amount ? ` Refund: ${d.refund_amount}.` : ''}`,
+      };
+
+    case 'REISSUE_COMPLETED':
+      return {
+        subject: `[FAREMIND] Booking reissued – ${ref}`,
+        html: wrap('[Support] Booking Reissued', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking Reissued</h2>
+          <p style="margin:0 0 8px;color:#64748b;font-size:14px;">Booking <strong>${ref}</strong> for ${name} has been reissued.${d.new_route ? ` New flights: <strong>${d.new_route}</strong>.` : ''}${d.fare_difference ? ` Fare difference: <strong>${d.fare_difference}</strong>.` : ''}</p>
+          <p style="margin:0;color:#64748b;font-size:13px;">${d.mystifly_ref ? `Provider ref: ${d.mystifly_ref}` : ''}</p>
+        `),
+        text: `Booking ${ref} for ${name} reissued.${d.new_route ? ` New: ${d.new_route}.` : ''}`,
+      };
+
+    case 'COMMISSION_PAID':
+      return {
+        subject: `[FAREMIND] Commission paid – ${d.paid_amount ?? ''} to ${d.agent_name ?? 'agent'}`,
+        html: wrap('[Finance] Commission Paid', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Commission Paid</h2>
+          <p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>${d.paid_amount ?? ''}</strong> paid to <strong>${d.agent_name ?? ''}</strong> for ${d.period ?? ''}, covering ${d.entry_count ?? 0} booking(s).</p>
+          ${d.system_amount && d.paid_amount !== d.system_amount ? `<p style="margin:0 0 8px;color:#b45309;font-size:14px;">Adjusted from the calculated ${d.system_amount}. Reason: ${d.reason ?? 'not stated'}</p>` : ''}
+          <p style="margin:0;color:#64748b;font-size:13px;">Approved by ${d.decided_by ?? 'admin'}</p>
+        `),
+        text: `Commission paid: ${d.paid_amount ?? ''} to ${d.agent_name ?? ''} for ${d.period ?? ''} by ${d.decided_by ?? 'admin'}.`,
+      };
+
+    case 'COMMISSION_WITHHELD':
+      return {
+        subject: `[FAREMIND] Commission withheld – ${d.agent_name ?? 'agent'} (${d.period ?? ''})`,
+        html: wrap('[Finance] Commission Withheld', `
+          <h2 style="margin:0 0 8px;color:#ef4444;font-size:20px;font-weight:800;">Commission Withheld</h2>
+          <p style="margin:0 0 8px;color:#64748b;font-size:14px;"><strong>${d.system_amount ?? ''}</strong> for <strong>${d.agent_name ?? ''}</strong> was not released for ${d.period ?? ''}. It remains owed and carries into the next payout.</p>
+          <p style="margin:0 0 8px;color:#0f172a;font-size:14px;">Reason: ${d.reason ?? 'not stated'}</p>
+          <p style="margin:0;color:#64748b;font-size:13px;">Decided by ${d.decided_by ?? 'admin'}</p>
+        `),
+        text: `Commission withheld: ${d.system_amount ?? ''} for ${d.agent_name ?? ''} (${d.period ?? ''}). Reason: ${d.reason ?? 'not stated'}`,
+      };
+
     case 'BOOKING_CONFIRMED':
       return {
         subject: `[FAREMIND] New Booking Confirmed – ${ref}`,
@@ -830,6 +947,76 @@ export function buildAgentEmail(eventType: string, d: Record<string, unknown>, a
   const appUrl = process.env.APP_URL || 'https://faremind.ai';
 
   switch (eventType) {
+    // ── The agent's own money ────────────────────────────────────────────────
+    //
+    // These are the only emails an agent receives about their earnings, so they
+    // state the amount, the period and — when the figure was changed — what it
+    // was changed from and why. An agent finding a different number in their
+    // bank than on their statement has no way to ask about it otherwise.
+
+    case 'COMMISSION_PAID': {
+      const paid = String(d.paid_amount ?? '');
+      const calculated = String(d.system_amount ?? '');
+      const period = String(d.period ?? '');
+      const adjusted = !!calculated && paid !== calculated;
+      return {
+        subject: `Commission paid – ${paid} for ${period}`,
+        html: wrap('Commission Paid', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Your ${period} commission has been paid</h2>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${agentName}, <strong>${paid}</strong> has been settled for ${period}${d.entry_count ? ` across ${d.entry_count} booking${Number(d.entry_count) === 1 ? '' : 's'}` : ''}.</p>
+          ${adjusted ? `<p style="margin:0 0 16px;color:#b45309;font-size:14px;background:#fffbeb;border:1px solid #fde68a;border-radius:8px;padding:10px 12px;">This was adjusted from the calculated <strong>${calculated}</strong>.${d.reason ? ` Reason: ${d.reason}` : ''}</p>` : ''}
+          <p style="margin:0;color:#64748b;font-size:14px;">The full breakdown is under <strong>My Commission</strong> in your agent portal.</p>
+        `),
+        text: `Hi ${agentName}, ${paid} commission has been paid for ${period}.${adjusted ? ` Adjusted from ${calculated}.` : ''}`,
+      };
+    }
+
+    case 'COMMISSION_WITHHELD': {
+      const held = String(d.system_amount ?? '');
+      const period = String(d.period ?? '');
+      return {
+        subject: `Commission on hold – ${period}`,
+        html: wrap('Commission On Hold', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Your ${period} commission is on hold</h2>
+          <p style="margin:0 0 16px;color:#64748b;font-size:14px;">Hi ${agentName}, <strong>${held}</strong> for ${period} was not released in this payout run.</p>
+          ${d.reason ? `<p style="margin:0 0 16px;color:#0f172a;font-size:14px;">Reason: ${d.reason}</p>` : ''}
+          <p style="margin:0;color:#64748b;font-size:14px;">This commission remains owed to you and carries into the next payout.</p>
+        `),
+        text: `Hi ${agentName}, ${held} commission for ${period} is on hold.${d.reason ? ` Reason: ${d.reason}` : ''} It remains owed and carries forward.`,
+      };
+    }
+
+    case 'REFUND_ISSUED':
+      return {
+        subject: `Refund issued – ${ref || 'booking'}`,
+        html: wrap('Refund Issued', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Refund issued on your booking</h2>
+          <p style="margin:0 0 8px;color:#64748b;font-size:14px;">Hi ${agentName}, <strong>${d.refund_amount ?? ''}</strong> has been refunded to ${name} on booking <strong>${ref}</strong>.</p>
+          <p style="margin:0;color:#64748b;font-size:14px;">Any commission earned on this booking has been reversed.</p>
+        `),
+        text: `Hi ${agentName}, ${d.refund_amount ?? ''} refunded to ${name} on booking ${ref}. Commission has been reversed.`,
+      };
+
+    case 'BOOKING_VOIDED':
+      return {
+        subject: `Booking voided – ${ref}`,
+        html: wrap('Booking Voided', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking voided</h2>
+          <p style="margin:0;color:#64748b;font-size:14px;">Hi ${agentName}, booking <strong>${ref}</strong> for ${name} (${route}) has been voided.${d.refund_amount ? ` A refund of <strong>${d.refund_amount}</strong> is being returned.` : ''}</p>
+        `),
+        text: `Hi ${agentName}, booking ${ref} for ${name} (${route}) has been voided.`,
+      };
+
+    case 'REISSUE_COMPLETED':
+      return {
+        subject: `Booking reissued – ${ref}`,
+        html: wrap('Booking Reissued', `
+          <h2 style="margin:0 0 8px;color:#0f172a;font-size:20px;font-weight:800;">Booking reissued</h2>
+          <p style="margin:0;color:#64748b;font-size:14px;">Hi ${agentName}, booking <strong>${ref}</strong> for ${name} has been reissued.${d.new_route ? ` New flights: <strong>${d.new_route}</strong>.` : ''}${d.fare_difference ? ` Fare difference: <strong>${d.fare_difference}</strong>.` : ''}</p>
+        `),
+        text: `Hi ${agentName}, booking ${ref} for ${name} has been reissued.`,
+      };
+
     case 'BOOKING_CONFIRMED': {
       const airlinePnr = airlinePnrLabel(d);
       const airline = String(d.airline ?? '');
@@ -1005,6 +1192,9 @@ export function buildAgentEmail(eventType: string, d: Record<string, unknown>, a
 
 // Which events send to customer vs support
 const CUSTOMER_EVENTS = new Set<string>([
+  // Money movements. Without these the events exist but reach nobody, which
+  // is the same as not firing them at all.
+  'REFUND_ISSUED', 'BOOKING_VOIDED', 'REISSUE_COMPLETED',
   'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_CANCELLED', 'BOOKING_UPDATED',
   'PASSENGER_INFO_UPDATED',
   'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
@@ -1017,6 +1207,10 @@ const CUSTOMER_EVENTS = new Set<string>([
 ]);
 
 const SUPPORT_EVENTS = new Set<string>([
+  // Money movements. Without these the events exist but reach nobody, which
+  // is the same as not firing them at all.
+  'REFUND_ISSUED', 'BOOKING_VOIDED', 'REISSUE_COMPLETED',
+  'COMMISSION_PAID', 'COMMISSION_WITHHELD',
   'BOOKING_CONFIRMED', 'BOOKING_PENDING', 'BOOKING_FAILED', 'BOOKING_CANCELLED',
   'BOOKING_UPDATED', 'PASSENGER_INFO_UPDATED',
   'FLIGHT_CHANGE_CONFIRMED', 'SEAT_SELECTION_UPDATED',
@@ -1115,6 +1309,10 @@ export async function fireNotification(payload: NotifyPayload): Promise<void> {
       'PAYMENT_SUCCESS', 'PAYMENT_FAILED',
       'DATE_CHANGE_SUBMITTED', 'DATE_CHANGE_APPROVED', 'DATE_CHANGE_REJECTED',
   'REISSUE_PAYMENT_REQUIRED',
+      // An agent whose booking was refunded, voided or reissued is told —
+      // otherwise they keep quoting flights that no longer exist, and only
+      // discover the reversed commission when their statement changes.
+      'REFUND_ISSUED', 'BOOKING_VOIDED', 'REISSUE_COMPLETED',
     ]);
     const agentEmail = data.agent_email ? String(data.agent_email) : null;
     const agentName = data.agent_name ? String(data.agent_name) : 'Agent';
