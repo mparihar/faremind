@@ -52,12 +52,12 @@ interface Totals {
 /** The comparison line under a KPI. Null means there is nothing to compare to. */
 function Delta({ value, label }: { value: number | null; label: string }) {
   if (value == null) {
-    return <p className="text-[10px] text-slate-600 mt-1">No {label} to compare</p>;
+    return <p className="text-xs text-slate-600 mt-1">No {label} to compare</p>;
   }
   const up = value >= 0;
   const Icon = value === 0 ? Minus : up ? TrendingUp : TrendingDown;
   return (
-    <p className={`text-[10px] mt-1 flex items-center gap-1 font-semibold ${
+    <p className={`text-xs mt-1 flex items-center gap-1 font-semibold ${
       value === 0 ? 'text-slate-500' : up ? 'text-emerald-400' : 'text-red-400'}`}>
       <Icon size={10} />
       {up && value !== 0 ? '+' : ''}{value}% vs {label}
@@ -81,10 +81,10 @@ function Kpi({ label, value, sub, delta, deltaLabel, tone = 'slate', icon: Icon 
     <div className={`rounded-2xl border p-4 ${TONES[tone]}`}>
       <div className="flex items-center gap-2 mb-2">
         {Icon && <Icon size={13} className="text-slate-400" />}
-        <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{label}</p>
+        <p className="text-xs font-black text-slate-400 uppercase tracking-wider">{label}</p>
       </div>
       <p className="text-2xl font-black text-white tabular-nums">{value}</p>
-      {sub && <p className="text-[10px] text-slate-500 mt-0.5">{sub}</p>}
+      {sub && <p className="text-xs text-slate-500 mt-0.5">{sub}</p>}
       {deltaLabel !== undefined && <Delta value={delta ?? null} label={deltaLabel} />}
     </div>
   );
@@ -111,10 +111,10 @@ function TrendChart({ monthly, selected, onSelect }: {
     <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 p-5">
       <div className="flex flex-wrap items-center justify-between gap-3 mb-4">
         <div>
-          <h2 className="text-sm font-black text-white">12-Month Financial Performance</h2>
-          <p className="text-[10px] text-slate-500 mt-0.5">Click a month to filter the whole page</p>
+          <h2 className="text-base font-black text-white">12-Month Financial Performance</h2>
+          <p className="text-xs text-slate-500 mt-0.5">Click a month to filter the whole page</p>
         </div>
-        <div className="flex items-center gap-4 text-[10px] font-semibold">
+        <div className="flex items-center gap-4 text-xs font-semibold">
           <span className="flex items-center gap-1.5 text-slate-400">
             <span className="w-2.5 h-2.5 rounded-sm bg-slate-600" /> Gross Booking Value
           </span>
@@ -218,9 +218,9 @@ function CommissionSettings() {
     <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 p-5">
       <div className="flex items-center gap-2 mb-1">
         <Users size={14} className="text-amber-400" />
-        <h2 className="text-sm font-black text-white">Agent Commission</h2>
+        <h2 className="text-base font-black text-white">Agent Commission</h2>
       </div>
-      <p className="text-[11px] text-slate-500 mb-4">
+      <p className="text-[13px] text-slate-500 mb-4">
         The agent&apos;s share of what FareMind earns — service/platform fees and ancillary upsells.
         Never a share of the airline fare. Changes apply to <span className="text-slate-300 font-semibold">new bookings only</span>;
         every existing booking keeps the rate it was booked at.
@@ -232,7 +232,7 @@ function CommissionSettings() {
           ['ancillaryRate', 'Ancillary & upsells'],
         ] as const).map(([key, label]) => (
           <div key={key}>
-            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">{label}</label>
+            <label className="block text-xs font-black text-slate-500 uppercase tracking-wider mb-1">{label}</label>
             <div className="flex items-center gap-1.5">
               <input
                 type="number" min={0} max={100} step={0.5}
@@ -262,7 +262,7 @@ function CommissionSettings() {
       {/* A worked example, because a percentage on its own does not say what it
           is a percentage OF — and the answer is the one thing people get wrong. */}
       {rates && (
-        <p className="text-[11px] text-slate-500 mt-4 leading-relaxed">
+        <p className="text-[13px] text-slate-500 mt-4 leading-relaxed">
           On a booking with a <span className="text-slate-300">$20</span> service fee, the agent earns{' '}
           <span className="text-amber-400 font-semibold">{money(20 * rates.serviceFeeRate / 100, 2)}</span> and FareMind keeps{' '}
           <span className="text-[#1ABC9C] font-semibold">{money(20 - 20 * rates.serviceFeeRate / 100, 2)}</span>.
@@ -321,20 +321,20 @@ function Ledger({ year, month, provider, agentsOnly }: {
   return (
     <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 overflow-hidden">
       <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-3">
-        <h2 className="text-sm font-black text-white">Financial Transactions</h2>
+        <h2 className="text-base font-black text-white">Financial Transactions</h2>
         <input
           value={search}
           onChange={e => setSearch(e.target.value)}
           placeholder="Booking ref, PNR, customer, agent…"
-          className="px-3 py-2 w-72 max-w-full bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-600 text-xs focus:outline-none focus:border-[#1ABC9C]"
+          className="px-3 py-2 w-72 max-w-full bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-600 text-sm focus:outline-none focus:border-[#1ABC9C]"
         />
       </div>
       <div ref={scrollRef} id="finance-ledger-scroll" className="overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-[15px]">
           <thead>
             <tr className="border-y border-slate-700/50 bg-slate-800/40">
               {COLS.map(h => (
-                <th key={h} className="px-4 py-2.5 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                <th key={h} className="px-4 py-2.5 text-left text-xs font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
               ))}
             </tr>
           </thead>
@@ -359,7 +359,7 @@ function Ledger({ year, month, provider, agentsOnly }: {
                   {r.refundAmount > 0 ? money(r.refundAmount, 2) : '—'}
                 </td>
                 <td className="px-4 py-3">
-                  <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-700/50 text-slate-300 whitespace-nowrap">
+                  <span className="inline-block px-2 py-0.5 rounded-full text-xs font-bold bg-slate-700/50 text-slate-300 whitespace-nowrap">
                     {r.bookingStatus}
                   </span>
                 </td>
@@ -484,7 +484,7 @@ export default function FinancePage() {
 
       {/* Volume — money that moved through FareMind. Not earnings. */}
       <div>
-        <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">
+        <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
           Transaction volume
         </p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -507,7 +507,7 @@ export default function FinancePage() {
 
       {/* Earnings — money that is actually FareMind's. */}
       <div>
-        <p className="text-[10px] font-black text-slate-500 uppercase tracking-wider mb-2">
+        <p className="text-xs font-black text-slate-500 uppercase tracking-wider mb-2">
           FareMind earnings
         </p>
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
@@ -530,7 +530,7 @@ export default function FinancePage() {
 
       {/* How the money was earned, line by line. */}
       <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 p-5">
-        <h2 className="text-sm font-black text-white mb-3">Revenue Breakdown</h2>
+        <h2 className="text-base font-black text-white mb-3">Revenue Breakdown</h2>
         <div className="space-y-1.5 text-sm max-w-xl">
           {[
             ['Service fees', t?.serviceFeeRevenue ?? 0],
@@ -570,14 +570,14 @@ export default function FinancePage() {
 
       {/* Provider performance */}
       <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 overflow-hidden">
-        <h2 className="text-sm font-black text-white px-5 pt-5 pb-3">Provider Performance</h2>
+        <h2 className="text-base font-black text-white px-5 pt-5 pb-3">Provider Performance</h2>
         <div ref={providerScrollRef} id="finance-provider-scroll" className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-[15px]">
             <thead>
               <tr className="border-y border-slate-700/50 bg-slate-800/40">
                 {['Provider', 'Bookings', 'Gross Booking Value', 'Refunds', 'Net Booking Value',
                   'Provider Cost', 'Service Fees', 'Ancillary', 'FareMind Revenue', 'Avg Booking'].map(h => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  <th key={h} className="px-4 py-2.5 text-left text-xs font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
@@ -609,14 +609,14 @@ export default function FinancePage() {
 
       {/* Agent performance */}
       <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 overflow-hidden">
-        <h2 className="text-sm font-black text-white px-5 pt-5 pb-3">Agent Performance</h2>
+        <h2 className="text-base font-black text-white px-5 pt-5 pb-3">Agent Performance</h2>
         <div ref={agentScrollRef} id="finance-agent-scroll" className="overflow-x-auto">
-          <table className="w-full text-sm">
+          <table className="w-full text-[15px]">
             <thead>
               <tr className="border-y border-slate-700/50 bg-slate-800/40">
                 {['Agent', 'Bookings', 'Gross Booking Value', 'Refunds', 'Service Fees',
                   'Ancillary', 'Agent Commission', 'FareMind Revenue', 'Avg Booking'].map(h => (
-                  <th key={h} className="px-4 py-2.5 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+                  <th key={h} className="px-4 py-2.5 text-left text-xs font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
                 ))}
               </tr>
             </thead>
