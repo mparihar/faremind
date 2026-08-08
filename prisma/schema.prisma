@@ -624,6 +624,24 @@ model MasterBooking {
   // Financial — Seat/Ancillary Service Totals
   seatServiceTotal       Decimal?           @map("seat_service_total") @db.Decimal(10, 2)
 
+  // Financial — Agent Commission, snapshotted at book time.
+  //
+  // The AMOUNTS are stored, not just the rates, and the rates are stored
+  // alongside them. Finance reporting has to stay true after the commission
+  // policy changes: if today's share is 50% and next year it becomes 40%, last
+  // year's bookings must keep reporting what was actually owed and paid.
+  // Recomputing historical months from a live config would silently restate
+  // closed periods, which is the one thing a finance dashboard must never do.
+  //
+  // Null means the booking predates commission tracking or had no agent —
+  // distinct from zero, which means an agent booking that earned nothing.
+  agentServiceFeeCommission  Decimal?       @map("agent_service_fee_commission") @db.Decimal(10, 2)
+  agentAncillaryCommission   Decimal?       @map("agent_ancillary_commission") @db.Decimal(10, 2)
+  agentCommissionTotal       Decimal?       @map("agent_commission_total") @db.Decimal(10, 2)
+  /** The percentages applied, e.g. 50.00 — kept so a figure can be explained. */
+  agentServiceFeeRate        Decimal?       @map("agent_service_fee_rate") @db.Decimal(5, 2)
+  agentAncillaryRate         Decimal?       @map("agent_ancillary_rate") @db.Decimal(5, 2)
+
   // Provider
   primaryProvider        String             @default("duffel") @map("primary_provider")
 

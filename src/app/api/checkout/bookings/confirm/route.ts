@@ -18,6 +18,8 @@ import { detectConnectionChanges } from '@/lib/connection-changes';
 import { refundBookingPayment } from '@/lib/booking-refund-client';
 import { classifyRefund, needsAttention, refundQueue } from '@/lib/refund-status';
 import { providerIdOf, providerFromErrorCode } from '@/lib/providers/provider-identity';
+import { agentCommissionFor } from '@/lib/finance/finance-math';
+import { getCommissionRates } from '@/lib/finance/commission-config';
 import { applySegmentTerminals } from '@/lib/terminal';
 
 // ── Duffel API client (direct import for Next.js API route) ──────────────────
@@ -1920,6 +1922,32 @@ export async function POST(req: NextRequest) {
       : mystiflyTicketingOutcome === 'FAILED' ? 'FAILED'
       : 'NOT_STARTED';
 
+    // The agent's share of what WE earn — never of the airline fare. Computed
+    // before the transaction so a config read cannot hold it open, and only for
+    // agent bookings: a direct booking leaves these null, which reports as
+    // "no agent" rather than as an agent who earned zero.
+    const agentCommission = await (async () => {
+      if (!agentUserId) return {};
+      const rates = await getCommissionRates();
+      const c = agentCommissionFor(
+        {
+          serviceFeeAmount: Number(financials.serviceFeeAmount ?? 0),
+          seatServiceTotal: Number(financials.seatServiceTotal ?? 0),
+          travelInsuranceAmount: Number(financials.travelInsuranceAmount ?? 0),
+          priceProtectionAmount: Number(financials.priceProtectionAmount ?? 0),
+          thirdPartyPayableTotal: Number(financials.thirdPartyPayableTotal ?? 0),
+        },
+        rates,
+      );
+      return {
+        agentServiceFeeCommission: c.serviceFeeCommission,
+        agentAncillaryCommission: c.ancillaryCommission,
+        agentCommissionTotal: c.total,
+        agentServiceFeeRate: c.serviceFeeRate,
+        agentAncillaryRate: c.ancillaryRate,
+      };
+    })();
+
     const txResult = await prisma.$transaction(async (tx) => {
       // 1. MasterBooking
       const mb = await tx.masterBooking.create({
@@ -1981,6 +2009,15 @@ export async function POST(req: NextRequest) {
 
           // Financial — Seat/Ancillary
           seatServiceTotal: financials.seatServiceTotal,
+
+          // Financial — Agent commission, computed once and frozen here.
+          //
+          // The AMOUNT is stored, not just the rate, because finance reporting
+          // must stay true after the commission policy changes: if the split
+          // moves from 50% to 40% next year, this booking has to keep reporting
+          // what was actually owed. Recomputing history from live config would
+          // restate closed months.
+          ...agentCommission,
 
           primaryProvider: sourceProvider,
           rawProviderPayload: { sourceFlight: sourceFlight ?? null, sourceRoundTrip: sourceRoundTrip ?? null, routingProvider },
