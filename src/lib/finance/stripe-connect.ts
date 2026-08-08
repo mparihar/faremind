@@ -254,3 +254,48 @@ export async function transferToAgent(params: {
     return { ok: false, transferId: null, amount: null, error: message };
   }
 }
+
+export interface PlatformBalance {
+  /** Transferable right now, in major units. */
+  available: number;
+  /** Settling — not yet transferable, but arriving. */
+  pending: number;
+  currency: string;
+  /** False when Stripe could not be read; the figures are then not trustworthy. */
+  known: boolean;
+}
+
+/**
+ * What the platform can actually transfer today.
+ *
+ * A Connect transfer comes from the Stripe BALANCE, not from a bank account. If
+ * the payout schedule sweeps that balance to the bank daily — Stripe's default —
+ * there may be nothing left to transfer from, and the admin would otherwise
+ * discover that by clicking Pay and failing.
+ *
+ * `pending` is shown alongside because "$0 available, $6,400 pending" is a wait,
+ * whereas "$0 available, $0 pending" is a problem.
+ */
+export async function getPlatformBalance(): Promise<PlatformBalance> {
+  const currency = (process.env.STRIPE_PLATFORM_CURRENCY || 'usd').toLowerCase();
+  try {
+    const b = await getStripe().balance.retrieve();
+    const sum = (rows: Array<{ amount: number; currency: string }> | undefined) =>
+      (rows ?? [])
+        .filter((r) => r.currency?.toLowerCase() === currency)
+        .reduce((s, r) => s + r.amount, 0) / 100;
+
+    return {
+      available: Math.round(sum(b.available) * 100) / 100,
+      pending: Math.round(sum(b.pending) * 100) / 100,
+      currency: currency.toUpperCase(),
+      known: true,
+    };
+  } catch (e) {
+    // Reported as unknown rather than as zero. Showing $0 for a balance we
+    // could not read would push an admin to pay externally when the money was
+    // there all along.
+    console.warn(`[Connect] could not read platform balance: ${(e as Error).message}`);
+    return { available: 0, pending: 0, currency: currency.toUpperCase(), known: false };
+  }
+}

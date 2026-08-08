@@ -9,7 +9,7 @@ import { withAdmin } from '@/lib/admin-rbac';
 import { prisma } from '@/lib/db';
 import { fireNotification } from '@/lib/notify';
 import { auditLog } from '@/lib/admin-auth';
-import { getPayoutAccountState, PLATFORM_COUNTRY } from '@/lib/finance/stripe-connect';
+import { getPayoutAccountState, getPlatformBalance, PLATFORM_COUNTRY } from '@/lib/finance/stripe-connect';
 import {
   agentsDueForPeriod, payAgentCommission, rejectAgentCommission,
 } from '@/lib/finance/agent-commission-payout';
@@ -45,6 +45,11 @@ export const GET = withAdmin(async (req: NextRequest) => {
     payoutAccount: await getPayoutAccountState(a.agentUserId),
   })));
 
+  // Transfers come from the Stripe balance, not from a bank account. Shown
+  // alongside what is owed so the admin can choose platform or external
+  // transfer knowingly, rather than by clicking Pay and failing.
+  const balance = await getPlatformBalance();
+
   const totalDue = agents.reduce((s, a) => s + (a.payout ? 0 : a.dueAmount), 0);
   const totalPaid = agents.reduce((s, a) => s + (a.payout?.status === 'PAID' ? a.payout.paidAmount : 0), 0);
 
@@ -52,6 +57,7 @@ export const GET = withAdmin(async (req: NextRequest) => {
     period,
     agents: withPayoutState,
     platformCountry: PLATFORM_COUNTRY,
+    balance,
     summary: {
       agents: agents.length,
       awaitingDecision: agents.filter(a => !a.payout).length,

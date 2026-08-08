@@ -16,7 +16,7 @@ import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/store/useAdminStore';
 import {
-  ArrowLeft, RefreshCw, CheckCircle2, XCircle, Users, Wallet, Clock, AlertTriangle,
+  ArrowLeft, RefreshCw, CheckCircle2, XCircle, Users, Wallet, Clock, AlertTriangle, Landmark,
 } from 'lucide-react';
 import { format } from 'date-fns';
 
@@ -120,6 +120,7 @@ export default function CommissionPayoutsPage() {
 
   const agents: AgentDue[] = data?.agents ?? [];
   const s = data?.summary;
+  const bal = data?.balance;
   const corrected = modal?.action === 'PAY' && Number(amount) !== modal.agent.dueAmount;
 
   return (
@@ -154,10 +155,22 @@ export default function CommissionPayoutsPage() {
 
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         {[
-          { label: 'Agents', value: String(s?.agents ?? 0), icon: Users, tone: 'border-slate-700/50 bg-slate-800/40' },
-          { label: 'Awaiting decision', value: String(s?.awaitingDecision ?? 0), icon: Clock, tone: 'border-amber-500/25 bg-amber-500/[0.06]' },
-          { label: 'Total outstanding', value: money(s?.totalDue ?? 0), icon: Wallet, tone: 'border-amber-500/25 bg-amber-500/[0.06]' },
-          { label: 'Paid this period', value: money(s?.totalPaid ?? 0), icon: CheckCircle2, tone: 'border-emerald-500/25 bg-emerald-500/[0.06]' },
+          { label: 'Awaiting decision', value: String(s?.awaitingDecision ?? 0), icon: Clock, tone: 'border-amber-500/25 bg-amber-500/[0.06]', sub: `${s?.agents ?? 0} agents this period` },
+          { label: 'Total outstanding', value: money(s?.totalDue ?? 0), icon: Wallet, tone: 'border-amber-500/25 bg-amber-500/[0.06]', sub: 'owed to agents' },
+          {
+            label: 'Stripe balance',
+            value: bal?.known ? money(bal.available) : '—',
+            icon: Landmark,
+            // Amber when it will not cover what is owed — that is the moment to
+            // choose external transfer, and it should read at a glance.
+            tone: !bal?.known ? 'border-slate-700/50 bg-slate-800/40'
+              : bal.available >= (s?.totalDue ?? 0) ? 'border-emerald-500/25 bg-emerald-500/[0.06]'
+              : 'border-amber-500/25 bg-amber-500/[0.06]',
+            sub: !bal?.known ? 'could not read Stripe'
+              : bal.pending > 0 ? `${money(bal.pending)} settling`
+              : 'available to transfer',
+          },
+          { label: 'Paid this period', value: money(s?.totalPaid ?? 0), icon: CheckCircle2, tone: 'border-emerald-500/25 bg-emerald-500/[0.06]', sub: 'settled' },
         ].map(c => (
           <div key={c.label} className={`rounded-2xl border p-4 ${c.tone}`}>
             <div className="flex items-center gap-2 mb-2">
@@ -165,6 +178,7 @@ export default function CommissionPayoutsPage() {
               <p className="text-[10px] font-black text-slate-400 uppercase tracking-wider">{c.label}</p>
             </div>
             <p className="text-2xl font-black text-white tabular-nums">{c.value}</p>
+            {c.sub && <p className="text-[10px] text-slate-500 mt-0.5">{c.sub}</p>}
           </div>
         ))}
       </div>
@@ -293,6 +307,18 @@ export default function CommissionPayoutsPage() {
                     );
                   })}
                 </div>
+
+                {/* Transfers draw on the Stripe balance, not a bank account.
+                    Said here because this is where the choice is made. */}
+                {method === 'STRIPE_CONNECT' && bal?.known && (
+                  <p className={`text-[11px] -mt-2 mb-4 leading-relaxed ${
+                    bal.available >= (Number(amount) || 0) ? 'text-slate-500' : 'text-amber-400'}`}>
+                    Stripe balance available: <span className="font-semibold">{money(bal.available)}</span>
+                    {bal.pending > 0 ? ` (${money(bal.pending)} still settling)` : ''}.
+                    {bal.available < (Number(amount) || 0) &&
+                      ' This does not cover the transfer — top up the balance or pay externally.'}
+                  </p>
+                )}
 
                 {/* Why the platform option is unavailable, before it is picked
                     rather than after it fails. */}
