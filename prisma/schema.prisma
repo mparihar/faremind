@@ -43,6 +43,7 @@ model User {
   servicePayments ServicePayment[]
   limitOrders     LimitOrder[]
   agentWallet     AgentWallet?
+  commissionEntries AgentCommissionEntry[]
 
   @@map("users")
 }
@@ -112,6 +113,64 @@ model AgentWallet {
 
   @@index([status])
   @@map("agent_wallets")
+}
+
+/**
+ * What FareMind owes an agent for the business they brought.
+ *
+ * Deliberately NOT the AgentWallet. That wallet is the agent's own money, put in
+ * to pay for bookings — spendable the moment it lands. Commission is money we
+ * owe them, accrued as bookings are paid for and settled on a payout cycle.
+ * Crediting it into the spending wallet would let an agent book flights with
+ * commission that has not been settled, and would make the wallet balance
+ * impossible to reconcile against what they actually paid in.
+ *
+ * An append-only ledger rather than a running total: a balance column drifts the
+ * first time two writes race, and "why is my balance $840" has to be answerable
+ * booking by booking. The balance is the sum of the entries.
+ */
+model AgentCommissionEntry {
+  id          String   @id @default(cuid())
+  agentUserId String   @map("agent_user_id")
+
+  /** One accrual per booking — the unique constraint is the idempotency guard. */
+  bookingId   String?  @unique @map("booking_id")
+
+  /** ACCRUED | REVERSED | PAID_OUT | ADJUSTMENT */
+  entryType   String   @map("entry_type")
+
+  /** Signed: positive credits the agent, negative takes it back. */
+  amount      Decimal  @db.Decimal(12, 2)
+  currency    String   @default("USD")
+
+  /** The split that produced it, so a figure can explain itself years later. */
+  serviceFeeCommission Decimal? @map("service_fee_commission") @db.Decimal(12, 2)
+  ancillaryCommission  Decimal? @map("ancillary_commission") @db.Decimal(12, 2)
+  serviceFeeRate       Decimal? @map("service_fee_rate") @db.Decimal(5, 2)
+  ancillaryRate        Decimal? @map("ancillary_rate") @db.Decimal(5, 2)
+
+  /** PENDING until a payout run settles it, then PAID. */
+  status      String   @default("PENDING")
+  payoutRef   String?  @map("payout_ref")
+  paidAt      DateTime? @map("paid_at")
+
+  /**
+   * When the money was earned — the payment capture, not the row write. Payout
+   * periods are cut on this, so a booking paid on 31 Jan belongs to January
+   * even if the ledger row lands seconds into February.
+   */
+  earnedAt    DateTime @map("earned_at")
+
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  agent   User @relation(fields: [agentUserId], references: [id], onDelete: Cascade)
+
+  @@index([agentUserId, earnedAt])
+  @@index([status])
+  @@index([earnedAt])
+  @@map("agent_commission_entries")
 }
 
 model AgentWalletHistory {

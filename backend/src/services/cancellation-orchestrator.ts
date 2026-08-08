@@ -17,6 +17,7 @@ import { backfillEticketsFromTripDetails } from '../lib/eticket-backfill';
 import { fireNotification } from '../lib/notify';
 import Stripe from 'stripe';
 import { randomBytes } from 'crypto';
+import { reverseCommission } from '../lib/finance/agent-commission-ledger';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -346,6 +347,15 @@ export async function initiateCancellation(
     providerResponse: providerResult.raw as object,
     status: 'CANCEL_CONFIRMED',
   } as any);
+
+  // The booking is being refunded, so the agent's commission on it is taken
+  // back. Written as an opposing ledger entry rather than by deleting the
+  // accrual — the agent's statement has to show that they earned it and that it
+  // was reversed. Commission already paid out is left alone and logged for a
+  // human; silently clawing settled money out of a future payout is how agents
+  // stop trusting the number.
+  await reverseCommission({ bookingId, reason: `Booking refunded (${cancel.id})` })
+    .catch((e) => console.warn(`[Cancellation] commission reversal failed for ${bookingId}: ${e.message}`));
 
   // ── Step 7: Create BookingRefund with reimbursement tracking ───────
   const idempotencyKey = generateIdempotencyKey('customer-refund', bookingId, cancel.id);

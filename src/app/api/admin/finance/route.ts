@@ -125,6 +125,22 @@ export const GET = withAdmin(async (req: NextRequest) => {
     refundByBooking.set(r.bookingId, (refundByBooking.get(r.bookingId) ?? 0) + Number(r.amount ?? 0));
   }
 
+  // Failed bookings are refunded through the failure-audit path, not through
+  // BookingRefund — the booking never got far enough to have a cancellation.
+  // Reading only one source under-reports refunds by exactly the money we give
+  // back when a booking dies, which is the case most worth seeing.
+  const auditRefunds = await prisma.bookingFailureAudit.aggregate({
+    where: {
+      createdAt: yearRange,
+      refundStatus: { in: ['REFUND_ISSUED', 'ALREADY_REFUNDED'] },
+      ...(provider ? { provider: { equals: provider, mode: 'insensitive' } } : {}),
+    },
+    _sum: { refundAmount: true },
+    _count: true,
+  }).catch(() => ({ _sum: { refundAmount: null }, _count: 0 }));
+
+  const failedBookingRefunds = Number(auditRefunds._sum.refundAmount ?? 0);
+
   // ── Monthly series, so the chart and the KPI cards agree by construction ──
   const monthly: FinanceTotals[] = [];
   for (let m = 1; m <= 12; m++) {
@@ -198,8 +214,11 @@ export const GET = withAdmin(async (req: NextRequest) => {
     providers,
     agents,
     refunds: {
-      total: current.refunds,
-      refundedBookings: refundedInPeriod,
+      // Both sources, so the figure is what customers actually got back.
+      total: Math.round((current.refunds + failedBookingRefunds) * 100) / 100,
+      onBookings: current.refunds,
+      onFailedBookings: failedBookingRefunds,
+      refundedBookings: refundedInPeriod + auditRefunds._count,
       rate: refundRate(refundedInPeriod, current.bookings),
     },
     // Said out loud rather than rendered as $0, which would read as "free".

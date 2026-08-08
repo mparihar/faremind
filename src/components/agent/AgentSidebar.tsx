@@ -22,6 +22,7 @@ import {
   HelpCircle,
   CreditCard,
   Target,
+  Wallet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -38,6 +39,7 @@ const AGENT_NAV = [
   { href: '/agent/cancellations', label: 'Cancellations', icon: XCircle },
   { href: '/agent/refunds', label: 'Refunds & Credits', icon: CreditCard },
   { href: '/agent/make-payment', label: 'Make a Payment', icon: CreditCard },
+  { href: '/agent/commission', label: 'My Commission', icon: Wallet },
   { href: '/agent/duffel-assistant', label: 'Duffel Assistant', icon: MessageCircle },
   { href: '/agent/limit-orders', label: 'Limit Orders', icon: Target },
   { href: '/agent/notifications', label: 'Notifications', icon: Bell },

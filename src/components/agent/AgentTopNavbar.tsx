@@ -17,6 +17,7 @@ import {
   Menu,
   X,
   Headphones,
+  Wallet,
 } from 'lucide-react';
 import { cn } from '@/lib/utils';
 import { useAuthStore } from '@/store/useAuthStore';
@@ -33,6 +34,7 @@ const PRIMARY_NAV = [
 const DROPDOWN_NAV = [
   { href: '/agent/passenger-updates', label: 'Passenger Updates', icon: UserCog },
   { href: '/agent/cancellations', label: 'Cancellation Requests', icon: XCircle },
+  { href: '/agent/commission', label: 'My Commission', icon: Wallet },
   { href: '/agent/notifications', label: 'Notifications', icon: Bell },
   { href: '/agent/profile', label: 'Profile', icon: User },
 ];

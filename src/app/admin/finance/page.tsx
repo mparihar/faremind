@@ -27,6 +27,7 @@ import {
 } from 'lucide-react';
 import { PROVIDERS, providerLabel } from '@/lib/providers/provider-identity';
 import HScrollbar from '@/components/ui/HScrollbar';
+import { format } from 'date-fns';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
   'July', 'August', 'September', 'October', 'November', 'December'];
@@ -161,6 +162,234 @@ function TrendChart({ monthly, selected, onSelect }: {
           </span>
         ))}
       </div>
+    </div>
+  );
+}
+
+/**
+ * The agent commission split, editable here rather than in code.
+ *
+ * States plainly that a change applies to new bookings only. An admin editing
+ * this needs to know it will not restate last month's payouts — that guarantee
+ * is the whole reason the rate is snapshotted onto each booking, and a settings
+ * box that stays silent about it invites exactly the wrong assumption.
+ */
+function CommissionSettings() {
+  const [rates, setRates] = useState<{ serviceFeeRate: number; ancillaryRate: number } | null>(null);
+  const [draft, setDraft] = useState({ serviceFeeRate: '', ancillaryRate: '' });
+  const [saving, setSaving] = useState(false);
+  const [msg, setMsg] = useState<{ ok: boolean; text: string } | null>(null);
+
+  useEffect(() => {
+    adminFetch('/api/admin/finance/commission-rates')
+      .then(r => r.ok ? r.json() : null)
+      .then(d => {
+        if (!d) return;
+        setRates(d);
+        setDraft({ serviceFeeRate: String(d.serviceFeeRate), ancillaryRate: String(d.ancillaryRate) });
+      })
+      .catch(() => {});
+  }, []);
+
+  async function save() {
+    setSaving(true); setMsg(null);
+    try {
+      const res = await adminFetch('/api/admin/finance/commission-rates', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          serviceFeeRate: Number(draft.serviceFeeRate),
+          ancillaryRate: Number(draft.ancillaryRate),
+        }),
+      });
+      const d = await res.json();
+      if (res.ok) { setRates(d); setMsg({ ok: true, text: 'Saved — applies to new bookings.' }); }
+      else setMsg({ ok: false, text: d.error ?? 'Could not save.' });
+    } catch {
+      setMsg({ ok: false, text: 'Could not reach the server.' });
+    }
+    setSaving(false);
+  }
+
+  const dirty = rates != null &&
+    (Number(draft.serviceFeeRate) !== rates.serviceFeeRate || Number(draft.ancillaryRate) !== rates.ancillaryRate);
+
+  return (
+    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 p-5">
+      <div className="flex items-center gap-2 mb-1">
+        <Users size={14} className="text-amber-400" />
+        <h2 className="text-sm font-black text-white">Agent Commission</h2>
+      </div>
+      <p className="text-[11px] text-slate-500 mb-4">
+        The agent&apos;s share of what FareMind earns — service/platform fees and ancillary upsells.
+        Never a share of the airline fare. Changes apply to <span className="text-slate-300 font-semibold">new bookings only</span>;
+        every existing booking keeps the rate it was booked at.
+      </p>
+
+      <div className="flex flex-wrap items-end gap-4">
+        {([
+          ['serviceFeeRate', 'Service / platform fee'],
+          ['ancillaryRate', 'Ancillary & upsells'],
+        ] as const).map(([key, label]) => (
+          <div key={key}>
+            <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">{label}</label>
+            <div className="flex items-center gap-1.5">
+              <input
+                type="number" min={0} max={100} step={0.5}
+                value={draft[key]}
+                onChange={e => setDraft(d => ({ ...d, [key]: e.target.value }))}
+                className="w-24 px-3 py-2 bg-slate-900 border border-slate-700 rounded-xl text-white text-sm tabular-nums focus:outline-none focus:border-[#1ABC9C]"
+              />
+              <span className="text-slate-500 text-sm font-bold">%</span>
+            </div>
+          </div>
+        ))}
+        <button
+          onClick={save}
+          disabled={saving || !dirty}
+          className={`px-4 py-2 rounded-xl text-sm font-bold transition-all border ${
+            dirty && !saving
+              ? 'bg-[#1ABC9C]/10 border-[#1ABC9C]/30 text-[#1ABC9C] hover:bg-[#1ABC9C]/20'
+              : 'bg-slate-800 border-slate-700 text-slate-600 cursor-not-allowed'}`}
+        >
+          {saving ? 'Saving…' : 'Save'}
+        </button>
+        {msg && (
+          <span className={`text-xs font-semibold ${msg.ok ? 'text-emerald-400' : 'text-red-400'}`}>{msg.text}</span>
+        )}
+      </div>
+
+      {/* A worked example, because a percentage on its own does not say what it
+          is a percentage OF — and the answer is the one thing people get wrong. */}
+      {rates && (
+        <p className="text-[11px] text-slate-500 mt-4 leading-relaxed">
+          On a booking with a <span className="text-slate-300">$20</span> service fee, the agent earns{' '}
+          <span className="text-amber-400 font-semibold">{money(20 * rates.serviceFeeRate / 100, 2)}</span> and FareMind keeps{' '}
+          <span className="text-[#1ABC9C] font-semibold">{money(20 - 20 * rates.serviceFeeRate / 100, 2)}</span>.
+          Commission accrues to the agent&apos;s commission account when the customer&apos;s payment is captured,
+          and is settled on the monthly payout cycle.
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The rows behind the totals.
+ *
+ * A dashboard figure nobody can decompose is one people stop trusting the first
+ * time it looks wrong, so every KPI above is reachable down to the bookings that
+ * produced it — what the customer paid, what went to the airline, what we kept,
+ * what the agent earned and at what rate.
+ */
+function Ledger({ year, month, provider, agentsOnly }: {
+  year: number; month: number; provider: string; agentsOnly: boolean;
+}) {
+  const [rows, setRows] = useState<any[]>([]);
+  const [pagination, setPagination] = useState<any>(null);
+  const [page, setPage] = useState(1);
+  const [search, setSearch] = useState('');
+  const [loading, setLoading] = useState(true);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  // Any filter change resets to page 1 — staying on page 4 of a set that now
+  // has two pages shows an empty table and reads as "no data".
+  useEffect(() => { setPage(1); }, [year, month, provider, agentsOnly, search]);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    const qs = new URLSearchParams({ year: String(year), month: String(month), page: String(page), limit: '25' });
+    if (provider) qs.set('provider', provider);
+    if (agentsOnly) qs.set('agentUserId', 'AGENTS');
+    if (search) qs.set('q', search);
+    adminFetch(`/api/admin/finance/ledger?${qs}`)
+      .then(r => r.ok ? r.json() : null)
+      .then(d => { if (!cancelled && d) { setRows(d.ledger ?? []); setPagination(d.pagination ?? null); } })
+      .catch(() => {})
+      .finally(() => { if (!cancelled) setLoading(false); });
+    return () => { cancelled = true; };
+  }, [year, month, provider, agentsOnly, search, page]);
+
+  const COLS = ['Booking', 'Booked', 'Customer', 'Provider', 'Agent', 'Route',
+    'Gross', 'Provider Cost', 'Service Fee', 'Ancillary', 'Agent Comm.',
+    'FareMind Net', 'Refund', 'Status'];
+
+  return (
+    <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 overflow-hidden">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-5 pt-5 pb-3">
+        <h2 className="text-sm font-black text-white">Financial Transactions</h2>
+        <input
+          value={search}
+          onChange={e => setSearch(e.target.value)}
+          placeholder="Booking ref, PNR, customer, agent…"
+          className="px-3 py-2 w-72 max-w-full bg-slate-900 border border-slate-700 rounded-xl text-white placeholder-slate-600 text-xs focus:outline-none focus:border-[#1ABC9C]"
+        />
+      </div>
+      <div ref={scrollRef} id="finance-ledger-scroll" className="overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="border-y border-slate-700/50 bg-slate-800/40">
+              {COLS.map(h => (
+                <th key={h} className="px-4 py-2.5 text-left text-[10px] font-black text-slate-500 uppercase tracking-wider whitespace-nowrap">{h}</th>
+              ))}
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((r: any) => (
+              <tr key={r.bookingReference} className="border-b border-slate-700/30 hover:bg-slate-800/40 transition-colors">
+                <td className="px-4 py-3 font-mono text-[#1ABC9C] font-bold whitespace-nowrap">{r.bookingReference}</td>
+                <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{format(new Date(r.bookedAt), 'd MMM')}</td>
+                <td className="px-4 py-3 text-slate-300 truncate max-w-[140px]">{r.customer ?? '—'}</td>
+                <td className="px-4 py-3 text-slate-400 whitespace-nowrap">{r.provider}</td>
+                <td className="px-4 py-3 text-slate-400 truncate max-w-[120px]">{r.agent ?? '—'}</td>
+                <td className="px-4 py-3 text-slate-300 whitespace-nowrap">{r.route}</td>
+                <td className="px-4 py-3 text-white font-semibold tabular-nums whitespace-nowrap">{money(r.grossAmount, 2)}</td>
+                <td className="px-4 py-3 text-slate-400 tabular-nums whitespace-nowrap">{money(r.providerCost, 2)}</td>
+                <td className="px-4 py-3 text-slate-300 tabular-nums whitespace-nowrap">{money(r.serviceFee, 2)}</td>
+                <td className="px-4 py-3 text-slate-300 tabular-nums whitespace-nowrap">{money(r.ancillary, 2)}</td>
+                <td className="px-4 py-3 text-amber-400 tabular-nums whitespace-nowrap">
+                  {r.agentCommission == null ? '—' : money(r.agentCommission, 2)}
+                </td>
+                <td className="px-4 py-3 text-[#1ABC9C] font-bold tabular-nums whitespace-nowrap">{money(r.fareMindNet, 2)}</td>
+                <td className="px-4 py-3 text-red-400 tabular-nums whitespace-nowrap">
+                  {r.refundAmount > 0 ? money(r.refundAmount, 2) : '—'}
+                </td>
+                <td className="px-4 py-3">
+                  <span className="inline-block px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-700/50 text-slate-300 whitespace-nowrap">
+                    {r.bookingStatus}
+                  </span>
+                </td>
+              </tr>
+            ))}
+            {rows.length === 0 && !loading && (
+              <tr><td colSpan={COLS.length} className="px-4 py-10 text-center text-slate-500 text-sm">
+                No transactions match these filters.
+              </td></tr>
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="px-5 pb-1">
+        <HScrollbar targetRef={scrollRef} controlsId="finance-ledger-scroll" tone="dark" label="Scroll ledger" />
+      </div>
+      {pagination && pagination.pages > 1 && (
+        <div className="flex items-center justify-between px-5 py-3 border-t border-slate-700/50">
+          <span className="text-xs text-slate-500">
+            Page {pagination.page} of {pagination.pages} · {pagination.total} transactions
+          </span>
+          <div className="flex items-center gap-2">
+            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
+              className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-slate-300 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:text-white transition-all">
+              Previous
+            </button>
+            <button onClick={() => setPage(p => Math.min(pagination.pages, p + 1))} disabled={page >= pagination.pages}
+              className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-slate-300 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:text-white transition-all">
+              Next
+            </button>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
@@ -334,6 +563,8 @@ export default function FinancePage() {
         </div>
       </div>
 
+      <CommissionSettings />
+
       {/* Provider performance */}
       <div className="rounded-2xl border border-slate-700/50 bg-slate-800/40 overflow-hidden">
         <h2 className="text-sm font-black text-white px-5 pt-5 pb-3">Provider Performance</h2>
@@ -410,6 +641,8 @@ export default function FinancePage() {
         </div>
         <div className="px-5 pb-2"><HScrollbar targetRef={agentScrollRef} controlsId="finance-agent-scroll" tone="dark" label="Scroll agent table" /></div>
       </div>
+
+      <Ledger year={year} month={month} provider={provider} agentsOnly={tab === 'agents'} />
 
       {/* Empty months still render every card at $0 — a blank page reads as
           broken, which is exactly how the old $0 dashboard read. */}

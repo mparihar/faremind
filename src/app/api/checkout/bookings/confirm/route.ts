@@ -20,6 +20,7 @@ import { classifyRefund, needsAttention, refundQueue } from '@/lib/refund-status
 import { providerIdOf, providerFromErrorCode } from '@/lib/providers/provider-identity';
 import { agentCommissionFor } from '@/lib/finance/finance-math';
 import { getCommissionRates } from '@/lib/finance/commission-config';
+import { accrueCommission } from '@/lib/finance/agent-commission-ledger';
 import { applySegmentTerminals } from '@/lib/terminal';
 
 // ── Duffel API client (direct import for Next.js API route) ──────────────────
@@ -1926,6 +1927,7 @@ export async function POST(req: NextRequest) {
     // before the transaction so a config read cannot hold it open, and only for
     // agent bookings: a direct booking leaves these null, which reports as
     // "no agent" rather than as an agent who earned zero.
+    let agentCommissionDetail: Awaited<ReturnType<typeof agentCommissionFor>> | null = null;
     const agentCommission = await (async () => {
       if (!agentUserId) return {};
       const rates = await getCommissionRates();
@@ -1939,6 +1941,7 @@ export async function POST(req: NextRequest) {
         },
         rates,
       );
+      agentCommissionDetail = c;
       return {
         agentServiceFeeCommission: c.serviceFeeCommission,
         agentAncillaryCommission: c.ancillaryCommission,
@@ -2604,6 +2607,23 @@ export async function POST(req: NextRequest) {
       } catch (feeErr) {
         // Don't block booking creation if fee snapshot fails
         console.error('[booking] ⚠️ Commercial charge snapshot failed (non-blocking):', feeErr);
+      }
+
+      // Credit the agent's commission account, inside the same transaction as
+      // the booking. The customer's payment is already captured by this point,
+      // which is what the commission is earned against; running it here means a
+      // booking that rolls back cannot leave a credit behind, and a credit that
+      // fails cannot leave a paid booking unpersisted.
+      if (agentUserId && agentCommissionDetail) {
+        await accrueCommission({
+          agentUserId,
+          bookingId: mb.id,
+          bookingReference: masterBookingReference,
+          commission: agentCommissionDetail,
+          currency: currency ?? 'USD',
+          earnedAt: new Date(),
+          tx,
+        });
       }
 
       return { mb, pnrResult };
