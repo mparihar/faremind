@@ -14,6 +14,7 @@
 
 import Stripe from 'stripe';
 import { prisma } from '../lib/db';
+import { fireNotification } from '../lib/notify';
 
 const stripe = new Stripe(process.env.STRIPE_SECRET_KEY || '', { typescript: true });
 
@@ -87,9 +88,62 @@ export async function chargeOriginalCard(
   }
 }
 
-/** Refund a previously created collection charge (best-effort caller logging). */
-export async function refundCollection(chargeId: string): Promise<void> {
-  await stripe.refunds.create({ payment_intent: chargeId });
+// The bare refundCollection() that used to live here has been removed. It
+// issued a Stripe refund and did nothing else — no BookingRefund row, no
+// timeline entry, no ServicePayment update, no email — and it had no callers
+// left. Keeping an unaudited refund helper around is an invitation to wire it up
+// in a hurry and silently return money to a customer nobody tells.
+// Use refundCollectionWithAudit below.
+
+/**
+ * The email for a reversed servicing collection.
+ *
+ * Says what it is refunding and why, because "we have refunded you $120" against
+ * a booking the customer still holds reads as a mistake unless it names the
+ * reissue that failed.
+ */
+async function notifyCollectionReversed(params: {
+  bookingId: string;
+  amount: number | null;
+  currency: string;
+  reason: string;
+  stripeRefundId: string;
+  bookingRef?: string;
+}): Promise<void> {
+  try {
+    const booking = await prisma.masterBooking.findUnique({
+      where: { id: params.bookingId },
+      select: {
+        masterBookingReference: true, customerEmail: true, customerName: true,
+        airlinePnr: true, masterPnr: true, originAirport: true, destinationAirport: true,
+        agentEmail: true, agentName: true,
+      },
+    });
+
+    await fireNotification({
+      event_type: 'REFUND_ISSUED' as any,
+      booking_id: params.bookingId,
+      customer_email: booking?.customerEmail ?? undefined,
+      data: {
+        customer_name: booking?.customerName?.split(' ')[0] || 'Traveler',
+        booking_reference: booking?.masterBookingReference ?? params.bookingRef ?? null,
+        airline_pnr: booking?.airlinePnr ?? null,
+        mystifly_ref: booking?.masterPnr ?? null,   // internal recipients only
+        route: booking ? `${booking.originAirport} → ${booking.destinationAirport}` : null,
+        refund_amount: params.amount != null ? `${params.currency} ${params.amount.toFixed(2)}` : 'The amount collected',
+        refund_reference: params.stripeRefundId,
+        // Names the servicing action, so the refund is not mistaken for the
+        // booking itself being cancelled.
+        refund_timeline: `This reverses the amount collected for a booking change, because ${params.reason}. ` +
+          `Your original booking is unaffected. It can take 5–10 business days to appear on your statement.`,
+        agent_email: booking?.agentEmail ?? null,
+        agent_name: booking?.agentName ?? null,
+      },
+    });
+  } catch (e: any) {
+    // A refund that happened must never be undone by a mail failure.
+    console.warn(`[collect-refund] notification failed for ${params.bookingId}: ${e?.message}`);
+  }
 }
 
 export interface CollectionRefundResult {
@@ -103,11 +157,12 @@ export interface CollectionRefundResult {
  * Give back a collection we took for a servicing action that then failed — e.g. the
  * airline refused the reissue we had already charged for.
  *
- * The bare refundCollection() above issues the Stripe refund and nothing else, so a
- * reversed collection left no BookingRefund, no timeline entry and a ServicePayment
- * still reading SUCCEEDED, and a refund that itself failed was only console.error'd —
- * the customer stayed charged with nobody told. This records the reversal the same way
- * a cancellation refund is recorded, and escalates loudly when it cannot be made.
+ * This replaced a bare refundCollection() that issued the Stripe refund and
+ * nothing else: a reversed collection left no BookingRefund, no timeline entry
+ * and a ServicePayment still reading SUCCEEDED, and a refund that itself failed
+ * was only console.error'd — the customer stayed charged with nobody told. This
+ * records the reversal the way a cancellation refund is recorded, emails the
+ * customer, agent and support, and escalates loudly when it cannot be made.
  *
  * Refunds the whole PaymentIntent (Stripe's default with no `amount`), which is exactly
  * what the customer paid for the servicing action: fare difference plus service fee.
@@ -158,6 +213,25 @@ export async function refundCollectionWithAudit(params: {
         payloadJson: { stripeRefundId: stripeRefund.id, amount, chargeId } as any,
       },
     }).catch(() => {});
+
+    // Tell the customer their money is coming back.
+    //
+    // This path recorded the reversal thoroughly — BookingRefund, timeline,
+    // ServicePayment — and told nobody. A customer charged a fare difference for
+    // a reissue the airline then refused got that money back in silence, and the
+    // agent and support learned about it from a statement.
+    //
+    // NOT a commission reversal: this reverses a SERVICING collection, not the
+    // booking. The original booking still stands, and the agent's commission on
+    // it was earned and remains earned.
+    await notifyCollectionReversed({
+      bookingId,
+      amount,
+      currency,
+      reason,
+      stripeRefundId: stripeRefund.id,
+      bookingRef: params.bookingRef,
+    });
 
     console.log(`[collect-refund] refunded ${chargeId} (${amount ?? '?'} ${currency}) — ${reason}`);
     return { refunded: true, amount, stripeRefundId: stripeRefund.id };
