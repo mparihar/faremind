@@ -1,6 +1,6 @@
 'use client';
 
-import React, { useEffect, useState, useCallback } from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch, useAdminStore } from '@/store/useAdminStore';
 import {
@@ -12,6 +12,7 @@ import {
 import { format, formatDistanceToNow } from 'date-fns';
 import { classifyRefund, refundLabel, type RefundFacts } from '@/lib/refund-status';
 import { PROVIDERS, providerLabel, type ProviderId } from '@/lib/providers/provider-identity';
+import HScrollbar from '@/components/ui/HScrollbar';
 
 type TicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CUSTOMER' | 'ESCALATED' | 'RESOLVED' | 'CLOSED';
@@ -185,6 +186,7 @@ export default function SupportQueuePage() {
   const [statusFilter, setStatusFilter] = useState<TicketStatus | ''>('');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | ''>('');
   const [providerFilter, setProviderFilter] = useState<ProviderId | ''>('');
+  const tableScrollRef = useRef<HTMLDivElement>(null);
   const [activeTab, setActiveTab] = useState('all');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -516,6 +518,10 @@ export default function SupportQueuePage() {
 
       {/* Tickets table */}
       <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden min-h-[400px]">
+        {/* The card clipped its own table: overflow-hidden with no scrolling
+            child, so the right-hand columns were unreachable rather than merely
+            off-screen. */}
+        <div ref={tableScrollRef} id="admin-support-table-scroll" className="overflow-x-auto">
         <table className="w-full">
           <thead>
             <tr className="border-b border-slate-700/50">
@@ -834,6 +840,15 @@ export default function SupportQueuePage() {
             )}
           </tbody>
         </table>
+        </div>
+        <div className="px-5 pb-2">
+          <HScrollbar
+            targetRef={tableScrollRef}
+            controlsId="admin-support-table-scroll"
+            label="Scroll support queue horizontally"
+            tone="dark"
+          />
+        </div>
       </div>
 
       {/* Create Ticket Modal */}

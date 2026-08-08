@@ -26,11 +26,24 @@ import React, { useCallback, useEffect, useRef, useState } from 'react';
  * The element is now always rendered and merely hidden when there is nothing to
  * scroll. Measurement never depends on the outcome of measurement.
  */
+
+/**
+ * The track and thumb have to be visible against the surface they sit on. The
+ * original light-only colours disappeared completely on the admin console's
+ * slate-900 tables — the bar was there, doing nothing anyone could see, which is
+ * the same failure as having no bar at all.
+ */
+const TONES = {
+  light: { track: 'bg-slate-200', thumb: 'bg-slate-400 hover:bg-slate-500 active:bg-slate-600' },
+  dark:  { track: 'bg-slate-700/50', thumb: 'bg-slate-500 hover:bg-slate-400 active:bg-[#1ABC9C]' },
+} as const;
+
 export default function HScrollbar({
   targetRef,
   className = '',
   label = 'Scroll',
   controlsId,
+  tone = 'light',
 }: {
   targetRef: React.RefObject<HTMLElement | null>;
   className?: string;
@@ -38,7 +51,10 @@ export default function HScrollbar({
   /** id of the scrolling element, for aria-controls. Passed rather than read
    *  off the ref, which is not safe to touch during render. */
   controlsId?: string;
+  /** Match the surface underneath — the console tables are dark. */
+  tone?: keyof typeof TONES;
 }) {
+  const colors = TONES[tone];
   const trackRef = useRef<HTMLDivElement>(null);
   const dragRef = useRef<{ pointerId: number; startX: number; startScroll: number } | null>(null);
   const [{ thumbWidth, thumbLeft, overflows, percent }, setMetrics] = useState({
@@ -189,7 +205,7 @@ export default function HScrollbar({
       }}
       // Collapsed to zero height when idle so it leaves no dead strip under the
       // row; width is unaffected, so it still measures correctly.
-      className={`relative w-full rounded-full bg-slate-200 transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1ABC9C] ${
+      className={`relative w-full rounded-full ${colors.track} transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-[#1ABC9C] ${
         overflows ? 'mt-1 h-2.5 opacity-100 cursor-pointer' : 'mt-0 h-0 pointer-events-none opacity-0'
       } ${className}`}
     >
@@ -199,7 +215,7 @@ export default function HScrollbar({
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
         style={{ width: `${thumbWidth}px`, transform: `translateX(${thumbLeft}px)` }}
-        className="absolute top-0 left-0 h-full rounded-full bg-slate-400 hover:bg-slate-500 active:bg-slate-600 transition-colors touch-none"
+        className={`absolute top-0 left-0 h-full rounded-full ${colors.thumb} transition-colors touch-none`}
       />
     </div>
   );

@@ -14,6 +14,7 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import BookedDateSort, { type BookedSortOrder } from '@/components/bookings/BookedDateSort';
+import HScrollbar from '@/components/ui/HScrollbar';
 import { PROVIDERS as PROVIDER_IDS, providerLabel } from '@/lib/providers/provider-identity';
 
 // '' is the "All" option; the rest come from the one place providers are named.
@@ -284,6 +285,7 @@ export default function AdminBookingsPage() {
   const [dateFrom, setDateFrom] = useState('');
   const [dateTo, setDateTo]     = useState('');
   const [showFilters, setShowFilters] = useState(false);
+  const tableScrollRef = useRef<HTMLDivElement>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
   const limit = 20;
@@ -501,7 +503,7 @@ export default function AdminBookingsPage() {
 
       {/* Table */}
       <div className="bg-slate-800/50 border border-slate-700/50 rounded-2xl overflow-hidden">
-        <div className="overflow-x-auto">
+        <div ref={tableScrollRef} id="admin-bookings-table-scroll" className="overflow-x-auto">
           <table className="w-full text-sm">
             <thead>
               {table.getHeaderGroups().map(hg => (
@@ -549,6 +551,19 @@ export default function AdminBookingsPage() {
               )}
             </tbody>
           </table>
+        </div>
+
+        {/* The table is wider than the screen — Payment, Ticketing and the row
+            actions sit past the right edge. It scrolled already, but the native
+            bar is an auto-hiding overlay on most machines, so the columns read
+            as simply missing. This draws a real one. */}
+        <div className="px-5 pb-1">
+          <HScrollbar
+            targetRef={tableScrollRef}
+            controlsId="admin-bookings-table-scroll"
+            label="Scroll bookings table horizontally"
+            tone="dark"
+          />
         </div>
 
         {/* Pagination */}
