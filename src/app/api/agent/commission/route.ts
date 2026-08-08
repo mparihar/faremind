@@ -56,8 +56,26 @@ export const GET = withAgentServicing(async (req: NextRequest, { agent }) => {
     : [];
   const byId = new Map(bookings.map(b => [b.id, b]));
 
+  // Whether this month has been settled, so the agent sees "Paid on 3 Sep"
+  // rather than a pile of entries they cannot tell the status of. A withheld
+  // month is shown as withheld with its reason — silence there reads as a
+  // system that forgot them.
+  const payout = month >= 1 && month <= 12
+    ? await prisma.agentCommissionPayout.findUnique({
+        where: { agentUserId_periodYear_periodMonth: { agentUserId, periodYear: year, periodMonth: month } },
+        select: { status: true, paidAmount: true, systemAmount: true, reason: true, decidedAt: true },
+      }).catch(() => null)
+    : null;
+
   return NextResponse.json({
     period: { year, month },
+    payout: payout ? {
+      status: payout.status,
+      paidAmount: Number(payout.paidAmount),
+      systemAmount: Number(payout.systemAmount),
+      reason: payout.reason,
+      decidedAt: payout.decidedAt,
+    } : null,
     /** What we owe right now, across all time. */
     pending: lifetime.pending,
     paid: lifetime.paid,

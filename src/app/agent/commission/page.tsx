@@ -124,6 +124,43 @@ export default function AgentCommissionPage() {
         </div>
       </div>
 
+      {/* Whether this month has been settled. Without it an agent is looking at
+          a list of amounts with no way to tell what has actually been paid. */}
+      {data?.payout && (
+        <div className={`flex items-start gap-2.5 px-4 py-3 rounded-xl border ${
+          data.payout.status === 'PAID'
+            ? 'bg-emerald-500/[0.07] border-emerald-500/25'
+            : 'bg-amber-500/[0.07] border-amber-500/25'}`}>
+          {data.payout.status === 'PAID'
+            ? <CheckCircle2 size={15} className="text-emerald-400 shrink-0 mt-0.5" />
+            : <Clock size={15} className="text-amber-400 shrink-0 mt-0.5" />}
+          <div>
+            {data.payout.status === 'PAID' ? (
+              <>
+                <p className="text-sm font-bold text-emerald-300">
+                  {MONTHS[month - 1]} {year} paid — {money(data.payout.paidAmount)}
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  Settled on {format(new Date(data.payout.decidedAt), 'd MMMM yyyy')}.
+                  {data.payout.paidAmount !== data.payout.systemAmount && (
+                    <> Adjusted from {money(data.payout.systemAmount)}{data.payout.reason ? ` — ${data.payout.reason}` : ''}.</>
+                  )}
+                </p>
+              </>
+            ) : (
+              <>
+                <p className="text-sm font-bold text-amber-300">
+                  {MONTHS[month - 1]} {year} payout on hold
+                </p>
+                <p className="text-[11px] text-slate-400 mt-0.5">
+                  {data.payout.reason ?? 'Held for review.'} This commission remains owed to you and carries into the next payout.
+                </p>
+              </>
+            )}
+          </div>
+        </div>
+      )}
+
       {/* The distinction that matters most, said before they go looking for the
           money in the wrong place. */}
       <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-slate-800/40 border border-slate-700/50">

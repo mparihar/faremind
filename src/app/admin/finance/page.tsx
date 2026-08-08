@@ -266,8 +266,11 @@ function CommissionSettings() {
           On a booking with a <span className="text-slate-300">$20</span> service fee, the agent earns{' '}
           <span className="text-amber-400 font-semibold">{money(20 * rates.serviceFeeRate / 100, 2)}</span> and FareMind keeps{' '}
           <span className="text-[#1ABC9C] font-semibold">{money(20 - 20 * rates.serviceFeeRate / 100, 2)}</span>.
-          Commission accrues to the agent&apos;s commission account when the customer&apos;s payment is captured,
-          and is settled on the monthly payout cycle.
+          Commission accrues to the agent&apos;s commission account when the customer&apos;s payment is captured.
+          Payouts are settled monthly from{' '}
+          <a href="/admin/finance/commission-payouts" className="text-[#1ABC9C] font-semibold hover:underline">
+            Commission Payouts
+          </a>, reviewed and approved by hand.
         </p>
       )}
     </div>
