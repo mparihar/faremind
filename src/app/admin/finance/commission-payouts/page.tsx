@@ -33,8 +33,18 @@ interface AgentDue {
   agentEmail: string;
   dueAmount: number;
   entryCount: number;
+  payoutAccount?: {
+    canReceiveTransfer: boolean;
+    blockedReason: string | null;
+    country: string | null;
+    connected: boolean;
+  };
   payout: {
     status: 'PAID' | 'REJECTED';
+    method?: string | null;
+    paymentReference?: string | null;
+    stripeTransferId?: string | null;
+    transferStatus?: string | null;
     systemAmount: number;
     paidAmount: number;
     reason: string | null;
@@ -53,6 +63,9 @@ export default function CommissionPayoutsPage() {
   const [modal, setModal] = useState<{ agent: AgentDue; action: 'PAY' | 'REJECT' } | null>(null);
   const [amount, setAmount] = useState('');
   const [reason, setReason] = useState('');
+  const [method, setMethod] = useState<'EXTERNAL_TRANSFER' | 'STRIPE_CONNECT'>('EXTERNAL_TRANSFER');
+  const [paymentReference, setPaymentReference] = useState('');
+  const [paidOn, setPaidOn] = useState('');
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -72,6 +85,11 @@ export default function CommissionPayoutsPage() {
     // nothing, which is the case that should take the fewest keystrokes.
     setAmount(action === 'PAY' ? agent.dueAmount.toFixed(2) : '');
     setReason('');
+    setPaymentReference('');
+    setPaidOn(new Date().toISOString().slice(0, 10));
+    // Default to whichever method can actually complete. Preselecting a
+    // platform transfer the agent cannot receive just moves the failure later.
+    setMethod(agent.payoutAccount?.canReceiveTransfer ? 'STRIPE_CONNECT' : 'EXTERNAL_TRANSFER');
     setError(null);
   }
 
@@ -86,7 +104,7 @@ export default function CommissionPayoutsPage() {
           agentUserId: modal.agent.agentUserId,
           action: modal.action,
           year, month,
-          ...(modal.action === 'PAY' ? { amount } : {}),
+          ...(modal.action === 'PAY' ? { amount, method, paymentReference, paidOn } : {}),
           reason: reason.trim() || undefined,
         }),
       });
@@ -191,6 +209,13 @@ export default function CommissionPayoutsPage() {
                         {format(new Date(a.payout.decidedAt), 'd MMM yyyy')}
                         {a.payout.decidedBy ? ` · ${a.payout.decidedBy}` : ''}
                       </p>
+                      {a.payout.status === 'PAID' && (
+                        <p className="text-[10px] text-slate-400 mt-0.5">
+                          {a.payout.method === 'STRIPE_CONNECT'
+                            ? `Platform transfer${a.payout.stripeTransferId ? ` · ${a.payout.stripeTransferId}` : ''}`
+                            : `External${a.payout.paymentReference ? ` · ref ${a.payout.paymentReference}` : ''}`}
+                        </p>
+                      )}
                       {a.payout.reason && <p className="text-[10px] text-slate-400 mt-0.5 max-w-xs">{a.payout.reason}</p>}
                     </div>
                   )}
@@ -237,6 +262,47 @@ export default function CommissionPayoutsPage() {
 
             {modal.action === 'PAY' ? (
               <>
+                {/* How the money reaches the agent. Two genuinely different
+                    things: one is a claim a human is making, the other is a
+                    transfer the platform can prove. */}
+                <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1.5">
+                  Payment method
+                </label>
+                <div className="grid grid-cols-2 gap-2 mb-4">
+                  {([
+                    ['STRIPE_CONNECT', 'Platform transfer', 'Sent to their bank via Stripe now'],
+                    ['EXTERNAL_TRANSFER', 'External transfer', 'Paid outside FareMind — recorded here'],
+                  ] as const).map(([value, label, hint]) => {
+                    const blocked = value === 'STRIPE_CONNECT' && !modal.agent.payoutAccount?.canReceiveTransfer;
+                    return (
+                      <button
+                        key={value}
+                        type="button"
+                        disabled={blocked}
+                        onClick={() => setMethod(value)}
+                        className={`text-left px-3 py-2.5 rounded-xl border transition-all ${
+                          blocked
+                            ? 'bg-slate-800/40 border-slate-700/40 cursor-not-allowed opacity-50'
+                            : method === value
+                              ? 'bg-[#1ABC9C]/10 border-[#1ABC9C]/40'
+                              : 'bg-slate-800 border-slate-700 hover:border-slate-600'}`}
+                      >
+                        <p className={`text-xs font-bold ${method === value && !blocked ? 'text-[#1ABC9C]' : 'text-slate-300'}`}>{label}</p>
+                        <p className="text-[10px] text-slate-500 mt-0.5 leading-snug">{hint}</p>
+                      </button>
+                    );
+                  })}
+                </div>
+
+                {/* Why the platform option is unavailable, before it is picked
+                    rather than after it fails. */}
+                {!modal.agent.payoutAccount?.canReceiveTransfer && modal.agent.payoutAccount?.blockedReason && (
+                  <p className="text-[11px] text-slate-500 -mt-2 mb-4 leading-relaxed">
+                    <span className="text-slate-400 font-semibold">Platform transfer unavailable:</span>{' '}
+                    {modal.agent.payoutAccount.blockedReason}
+                  </p>
+                )}
+
                 <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
                   Amount to pay
                 </label>
@@ -272,6 +338,36 @@ export default function CommissionPayoutsPage() {
               </div>
             )}
 
+            {modal.action === 'PAY' && method === 'EXTERNAL_TRANSFER' && (
+              <div className="grid grid-cols-2 gap-3 mt-4">
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                    Payment reference <span className="text-red-400">*</span>
+                  </label>
+                  <input
+                    value={paymentReference}
+                    onChange={e => setPaymentReference(e.target.value)}
+                    placeholder="Bank / UPI / cheque ref"
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm placeholder-slate-600 focus:outline-none focus:border-[#1ABC9C]"
+                  />
+                </div>
+                <div>
+                  <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mb-1">
+                    Paid on
+                  </label>
+                  <input
+                    type="date" value={paidOn}
+                    onChange={e => setPaidOn(e.target.value)}
+                    className="w-full px-3 py-2 bg-slate-800 border border-slate-700 rounded-xl text-white text-sm focus:outline-none focus:border-[#1ABC9C]"
+                  />
+                </div>
+                <p className="col-span-2 text-[11px] text-slate-500 leading-relaxed">
+                  The reference is what the agent matches against their bank statement — it is the only link
+                  between this record and the money that actually moved.
+                </p>
+              </div>
+            )}
+
             <label className="block text-[10px] font-black text-slate-500 uppercase tracking-wider mt-4 mb-1">
               Reason {modal.action === 'REJECT' || corrected ? '(required)' : '(optional)'}
             </label>
@@ -293,7 +389,9 @@ export default function CommissionPayoutsPage() {
                   modal.action === 'PAY'
                     ? 'bg-[#1ABC9C]/10 border-[#1ABC9C]/30 text-[#1ABC9C] hover:bg-[#1ABC9C]/20'
                     : 'bg-red-500/10 border-red-500/30 text-red-400 hover:bg-red-500/20'}`}>
-                {saving ? 'Working…' : modal.action === 'PAY' ? `Pay ${money(Number(amount) || 0)}` : 'Withhold'}
+                {saving ? 'Working…' : modal.action === 'REJECT' ? 'Withhold'
+                  : method === 'STRIPE_CONNECT' ? `Transfer ${money(Number(amount) || 0)}`
+                  : `Mark ${money(Number(amount) || 0)} as paid`}
               </button>
             </div>
           </div>

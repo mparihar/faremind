@@ -45,6 +45,7 @@ model User {
   agentWallet     AgentWallet?
   commissionEntries AgentCommissionEntry[]
   commissionPayouts AgentCommissionPayout[]
+  payoutAccount     AgentPayoutAccount?
 
   @@map("users")
 }
@@ -204,6 +205,31 @@ model AgentCommissionPayout {
   /** PAID | REJECTED */
   status      String
 
+  /**
+   * How the money reached the agent.
+   *
+   * EXTERNAL_TRANSFER — paid outside the platform (bank transfer, UPI, cheque).
+   *   The platform records the decision; the money moved elsewhere, so the
+   *   reference below is the only link between our record and the bank's.
+   * STRIPE_CONNECT — the platform actually moved it, and stripeTransferId is
+   *   Stripe's own receipt.
+   *
+   * Kept explicit because "paid" means two very different things here: one is a
+   * claim a human is making, the other is a transfer we can prove.
+   */
+  payoutMethod String? @map("payout_method")
+
+  /** Bank/UPI/cheque reference for an external transfer — what the agent matches against their statement. */
+  paymentReference String? @map("payment_reference")
+  /** When the external transfer was actually made. May predate the decision being recorded. */
+  paidOn        DateTime? @map("paid_on")
+
+  /** Stripe Connect transfer id, and how it settled. */
+  stripeTransferId String? @map("stripe_transfer_id")
+  /** PENDING | PAID | FAILED — a Connect transfer is not instant. */
+  transferStatus   String? @map("transfer_status")
+  transferFailureReason String? @map("transfer_failure_reason")
+
   /** Required when the amount was corrected or the payout withheld. */
   reason      String?
   entryCount  Int      @default(0) @map("entry_count")
@@ -220,6 +246,54 @@ model AgentCommissionPayout {
   @@index([periodYear, periodMonth])
   @@index([status])
   @@map("agent_commission_payouts")
+}
+
+/**
+ * An agent's Stripe Connect account — how the platform pays them directly.
+ *
+ * FareMind never sees the bank details. The agent completes onboarding on
+ * Stripe's own hosted pages: account number, identity document and tax details
+ * go straight to Stripe, and we store only the account id and what Stripe tells
+ * us about its state. That is the entire reason to use Connect — storing bank
+ * credentials ourselves would put the platform in KYC and money-transmitter
+ * scope for no benefit.
+ *
+ * Transfers are DOMESTIC. A US platform balance pays a US agent; an Indian
+ * balance pays an Indian agent. Cross-border is deliberately not attempted —
+ * it carries per-corridor restrictions that differ by country and would make
+ * "Pay" succeed for some agents and fail for others with no way to tell in
+ * advance. Where the countries differ, the payout is made externally and
+ * recorded with its bank reference instead.
+ */
+model AgentPayoutAccount {
+  id          String   @id @default(cuid())
+  userId      String   @unique @map("user_id")
+
+  /** Stripe's connected account id (acct_…). Never a bank number. */
+  stripeAccountId String @unique @map("stripe_account_id")
+  /** ISO-2 of the account, e.g. "US". Must match the platform to transfer. */
+  country     String
+
+  /**
+   * Stripe's own verdict, refreshed from the account.updated webhook.
+   * `payoutsEnabled` false means Stripe will reject a transfer — the admin has
+   * to see that BEFORE clicking pay, not as a failure afterwards.
+   */
+  payoutsEnabled  Boolean  @default(false) @map("payouts_enabled")
+  detailsSubmitted Boolean @default(false) @map("details_submitted")
+  /** Outstanding KYC items, verbatim from Stripe, so the agent is told what is missing. */
+  requirementsDue Json?    @map("requirements_due")
+  disabledReason  String?  @map("disabled_reason")
+
+  onboardedAt  DateTime? @map("onboarded_at")
+  lastSyncedAt DateTime? @map("last_synced_at")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([payoutsEnabled])
+  @@map("agent_payout_accounts")
 }
 
 model AgentWalletHistory {

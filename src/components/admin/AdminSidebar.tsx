@@ -29,6 +29,7 @@ const NAV: NavItem[] = [
   { href: '/admin/customers',            label: 'Customer Users',       icon: UserRoundSearch, minRole: 'SUPPORT' },
   { href: '/admin/partners',             label: 'Partners',             icon: Users2, minRole: 'OPS_ADMIN' },
   { href: '/admin/finance',              label: 'Finance',              icon: DollarSign, minRole: 'FINANCE' },
+  { href: '/admin/finance/commission-payouts', label: 'Commission Payouts', icon: Wallet },
   { href: '/admin/finance/payments',     label: 'Payments',             icon: CreditCard, minRole: 'FINANCE' },
   { href: '/admin/finance/service-payments', label: 'Service Payments', icon: CreditCard, minRole: 'SUPPORT' },
   { href: '/admin/payments',             label: 'All Payments',         icon: CreditCard, minRole: 'SUPPORT' },

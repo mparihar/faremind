@@ -8,6 +8,7 @@
  * withholds it with a reason.
  */
 import { prisma } from '../db';
+import { transferToAgent } from './stripe-connect';
 
 export interface PayoutPeriod {
   year: number;
@@ -37,6 +38,10 @@ export interface AgentDue {
     reason: string | null;
     decidedBy: string | null;
     decidedAt: Date;
+    method: string | null;
+    paymentReference: string | null;
+    stripeTransferId: string | null;
+    transferStatus: string | null;
   } | null;
 }
 
@@ -81,6 +86,10 @@ export async function agentsDueForPeriod(period: PayoutPeriod): Promise<AgentDue
           reason: p.reason,
           decidedBy: p.decidedBy,
           decidedAt: p.decidedAt,
+          method: p.payoutMethod,
+          paymentReference: p.paymentReference,
+          stripeTransferId: p.stripeTransferId,
+          transferStatus: p.transferStatus,
         } : null,
       };
       byAgent.set(e.agentUserId, row);
@@ -96,11 +105,23 @@ export async function agentsDueForPeriod(period: PayoutPeriod): Promise<AgentDue
     .sort((a, b) => b.dueAmount - a.dueAmount);
 }
 
+/**
+ * EXTERNAL_TRANSFER — the money moved outside the platform (bank transfer, UPI,
+ *   cheque). We record that a human says it happened, and the reference is the
+ *   only link between our record and the bank's.
+ * STRIPE_CONNECT — the platform moved it, and Stripe's transfer id is proof.
+ *
+ * The distinction is kept everywhere because "paid" means two different things:
+ * one is a claim, the other is a receipt.
+ */
+export type PayoutMethod = 'EXTERNAL_TRANSFER' | 'STRIPE_CONNECT';
+
 export type PayoutDecision =
-  | { outcome: 'PAID'; payoutId: string; paidAmount: number; entriesSettled: number }
+  | { outcome: 'PAID'; payoutId: string; paidAmount: number; entriesSettled: number; method: PayoutMethod; transferId?: string | null }
   | { outcome: 'REJECTED'; payoutId: string }
   | { outcome: 'ALREADY_DECIDED'; status: string; paidAmount: number }
   | { outcome: 'NOTHING_DUE' }
+  | { outcome: 'TRANSFER_FAILED'; error: string }
   | { outcome: 'INVALID'; error: string };
 
 /**
@@ -121,8 +142,15 @@ export async function payAgentCommission(params: {
   amountOverride?: number | null;
   reason?: string | null;
   decidedBy?: string | null;
+  /** Defaults to external — the method that requires nothing of the agent. */
+  method?: PayoutMethod;
+  /** Bank/UPI/cheque reference. Required for an external transfer. */
+  paymentReference?: string | null;
+  /** When the external transfer was actually made; defaults to now. */
+  paidOn?: Date | null;
 }): Promise<PayoutDecision> {
   const { agentUserId, period, amountOverride, reason, decidedBy } = params;
+  const method: PayoutMethod = params.method ?? 'EXTERNAL_TRANSFER';
   const range = periodRange(period);
 
   const existing = await prisma.agentCommissionPayout.findUnique({
@@ -150,7 +178,37 @@ export async function payAgentCommission(params: {
     return { outcome: 'INVALID', error: 'A reason is required when changing the calculated amount.' };
   }
 
+  // An external transfer with no reference is an unverifiable claim. The
+  // reference is the only thing linking our "paid" to the bank's record, and
+  // the agent needs it to match the credit on their statement.
+  if (method === 'EXTERNAL_TRANSFER' && !String(params.paymentReference ?? '').trim()) {
+    return { outcome: 'INVALID', error: 'A payment reference is required for an external transfer.' };
+  }
+
   const currency = pending[0]?.currency ?? 'USD';
+
+  // Move the money BEFORE recording that it moved.
+  //
+  // Recording first and transferring after would leave a failed transfer marked
+  // PAID — the agent's portal saying settled, their bank saying nothing, and the
+  // period closed so it never appears in a payout run again. A transfer that
+  // fails here writes no payout at all, and the month stays payable.
+  let transferId: string | null = null;
+  if (method === 'STRIPE_CONNECT') {
+    const transfer = await transferToAgent({
+      userId: agentUserId,
+      amount: paidAmount,
+      currency,
+      // Deterministic, so a retry of the same period cannot pay twice even
+      // before a payout row exists to key on.
+      payoutId: `${agentUserId}-${period.year}-${String(period.month).padStart(2, '0')}`,
+      description: `FareMind commission — ${period.year}-${String(period.month).padStart(2, '0')}`,
+    });
+    if (!transfer.ok) {
+      return { outcome: 'TRANSFER_FAILED', error: transfer.error ?? 'The transfer could not be completed.' };
+    }
+    transferId = transfer.transferId;
+  }
 
   const payout = await prisma.$transaction(async (tx) => {
     const p = await tx.agentCommissionPayout.create({
@@ -160,6 +218,13 @@ export async function payAgentCommission(params: {
         periodMonth: period.month,
         systemAmount, paidAmount, currency,
         status: 'PAID',
+        payoutMethod: method,
+        paymentReference: params.paymentReference?.trim() || null,
+        paidOn: params.paidOn ?? new Date(),
+        stripeTransferId: transferId,
+        // A Connect transfer is accepted here; Stripe settles it to the bank
+        // over the following days, so this is not claimed as PAID at the bank.
+        transferStatus: method === 'STRIPE_CONNECT' ? 'PENDING' : null,
         reason: reason?.trim() || null,
         entryCount: pending.length,
         decidedBy: decidedBy ?? null,
@@ -192,7 +257,7 @@ export async function payAgentCommission(params: {
     return p;
   });
 
-  return { outcome: 'PAID', payoutId: payout.id, paidAmount, entriesSettled: pending.length };
+  return { outcome: 'PAID', payoutId: payout.id, paidAmount, entriesSettled: pending.length, method, transferId };
 }
 
 /**

@@ -107,10 +107,55 @@ export async function reverseCommission(params: {
   if (!original || original.entryType !== 'ACCRUED') return { reversed: 0, alreadyPaid: false };
 
   if (original.status === 'PAID') {
+    // Already settled, so there is nothing to take back from a future payout
+    // without an explicit decision. This used to be a console warning and
+    // nothing else — money owed back to FareMind, visible to nobody, on a line
+    // in a log that scrolls away. It is now a ticket someone has to close.
+    const amount = Number(original.amount);
     console.warn(
       `[AgentCommission] booking ${bookingId} was refunded but its commission ` +
-      `(${original.amount}) is already paid out — needs manual settlement.`,
+      `(${amount}) is already paid out — raising for manual settlement.`,
     );
+
+    const agent = await prisma.user.findUnique({
+      where: { id: original.agentUserId },
+      select: { email: true, firstName: true, lastName: true },
+    }).catch(() => null);
+    const booking = await prisma.masterBooking.findUnique({
+      where: { id: bookingId },
+      select: { masterBookingReference: true, customerName: true },
+    }).catch(() => null);
+    const agentName = `${agent?.firstName ?? ''} ${agent?.lastName ?? ''}`.trim() || 'Agent';
+
+    await prisma.supportTicket.create({
+      data: {
+        subject: `Commission recovery: ${agentName} — ${original.currency} ${amount.toFixed(2)} already paid`,
+        description: [
+          `Booking ${booking?.masterBookingReference ?? bookingId} was refunded (${reason}).`,
+          '',
+          `The agent's commission of ${original.currency} ${amount.toFixed(2)} on this booking was ALREADY PAID OUT,`,
+          'so it could not be reversed against a future payout automatically.',
+          '',
+          `Agent: ${agentName}${agent?.email ? ` (${agent.email})` : ''}`,
+          `Customer: ${booking?.customerName ?? 'n/a'}`,
+          '',
+          'Decide whether to recover this from the next payout or write it off,',
+          'and record the decision here. Nothing has been deducted automatically —',
+          'clawing settled money back without telling the agent is how they stop',
+          'trusting the figure.',
+        ].join('\n'),
+        priority: 'HIGH',
+        status: 'OPEN',
+        category: 'Refund',
+        channel: 'SYSTEM',
+        bookingRef: booking?.masterBookingReference ?? undefined,
+        ticketType: 'COMMISSION_RECOVERY',
+        queue: 'MANUAL_REFUND_REQUIRED',
+        customerName: agentName,
+        customerEmail: agent?.email ?? 'unknown@faremind.ai',
+      } as any,
+    }).catch((e) => console.error(`[AgentCommission] recovery ticket failed: ${e.message}`));
+
     return { reversed: 0, alreadyPaid: true };
   }
 

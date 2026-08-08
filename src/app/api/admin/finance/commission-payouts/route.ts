@@ -9,6 +9,7 @@ import { withAdmin } from '@/lib/admin-rbac';
 import { prisma } from '@/lib/db';
 import { fireNotification } from '@/lib/notify';
 import { auditLog } from '@/lib/admin-auth';
+import { getPayoutAccountState, PLATFORM_COUNTRY } from '@/lib/finance/stripe-connect';
 import {
   agentsDueForPeriod, payAgentCommission, rejectAgentCommission,
 } from '@/lib/finance/agent-commission-payout';
@@ -36,12 +37,21 @@ export const GET = withAdmin(async (req: NextRequest) => {
   const period = readPeriod(searchParams);
   const agents = await agentsDueForPeriod(period);
 
+  // Whether each agent can actually receive a platform transfer. Offering the
+  // option and failing afterwards is worse than not offering it: by then the
+  // admin believes they have paid.
+  const withPayoutState = await Promise.all(agents.map(async (a) => ({
+    ...a,
+    payoutAccount: await getPayoutAccountState(a.agentUserId),
+  })));
+
   const totalDue = agents.reduce((s, a) => s + (a.payout ? 0 : a.dueAmount), 0);
   const totalPaid = agents.reduce((s, a) => s + (a.payout?.status === 'PAID' ? a.payout.paidAmount : 0), 0);
 
   return NextResponse.json({
     period,
-    agents,
+    agents: withPayoutState,
+    platformCountry: PLATFORM_COUNTRY,
     summary: {
       agents: agents.length,
       awaitingDecision: agents.filter(a => !a.payout).length,
@@ -53,7 +63,7 @@ export const GET = withAdmin(async (req: NextRequest) => {
 
 export const POST = withAdmin(async (req: NextRequest, { admin }) => {
   const body = await req.json().catch(() => ({}));
-  const { agentUserId, action, amount, reason } = body ?? {};
+  const { agentUserId, action, amount, reason, method, paymentReference, paidOn } = body ?? {};
 
   if (!agentUserId || (action !== 'PAY' && action !== 'REJECT')) {
     return NextResponse.json({ error: 'agentUserId and action (PAY | REJECT) are required.' }, { status: 400 });
@@ -72,12 +82,23 @@ export const POST = withAdmin(async (req: NextRequest, { admin }) => {
         // is a correction and the service will require a reason for it.
         amountOverride: amount === '' || amount == null ? null : Number(amount),
         reason, decidedBy,
+        method: method === 'STRIPE_CONNECT' ? 'STRIPE_CONNECT' : 'EXTERNAL_TRANSFER',
+        paymentReference,
+        paidOn: paidOn ? new Date(paidOn) : null,
       })
     : await rejectAgentCommission({ agentUserId, period, reason: String(reason ?? ''), decidedBy });
 
   if (result.outcome === 'INVALID') return NextResponse.json({ error: result.error }, { status: 400 });
   if (result.outcome === 'NOTHING_DUE') {
     return NextResponse.json({ error: 'There is nothing outstanding for this agent in this period.' }, { status: 400 });
+  }
+  if (result.outcome === 'TRANSFER_FAILED') {
+    // Nothing was recorded, so the month is still payable — say so, or the
+    // admin assumes it half-happened and is afraid to retry.
+    return NextResponse.json(
+      { error: `${result.error} Nothing was recorded — this period is still payable.` },
+      { status: 502 },
+    );
   }
   if (result.outcome === 'ALREADY_DECIDED') {
     return NextResponse.json(

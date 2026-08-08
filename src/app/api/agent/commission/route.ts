@@ -63,7 +63,8 @@ export const GET = withAgentServicing(async (req: NextRequest, { agent }) => {
   const payout = month >= 1 && month <= 12
     ? await prisma.agentCommissionPayout.findUnique({
         where: { agentUserId_periodYear_periodMonth: { agentUserId, periodYear: year, periodMonth: month } },
-        select: { status: true, paidAmount: true, systemAmount: true, reason: true, decidedAt: true },
+        select: { status: true, paidAmount: true, systemAmount: true, reason: true, decidedAt: true,
+                  payoutMethod: true, paymentReference: true, stripeTransferId: true, transferStatus: true, paidOn: true },
       }).catch(() => null)
     : null;
 
@@ -75,6 +76,11 @@ export const GET = withAgentServicing(async (req: NextRequest, { agent }) => {
       systemAmount: Number(payout.systemAmount),
       reason: payout.reason,
       decidedAt: payout.decidedAt,
+      method: payout.payoutMethod,
+      paymentReference: payout.paymentReference,
+      stripeTransferId: payout.stripeTransferId,
+      transferStatus: payout.transferStatus,
+      paidOn: payout.paidOn,
     } : null,
     /** What we owe right now, across all time. */
     pending: lifetime.pending,

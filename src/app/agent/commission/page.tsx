@@ -56,6 +56,8 @@ export default function AgentCommissionPage() {
   const [month, setMonth] = useState(now.getMonth() + 1);
   const [data, setData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
+  const [payoutAccount, setPayoutAccount] = useState<any>(null);
+  const [connecting, setConnecting] = useState(false);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -67,6 +69,21 @@ export default function AgentCommissionPage() {
   }, [year, month]);
 
   useEffect(() => { load(); }, [load]);
+
+  // Payout setup is independent of the month being viewed.
+  useEffect(() => {
+    apiFetch<any>('/api/agent/payout-account').then(setPayoutAccount).catch(() => {});
+  }, []);
+
+  async function startPayoutSetup() {
+    setConnecting(true);
+    try {
+      const r = await apiFetch<{ url?: string; error?: string }>('/api/agent/payout-account', { method: 'POST' });
+      // Stripe hosts the form. Bank details are entered there, never here.
+      if (r.url) window.location.href = r.url;
+    } catch { /* the button re-enables and they can retry */ }
+    setConnecting(false);
+  }
 
   const entries: Entry[] = data?.entries ?? [];
   const years = [now.getFullYear(), now.getFullYear() - 1, now.getFullYear() - 2];
@@ -141,7 +158,14 @@ export default function AgentCommissionPage() {
                   {MONTHS[month - 1]} {year} paid — {money(data.payout.paidAmount)}
                 </p>
                 <p className="text-[11px] text-slate-400 mt-0.5">
-                  Settled on {format(new Date(data.payout.decidedAt), 'd MMMM yyyy')}.
+                  {data.payout.method === 'STRIPE_CONNECT'
+                    ? 'Transferred to your bank account via Stripe'
+                    : 'Paid by bank transfer'}
+                  {data.payout.paidOn ? ` on ${format(new Date(data.payout.paidOn), 'd MMMM yyyy')}` : ` on ${format(new Date(data.payout.decidedAt), 'd MMMM yyyy')}`}.
+                  {/* The reference is what they match against their statement —
+                      without it "paid" is something they have to take on trust. */}
+                  {data.payout.paymentReference ? ` Reference: ${data.payout.paymentReference}.` : ''}
+                  {data.payout.stripeTransferId ? ` Transfer: ${data.payout.stripeTransferId}.` : ''}
                   {data.payout.paidAmount !== data.payout.systemAmount && (
                     <> Adjusted from {money(data.payout.systemAmount)}{data.payout.reason ? ` — ${data.payout.reason}` : ''}.</>
                   )}
@@ -158,6 +182,48 @@ export default function AgentCommissionPage() {
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Direct payouts. Offered, not demanded — an agent paid by bank transfer
+          is not doing anything wrong, so this reads as an option rather than an
+          outstanding task. */}
+      {payoutAccount && !payoutAccount.canReceiveTransfer && (
+        <div className="flex items-start gap-2.5 px-4 py-3 rounded-xl bg-slate-800/40 border border-slate-700/50">
+          <Wallet size={15} className="text-[#1ABC9C] shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className="text-sm font-bold text-white">
+              {payoutAccount.connected ? 'Finish your payout setup' : 'Get paid directly to your bank'}
+            </p>
+            <p className="text-[11px] text-slate-400 mt-0.5 leading-relaxed">
+              {payoutAccount.connected
+                ? (payoutAccount.blockedReason ?? 'A few details are still outstanding with Stripe.')
+                : 'Set up direct payouts and your commission can be transferred straight to your bank account. Your bank details are entered on Stripe’s secure pages — FareMind never sees or stores them.'}
+              {payoutAccount.requirementsDue?.length > 0 && (
+                <> Outstanding: {payoutAccount.requirementsDue.slice(0, 3).join(', ')}.</>
+              )}
+            </p>
+          </div>
+          {/* Hidden when the block is a country mismatch — no amount of
+              onboarding fixes a corridor we do not support. */}
+          {payoutAccount.country == null || payoutAccount.country === payoutAccount.platformCountry ? (
+            <button
+              onClick={startPayoutSetup}
+              disabled={connecting}
+              className="shrink-0 px-4 py-2 rounded-xl bg-[#1ABC9C]/10 border border-[#1ABC9C]/30 text-[#1ABC9C] text-xs font-bold hover:bg-[#1ABC9C]/20 transition-all disabled:opacity-50"
+            >
+              {connecting ? 'Opening…' : payoutAccount.connected ? 'Continue setup' : 'Set up payouts'}
+            </button>
+          ) : null}
+        </div>
+      )}
+
+      {payoutAccount?.canReceiveTransfer && (
+        <div className="flex items-center gap-2.5 px-4 py-2.5 rounded-xl bg-emerald-500/[0.06] border border-emerald-500/20">
+          <CheckCircle2 size={14} className="text-emerald-400 shrink-0" />
+          <p className="text-[11px] text-emerald-300">
+            Direct payouts are active — commission can be transferred straight to your bank account.
+          </p>
         </div>
       )}
 
