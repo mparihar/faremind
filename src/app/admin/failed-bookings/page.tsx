@@ -5,11 +5,13 @@ import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/store/useAdminStore';
 import { useAdminStore } from '@/store/useAdminStore';
 import {
-  RefreshCw, Search, ChevronLeft, ChevronRight, ChevronDown, ChevronUp,
+  RefreshCw, Search, ChevronDown, ChevronUp,
   AlertTriangle, Phone, Mail, Trash2, CheckCircle2, X, Plane, Clock,
   Users, DollarSign, ShieldAlert, Inbox
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
+import Pagination from '@/components/admin/Pagination';
+import { ADMIN_PAGE_SIZE } from '@/lib/pagination';
 
 const ERROR_CODE_LABELS: Record<string, { label: string; color: string }> = {
   PROVIDER_ORDER_FAILED:    { label: 'Provider Failed',     color: 'bg-red-500/15 text-red-400' },
@@ -84,7 +86,7 @@ export default function FailedBookingsPage() {
       console.error(e);
     }
 
-    const params = new URLSearchParams({ page: String(page), limit: '25' });
+    const params = new URLSearchParams({ page: String(page), limit: String(ADMIN_PAGE_SIZE) });
     if (emailSearch.trim()) params.set('email', emailSearch.trim());
     if (dateFrom) params.set('from', dateFrom);
     if (dateTo) params.set('to', dateTo);
@@ -499,27 +501,7 @@ export default function FailedBookingsPage() {
           </table>
         </div>
 
-        <div className="flex items-center justify-between px-5 py-4 border-t border-slate-700/50">
-          <p className="text-slate-400 text-xs">
-            {total.toLocaleString()} records · page {page} of {pages}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white disabled:opacity-30 transition-all"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <button
-              onClick={() => setPage(p => Math.min(pages, p + 1))}
-              disabled={page >= pages}
-              className="p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white disabled:opacity-30 transition-all"
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
+        <Pagination page={page} pages={pages} total={total} limit={ADMIN_PAGE_SIZE} onChange={setPage} />
       </div>
 
       {resolveId && (

@@ -8,13 +8,14 @@ import {
   flexRender, createColumnHelper, type SortingState,
 } from '@tanstack/react-table';
 import {
-  Search, ChevronUp, ChevronDown, ChevronsUpDown,
-  ChevronLeft, ChevronRight, RefreshCw, Trash2,
+  Search, ChevronUp, ChevronDown, ChevronsUpDown, RefreshCw, Trash2,
   Users, Mail, Phone, Calendar, Shield, ShieldOff,
   BookOpen, Clock, AlertTriangle, UserCheck, UserX,
   Briefcase,
 } from 'lucide-react';
 import { format } from 'date-fns';
+import Pagination from '@/components/admin/Pagination';
+import { ADMIN_PAGE_SIZE } from '@/lib/pagination';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -419,7 +420,7 @@ export default function AdminCustomersPage() {
   const [status, setStatus]       = useState('');
   const [sorting, setSorting]     = useState<SortingState>([]);
   const [selectedId, setSelectedId] = useState<string | null>(null);
-  const limit = 20;
+  const limit = ADMIN_PAGE_SIZE;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -636,28 +637,7 @@ export default function AdminCustomersPage() {
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-slate-700/50">
-          <p className="text-slate-400 text-xs">
-            Showing {Math.min(((page - 1) * limit) + 1, total)}–{Math.min(page * limit, total)} of {total.toLocaleString()}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white disabled:opacity-30 transition-all"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <span className="text-slate-300 text-xs font-bold px-2">{page} / {pages}</span>
-            <button
-              onClick={() => setPage(p => Math.min(pages, p + 1))}
-              disabled={page >= pages}
-              className="p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white disabled:opacity-30 transition-all"
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
+        <Pagination page={page} pages={pages} total={total} limit={ADMIN_PAGE_SIZE} onChange={setPage} />
       </div>
 
       {/* Detail Slide-Out Panel */}

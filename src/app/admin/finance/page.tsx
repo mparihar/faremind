@@ -27,6 +27,8 @@ import {
 } from 'lucide-react';
 import { PROVIDERS, providerLabel } from '@/lib/providers/provider-identity';
 import HScrollbar from '@/components/ui/HScrollbar';
+import Pagination from '@/components/admin/Pagination';
+import { ADMIN_PAGE_SIZE } from '@/lib/pagination';
 import { format } from 'date-fns';
 
 const MONTHS = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -302,7 +304,7 @@ function Ledger({ year, month, provider, agentsOnly }: {
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    const qs = new URLSearchParams({ year: String(year), month: String(month), page: String(page), limit: '25' });
+    const qs = new URLSearchParams({ year: String(year), month: String(month), page: String(page), limit: String(ADMIN_PAGE_SIZE) });
     if (provider) qs.set('provider', provider);
     if (agentsOnly) qs.set('agentUserId', 'AGENTS');
     if (search) qs.set('q', search);
@@ -376,22 +378,14 @@ function Ledger({ year, month, provider, agentsOnly }: {
       <div className="px-5 pb-1">
         <HScrollbar targetRef={scrollRef} controlsId="finance-ledger-scroll" tone="dark" label="Scroll ledger" />
       </div>
-      {pagination && pagination.pages > 1 && (
-        <div className="flex items-center justify-between px-5 py-3 border-t border-slate-700/50">
-          <span className="text-xs text-slate-500">
-            Page {pagination.page} of {pagination.pages} · {pagination.total} transactions
-          </span>
-          <div className="flex items-center gap-2">
-            <button onClick={() => setPage(p => Math.max(1, p - 1))} disabled={page <= 1}
-              className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-slate-300 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:text-white transition-all">
-              Previous
-            </button>
-            <button onClick={() => setPage(p => Math.min(pagination.pages, p + 1))} disabled={page >= pagination.pages}
-              className="px-3 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-slate-300 text-xs font-semibold disabled:opacity-40 disabled:cursor-not-allowed hover:text-white transition-all">
-              Next
-            </button>
-          </div>
-        </div>
+      {pagination && (
+        <Pagination
+          page={pagination.page}
+          pages={pagination.pages}
+          total={pagination.total}
+          limit={ADMIN_PAGE_SIZE}
+          onChange={setPage}
+        />
       )}
     </div>
   );

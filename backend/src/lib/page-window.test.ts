@@ -1,7 +1,7 @@
 /**
  * Run: cd backend && npx tsx src/lib/page-window.test.ts
  *
- * Mirrors pageWindow in src/app/admin/bookings/page.tsx. Halving the page size
+ * Mirrors pageWindow in src/lib/pagination.ts, now shared by every admin table. Halving the page size
  * to 10 doubled the page count, so direct page numbers replaced prev/next —
  * and a windowed pager is where off-by-ones live: a first or last page that
  * cannot be reached, or a gap hiding a page the window should have shown.

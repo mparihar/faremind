@@ -3,8 +3,10 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useRouter } from 'next/navigation';
 import { adminFetch } from '@/store/useAdminStore';
-import { RefreshCw, Search, ChevronLeft, ChevronRight, CalendarDays, Trash2, Loader2 } from 'lucide-react';
+import { RefreshCw, Search, CalendarDays, Trash2, Loader2 } from 'lucide-react';
 import { format } from 'date-fns';
+import Pagination from '@/components/admin/Pagination';
+import { ADMIN_PAGE_SIZE } from '@/lib/pagination';
 
 export default function AuditLogsPage() {
   const router = useRouter();
@@ -20,7 +22,7 @@ export default function AuditLogsPage() {
 
   const load = useCallback(async () => {
     setLoading(true);
-    const params = new URLSearchParams({ page: String(page), limit: '25' });
+    const params = new URLSearchParams({ page: String(page), limit: String(ADMIN_PAGE_SIZE) });
     if (search) params.set('action', search);
     const res = await adminFetch(`/api/admin/audit-logs?${params}`);
     if (res.status === 401) { router.replace('/admin/login'); return; }
@@ -155,27 +157,7 @@ export default function AuditLogsPage() {
         </div>
 
         {/* Pagination */}
-        <div className="flex items-center justify-between px-5 py-4 border-t border-slate-700/50">
-          <p className="text-slate-400 text-xs">
-            {total.toLocaleString()} records · page {page} of {pages}
-          </p>
-          <div className="flex items-center gap-2">
-            <button
-              onClick={() => setPage(p => Math.max(1, p - 1))}
-              disabled={page <= 1}
-              className="p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white disabled:opacity-30 transition-all"
-            >
-              <ChevronLeft size={14} />
-            </button>
-            <button
-              onClick={() => setPage(p => Math.min(pages, p + 1))}
-              disabled={page >= pages}
-              className="p-1.5 rounded-lg border border-slate-700 text-slate-400 hover:text-white disabled:opacity-30 transition-all"
-            >
-              <ChevronRight size={14} />
-            </button>
-          </div>
-        </div>
+        <Pagination page={page} pages={pages} total={total} limit={ADMIN_PAGE_SIZE} onChange={setPage} />
       </div>
     </div>
   );
