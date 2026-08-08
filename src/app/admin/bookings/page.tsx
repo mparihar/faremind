@@ -159,6 +159,36 @@ const DIR_LABEL: Record<string, string> = { OUTBOUND: '↗', RETURN: '↙', ALL:
 
 const col = createColumnHelper<BookingRow>();
 
+/**
+ * Which page numbers to show, windowed around the current one.
+ *
+ * Ten rows a page means twice as many pages as before, and prev/next alone puts
+ * page 6 five clicks away. First and last are always present so the ends stay
+ * one click off; the middle slides. A gap is '…', never a clickable page — a
+ * number you cannot predict the destination of is worse than an ellipsis.
+ */
+function pageWindow(current: number, total: number, span = 5): (number | '…')[] {
+  if (total <= span + 2) return Array.from({ length: total }, (_, i) => i + 1);
+
+  const half = Math.floor(span / 2);
+  let start = Math.max(2, current - half);
+  let end = Math.min(total - 1, start + span - 1);
+  start = Math.max(2, end - span + 1);
+
+  // Keep the width constant as the window slides. At either end one ellipsis is
+  // absent, which frees a slot — spend it on another page number rather than
+  // letting the control narrow and the buttons shift under the cursor.
+  if (start === 2) end = Math.min(total - 1, end + 1);
+  if (end === total - 1) start = Math.max(2, start - 1);
+
+  const out: (number | '…')[] = [1];
+  if (start > 2) out.push('…');
+  for (let i = start; i <= end; i++) out.push(i);
+  if (end < total - 1) out.push('…');
+  out.push(total);
+  return out;
+}
+
 const DATA_COLUMNS = [
   col.accessor('masterBookingReference', {
     header: 'FBR',
@@ -288,7 +318,10 @@ export default function AdminBookingsPage() {
   const tableScrollRef = useRef<HTMLDivElement>(null);
   const [sorting, setSorting] = useState<SortingState>([]);
   const [deleting, setDeleting] = useState<string | null>(null);
-  const limit = 20;
+  // Ten rows fits the viewport without scrolling past the pagination, so the
+  // controls stay reachable and a page can be scanned in one look. Twenty ran
+  // the table off the bottom of the screen on the sizes this console is used at.
+  const limit = 10;
 
   const activeFilterCount = [paymentStatus, ticketingStatus, provider, cabin, tripType, dateFrom, dateTo].filter(Boolean).length;
 
@@ -579,7 +612,23 @@ export default function AdminBookingsPage() {
             >
               <ChevronLeft size={14} />
             </button>
-            <span className="text-slate-300 text-xs font-bold px-2">{page} / {pages}</span>
+            {pageWindow(page, pages).map((p, i) =>
+              p === '…' ? (
+                <span key={`gap-${i}`} className="text-slate-600 text-xs px-1 select-none">…</span>
+              ) : (
+                <button
+                  key={p}
+                  onClick={() => setPage(p)}
+                  aria-current={p === page ? 'page' : undefined}
+                  className={`min-w-[28px] h-7 px-2 rounded-lg text-xs font-bold transition-all ${
+                    p === page
+                      ? 'bg-[#1ABC9C]/15 border border-[#1ABC9C]/40 text-[#1ABC9C]'
+                      : 'border border-slate-700 text-slate-400 hover:text-white hover:border-slate-600'
+                  }`}
+                >
+                  {p}
+                </button>
+              ))}
             <button
               onClick={() => setPage(p => Math.min(pages, p + 1))}
               disabled={page >= pages}
