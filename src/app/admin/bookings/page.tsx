@@ -14,6 +14,10 @@ import {
 } from 'lucide-react';
 import { format } from 'date-fns';
 import BookedDateSort, { type BookedSortOrder } from '@/components/bookings/BookedDateSort';
+import { PROVIDERS as PROVIDER_IDS, providerLabel } from '@/lib/providers/provider-identity';
+
+// '' is the "All" option; the rest come from the one place providers are named.
+const PROVIDERS: readonly string[] = ['', ...PROVIDER_IDS];
 
 interface BookingPnrRow {
   id: string;
@@ -86,7 +90,6 @@ const STATUS_COLORS: Record<string, string> = {
 const BOOKING_STATUSES = ['', 'CREATED', 'CONFIRMED', 'TICKETED', 'CANCELLED', 'COMPLETED', 'FAILED', 'REBOOKED'];
 const PAYMENT_STATUSES = ['', 'PENDING', 'PARTIAL', 'SUCCEEDED', 'FAILED', 'REFUNDED', 'PARTIALLY_REFUNDED'];
 const TICKETING_STATUSES = ['', 'NOT_STARTED', 'IN_PROGRESS', 'ISSUED', 'PARTIALLY_ISSUED', 'FAILED', 'VOIDED'];
-const PROVIDERS = ['', 'duffel', 'mystifly'];
 const CABINS = ['', 'economy', 'premium_economy', 'business', 'first'];
 const TRIP_TYPES = ['', 'ONE_WAY', 'ROUND_TRIP', 'MULTI_CITY'];
 
@@ -198,7 +201,7 @@ const DATA_COLUMNS = [
   }),
   col.accessor('provider', {
     header: 'Provider',
-    cell: i => <span className="text-slate-400 text-sm capitalize font-semibold">{i.getValue()}</span>,
+    cell: i => <span className="text-slate-400 text-sm font-semibold">{providerLabel(i.getValue()) ?? i.getValue()}</span>,
   }),
   col.accessor(r => `${r.user.firstName} ${r.user.lastName}`, {
     id: 'passenger',
@@ -410,6 +413,22 @@ export default function AdminBookingsPage() {
             ))}
           </select>
         </div>
+        {/* Provider sits in the primary bar, not behind the Filters toggle.
+            It was one of seven options in a collapsed panel, which meant
+            "show me everything booked through Duffel" took three clicks and
+            you could not tell at a glance whether a filter was even applied. */}
+        <div className="relative">
+          <Plane size={14} className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400 pointer-events-none" />
+          <select
+            value={provider}
+            onChange={e => { setProvider(e.target.value); setPage(1); }}
+            className={`pl-8 ${selectCls}`}
+          >
+            {PROVIDERS.map(p => (
+              <option key={p} value={p} className="bg-slate-800">{providerLabel(p) ?? 'All Providers'}</option>
+            ))}
+          </select>
+        </div>
         <BookedDateSort order={sortOrder} onChange={(o) => { setSortOrder(o); setPage(1); }} className="py-2.5" />
         <button
           onClick={() => setShowFilters(!showFilters)}
@@ -446,7 +465,7 @@ export default function AdminBookingsPage() {
             <div>
               <label className="text-[10px] text-slate-500 uppercase font-bold mb-1 block">Provider</label>
               <select value={provider} onChange={e => { setProvider(e.target.value); setPage(1); }} className={selectCls + ' w-full'}>
-                {PROVIDERS.map(s => <option key={s} value={s} className="bg-slate-800">{s ? s.charAt(0).toUpperCase() + s.slice(1) : 'All'}</option>)}
+                {PROVIDERS.map(s => <option key={s} value={s} className="bg-slate-800">{providerLabel(s) ?? 'All'}</option>)}
               </select>
             </div>
             <div>

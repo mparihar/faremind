@@ -17,6 +17,7 @@ import { buildPassengerExtras } from '@/lib/mystifly-passenger-extras';
 import { detectConnectionChanges } from '@/lib/connection-changes';
 import { refundBookingPayment } from '@/lib/booking-refund-client';
 import { classifyRefund, needsAttention, refundQueue } from '@/lib/refund-status';
+import { providerIdOf, providerFromErrorCode } from '@/lib/providers/provider-identity';
 import { applySegmentTerminals } from '@/lib/terminal';
 
 // ── Duffel API client (direct import for Next.js API route) ──────────────────
@@ -214,6 +215,13 @@ interface BookingFailureContext {
   errorMessage: string;
   customerMessage: string;
   failureStage: string;
+  /**
+   * Which provider we were booking with. A failed booking has no MasterBooking
+   * to join to, so this is the only thing that can route the support ticket to
+   * the right provider's desk. Defaults from the error code when a caller
+   * omits it, which covers MYSTIFLY_* but not the generic codes.
+   */
+  provider?: string | null;
   offerProvidedAt?: string | null;
   offerExpiresAt?: string | null;
   // Refund tracking
@@ -281,6 +289,7 @@ async function logBookingFailure(ctx: BookingFailureContext): Promise<void> {
         currency: ctx.currency || 'USD',
         offerId: ctx.selectedFare?.offerId || ctx.selectedFare?.id || null,
         fareName: ctx.selectedFare?.name || null,
+        provider: providerIdOf(ctx.provider) ?? providerFromErrorCode(ctx.errorCode),
         errorCode: ctx.errorCode,
         errorMessage: ctx.errorMessage,
         customerMessage: ctx.customerMessage,
@@ -840,7 +849,7 @@ export async function POST(req: NextRequest) {
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-            currency, errorCode: 'PASSENGER_COUNT_MISMATCH',
+            currency, provider: routingProvider, errorCode: 'PASSENGER_COUNT_MISMATCH',
             errorMessage: mismatchMsg, customerMessage: customerMsg,
             failureStage: 'DUFFEL_OFFER_VALIDATION',
             offerProvidedAt, offerExpiresAt,
@@ -1168,7 +1177,7 @@ export async function POST(req: NextRequest) {
         await logBookingFailure({
           passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
           paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-          currency, errorCode: 'PROVIDER_ORDER_FAILED',
+          currency, provider: routingProvider, errorCode: 'PROVIDER_ORDER_FAILED',
           errorMessage: duffelErr.message || 'Unknown Duffel error',
           customerMessage, failureStage: 'DUFFEL_ORDER_CREATION',
           offerProvidedAt, offerExpiresAt,
@@ -1308,7 +1317,7 @@ export async function POST(req: NextRequest) {
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-            currency,
+            currency, provider: routingProvider,
             errorCode: erbuk082Seen ? 'MYSTIFLY_ERBUK082_UNRESOLVED' : 'MYSTIFLY_REVALIDATION_FAILED',
             errorMessage: lastRevalError || 'Revalidation failed',
             customerMessage, failureStage: 'MYSTIFLY_REVALIDATION',
@@ -1337,7 +1346,7 @@ export async function POST(req: NextRequest) {
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-            currency, errorCode: 'REVALIDATION_NO_FSC',
+            currency, provider: routingProvider, errorCode: 'REVALIDATION_NO_FSC',
             errorMessage: 'Revalidation returned no FareSourceCode',
             customerMessage, failureStage: 'MYSTIFLY_REVALIDATION',
           });
@@ -1391,7 +1400,7 @@ export async function POST(req: NextRequest) {
             await logBookingFailure({
               passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
               paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-              currency, errorCode: 'STRIPE_CAPTURE_FAILED',
+              currency, provider: routingProvider, errorCode: 'STRIPE_CAPTURE_FAILED',
               errorMessage: captureErr.message, customerMessage,
               failureStage: 'STRIPE_CAPTURE_BEFORE_BOOKING',
               refundStatus: 'NOT_APPLICABLE',
@@ -1480,7 +1489,7 @@ export async function POST(req: NextRequest) {
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-            currency, errorCode: 'MYSTIFLY_BOOKING_UNCONFIRMED',
+            currency, provider: routingProvider, errorCode: 'MYSTIFLY_BOOKING_UNCONFIRMED',
             errorMessage: `${pendingMsg} (ref ${bookData.uniqueId}, provider status ${bookData.mystiflyBookingStatus ?? 'unreadable'})`,
             customerMessage:
               'We could not confirm this booking with the airline. Our team is checking with them now and will ' +
@@ -1522,7 +1531,7 @@ export async function POST(req: NextRequest) {
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-            currency, errorCode: 'MYSTIFLY_BOOKING_PENDING_UNRESOLVED',
+            currency, provider: routingProvider, errorCode: 'MYSTIFLY_BOOKING_PENDING_UNRESOLVED',
             errorMessage: pendingMsg,
             customerMessage:
               'Your booking is being confirmed with the airline. This can take a little longer than usual — ' +
@@ -1611,7 +1620,7 @@ export async function POST(req: NextRequest) {
           await logBookingFailure({
             passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
             paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-            currency, errorCode: 'MYSTIFLY_BOOKING_FAILED',
+            currency, provider: routingProvider, errorCode: 'MYSTIFLY_BOOKING_FAILED',
             errorMessage: errMsg, customerMessage,
             failureStage: 'MYSTIFLY_BOOKING_AFTER_CAPTURE',
             refundStatus, refundId, refundAmount, refundFailureReason,
@@ -1781,7 +1790,7 @@ export async function POST(req: NextRequest) {
         await logBookingFailure({
           passengers, selectedFare, pricing, sourceFlight, sourceRoundTrip,
           paymentIntentId, sessionId, userId, routeLabel: routeLabel ?? '',
-          currency, errorCode: 'PROVIDER_ORDER_FAILED',
+          currency, provider: routingProvider, errorCode: 'PROVIDER_ORDER_FAILED',
           errorMessage: mystiflyErr.message || 'Unknown Mystifly error',
           customerMessage, failureStage: 'MYSTIFLY_ORDER_CREATION',
           refundStatus, refundId, refundAmount, refundFailureReason,

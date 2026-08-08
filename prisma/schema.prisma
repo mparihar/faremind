@@ -2643,6 +2643,13 @@ model BookingFailureAudit {
   offerId               String?   @map("offer_id")
   fareName              String?   @map("fare_name")
 
+  // Which provider the booking was being made with. A failed booking has no
+  // MasterBooking to join to, so without this the support queue cannot route
+  // the ticket to the right provider's desk — it was being inferred from the
+  // error-code prefix, which works for MYSTIFLY_* and not for the generic
+  // PROVIDER_ORDER_FAILED that the Duffel path raises.
+  provider              String?   @map("provider")
+
   // Error details (root cause — internal only, never shown to customer)
   errorCode             String    @map("error_code")
   errorMessage          String    @map("error_message") @db.Text
@@ -2681,6 +2688,7 @@ model BookingFailureAudit {
   @@index([createdAt])
   @@index([errorCode])
   @@index([resolvedAt])
+  @@index([provider])
   @@map("booking_failure_audits")
 }
 

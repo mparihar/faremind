@@ -11,6 +11,7 @@ import {
 } from 'lucide-react';
 import { format, formatDistanceToNow } from 'date-fns';
 import { classifyRefund, refundLabel, type RefundFacts } from '@/lib/refund-status';
+import { PROVIDERS, providerLabel, type ProviderId } from '@/lib/providers/provider-identity';
 
 type TicketPriority = 'LOW' | 'MEDIUM' | 'HIGH' | 'URGENT';
 type TicketStatus = 'OPEN' | 'IN_PROGRESS' | 'WAITING_CUSTOMER' | 'ESCALATED' | 'RESOLVED' | 'CLOSED';
@@ -35,6 +36,8 @@ interface SupportTicket {
   assignedToId?: string | null;
   failureAuditId?: string | null;
   failureAudit?: any;
+  /** Derived server-side from the booking, or the failure audit. */
+  provider?: ProviderId | null;
   whatsappNumberUsed?: string | null;
   createdAt: string;
   updatedAt: string;
@@ -82,6 +85,32 @@ function refundBadge(audit: RefundFacts | null | undefined): { label: string; cl
   if (state === 'NOT_CHARGED' || state === 'NOT_APPLICABLE') return null;
   const label = refundLabel(state);
   return label ? { label, cls: REFUND_BADGE_STYLES[state] ?? '' } : null;
+}
+
+/**
+ * Whose desk this ticket goes to.
+ *
+ * Rendered on every ticket type, not just failed bookings — a cancellation or a
+ * reissue is chased with the provider too, and "which one" was previously only
+ * discoverable by opening the ticket and reading the booking reference.
+ *
+ * Deliberately shows nothing when the provider is unknown, rather than guessing
+ * or printing "Unassigned" on every general enquiry that legitimately has no
+ * provider at all.
+ */
+const PROVIDER_CHIP: Record<string, string> = {
+  duffel:   'bg-indigo-400/15 text-indigo-300',
+  mystifly: 'bg-sky-400/15 text-sky-300',
+};
+
+function ProviderChip({ provider }: { provider?: string | null }) {
+  const label = providerLabel(provider);
+  if (!label) return null;
+  return (
+    <span className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-black uppercase tracking-wider ${PROVIDER_CHIP[String(provider)] ?? 'bg-slate-400/15 text-slate-400'}`}>
+      {label}
+    </span>
+  );
 }
 
 const CATEGORY_GROUPS: CategoryGroup[] = [
@@ -155,6 +184,7 @@ export default function SupportQueuePage() {
   const [search, setSearch] = useState('');
   const [statusFilter, setStatusFilter] = useState<TicketStatus | ''>('');
   const [priorityFilter, setPriorityFilter] = useState<TicketPriority | ''>('');
+  const [providerFilter, setProviderFilter] = useState<ProviderId | ''>('');
   const [activeTab, setActiveTab] = useState('all');
   const [deleting, setDeleting] = useState<string | null>(null);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -300,6 +330,10 @@ export default function SupportQueuePage() {
     if (!matchesGroup(t.category, activeGroup)) return false;
     if (statusFilter && t.status !== statusFilter) return false;
     if (priorityFilter && t.priority !== priorityFilter) return false;
+    // Which provider's desk this belongs to. Support opens the queue asking
+    // "what is Duffel waiting on", and answering that meant opening tickets
+    // one at a time to read the booking reference.
+    if (providerFilter && t.provider !== providerFilter) return false;
     if (assigneeFilter === 'ME' && t.assignedToId !== adminUser?.id) return false;
     if (search) {
       // Special pseudo-filter for channel
@@ -433,6 +467,18 @@ export default function SupportQueuePage() {
             <option key={s} value={s} className="bg-slate-800">{s.replace(/_/g, ' ')}</option>
           ))}
         </select>
+        {/* Which provider's desk. Named in full rather than by code, because the
+            person reading it is about to email that provider's support team. */}
+        <select
+          value={providerFilter}
+          onChange={e => setProviderFilter(e.target.value as ProviderId | '')}
+          className="px-3 py-2.5 bg-slate-800 border border-slate-700 rounded-xl text-slate-300 text-sm focus:outline-none focus:border-[#1ABC9C] appearance-none cursor-pointer"
+        >
+          <option value="">All Providers</option>
+          {PROVIDERS.map(p => (
+            <option key={p} value={p} className="bg-slate-800">{providerLabel(p)}</option>
+          ))}
+        </select>
         <select
           value={priorityFilter}
           onChange={e => setPriorityFilter(e.target.value as TicketPriority | '')}
@@ -555,6 +601,7 @@ export default function SupportQueuePage() {
                               <ShieldAlert size={11} />
                               Failed Booking
                             </span>
+                            <ProviderChip provider={ticket.provider} />
                             {/* Where the customer's money is, live from the audit
                                 the Stripe webhook writes to. On a failed booking
                                 that is the only thing anyone triaging the queue
@@ -581,6 +628,9 @@ export default function SupportQueuePage() {
                           </span>
                         ) : (
                           <span className="text-slate-400 text-sm">{ticket.category}</span>
+                        )}
+                        {ticket.category !== 'Failed Booking' && (
+                          <div className="mt-1"><ProviderChip provider={ticket.provider} /></div>
                         )}
                       </td>
                       <td className="px-5 py-4">

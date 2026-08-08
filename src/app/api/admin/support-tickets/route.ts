@@ -2,12 +2,14 @@ import { NextRequest, NextResponse } from 'next/server';
 import { withAdmin } from '@/lib/admin-rbac';
 import { prisma } from '@/lib/db';
 import { auditLog } from '@/lib/admin-auth';
+import { providerIdOf, ticketProvider } from '@/lib/providers/provider-identity';
 
 // Support users and above can view the queue
 export const GET = withAdmin(async (req: NextRequest) => {
   try {
     const url = new URL(req.url);
     const category = url.searchParams.get('category');
+    const provider = providerIdOf(url.searchParams.get('provider'));
 
     const where: Record<string, unknown> = {};
     if (category) where.category = category;
@@ -22,13 +24,38 @@ export const GET = withAdmin(async (req: NextRequest) => {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Which provider each ticket belongs to, so support can route it to the
+    // right desk without opening it.
+    //
+    // Derived rather than stored on the ticket: twenty different call sites
+    // create SupportTickets, and a column one of them forgets to set produces a
+    // ticket that silently vanishes from every provider filter. The booking is
+    // the authority and cannot drift. A FAILED booking has no MasterBooking to
+    // ask, which is why the failure audit carries its own provider.
+    const refs = [...new Set(tickets.map(t => t.bookingRef).filter((r): r is string => !!r))];
+    const bookings = refs.length > 0
+      ? await prisma.masterBooking.findMany({
+          where: { masterBookingReference: { in: refs } },
+          select: { masterBookingReference: true, primaryProvider: true },
+        })
+      : [];
+    const providerByRef = new Map(bookings.map(b => [b.masterBookingReference, b.primaryProvider]));
+
     const formatted = tickets.map(t => ({
       ...t,
       assignedTo: t.assignedTo?.fullName ?? null,
       messageCount: t._count.messages,
+      provider: ticketProvider({
+        failureAudit: t.failureAudit,
+        bookingProvider: t.bookingRef ? providerByRef.get(t.bookingRef) : null,
+      }),
     }));
 
-    return NextResponse.json({ tickets: formatted });
+    // Filtered after derivation, because the value being filtered on does not
+    // exist as a column to put in the `where`.
+    const visible = provider ? formatted.filter(t => t.provider === provider) : formatted;
+
+    return NextResponse.json({ tickets: visible });
   } catch (err: any) {
     console.error('[support-tickets] GET error:', err);
     return NextResponse.json({ error: 'Failed to fetch tickets' }, { status: 500 });
