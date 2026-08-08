@@ -98,6 +98,24 @@ export default function HScrollbar({
         : next);
   }, [targetRef]);
 
+  // Hide the target's NATIVE scrollbar, because this component draws its own.
+  //
+  // Two bars appeared under the admin tables — the OS one and this one, in
+  // different colours, stacked. This component exists for machines whose native
+  // bar is an invisible overlay; on machines where it IS drawn, adding ours
+  // simply doubled it.
+  //
+  // Done here rather than asking every caller to remember `scrollbar-hide`: the
+  // pairing is what makes it correct, so the component that creates the problem
+  // owns the fix. Removed on unmount so the element is left as it was found.
+  useEffect(() => {
+    const el = targetRef.current;
+    if (!el) return;
+    const had = el.classList.contains('scrollbar-hide');
+    if (!had) el.classList.add('scrollbar-hide');
+    return () => { if (!had) el.classList.remove('scrollbar-hide'); };
+  }, [targetRef]);
+
   useEffect(() => {
     const el = targetRef.current;
     if (!el) return;
