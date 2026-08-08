@@ -10,6 +10,7 @@ import {
 import { format } from 'date-fns';
 import Link from 'next/link';
 import { formatFlightDateTime } from '@/lib/provider-time';
+import { PROVIDERS, providerLabel } from '@/lib/providers/provider-identity';
 
 interface Stats {
   totalBookings: number;
@@ -51,9 +52,47 @@ const STATUS_COLORS: Record<string, string> = {
   REBOOKED:   'bg-purple-400/15 text-purple-400',
 };
 
-function StatCard({ label, value, sub, icon: Icon, color, href }: {
+/** Whole dollars, matching the tile above it. */
+const fmtMoney = (n: number) =>
+  new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 })
+    .format(Number.isFinite(n) ? n : 0);
+
+/**
+ * The provider split under a revenue tile, plus what FareMind actually earned.
+ *
+ * The big number is what CUSTOMERS PAID — mostly the airline's money passing
+ * through. Showing it alone under the word "Revenue" reads as what FareMind
+ * made, which on this data would be 23x the truth. Both are here, each labelled
+ * for what it is.
+ *
+ * Providers are listed even at zero, so "Duffel $0" is visibly zero business
+ * rather than a line someone has to notice is absent.
+ */
+function RevenueSplit({ split }: { split?: { byProvider?: Record<string, number>; fareMindRevenue?: number } }) {
+  if (!split) return null;
+  const by = split.byProvider ?? {};
+  return (
+    <div className="mt-2.5 pt-2.5 border-t border-slate-700/40 space-y-1">
+      <div className="flex flex-wrap gap-x-3 gap-y-0.5">
+        {PROVIDERS.map((p) => (
+          <span key={p} className="text-[11px] text-slate-400">
+            {providerLabel(p)} <span className="text-slate-200 font-semibold tabular-nums">{fmtMoney(by[p] ?? 0)}</span>
+          </span>
+        ))}
+      </div>
+      <p className="text-[11px] text-slate-500">
+        FareMind revenue{' '}
+        <span className="text-[#1ABC9C] font-semibold tabular-nums">{fmtMoney(split.fareMindRevenue ?? 0)}</span>
+      </p>
+    </div>
+  );
+}
+
+function StatCard({ label, value, sub, icon: Icon, color, href, footer }: {
   label: string; value: string | number; sub?: string;
   icon: React.ElementType; color: string; href?: string;
+  /** Extra detail under the tile — the provider split on the revenue cards. */
+  footer?: React.ReactNode;
 }) {
   const content = (
     <div className={`bg-slate-800/50 border border-slate-700/50 rounded-2xl p-5 h-full ${href ? 'hover:bg-slate-800 hover:border-slate-600 transition-all cursor-pointer' : ''}`}>
@@ -65,6 +104,7 @@ function StatCard({ label, value, sub, icon: Icon, color, href }: {
       </div>
       <p className="text-3xl font-black text-white">{value}</p>
       {sub && <p className="text-slate-400 text-xs mt-1">{sub}</p>}
+      {footer}
     </div>
   );
 
@@ -96,8 +136,7 @@ export default function AdminDashboardPage() {
 
   useEffect(() => { load(); }, []);
 
-  const fmt = (n: number) =>
-    new Intl.NumberFormat('en-US', { style: 'currency', currency: 'USD', maximumFractionDigits: 0 }).format(n);
+  const fmt = fmtMoney;
 
   if (loading) {
     return (
@@ -132,8 +171,10 @@ export default function AdminDashboardPage() {
         <StatCard label="Cancelled Today"  value={stats?.cancelledToday ?? 0}      icon={XCircle}       color="bg-red-400/10 text-red-400" href="/admin/bookings" />
         <StatCard label="Pending Work"     value={stats?.pendingWork ?? 0}          icon={AlertTriangle} color="bg-amber-400/10 text-amber-400"
           sub={`${stats?.pendingChanges ?? 0} date changes · ${stats?.pendingCancellations ?? 0} cancellations`} href="/admin/support-queue" />
-        <StatCard label="Week Revenue"     value={fmt(stats?.weekRevenue ?? 0)}     icon={DollarSign}    color="bg-[#1ABC9C]/10 text-[#1ABC9C]" sub="last 7 days" />
-        <StatCard label="Month Revenue"    value={fmt(stats?.monthRevenue ?? 0)}    icon={DollarSign}    color="bg-purple-400/10 text-purple-400" sub="this month" />
+        <StatCard label="Week Booking Value" value={fmt(stats?.weekRevenue ?? 0)}  icon={DollarSign}    color="bg-[#1ABC9C]/10 text-[#1ABC9C]" sub="last 7 days"
+          footer={<RevenueSplit split={(stats as any)?.weekSplit} />} />
+        <StatCard label="Month Booking Value" value={fmt(stats?.monthRevenue ?? 0)} icon={DollarSign}    color="bg-purple-400/10 text-purple-400" sub="this month"
+          footer={<RevenueSplit split={(stats as any)?.monthSplit} />} />
         <StatCard label="Price Alerts"     value={stats?.openAlerts ?? 0}           icon={Bell}          color="bg-orange-400/10 text-orange-400" sub="open alerts" />
         <StatCard label="Support Tickets" value={stats?.openSupportTickets ?? 0} icon={GitMerge} color="bg-sky-400/10 text-sky-400" href="/admin/support-queue" />
       </div>

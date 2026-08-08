@@ -1,6 +1,71 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { withAdmin } from '@/lib/admin-rbac';
 import { prisma } from '@/lib/db';
+import { providerIdOf } from '@/lib/providers/provider-identity';
+
+
+/** What a booking contributes to the revenue split. */
+const REVENUE_FIELDS = {
+  primaryProvider: true,
+  serviceFeeAmount: true,
+  markupAmount: true,
+  seatServiceTotal: true,
+  travelInsuranceAmount: true,
+  priceProtectionAmount: true,
+  thirdPartyPayableTotal: true,
+} as const;
+
+interface RevenueSplit {
+  /** What customers were charged — volume, not earnings. */
+  bookingValue: number;
+  /** What FareMind actually earned on it. */
+  fareMindRevenue: number;
+  byProvider: Record<string, number>;
+}
+
+/**
+ * Split captured payments by provider, and separate volume from earnings.
+ *
+ * The tile said "Week Revenue" over the sum of what customers paid — mostly the
+ * airline's money passing through. $18,257 of bookings against $780 actually
+ * earned reads as 23x what FareMind made. Both numbers are now shown, labelled
+ * for what they are.
+ *
+ * Booking value is summed per PAYMENT, because that is what was captured.
+ * FareMind revenue is summed per BOOKING — a booking with two payments would
+ * otherwise count its service fee twice.
+ */
+function splitRevenue(
+  rows: Array<{ bookingId: string; amount: unknown; booking: Record<string, unknown> | null }>,
+): RevenueSplit {
+  const n = (v: unknown) => (v == null ? 0 : Number(v));
+  const byProvider: Record<string, number> = {};
+  let bookingValue = 0;
+
+  const seen = new Set<string>();
+  let fareMindRevenue = 0;
+
+  for (const r of rows) {
+    const amount = n(r.amount);
+    bookingValue += amount;
+
+    const provider = providerIdOf(r.booking?.primaryProvider) ?? 'unknown';
+    byProvider[provider] = (byProvider[provider] ?? 0) + amount;
+
+    if (r.booking && !seen.has(r.bookingId)) {
+      seen.add(r.bookingId);
+      // Third-party products earn us the spread, not the premium.
+      const thirdParty = Math.max(0,
+        n(r.booking.travelInsuranceAmount) + n(r.booking.priceProtectionAmount) - n(r.booking.thirdPartyPayableTotal));
+      fareMindRevenue += n(r.booking.serviceFeeAmount) + n(r.booking.markupAmount)
+        + n(r.booking.seatServiceTotal) + thirdParty;
+    }
+  }
+
+  const cents = (v: number) => Math.round(v * 100) / 100;
+  for (const k of Object.keys(byProvider)) byProvider[k] = cents(byProvider[k]);
+  return { bookingValue: cents(bookingValue), fareMindRevenue: cents(fareMindRevenue), byProvider };
+}
 
 export const GET = withAdmin(async (_req: NextRequest) => {
   const now = new Date();
@@ -67,13 +132,16 @@ export const GET = withAdmin(async (_req: NextRequest) => {
       },
     }),
     prisma.cancellationRecord.count({ where: { status: { in: ['CANCEL_REQUESTED', 'IN_PROGRESS'] } } }),
-    prisma.bookingPayment.aggregate({
+    // Captured payments WITH the provider and the revenue fields of the booking
+    // they belong to. The bare _sum could only produce one blended number, and
+    // a blended number cannot answer "how much of this was Duffel".
+    prisma.bookingPayment.findMany({
       where: { status: 'SUCCEEDED', paidAt: { gte: weekStart } },
-      _sum: { amount: true },
+      select: { bookingId: true, amount: true, booking: { select: REVENUE_FIELDS } },
     }),
-    prisma.bookingPayment.aggregate({
+    prisma.bookingPayment.findMany({
       where: { status: 'SUCCEEDED', paidAt: { gte: monthStart } },
-      _sum: { amount: true },
+      select: { bookingId: true, amount: true, booking: { select: REVENUE_FIELDS } },
     }),
     prisma.masterBooking.findMany({
       take: 8,
@@ -124,8 +192,12 @@ export const GET = withAdmin(async (_req: NextRequest) => {
       pendingCancellations,
       openAlerts,
       openSupportTickets,
-      weekRevenue: Number(weekRevenue._sum.amount ?? 0),
-      monthRevenue: Number(monthRevenue._sum.amount ?? 0),
+      // Kept under the original names so nothing reading this breaks; the
+      // split sits alongside.
+      weekRevenue: splitRevenue(weekRevenue as any).bookingValue,
+      monthRevenue: splitRevenue(monthRevenue as any).bookingValue,
+      weekSplit: splitRevenue(weekRevenue as any),
+      monthSplit: splitRevenue(monthRevenue as any),
     },
     recentBookings,
   });
